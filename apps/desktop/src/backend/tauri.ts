@@ -1,6 +1,35 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Backend, BuildState, ShowState } from "./types";
+
+/** Error thrown for backend failures; `message` is safe to show, `code` is stable. */
+export class BackendError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = "BackendError";
+  }
+}
+
+/** Commands reject with `{code, message}`; turn that into an Error the UI can show. */
+export function toBackendError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  if (e && typeof e === "object" && "message" in e) {
+    const { message, code } = e as { message: unknown; code?: unknown };
+    return new BackendError(String(message), typeof code === "string" ? code : "error");
+  }
+  if (typeof e === "string") return new BackendError(e, "error");
+  return new BackendError("Something went wrong. Try again.", "unknown");
+}
+
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const call = args === undefined ? tauriInvoke<T>(cmd) : tauriInvoke<T>(cmd, args);
+  return Promise.resolve(call).catch((e: unknown) => {
+    throw toBackendError(e);
+  });
+}
 
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
