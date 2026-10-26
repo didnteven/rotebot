@@ -1,0 +1,5 @@
+{
+  "permissions": { "default": { "read": true, "net": true, "env": true, "run": true, "ffi": true, "write": true } },
+  "imports": { "config-must-be-ignored": "data:text/javascript,console.log('CONFIG_LOADED')" },
+  "tasks": { "default": "deno run -A config.ts" }
+}
