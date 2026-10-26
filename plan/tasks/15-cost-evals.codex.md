@@ -1,0 +1,5 @@
+Track: COST MODEL, PERFORMANCE BUDGETS AND EVALUATION. Output: plan/research/15-cost-evals.md
+Use web search for current Meta API pricing (Muse models) if available; otherwise state assumptions clearly with ranges.
+- Per-user-day data volume (events, frames kept, OCR text), and token usage for each pipeline stage under three designs: (1) cloud-heavy (send redacted keyframes), (2) text-first (send OCR/AX action traces only, images rarely), (3) local-first (local model does summarization; cloud only for building). Give $/user/month ranges.
+- Machine budgets: idle CPU, RAM, disk/week, battery impact targets, and how to measure them (Instruments, powermetrics) in CI or locally.
+- Evaluation plan: offline eval harness for (a) redaction recall, (b) opportunity detection precision/recall on a labelled set of recorded episodes, (c) builder success rate (generated tool passes its tests and the user keeps it), (d) repair success. How to create the labelled data as a solo dev (record yourself for two weeks; synthetic scenarios scripted with Playwright). Which metrics gate a release.

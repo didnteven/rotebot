@@ -1,0 +1,16 @@
+14-ux codex exit=0 secs=255
+11-architecture codex exit=0 secs=275
+01-product claude exit=0 secs=369
+13-ux claude exit=0 secs=351
+10-microapp-runtime claude exit=0 secs=373
+15-cost-evals codex exit=0 secs=368
+09-pattern-engine codex exit=0 secs=390
+02-competition codex exit=0 secs=431
+05-alt-builders codex exit=0 secs=426
+08-privacy-security claude exit=0 secs=439
+07-capture-windows codex exit=0 secs=450
+12-architecture claude exit=0 secs=454
+06-capture-macos codex exit=0 secs=471
+03-meta-models claude exit=0 secs=906
+04-muse-msp claude exit=0 secs=997
+ALL_DONE

@@ -1,0 +1,13 @@
+{"t_ms": 0, "dir": "meta", "obj": {"cmd": ["muse", "serve", "--provider", "echo", "--no-session-log"], "env_overrides": {"XDG_DATA_HOME": "/tmp/msp-iso10", "XDG_CONFIG_HOME": "/tmp/msp-iso10/cfg", "XDG_STATE_HOME": "/tmp/msp-iso10/state"}}}
+{"t_ms": 2, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"id\": 99, \"method\": \"session/list\", \"params\": {}}"}
+{"t_ms": 2, "dir": "c2s", "raw": "this is not json"}
+{"t_ms": 574, "dir": "s2c", "raw": "{\"jsonrpc\":\"2.0\",\"id\":99,\"error\":{\"code\":-32600,\"message\":\"Not initialized\",\"data\":{\"kind\":\"notInitialized\"}}}"}
+{"t_ms": 574, "dir": "s2c", "raw": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"parse error\",\"data\":{\"kind\":\"parseError\"}}}"}
+{"t_ms": 1011, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"clientInfo\": {\"name\": \"macroscope_probe\", \"title\": \"Macroscope probe\", \"version\": \"0.0.1\"}, \"capabilities\": {\"requestedCapabilities\": [\"userShell\", \"sessionListStream\", \"sessionRename\", \"feedback\"]}}}"}
+{"t_ms": 1271, "dir": "s2c", "raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"muse\",\"version\":\"1.4.11\"},\"userAgent\":\"muse-build/1.4.11 (serve; macos-aarch64; build d654f64987ba0a6f60980e9e89351223c1e4095c)\",\"museHome\":\"/tmp/msp-iso10/muse\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\",\"schema\":{\"version\":1,\"fingerprint\":\"sha256:f282ad16e21520d0cda68cb190149b86e2b062eef1dd282749360c05aa3d1082\"},\"grantedCapabilities\":[\"userShell\",\"sessionListStream\",\"feedback\"],\"experimentalApi\":false,\"sessionDurability\":\"ephemeral\",\"sandboxAvailability\":\"available\"}}"}
+{"t_ms": 1271, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"initialized\"}"}
+{"t_ms": 1271, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"initialize\", \"params\": {\"clientInfo\": {\"name\": \"again\", \"version\": \"0\"}}}"}
+{"t_ms": 1273, "dir": "s2c", "raw": "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32600,\"message\":\"already initialized\",\"data\":{\"kind\":\"alreadyInitialized\"}}}"}
+{"t_ms": 1273, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"no/such/method\", \"params\": {}}"}
+{"t_ms": 1274, "dir": "s2c", "raw": "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32601,\"message\":\"method not found\",\"data\":{\"kind\":\"methodNotFound\"}}}"}
+{"t_ms": 1998, "dir": "meta", "obj": {"exit": 0}}

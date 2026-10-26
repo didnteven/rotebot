@@ -1,0 +1,1373 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /Users/todd/StudioProjects/macroscope
+model: gpt-6.1-sol
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a16323-9c92-7750-b56e-3b4480dc5ab3
+--------
+user
+You are one of several planning agents working in parallel on a new desktop app. First read plan/BRIEF.md fully. Then do the track below. Write your output file yourself (markdown), make it substantive and specific (roughly 2,000-5,000 words, ASCII diagrams welcome), and do not edit any other agent's files.
+
+Track: PATTERN ENGINE (from raw events to ranked automation opportunities). Output: plan/research/09-pattern-engine.md
+Design the data pipeline end to end, concretely enough to implement:
+- Event schema (JSON) for: app focus, window/URL change, AX focused element + role + label, click on element, key shortcut (no content), text-entry burst (length only + field identity), clipboard copy/paste (type + hash + optional redacted preview), file events (Downloads), frame refs, OCR text refs.
+- Sessionization into "episodes" (boundaries by idle time, app/task switch), and an "action trace" representation that is compact and model-friendly (e.g. `copy(cell B2 in Sheets 'Invoices') -> paste(field 'Amount' in Chrome 'Xero bill')`).
+- Repetition detection without an LLM first: sequence mining on normalized action traces (n-gram / PrefixSpan / edit distance), periodicity (weekly Tuesday 2pm), then embeddings + LLM to name and explain clusters.
+- Friction score formula (frequency x duration x error/undo rate x context switches x copy-paste count) and an "automatability" score (are the apps scriptable? APIs? browser vs native?), so we suggest only things we can actually build.
+- When and how the LLM is used (batch nightly vs near-real-time), token budgets, what context is sent (text traces + a few redacted keyframes).
+- The "Opportunity" object handed to the builder: goal, observed steps, sample inputs/outputs, apps involved, suggested approach, confidence, evidence links to frames.
+- Evaluation: how to build a test set (record your own workflows; synthetic traces), precision of suggestions (target: >50% of suggestions accepted?), and the feedback loop from dismiss/accept.
+- Storage: SQLite schema sketch + vector index (sqlite-vec?) and data volumes per day.
+codex
+I’ll read the full brief and any repo guidance, then write the pattern-engine design to `plan/research/09-pattern-engine.md` without changing other agents’ files.
+exec
+/bin/zsh -lc "pwd && rg --files -g 'AGENTS.md' -g 'BRIEF.md' -g '*09-pattern-engine*' -g 'README*' plan .agents 2>/dev/null" in /Users/todd/StudioProjects/macroscope
+ exited 2 in 0ms:
+/Users/todd/StudioProjects/macroscope
+plan/BRIEF.md
+plan/logs/09-pattern-engine.codex.log
+plan/tasks/09-pattern-engine.codex.md
+
+exec
+/bin/zsh -lc 'cat plan/BRIEF.md' in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+# Macroscope: planning brief (shared by every planning agent)
+
+Today is 2026-10-22. Everything here is about planning; no app code exists yet.
+
+## The idea (the owner's words, condensed)
+
+A desktop app that watches what the user does on their computer (screen frames plus
+interaction events), uses AI to find repetitive, tedious work, and then **builds small,
+specific apps, scripts or automations** that do that work for them. Automation tools like
+Zapier and Shortcuts make you decide what to automate and build it yourself; Macroscope
+discovers it for you and writes the tool.
+
+Original pipeline sketch (feel free to change any of it):
+
+1. **Capture**: a background process records screen state only when the UI changes, plus
+   events (active app, window titles, clicks, keystroke patterns but not content).
+   Sensitive data is masked on the device before anything reaches a model.
+2. **Pattern engine**: groups activity into recurring workflows ("every Tuesday: open Jira,
+   copy three fields into a CSV, format dates, email a status update") and ranks them by
+   time spent, frequency and cognitive load.
+3. **Micro-app generator**: on "Automate this", an AI coding agent writes a dedicated
+   tool (script, browser extension, menu-bar widget, Shortcut...), shows a preview or
+   diff, the user tests it in a sandbox and pins it.
+
+## Hard requirements from the owner
+
+- **Desktop app for macOS and Windows. macOS is primary**: the owner can only test on a Mac.
+  Windows must be designed for, but cannot be hand-tested by the owner.
+- Mobile is out of scope for v1 (a prior analysis concluded mobile can only ever be a
+  companion: approvals, notifications, triggers). At most, mention it as a later phase.
+- **Must use Meta's APIs/models.** The owner specifically wants Meta's developer models,
+  the **Muse** family, and floated using **Muse Code** (Meta's terminal coding agent)
+  *from a terminal inside the application*, "or another way to build software/scripts
+  inside of software".
+- **All Meta model use is via API calls billed to an API key** (the owner's Meta developer
+  API key), not a consumer account login. Every design that uses Muse (`muse serve`,
+  `muse exec`) or calls Meta models directly MUST work with API-key auth, and the plan must
+  say exactly how the key gets from our app to the model (see "API-key auth" below).
+- **UI/UX matters**: plan the experience, not just the plumbing.
+- The owner is a solo developer who builds with AI coding agents (Codex, Claude, Muse) and
+  is comfortable with Flutter, Python, Rust and TypeScript.
+
+## Verified local facts (checked on the owner's Mac today)
+
+- `muse` CLI is installed: **Muse Code 1.4.11**. Full help text: `plan/reference/muse-cli-help.txt`.
+  - `muse exec` runs one headless prompt (`--json` gives JSONL events, `--output-schema`,
+    `--image`, `--workspace`, `--worktree`, `--approval-mode`, `--session-id`,
+    `--max-model-steps`, `--reasoning-effort none..ultra`).
+  - `muse serve` serves an **MSP (Muse Session Protocol) v1 session host over stdio**; the
+    client owns stdin/stdout. Sandbox posture is fixed per host process (`--disable-sandbox`,
+    `--sandbox-network`, `--disable-write`, `--disable-shell`); approval mode is chosen over
+    the wire. Providers: `meta`, `local`, `echo`.
+  - The full MSP v1 wire schema is exported at `plan/reference/msp/msp.d.ts` (TypeScript,
+    ~3,600 lines) and `plan/reference/msp/msp.schema.json`. Methods include `session/start`,
+    `session/resume`, `session/fork`, `session/read`, `session/sideChat`, `session/userShell`,
+    `session/setModel`, `session/tokenUsage`, `session/contextUsage`, `approval/request`,
+    `approval/decide`, `goal/set|pause|resume`, `subagent/*`, `task/*`, `skill/*`,
+    `plugin/*`, `hook/list`, `media/upload`, `model/list`, `item/started|delta|completed`.
+  - Known model ids: `muse-spark-1.3` (in the catalog) and **`muse-wonder-1.0`, which is
+    the default model `muse exec` used in a test today** [local].
+- **API-key auth (tested today)** [local]:
+  - `META_API_KEY` env var: "always takes priority over the account login" (`muse login --help`).
+    Verified: `META_API_KEY=<bogus> muse exec --json ...` sent the request to the Meta provider
+    (model `muse-wonder-1.0`) and failed with
+    `run.terminal.failed: "your API key from META_API_KEY was rejected — update or unset it"`.
+    So the key path works for `muse exec`, and failures come back as structured JSONL.
+  - `muse auth set --provider meta --api-key-stdin` stores a key in muse's own store (stdin only,
+    never argv).
+  - `muse exec --api-key-stdin` passes a key for a single run. `--base-url` overrides the endpoint.
+  - `-c KEY=VALUE` on exec/serve accepts secrets only as whole-value `${VAR}` references.
+  - MSP turn errors include `TurnErrorKind = "authRequired"` and a typed `quota` detail
+    (`QuotaDetail`, reset instant), so a desktop client can show "key missing/rejected" and
+    "rate-limited until X" without parsing text.
+  - NOT yet verified: that `muse serve` picks up `META_API_KEY` from its environment
+    the same way (expected, since it's the same binary and provider), and a *successful*
+    call with a real key (the owner has to supply that).
+- `codex` (0.163, has `codex app-server`) and `claude` (Claude Code) CLIs are also installed.
+- The owner already runs `muse exec` headless overnight via a keeper script
+  (`~/StudioProjects/agent-loop/scripts/muse_keeper.py`), so headless Muse is proven here.
+
+## Claims from the earlier chat that are NOT verified
+
+The idea came from a chat with another assistant. Treat these as **unverified, possibly
+invented**, and verify with web search before relying on them: "Muse Wonder", "Muse Glimmer
+(open-weight 30B)", "SAM 3.1 in the Meta Model API", base URLs like `dev.meta.ai/v1` or
+`llama.developer.meta.ai/v1`, a `@meta/llama` npm SDK, Muse model context sizes, Llama 4
+Scout's 10M-token context being usable for hours of screenshots. If you cannot verify
+something, say so plainly and design so the plan does not depend on it.
+
+## Rules for every planning agent
+
+- Write only inside `plan/`. Your assigned output file is given in your task.
+- Be concrete and opinionated: make decisions, give reasons, name the trade-off you accepted.
+  Do not survey every option evenly.
+- Mark every external fact as **[verified: source/URL]**, **[local: checked on machine]**
+  or **[assumption]**.
+- Call out risks that could kill the product (OS permissions, privacy, cost, App Store /
+  notarization rules, prompt injection from screen contents, Meta API terms).
+- End your file with **Open questions for the owner** (only real decisions) and
+  **Decisions I made** (one line each).
+
+exec
+/bin/zsh -lc "rg --files -g 'AGENTS.md' -g '"'!node_modules'"' -g '"'!vendor'"' . .." in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+../stockvaluation_io/AGENTS.md
+../stockvaluation_io/valuation-portal/AGENTS.md
+../your-pt.com/AGENTS.md
+
+exec
+/bin/zsh -lc "cat plan/tasks/09-pattern-engine.codex.md && ls -ld plan/research && rg -n 'api-key-stdin|META_API_KEY|--output-schema|--image|--model|--max-model-steps|--base-url' plan/reference/muse-cli-help.txt && rg -n 'TokenUsage|ContextUsage|authRequired|QuotaDetail|image|media/upload' plan/reference/msp/msp.d.ts" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+Track: PATTERN ENGINE (from raw events to ranked automation opportunities). Output: plan/research/09-pattern-engine.md
+Design the data pipeline end to end, concretely enough to implement:
+- Event schema (JSON) for: app focus, window/URL change, AX focused element + role + label, click on element, key shortcut (no content), text-entry burst (length only + field identity), clipboard copy/paste (type + hash + optional redacted preview), file events (Downloads), frame refs, OCR text refs.
+- Sessionization into "episodes" (boundaries by idle time, app/task switch), and an "action trace" representation that is compact and model-friendly (e.g. `copy(cell B2 in Sheets 'Invoices') -> paste(field 'Amount' in Chrome 'Xero bill')`).
+- Repetition detection without an LLM first: sequence mining on normalized action traces (n-gram / PrefixSpan / edit distance), periodicity (weekly Tuesday 2pm), then embeddings + LLM to name and explain clusters.
+- Friction score formula (frequency x duration x error/undo rate x context switches x copy-paste count) and an "automatability" score (are the apps scriptable? APIs? browser vs native?), so we suggest only things we can actually build.
+- When and how the LLM is used (batch nightly vs near-real-time), token budgets, what context is sent (text traces + a few redacted keyframes).
+- The "Opportunity" object handed to the builder: goal, observed steps, sample inputs/outputs, apps involved, suggested approach, confidence, evidence links to frames.
+- Evaluation: how to build a test set (record your own workflows; synthetic traces), precision of suggestions (target: >50% of suggestions accepted?), and the feedback loop from dismiss/accept.
+- Storage: SQLite schema sketch + vector index (sqlite-vec?) and data volumes per day.
+drwxr-xr-x@ 2 todd  staff  64 Oct 22 23:20 plan/research
+41:      --model <MODEL>
+51:      --base-url <URL>
+53:      --image <PATH>
+119:      --api-key-stdin
+128:      --model <ID>
+142:      --base-url <URL>
+144:      --image <PATH>
+161:      --output-schema <FILE>
+164:      --max-model-steps <N>
+218:Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [OPTIONS]
+239:      --model <MODEL>
+263:  muse serve --model <MODEL>
+264:  muse serve --provider meta --model <MODEL>
+451:export interface ContextUsage {
+478:/** Server-computed session cost member of [`CumulativeTokenUsage`] (tdd SS4.6.5, Amendment #41610 FR-41610-2/3). */
+487:export interface CumulativeTokenUsage {
+852:  /** `userMessage`: image attachment metadata only — base64 payloads are not echoed back on the view (tdd SS4.5.2). */
+1021:  usage?: TokenUsage;
+1135:/** `media/upload` params (tdd SS3.33, ADR 45443 D5): one chunk of a client-minted upload. All members required. */
+1155:/** `media/upload` result (tdd SS3.33): echoes the client-minted id, on every chunk and replay. */
+1161:/** `userMessage` image attachment metadata (tdd SS4.5.2): metadata only — the durable bytes live in the log and are reachable on the raw altitude. */
+1167:  /** The image media type (e.g. `"image/png"`). */
+1169:  /** Attachment type, `"image"` in v1 (free string: attachment vocabulary grows additively with the runtime's intake surface). */
+1279:  /** Content type, `"image"` in v1 (free string, grows with the durable vocabulary). */
+1621:export interface QuotaDetail {
+1898:export interface SessionContextUsageParams {
+2365:export interface SessionTokenUsageParams {
+2367:  cumulative: CumulativeTokenUsage;
+2385:  usage: TokenUsage;
+2593:  contextUsage?: ContextUsage;
+2613:  tokenUsage: CumulativeTokenUsage;
+2897:export interface TokenUsage {
+2977:  usage?: TokenUsage;
+2989:  quota?: QuotaDetail;
+2995:export type TurnErrorKind = "stepLimit" | "configError" | "projectionError" | "logError" | "workflowLaunchError" | "environmentError" | "modelError" | "launchError" | "authRequired" | "mcpLinkError" | (string & {});
+3011:/** One ordered content part of a turn submission (tdd SS3.2). File mentions are text, not a part type: write `@relative/path` in a text part. A structured `mention` part is reserved and currently rejected, and an unknown part type is `invalidParams` (tdd SS3.1.2, SS3.2) — which is what closes [`TurnInputPartType`].  Modelled as a discriminated flat object rather than a Rust `enum`, the convention [`crate::view::approval::ApprovalSubject`] already established for a wire union in this crate: the v1 schema model names no object-variant union shape and fails closed on one. The serialized JSON is the tdd shape either way; what a flat object cannot express is "`mediaType` is required exactly when `type` is `image`".  **RULED (#22785 E4, owner, 2026-08-26): the precedent is accepted.** A strict union node kind may be funded later as a follow-up; if it is, it must cover [`crate::method::lifecycle::PendingRequestPointer`] too. `height` may only appear together with `width`. `width` may only appear together with `height`. */
+3015:  /** Base64 payload, required on an `image` part. Invalid base64 or an empty payload is rejected with invalid params. */
+3019:  /** Media type, required on an `image` part. */
+3029:  /** The upload receipt, required on a `video` part (tdd SS3.2, SS3.33; ADR 45443 D5): the client-minted id `media/upload` echoed. */
+3036:export type TurnInputPartType = "text" | "image" | "skill" | "video";
+3578:  usage?: TokenUsage;
+3645:export type MspMethod = "initialize" | "subagent/sendMessage" | "subagent/followupTask" | "subagent/interrupt" | "subagent/stop" | "subagent/resume" | "subagent/reopen" | "subagent/close" | "subagent/readResult" | "session/start" | "session/resume" | "session/fork" | "session/leave" | "session/list" | "session/read" | "session/sideChat" | "turn/start" | "turn/steer" | "turn/interrupt" | "turn/cancel" | "turn/unqueue" | "session/compact" | "session/setModel" | "session/rename" | "session/setReasoningEffort" | "session/userShell" | "model/list" | "skill/list" | "skill/setActivation" | "skill/import" | "hook/list" | "plugin/list" | "plugin/install" | "plugin/marketplaceAdd" | "plugin/marketplaceUpdate" | "plugin/marketplaceRemove" | "task/background" | "task/stop" | "task/stopAll" | "task/list" | "goal/set" | "goal/edit" | "goal/clear" | "goal/pause" | "goal/resume" | "workflow/cancel" | "workflow/childControl" | "workflow/pause" | "workflow/resume" | "media/upload" | "view/subscribe" | "view/unsubscribe" | "view/page" | "item/readOutput" | "approval/decide" | "approval/listPending" | "session/setApprovalMode" | "userInput/answer" | "userInput/cancel" | "userInput/clarify" | "userInput/interrupt" | "usage/read" | "feedback/submit" | "recap/request" | "recap/cancel" | "computerUseSettings/read" | "computerUseSettings/update" | "computerUseSetup/read" | "computerUseSetup/start" | "computerUseSetup/check";
+
+web search: 
+web search: site.sqlite.org wal json generated columns FTS5 documentation ...
+web search: 
+web search: https://www.sqlite.org/wal.html
+exec
+/bin/zsh -lc "sed -n '90,185p' plan/reference/muse-cli-help.txt && sed -n '218,265p' plan/reference/muse-cli-help.txt && sed -n '2890,2920p' plan/reference/msp/msp.d.ts && git status --short" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+      --trust-workspace
+          Trust this workspace for this run (load its skills and rules); does
+          not save trust
+      --disable-approval
+          Disable tool approval prompts for this workspace run
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this run
+      --sandbox-network <MODE>
+          Sandbox network mode: restricted|enabled|proxy-only (default:
+          proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --enable-shell-tool
+          Use the legacy shell tool instead of the managed platform shell
+
+Run `muse <command> --help` for command-specific options.
+
+
+muse exec — run one prompt non-interactively (headless)
+
+Usage: muse exec [OPTIONS] [PROMPT]
+
+Options:
+      --json
+          Emit machine-readable JSONL events on stdout
+      --prompt-file <PATH>
+          Read the prompt from a file instead of an argument
+      --api-key-stdin
+          Read the provider API key from stdin
+      --provider <MODE>
+          Startup provider: echo or meta (default: meta)
+      --preset <NAME>
+          Run a built-in preset: native-basic, miniswe, empty, ac_orch,
+          openai-apply-patch
+      --permission-profile <ID>
+          Select a named permission profile for this session.
+      --model <ID>
+          Model id for non-echo providers
+      --contributor-mode <on|off>
+          Per-run contributor mode override (this run only; never persisted)
+  -c, --config <KEY=VALUE>
+          Set one setting for this run (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+      --reasoning-effort <EFFORT>
+          Meta reasoning effort: none|minimal|low|medium|high|xhigh|max|ultra
+          (default: high; alias: --effort)
+      --parallel-tool-calls
+          Enable Meta API parallel tool calls
+      --no-parallel-tool-calls
+          Disable Meta API parallel tool calls
+      --base-url <URL>
+          Override the provider base URL
+      --image <PATH>
+          Attach a local image file (repeatable)
+      --workspace <PATH>
+          Root policy-gated workspace tools at PATH
+  -w, --worktree [<MODE>]
+          Session git worktree: off|create|existing
+      --worktree-base <REF>
+          Base ref for --worktree create (default: HEAD)
+      --worktree-existing <PATH>
+          Existing worktree path for --worktree existing
+      --context-compaction-strategy <ID>
+          Context compaction strategy: summary-preserved-suffix/v1,
+          prefix-extension-summary/v1, prefix-extension-inventory-summary/v1
+      --context-compaction-soft-threshold <FRAC>
+          Soft compaction threshold
+      --context-compaction-hard-threshold <FRAC>
+          Hard compaction threshold
+      --output-schema <FILE>
+          Shape the final answer with the JSON schema in FILE (meta provider
+          only)
+      --max-model-steps <N>
+          Cap the number of model steps
+      --max-tool-output-bytes <N>
+          Cap tool output bytes fed back to the model (0 or >=9)
+      --session-id <UUID>
+          Use a specific session id
+      --allow-workspace-switch
+          Allow switching the workspace mid-run
+      --user-input-auto-resolve
+          Offer request_user_input and auto-cancel prompts (headless)
+      --subagent-worktree-isolation
+          Compatibility flag; capability defaults on. Only an affirmative
+          per-child request asks for isolation; omission stays shared. Requests
+          may reject when capability, provider, or Git prerequisites are
+          unavailable.
+      --disable-web-tools
+          Disable web tools for this run
+      --disable-reminders
+          Disable reminder agents for this run
+      --disable-request-user-input
+          Withhold request_user_input for this run
+      --no-foreign-personal-context
+Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [OPTIONS]
+
+The client owns this process's stdin and stdout and is its only
+connection. Sandbox posture and session durability are constructed
+here and apply to every session the host loads; neither is negotiable
+over the wire. Approval mode is the other way round — it is selected
+on the wire, so there is no approval flag here.
+
+Options:
+  -h, --help
+          Print this help
+      --no-session-log
+          Use memory-only sessions
+  -c, --config <KEY=VALUE>
+          Set one setting for this host (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+
+Provider selection (this process only; never rewrites settings):
+      --provider <PROVIDER>
+          Startup provider for this host: echo, meta, or local (default: from
+          your settings, else meta)
+      --model <MODEL>
+          Model id for non-echo providers (default: your configured model, else
+          the provider's default)
+      --contributor-mode <on|off>
+          Per-process contributor mode override (this host only; never
+          persisted)
+      --disable-request-user-input
+          Withhold request_user_input from the main conversation of every served
+          session (side chats keep it)
+
+Sandbox posture (fixed for the host's lifetime):
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this host
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --trust-workspace
+          Load each session workspace's skills and rules
+
+Examples:
+  muse serve --provider meta
+  muse serve --model <MODEL>
+  muse serve --provider meta --model <MODEL>
+
+  sourceTool: string;
+}
+
+/** Todo status (tdd SS4.6.3): closed in the runtime, wire-open. */
+export type TodoStatus = "pending" | "inProgress" | "completed" | "cancelled" | (string & {});
+
+/** Raw token counters, verbatim from the durable record (tdd SS4.6.5, the runtime's `Usage`, camelCased). Not directly summable across providers — sum the counted-once derivations instead (#8803). */
+export interface TokenUsage {
+  /** Cache read tokens, only when the provider distinguishes writes/reads. */
+  cacheReadTokens?: number;
+  /** Cache write tokens, only when the provider distinguishes writes/reads. */
+  cacheWriteTokens?: number;
+  /** Provider-reported cache tokens (inside or beside `inputTokens`, provider-convention-dependent — the reason `promptTokens` exists). */
+  cachedTokens: number;
+  /** Provider-reported input tokens. */
+  inputTokens: number;
+  /** Provider-reported output tokens. */
+  outputTokens: number;
+  /** Output tokens spent on reasoning, when the provider reports it. */
+  reasoningTokens: number;
+}
+
+/** `toolCall.displayLabel`: the call's words in three forms, each one line of plain text, always present together. The item's `status` picks the form. */
+export interface ToolDisplayLabel {
+  /** Shown while the call runs (`inProgress`), e.g. "Setting up Computer Use". */
+  active: string;
+  /** Shown after the call succeeds (`completed`), e.g. "Set up Computer Use". */
+  done: string;
+  /** Shown for every other status (failed, rejected, timed out, cancelled), beside that status; never implies success. */
+  neutral: string;
+}
+?? plan/
+
+codex
+The key design choice is to separate evidence of repetition from evidence that a workflow is buildable. I’m using local sequence mining to find repetitions, a capability registry to gate automation suggestions, and Meta calls to explain shortlisted patterns. The design also preserves copy/paste links and uncertainty without retaining typed content.
+web search: 
+web search: https://www.zetetic.net/sqlcipher/design/
+exec
+/bin/zsh -lc "sed -n '175,218p' plan/reference/muse-cli-help.txt && ls -la plan/research" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+          Compatibility flag; capability defaults on. Only an affirmative
+          per-child request asks for isolation; omission stays shared. Requests
+          may reject when capability, provider, or Git prerequisites are
+          unavailable.
+      --disable-web-tools
+          Disable web tools for this run
+      --disable-reminders
+          Disable reminder agents for this run
+      --disable-request-user-input
+          Withhold request_user_input for this run
+      --no-foreign-personal-context
+          Exclude foreign personal rules and skills from this run
+      --no-session-log
+          Do not persist session event logs to disk
+      --approval-mode <MODE>
+          Tool approval mode: untrusted|on-request|never (default: on-request)
+      --approval-judge <off|on>
+          LLM approval judge for Prompt-bound calls (default: on)
+  -h, --help
+          Print this help
+
+Safety (approval and the sandbox are ON by default):
+      --yolo
+          Disable approval and sandbox, trust this workspace, withhold
+          request_user_input (this run)
+      --trust-workspace
+          Load this workspace's skills and rules (this run)
+      --disable-approval
+          Disable tool approval prompts for this run
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this run
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --enable-shell-tool
+          Use the legacy shell tool instead of the managed platform shell
+
+
+muse serve — serve an MSP session host over stdio
+
+Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [OPTIONS]
+total 0
+drwxr-xr-x@  2 todd  staff   64 Oct 22 23:20 .
+drwxr-xr-x@ 11 todd  staff  352 Oct 22 23:24 ..
+
+web search: 
+web search: https://alexgarcia.xyz/sqlite-vec/features/vec0.html
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/09-pattern-engine.md
+diff --git a/plan/research/09-pattern-engine.md b/plan/research/09-pattern-engine.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1cfb69a1fb77f4243597e0b745496f2f72a89dc7
+--- /dev/null
++++ b/plan/research/09-pattern-engine.md
+@@ -0,0 +1,390 @@
++# Pattern engine: evidence before inference
++
++Read in full: `plan/BRIEF.md`. Scope: capture output through the builder handoff; no capture implementation or generated-automation runtime. Date: 2026-10-22.
++
++**Recommendation:** keep a local, replayable evidence pipeline. Discover repetitions with deterministic sequence matching, rank them using measured effort and verified implementation capabilities, then ask a Meta model to explain only the shortlist. A model-generated description must never manufacture repetition, saved time, or app capabilities.
++
++**Evidence convention:** [assumption] marks proposed designs, estimates, thresholds, and untested behavior throughout this document, including illustrative JSON/SQL. These are implementation starting points, not measured performance. External implementation facts have individual source links. [local] means inspected supplied machine references, with execution claims attributed explicitly to the brief.
++
++## 1. Pipeline and operating contract
++
++[assumption] One Rust background worker owns ingestion and SQLite writes on both platforms. Platform adapters supply macOS AX or Windows UI Automation observations in the same vocabulary; never assume equal coverage. Windows UI Automation exposes UI elements and control patterns programmatically [verified: Microsoft, https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32]. Windows capture and automation still require external testers; CI cannot establish real application coverage.
++
++```text
++OS/browser adapters
++  -> in-memory policy gate + redaction
++  -> validated events / redacted media store
++  -> ordered reducer -> actions + dataflow edges
++  -> episodes + overlapping task threads
++  -> local sequence candidates + periodicity
++  -> capability gate + scoring
++  -> optional vector neighbors -> Meta explanation
++  -> validated Opportunity -> user review -> builder
++```
++
++[assumption] Each stage records input revision, algorithm version, policy version, and a durable cursor. Deduplicate by `(capture_run, producer, producer_seq)`. Batch writes every 250 ms or 100 events; bound the memory queue to 10,000 events. Under pressure drop redundant frames first, then emit an explicit capture gap; never silently treat incomplete capture as uninterrupted activity. Recompute affected episodes when delayed OCR arrives. Suspend mining while locked, paused, or on excluded apps. Exclude Macroscope and its generated tools from discovery to avoid learning its own suggestions.
++
++## 2. Event contract
++
++[assumption] Use JSON Schema with a discriminated `kind`, reject unknown required versions, reject unexpected payload properties, and limit strings and arrays. This common envelope accompanies every payload below:
++
++```json
++{
++  "schema_version": 1,
++  "event_id": "ev_1042",
++  "capture_run": "run_22",
++  "producer": "mac.ax",
++  "producer_seq": 1042,
++  "occurred_at": "2026-10-22T01:02:03.456Z",
++  "received_at": "2026-10-22T01:02:03.466Z",
++  "mono_ms": 3123456,
++  "timezone": "Pacific/Auckland",
++  "kind": "ax.focus",
++  "context": {
++    "app_id": "com.google.Chrome",
++    "process_instance": "p_18",
++    "window_id": "w_7",
++    "tab_id": "tab_2",
++    "document_id": "doc_9"
++  },
++  "privacy": {"policy_version": 4, "state": "sanitized"},
++  "quality": {"source": "ax", "confidence": 0.95},
++  "payload": {
++    "element_id": "el_amount",
++    "role": "textbox",
++    "native_role": "AXTextField",
++    "label": "Amount",
++    "label_origin": "approved_ui_label",
++    "selector_ref": "sel_31",
++    "secure": false
++  }
++}
++```
++
++[assumption] IDs are device-local opaque tokens. Window handles are scoped to process instances; element handles are scoped to document revision. A separate sanitized selector registry provides best-effort identities across reloads. `mono_ms` orders and measures durations within a capture run; UTC supports dates and recurrence. Start a new run after restart and record sleep, timezone changes, and clock jumps. A coordinator merges producer streams with a 500 ms reorder window; causal links override receipt order. Late events trigger bounded revision, never an invented total order.
++
++[assumption] Required payload shapes follow. Samples are synthetic; `null` explicitly means unavailable. Persist only approved UI labels, never AX values, arbitrary page text, or text selected by the user.
++
++```json
++[
++  {"kind":"app.focus","payload":{
++    "previous_app_id":"com.apple.finder","app_id":"com.google.Chrome",
++    "display_name":"Chrome","reason":"activated"}},
++  {"kind":"window.change","payload":{
++    "change":"url","window_id":"w_7","tab_id":"tab_2",
++    "title":"Xero bill","document_id":"doc_9",
++    "url":{"origin":"https://example.invalid","route":"/bills/:id",
++           "resource_token":"res_8"}}},
++  {"kind":"ax.focus","payload":{
++    "element_id":"el_amount","role":"textbox","native_role":"AXTextField",
++    "label":"Amount","label_origin":"approved_ui_label",
++    "selector_ref":"sel_31","secure":false}},
++  {"kind":"pointer.click","payload":{
++    "button":"primary","count":1,"target_element_id":"el_amount",
++    "target_observation_id":"ev_1042","target_confidence":0.95,
++    "window_point":[0.42,0.31]}},
++  {"kind":"key.shortcut","payload":{
++    "modifiers":["primary"],"key":"C","command":"copy"}},
++  {"kind":"text.burst","payload":{
++    "field_id":"el_amount","selector_ref":"sel_31",
++    "started_mono_ms":3123500,"ended_mono_ms":3125200,
++    "typed_codepoints":6,"length_bucket":"5-8",
++    "length_quality":"input_method_reported","paste_included":false}},
++  {"kind":"clipboard.copy","payload":{
++    "clipboard_id":"clip_4","types":["text/plain"],"byte_length":6,
++    "hash":{"algorithm":"hmac-sha256","key_epoch":"2026-10-22",
++            "value":"illustrative-device-local-digest"},
++    "source_element_id":"cell_b2","redacted_preview":null}},
++  {"kind":"clipboard.paste","payload":{
++    "clipboard_id":"clip_4","types":["text/plain"],"byte_length":6,
++    "hash":{"algorithm":"hmac-sha256","key_epoch":"2026-10-22",
++            "value":"illustrative-device-local-digest"},
++    "target_element_id":"el_amount","redacted_preview":"[NUMBER]",
++    "link_quality":"matching_clipboard_generation"}},
++  {"kind":"file.download","payload":{
++    "operation":"ready","file_id":"file_3","directory":"Downloads",
++    "name_template":"invoice_<id>.csv","path_token":"path_4",
++    "previous_path_token":null,"extension":"csv","size_bytes":2048,
++    "readiness":"inferred_stable","source_context_event_id":null}},
++  {"kind":"frame.ref","payload":{
++    "frame_id":"fr_12","artifact_id":"blob_12","width":1280,"height":800,
++    "captured_mono_ms":3125300,"redaction_revision":4,
++    "mask_artifact_id":"mask_12","purpose":"post_action",
++    "perceptual_hash":"local-only-phash"}},
++  {"kind":"ocr.ref","payload":{
++    "ocr_id":"ocr_12","frame_id":"fr_12","artifact_id":"txt_12",
++    "engine_version":"adapter-v1","language":"en",
++    "block_count":7,"redaction_revision":4,"mean_confidence":0.91}}
++]
++```
++
++[assumption] `window.change.change` is `window|title|url|tab|document`; file operations are `created|modified|renamed|ready|deleted`. Add lifecycle kinds `idle.start/end`, `capture.gap`, `lock`, `sleep`, and `policy.changed`. Idle events carry timestamps/duration; gaps carry affected producers and lost-count estimates. They are essential boundary evidence.
++
++[assumption] Identity/privacy rules:
++
++- Strip URL query, fragment, credentials, and unapproved path segments before persistence. Retain route templates plus keyed resource tokens, not URLs containing invoice IDs. Titles default to app/page category unless an adapter recognizes safe UI text.
++- Read field role and label, never value. Labels can themselves contain personal data: redact them and default unknown labels to `[FIELD]`. Secure fields and excluded contexts emit no text, clipboard, AX, frame, or OCR details.
++- Record shortcuts from a fixed command vocabulary, no ordinary keys. Normalize Cmd/Ctrl to `primary`, preserving platform separately. A copy shortcut is an attempted command, not proof of clipboard change or successful paste.
++- End a typing burst after 1.5 seconds, field blur, paste, or shortcut; cap at 30 seconds. Persist counts only. IME input may not expose committed length safely: use `typed_codepoints:null`, a nullable bucket, and `length_quality:"unknown"`; never read field contents to recover it.
++- Clipboard observation is opt-in. Canonicalize approved text representations in memory, compute a device-secret HMAC, then discard bytes. Daily key epochs limit linkage; correlate primarily by clipboard generation. Plain hashes make small amounts guessable. Do not export hashes, clipboard IDs, or exact lengths to models. Previews default off, limited to 80 sanitized characters when enabled; images and files receive type metadata only.
++- Downloads events contain metadata, not file bytes. Preserve identity across temporary-file rename; deduplicate watcher bursts. Mark readiness inferred after two seconds of unchanged metadata, re-open it if writes resume. Attribute a download to an app only with corroboration, never temporal proximity alone.
++- Redact frames before persistence. OCR produces only sanitized text blocks with normalized bounding boxes, confidence, and mask linkage; raw OCR remains transient. Redaction failure discards the artifact. Repeated screen text is data, never an instruction.
++
++## 3. Episodes, actions, and task continuity
++
++[assumption] Maintain two levels: a chronological **episode** bounded by inactivity or a sustained task change, and a **task thread** joining related spans across interruptions. Splitting at every app focus would destroy precisely the cross-app workflows we need.
++
++[assumption] Hard-close episodes on lock, pause, sleep, permission loss, or 120 seconds idle. An app/window/tab switch starts a provisional segment. Continue the episode when the previous context returns within 45 seconds, a clipboard edge crosses the switch, or a known document/file relation connects it. Otherwise close at the switch after 45 seconds of unrelated activity. Use a 30-minute episode cap with continuation links. These boundaries have explicit reasons and confidence; they are revisable. Ambiguous segments remain separate, with candidate mining permitted across adjacent segments only when a dataflow or high-confidence task link exists. Never bridge privacy gaps.
++
++[assumption] Estimate active seconds by summing inter-action gaps capped at ten seconds. Keep wall duration, active duration, and observed waiting separate; reading can be effort even without input, so show uncertainty instead of charging all foreground time to a workflow. A known download completion may explain waiting, but it does not establish that the user waited for it.
++
++[assumption] The reducer combines low-level observations into actions:
++
++```text
++Action = {id, episode_id, span_id, verb, app, route, target,
++          object_slot, input_kind, length_bucket, start, end,
++          source_event_ids[], evidence_ids[], confidence}
++Edge   = {from_action, to_action, relation, confidence, evidence_ids[]}
++```
++
++[assumption] Collapse focus-click-focus into one activation; combine shortcut plus clipboard notification into one copy; combine paste plus field focus into one paste. Preserve undo/retry as annotations rather than silently removing them. Clipboard hash/generation match plus timing and focused target supports a transfer edge; mere Cmd+V supports `paste_attempt`. Retain observed and inferred actions distinctly. Never infer cell B2 from screen coordinates alone.
++
++[assumption] Store a lossless action graph and two projections: an instance trace with local document aliases, and a normalized trace for mining. Parameterize row numbers, dates, filenames, and instance IDs while retaining roles, source/destination field semantics, action order, and dataflow direction. Keep both strict document identity and generalized document type so two unrelated spreadsheets are not immediately merged.
++
++```text
++Instance (when adapter evidence actually identifies the cell):
++copy(cell B2 in Sheets 'Invoices')
++ -> paste(field 'Amount' in Chrome 'Xero bill')
++ -> copy(cell C2 in Sheets 'Invoices')
++ -> paste(field 'Reference' in Chrome 'Xero bill')
++ -> activate(button 'Save draft')
++
++Normalized:
++COPY(sheet.cell.amount, row=$r, doc=$source)
++ -> PASTE(bill.amount, from=$v1)
++ -> COPY(sheet.cell.reference, row=$r, doc=$source)
++ -> PASTE(bill.reference, from=$v2) -> SAVE_DRAFT(bill)
++```
++
++[assumption] Without adapter support use `sheet.cell.unknown`, lower confidence, and omit invented semantics. Render model traces from sanitized projections, numbered actions, relative times, and evidence IDs; never send raw event JSON or filesystem paths.
++
++## 4. Discover repetition locally
++
++[assumption] Run incremental exact mining every five minutes and deeper mining nightly over a rolling 28 days; retain aggregate recurrence counts for 90 days.
++
++1. **Seed:** rolling hashes of contiguous normalized action n-grams, lengths 3-12. Require three non-overlapping occurrences, across two episodes, plus either two dates or a five-item batch. Do not count multiple overlapping windows within one execution as separate support. Batch repetitions and task executions have separate counters.
++2. **Extend:** join overlapping seeds into maximal candidates up to 60 actions. Prefer closed patterns: suppress fragments with the same occurrence set when a longer pattern explains them. Remove generic navigation-only patterns such as focus/click/back.
++3. **Recover variants:** bucket by app set, endpoint roles, and dataflow signature. Compare candidate windows using weighted edit distance divided by maximum alignment weight; initially accept distance <=0.20. Navigation insertions cost 0.25, target substitutions cost 1, reversed transfer or changed write destination vetoes a merge. Use medoids and require every member near its medoid; avoid transitive chaining into unrelated tasks.
++4. **Handle gaps:** add constrained PrefixSpan for longer sequences after exact mining works. PrefixSpan grows sequential patterns using projected prefixes [verified: original paper, https://hanj.cs.illinois.edu/pdf/span01.pdf]. Our variant allows at most three skipped actions, 30 seconds between matched actions, ten minutes total span, and no protected boundary crossing. Retain matched intervals, not just subsequences; demand >=70% action coverage to avoid matching arbitrary browser activity. Stop at 10,000 candidates or 60 seconds per job and resume later.
++5. **Consolidate:** assign stable cluster IDs using medoid and occurrence overlap. Record split/merge lineage for feedback and rebuilds. Explain coverage, outliers, and unsupported branches rather than averaging them away.
++
++[assumption] Weekly periodicity uses local weekday/time-of-day histograms with 30-minute bins and +/-60-minute tolerance. Label “usually Tuesdays around 2pm” only after four observed weeks, >=75% matching weeks, and concentration above the user's overall activity baseline. Track recording coverage: an unobserved Tuesday is unknown, not a missed workflow. Preserve original timezone and handle DST in local time. Multiple jobs in a Tuesday batch count as one schedule occurrence. A schedule raises explanatory relevance, never establishes repetition or automatically creates a trigger.
++
++[assumption] Embeddings are a secondary neighbor generator, not evidence. Start with local 384-dimensional signed feature-hash vectors of semantic action bigrams, roles, and app categories; L2-normalize and use cosine distance. These are reproducible structural embeddings, not a claimed Meta embedding product. Retrieve ten nearest medoids, then require sequence/dataflow validation. A learned semantic embedding provider is a later adapter, enabled only after verifying an appropriate Meta API model, dimensions, cost, and privacy. No unverified endpoint, context size, or embedding service is required to ship v1.
++
++## 5. Friction, feasibility, and ranking
++
++[assumption] For each cluster, compute robust per-occurrence medians over non-overlapping spans. Missing observations reduce confidence rather than becoming zeros.
++
++```text
++F = observed executions / covered workdays * 5        # weekly rate
++D = median active minutes per execution
++e = min(undo_or_retry_annotations / eligible_actions, 0.25)
++s = min(median task-relevant app switches / 6, 1)
++c = min(median verified cross-field transfers / 6, 1)
++Friction = F * D * (1 + 2*e) * (1 + 0.5*s) * (1 + 0.5*c)
++```
++
++[assumption] Undo and retries are friction proxies, not proven mistakes. Count an undo followed by re-entry to the same field within ten seconds once; do not label ordinary undo as user error. Cap multipliers to prevent noisy capture dominating ranking. Show `F*D` as observed weekly effort; Friction is a ranking unit, never minutes saved.
++
++[assumption] Maintain an app/route/OS/version **capability registry** populated by adapters and builder probes, not LLM opinion. Each essential step records supported operation, evidence, test date, permission/auth prerequisites, and confidence. Assign implementation reliability `r`: tested local file transform 0.95; documented API operation plus successful read-only/schema probe 0.90; tested application script 0.85; stable browser DOM action 0.75; tested native accessibility action 0.60; coordinate/OCR-only action 0.20; unknown 0. These numbers are priors requiring calibration, not vendor reliability claims. Browser does not automatically mean automatable; native does not automatically mean impossible.
++
++```text
++coverage = supported essential steps / all essential steps
++A = coverage * min(r for essential steps)
++Q = min(capture_coverage, alignment_consistency, identity_quality,
++        support_strength)                 # each in [0,1]
++Rank = Friction * A * Q * preference_weight
++Savings = F * max(D - estimated_review_and_runtime_minutes, 0)
++```
++
++[assumption] Support strength starts at 0.6 for three executions and reaches 1 at eight executions across three dates; cap at 0.7 for a single-day batch. Offer buildable suggestions only with complete essential-step coverage, `A>=0.60`, `Q>=0.65`, and estimated savings >=10 minutes/week, or a batch saving >=5 minutes. Schedule-specific suggestions additionally require the periodicity threshold. Unavailable capability evidence yields an internal candidate or “teach this workflow” state, never an “Automate this” promise. Prefer automating a verified subset, such as producing an import CSV, when the full write path is unsupported.
++
++[assumption] Example: five executions/week, D=3, e=.05, s=c=1 gives Friction=37.1 but observed effort=15 minutes. With A=.75 and Q=.8, Rank=22.3; with 0.5 minute review per execution, proposed savings=12.5 minutes/week. Require user confirmation of the goal and samples before treating that estimate as reliable. Deduplicate overlapping opportunities so the same fifteen minutes are not promised twice.
++
++## 6. Meta inference: bounded explanation jobs
++
++[local: inspected `plan/reference/muse-cli-help.txt`] `muse exec` supports `--provider meta`, `--api-key-stdin`, `--prompt-file`, `--output-schema`, repeatable `--image`, `--no-session-log`, and model-step limits. [local: execution facts reported in `plan/BRIEF.md`] Muse Code 1.4.11 ran `muse-wonder-1.0`; a deliberately invalid `META_API_KEY` reached the Meta provider and was rejected. Successful real-key inference and `muse serve` environment authentication remain unverified. Do not depend on either for discovery.
++
++[assumption] Initial transport: the user enters their Meta developer API key into Macroscope; store it in the platform credential vault. A supervised child receives the key through stdin with `--api-key-stdin`, the prompt through a private file, and `--provider meta` explicitly. Never put the key in argv, trace payloads, logs, or inherited general-purpose child environments. Use an isolated disposable workspace and no workspace trust, no shell/write/web tools, no foreign personal context, no persisted session log. Verify effective tool denial before enabling unattended calls; CLI flags alone do not establish total tool isolation. The miner sends a description request, never a coding task. Use the installed model ID provisionally; test availability, schema conformance, and image support with the owner's real key before enabling each feature. No guessed API base URL.
++
++[assumption] Default nightly execution occurs at the next idle/unlocked opportunity after 02:00, on power when possible. No LLM per click or per frame. Explain at most five new/materially changed clusters per day, with one request per cluster; cache by sanitized packet hash plus model/prompt version. Near-real-time means local scoring when an episode closes. A model request occurs early only when the user opens an unexplained candidate and explicitly requests its explanation, using the same daily budget.
++
++[assumption] Per-cluster packet: task-neutral instruction and output schema; metrics; supported capability IDs; one medoid and two contrasting occurrences, up to 60 actions each; observed field/type mappings; missing evidence; up to three cropped redacted keyframes illustrating source, destination, and result. Images are omitted by default and added only when text evidence cannot resolve ambiguity and the user has enabled image sharing. Recheck redaction at egress; drop unsafe artifacts. Use request-local aliases and relative times, omit document tokens and full OCR dumps. Treat all OCR, labels, and previews as quoted untrusted evidence.
++
++[assumption] Reserve <=4,000 text input tokens and <=1,000 visible output tokens/job; daily text ceiling 20,000 input and 5,000 output, plus a separately metered image allowance <=six crops/day. Downsample crops to 768 pixels on the long edge; actual image token accounting and hidden reasoning costs are unknown until a successful call. These are application admission budgets, not a claim that the CLI enforces token maxima. Set low reasoning and one model step; reserve conservatively, reconcile provider usage, and stop admitting calls on quota/cost exhaustion. Until pricing and image metering are verified, disable image jobs and use a conservative owner-configurable monetary ceiling; one in-flight call may exceed a soft estimate. Budget failure leaves deterministic suggestions available.
++
++[assumption] The model returns only cluster name, tentative goal, observed-versus-inferred explanation, unresolved questions, and an approach referencing existing capability IDs. Reject nonexistent evidence, capability IDs, or unsupported factual claims. One invalid response gets one repair within the daily allowance; then use a deterministic label. The model cannot increase measured Q, support, savings, or A. Authentication/quota errors become actionable UI states; no consumer login fallback and no automatic replay storm.
++
++## 7. Opportunity and user experience
++
++[assumption] This synthetic, abbreviated builder contract is versioned, immutable by revision, and local by default:
++
++```json
++{
++  "schema_version":1,"id":"opp_7","revision":3,"cluster_id":"cl_9",
++  "status":"suggested","title":"Prepare invoice import rows",
++  "goal":{"text":"Turn invoice sheet rows into an import CSV",
++          "origin":"proposed","user_confirmed":false},
++  "observed_steps":[
++    {"id":"s1","verb":"copy","target":"sheet.amount",
++     "evidence":["action:a1","frame:fr_12"],"confidence":0.94},
++    {"id":"s2","verb":"paste","target":"bill.amount",
++     "evidence":["action:a2"],"confidence":0.90}
++  ],
++  "observations":{"executions":8,"covered_workdays":10,
++                  "median_active_seconds":180,"weekly_rate":4},
++  "sample_inputs":[{"fixture_id":"fx_in","kind":"synthetic",
++                    "data":{"amount":"123.45","reference":"INV-001"}}],
++  "sample_outputs":[{"fixture_id":"fx_out","kind":"synthetic",
++                     "data":{"csv_row":"INV-001,123.45"}}],
++  "apps":[{"id":"sheets.web","os":"macos"},
++          {"id":"accounting.web","os":"macos"}],
++  "suggested_approach":{"kind":"local_csv_transform",
++    "capability_ids":["csv.map.v1"],"scope":"verified_subset",
++    "manual_steps":["export source rows","review and import CSV"],
++    "prerequisites":["confirm destination import schema"],
++    "alternatives":["browser_draft_fill_if_verified"]},
++  "scores":{"friction":29.7,"automatability":0.95,
++            "evidence_quality":0.80,"acceptance_probability":null},
++  "confidence":{"goal":0.65,"field_mapping":0.82},
++  "evidence":{"episode_ids":["ep_2","ep_8"],
++              "frame_ids":["fr_12"],"expires_at":"2026-10-29T00:00:00Z"},
++  "unknowns":["source values unrecorded","destination schema unconfirmed"],
++  "execution_policy":{"mode":"preview_only","external_writes":false},
++  "provenance":{"normalizer":"v1","miner":"v1","prompt":"v1",
++                "model":"muse-wonder-1.0","policy_version":4}
++}
++```
++
++[assumption] The full object includes all observed steps and branches, first/last seen, occurrence intervals, score inputs, schedule evidence, input/output schemas, capability verification timestamps, preconditions, proposed success checks, and redaction manifests. Suggestion eligibility is separate from builder readiness: missing import schema can allow a promising suggestion but blocks generation until confirmed. Synthetic fixtures are clearly labeled and cannot validate real field meanings. Typed content was never recorded, so real samples must come from a user-selected file or explicit teach session under a new data scope.
++
++[assumption] Show at most three cards/week initially: “You moved invoice fields eight times; about three active minutes each.” Include a small trace and “Why this appeared,” with local evidence links that tolerate expiration. Actions: “Automate this,” “Not repetitive,” “Not worth it,” “Wrong steps,” and “Later.” Acceptance opens a scope/sample review before the builder; it grants no permission to run external writes. Never interpret screen text, observed clicking, or an LLM's goal as authorization.
++
++## 8. Storage, retention, and volumes
++
++[assumption] Bundle SQLCipher plus a pinned SQLite-compatible build of sqlite-vec; static registration avoids arbitrary extension loading. SQLCipher encrypts database pages and WAL page data; its design requires disabling file-backed temporary stores to avoid plaintext temporary data [verified: Zetetic, https://www.zetetic.net/sqlcipher/design/]. Put frames/OCR in a separately encrypted blob directory with per-artifact keys wrapped by the profile key. Keep credentials outside both stores. Integration with the selected Rust bindings, vec extension, and both OS packages is an early spike, not a proven combination.
++
++[assumption] Schema sketch; JSON columns contain sanitized projections. Production migrations add checks, foreign keys, and indexes for every retention/evidence traversal.
++
++```sql
++PRAGMA foreign_keys=ON;
++PRAGMA journal_mode=WAL;
++PRAGMA temp_store=MEMORY;
++CREATE TABLE events(
++ id TEXT PRIMARY KEY, run TEXT, producer TEXT, seq INTEGER,
++ wall_ms INTEGER, mono_ms INTEGER, kind TEXT, app_id TEXT,
++ payload_json TEXT, policy_version INTEGER,
++ UNIQUE(run,producer,seq));
++CREATE INDEX event_time ON events(run,mono_ms);
++CREATE TABLE artifacts(
++ id TEXT PRIMARY KEY, kind TEXT, encrypted_path TEXT,
++ key_ref TEXT, redaction_revision INTEGER, expires_ms INTEGER);
++CREATE TABLE episodes(
++ id TEXT PRIMARY KEY, start_ms INTEGER, end_ms INTEGER,
++ boundary_json TEXT, metrics_json TEXT, revision INTEGER);
++CREATE TABLE actions(
++ id TEXT PRIMARY KEY, episode_id TEXT REFERENCES episodes(id),
++ ordinal INTEGER, normalized_token TEXT, detail_json TEXT);
++CREATE TABLE evidence_links(
++ owner_type TEXT, owner_id TEXT, ref_type TEXT, ref_id TEXT,
++ PRIMARY KEY(owner_type,owner_id,ref_type,ref_id));
++CREATE TABLE action_edges(
++ source_id TEXT, target_id TEXT, relation TEXT, confidence REAL);
++CREATE TABLE clusters(
++ id TEXT PRIMARY KEY, medoid_json TEXT, metrics_json TEXT,
++ algorithm_version TEXT, lineage_json TEXT);
++CREATE TABLE occurrences(
++ id TEXT PRIMARY KEY, cluster_id TEXT REFERENCES clusters(id),
++ episode_id TEXT, first_action TEXT, last_action TEXT,
++ alignment_json TEXT, active_ms INTEGER);
++CREATE TABLE embedding_rows(
++ id INTEGER PRIMARY KEY, cluster_id TEXT, projection_hash TEXT,
++ model_version TEXT, dimension INTEGER);
++CREATE VIRTUAL TABLE trace_vec USING vec0(embedding float[384]);
++CREATE TABLE capabilities(
++ id TEXT PRIMARY KEY, os TEXT, app_version TEXT, operation TEXT,
++ verification_json TEXT, expires_ms INTEGER);
++CREATE TABLE opportunities(
++ id TEXT, revision INTEGER, cluster_id TEXT, status TEXT,
++ object_json TEXT, PRIMARY KEY(id,revision));
++CREATE TABLE feedback(
++ id TEXT PRIMARY KEY, opportunity_id TEXT, revision INTEGER,
++ response TEXT, reason TEXT, occurred_ms INTEGER);
++CREATE TABLE jobs(
++ id TEXT PRIMARY KEY, kind TEXT, input_revision TEXT,
++ state TEXT, cursor_json TEXT, attempts INTEGER);
++CREATE TABLE model_runs(
++ id TEXT PRIMARY KEY, packet_hash TEXT, model TEXT,
++ usage_json TEXT, validation_json TEXT, created_ms INTEGER);
++```
++
++[verified: sqlite-vec documentation, https://alexgarcia.xyz/sqlite-vec/features/vec0.html] `vec0` supports declared float vector columns and nearest-neighbor queries using `MATCH` with `k`. [verified: project API reference, https://github.com/asg017/sqlite-vec/blob/main/site/api-reference.md] It is pre-v1 and warns of breaking changes. [assumption] Align vec rowids with `embedding_rows.id`; never mix vector versions/dimensions. Rebuild derived vectors after normalizer changes. For this small medoid corpus, exact cosine scan in Rust is the fallback if extension packaging fails; do not add a server vector database.
++
++[verified: SQLite, https://www.sqlite.org/wal.html] WAL allows readers alongside a writer and needs checkpoint management. [assumption] Use one writer, short reader transactions, bounded background checkpoints, and a disk-full stop state. Select a currently patched SQLite baseline compatible with SQLCipher; the WAL documentation now records a WAL-reset bug, so version selection must include its fix rather than trusting the OS library. Resume idempotent jobs after crashes and reconstruct derived tables from retained sanitized data.
++
++[assumption] Eight-hour workday estimates, decimal MB, before database/index overhead:
++
++| Data | Assumed daily count/size | Daily volume |
++|---|---|---:|
++| Events | 40,000 x 700 bytes | 28 MB |
++| Actions, links, episodes, metrics | 6,000 actions plus links | 8 MB |
++| Changed redacted frames | 6,000 x 80 KB | 480 MB |
++| Sanitized OCR, selected frames only | 2,000 x 2 KB | 4 MB |
++| Cluster vectors | 100 x 384 x 4 bytes | 0.154 MB |
++
++[assumption] Frames dominate: 480 MB/day means 3.36 GB for seven days. Raw sanitized events: 28 days x 28 MB = 784 MB. Retain frames/OCR seven days; events/actions 28 days; sanitized medoids, aggregate recurrence counts, and feedback 90 days. Expect roughly 5-7 GB including indexes and working space, not a guarantee. Enforce a 10 GB default quota; stop frames at 750 MB/day, prune oldest eligible artifacts first, and report reduced evidence coverage. Never record screenshots at video rates for this engine. At 100 medoid vectors/day, 90-day float storage is about 13.8 MB before overhead.
++
++[assumption] User deletion traverses evidence lineage to actions, occurrences, clusters, vectors, cached prompts, and builder handoffs; cancel queued model jobs first. Recompute surviving aggregates and rebuild derivative indexes. Do not claim secure erasure from SQL DELETE: SQLite documents limitations for virtual-table shadow data [verified: SQLite, https://www.sqlite.org/pragma.html#pragma_secure_delete]. [assumption] Profile wipe destroys local encryption keys; selective deletion needs checkpoint/compaction and cannot recall data already sent to the provider. Do not back up capture storage by default; audit Muse temporary files and crash logs for copies.
++
++## 9. Evaluation and feedback
++
++[assumption] Build a consented, local corpus by recording the developer doing 12 workflow families with eight executions each across six weeks: spreadsheet-to-form transfer, download/rename/import, weekly report, expense draft, file conversion, and native-app equivalents. Include exceptions, interruptions, IME typing, permission denial, and unrelated browsing. Add at least 100 negative episodes: research, creative writing, navigation, and coincidental copy/paste. Use sandbox accounts and fabricated business data. Hand-label episode boundaries, task identity, essential steps, transfers, correct automation scope, and reasonable savings. A second reviewer checks 20%; owner-only labels are useful development evidence, not a product-quality estimate.
++
++[assumption] Generate >=1,000 reproducible synthetic trace variants from labeled traces: insert distractions, drop events, duplicate notifications, change labels/rows, invert transfers, reorder timestamps, simulate clipboard overwrite, midnight/DST, batch loops, and download renames. Plant secrets and malicious OCR instructions to test leakage and injection. Synthetic quality measures robustness, not market demand. Split by whole workflow family and time; never put perturbed copies of the same seed in train and test.
++
++[assumption] Release gates:
++
++- Boundary F1 >=0.85 with +/-10-second tolerance; transfer-edge precision >=0.95; false task merges <5% on held-out labeled episodes.
++- Candidate precision >=0.80 and family recall >=0.60; report matching tolerance, capture coverage, and each platform separately.
++- Every surfaced buildable suggestion has a verified essential-step path; manually audit unsupported capability claims with a target of zero.
++- Initial field target: >50% **explicit acceptance to investigate/build** within seven days of a viewed card; also report accepted/all-viewed, accepted/all-displayed, dismissed, ignored, and pending. Seek >=100 viewed suggestions across >=10 consenting users, bootstrap uncertainty by user, and avoid claiming success from one developer's repeated cards. Builder completion, first successful run, repeat use, and measured net time saved are separate outcomes.
++- Zero seeded secret leakage in retained or outbound artifacts; bounded ingestion lag <1 second, nightly mining <2 minutes on the owner's Mac at the estimated volume. These are targets to measure, not benchmarks.
++
++[assumption] Log feedback against opportunity revision and evidence. “Not repetitive” corrects cluster membership and suppresses the same pattern until materially new evidence; “Wrong steps” requests local boundary/mapping correction; “Not worth it” lowers that user's threshold preference; “Later” snoozes 30 days without a negative label. Accept is a positive relevance signal, not proof of feasibility. Failed builds lower the affected capability prior; successful runs update measured savings after subtracting review/repair time. Keep the original baseline and note workload changes to avoid attributing unrelated speedups to automation.
++
++[assumption] Begin with explicit rules and a Beta(1,1) acceptance prior by pattern category, using only resolved responses. Do not treat ignores as dismissals. Calibrate acceptance probabilities later with user-grouped validation; until then expose evidence-quality components rather than a spurious “92% confidence.” Hold out a small, budget-limited shadow candidate set for offline review to detect ranking blind spots without increasing notification volume.
++
++## 10. Product-killing risks and implementation order
++
++[assumption] The largest risk is insufficient identity: pixels and click coordinates may never reveal stable source/destination semantics. Ship a narrow adapter-supported workflow set first and abstain elsewhere. Permission loss or weak Windows coverage must be visible, not compensated for by model confidence. Privacy failures in labels, OCR, and clipboard can destroy trust; redaction and egress tests precede cloud inference. Screen prompt injection must have no route to tools or authority. Meta model availability, API-key success, provider retention/terms, quotas, and actual pricing remain launch gates; the local engine must work when inference is unavailable. Capture/helper distribution, notarization, and possible store restrictions require a separate platform review; no store eligibility is assumed here.
++
++[assumption] Implement in order: (1) schemas, privacy gate, encrypted replay store, and teach-session fixture recording; (2) deterministic actions, boundaries, and n-gram mining with evidence viewer; (3) capability registry and ranked cards; (4) real-key Meta transport and schema-validated explanations; (5) constrained PrefixSpan and vector neighbors only when held-out recall justifies them. This keeps a solo developer's first milestone testable without an open-ended multimodal agent.
++
++## Open questions for the owner
++
++- May nightly analysis send sanitized traces to Meta by default after setup, or should every batch require a user action? Images should have a separate setting either way.
++- Is opt-in clipboard metadata/HMAC correlation acceptable, or should v1 rely on shortcut and field evidence until a teach session?
++- Which two real workflows should define the first supported adapter/capability set, and can consenting Windows testers be recruited before cross-platform claims?
++- What daily API spending ceiling and local storage quota are acceptable? Proposed storage default: 10 GB.
++
++## Decisions I made
++
++- Discover repetition locally; use Meta to explain a bounded shortlist.
++- Preserve dataflow and provenance; never retain typed contents or invent samples.
++- Separate episodes from task continuity so app switches remain useful evidence.
++- Gate suggestions on a verified implementation path and rank friction separately from minutes saved.
++- Start with n-grams/edit distance and structural embeddings; add constrained PrefixSpan only when needed.
++- Use API-key-authenticated `muse exec` first; assume neither a successful real-key call nor serve authentication.
++- Keep encrypted SQLite/blob storage, seven-day visual evidence, and explicit deletion lineage.
++- Treat acceptance, build success, repeat use, and saved time as distinct evaluation outcomes.
+
+codex
+The draft is written. It includes the event payloads, episode and trace rules, mining thresholds, scoring formulas, builder handoff, storage estimates, and evaluation plan. I’m checking the word count, JSON examples, and source labels before finishing.
+exec
+/bin/zsh -lc "wc -w -l plan/research/09-pattern-engine.md && python3 - <<'PY'
+from pathlib import Path
+import json,re
+p=Path('plan/research/09-pattern-engine.md')
+s=p.read_text()
+for i,b in enumerate(re.findall(r'"'```json'"\\n(.*?)\\n"'```'"',s,re.S),1):
+    json.loads(b)
+    print(f'JSON example {i}: valid')
+print('Final sections:', [h for h in re.findall(r'"'^## .+'"',s,re.M)[-2:]])
+print('Non-ASCII characters:', ''.join(sorted(set(c for c in s if ord(c)>127))))
+PY" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+     390    4583 plan/research/09-pattern-engine.md
+JSON example 1: valid
+JSON example 2: valid
+JSON example 3: valid
+Final sections: ['## Open questions for the owner', '## Decisions I made']
+Non-ASCII characters: “”
+
+exec
+/bin/zsh -lc "git status --short -- plan/research/09-pattern-engine.md && sed -n '215,285p' plan/research/09-pattern-engine.md" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+?? plan/research/09-pattern-engine.md
+## 6. Meta inference: bounded explanation jobs
+
+[local: inspected `plan/reference/muse-cli-help.txt`] `muse exec` supports `--provider meta`, `--api-key-stdin`, `--prompt-file`, `--output-schema`, repeatable `--image`, `--no-session-log`, and model-step limits. [local: execution facts reported in `plan/BRIEF.md`] Muse Code 1.4.11 ran `muse-wonder-1.0`; a deliberately invalid `META_API_KEY` reached the Meta provider and was rejected. Successful real-key inference and `muse serve` environment authentication remain unverified. Do not depend on either for discovery.
+
+[assumption] Initial transport: the user enters their Meta developer API key into Macroscope; store it in the platform credential vault. A supervised child receives the key through stdin with `--api-key-stdin`, the prompt through a private file, and `--provider meta` explicitly. Never put the key in argv, trace payloads, logs, or inherited general-purpose child environments. Use an isolated disposable workspace and no workspace trust, no shell/write/web tools, no foreign personal context, no persisted session log. Verify effective tool denial before enabling unattended calls; CLI flags alone do not establish total tool isolation. The miner sends a description request, never a coding task. Use the installed model ID provisionally; test availability, schema conformance, and image support with the owner's real key before enabling each feature. No guessed API base URL.
+
+[assumption] Default nightly execution occurs at the next idle/unlocked opportunity after 02:00, on power when possible. No LLM per click or per frame. Explain at most five new/materially changed clusters per day, with one request per cluster; cache by sanitized packet hash plus model/prompt version. Near-real-time means local scoring when an episode closes. A model request occurs early only when the user opens an unexplained candidate and explicitly requests its explanation, using the same daily budget.
+
+[assumption] Per-cluster packet: task-neutral instruction and output schema; metrics; supported capability IDs; one medoid and two contrasting occurrences, up to 60 actions each; observed field/type mappings; missing evidence; up to three cropped redacted keyframes illustrating source, destination, and result. Images are omitted by default and added only when text evidence cannot resolve ambiguity and the user has enabled image sharing. Recheck redaction at egress; drop unsafe artifacts. Use request-local aliases and relative times, omit document tokens and full OCR dumps. Treat all OCR, labels, and previews as quoted untrusted evidence.
+
+[assumption] Reserve <=4,000 text input tokens and <=1,000 visible output tokens/job; daily text ceiling 20,000 input and 5,000 output, plus a separately metered image allowance <=six crops/day. Downsample crops to 768 pixels on the long edge; actual image token accounting and hidden reasoning costs are unknown until a successful call. These are application admission budgets, not a claim that the CLI enforces token maxima. Set low reasoning and one model step; reserve conservatively, reconcile provider usage, and stop admitting calls on quota/cost exhaustion. Until pricing and image metering are verified, disable image jobs and use a conservative owner-configurable monetary ceiling; one in-flight call may exceed a soft estimate. Budget failure leaves deterministic suggestions available.
+
+[assumption] The model returns only cluster name, tentative goal, observed-versus-inferred explanation, unresolved questions, and an approach referencing existing capability IDs. Reject nonexistent evidence, capability IDs, or unsupported factual claims. One invalid response gets one repair within the daily allowance; then use a deterministic label. The model cannot increase measured Q, support, savings, or A. Authentication/quota errors become actionable UI states; no consumer login fallback and no automatic replay storm.
+
+## 7. Opportunity and user experience
+
+[assumption] This synthetic, abbreviated builder contract is versioned, immutable by revision, and local by default:
+
+```json
+{
+  "schema_version":1,"id":"opp_7","revision":3,"cluster_id":"cl_9",
+  "status":"suggested","title":"Prepare invoice import rows",
+  "goal":{"text":"Turn invoice sheet rows into an import CSV",
+          "origin":"proposed","user_confirmed":false},
+  "observed_steps":[
+    {"id":"s1","verb":"copy","target":"sheet.amount",
+     "evidence":["action:a1","frame:fr_12"],"confidence":0.94},
+    {"id":"s2","verb":"paste","target":"bill.amount",
+     "evidence":["action:a2"],"confidence":0.90}
+  ],
+  "observations":{"executions":8,"covered_workdays":10,
+                  "median_active_seconds":180,"weekly_rate":4},
+  "sample_inputs":[{"fixture_id":"fx_in","kind":"synthetic",
+                    "data":{"amount":"123.45","reference":"INV-001"}}],
+  "sample_outputs":[{"fixture_id":"fx_out","kind":"synthetic",
+                     "data":{"csv_row":"INV-001,123.45"}}],
+  "apps":[{"id":"sheets.web","os":"macos"},
+          {"id":"accounting.web","os":"macos"}],
+  "suggested_approach":{"kind":"local_csv_transform",
+    "capability_ids":["csv.map.v1"],"scope":"verified_subset",
+    "manual_steps":["export source rows","review and import CSV"],
+    "prerequisites":["confirm destination import schema"],
+    "alternatives":["browser_draft_fill_if_verified"]},
+  "scores":{"friction":29.7,"automatability":0.95,
+            "evidence_quality":0.80,"acceptance_probability":null},
+  "confidence":{"goal":0.65,"field_mapping":0.82},
+  "evidence":{"episode_ids":["ep_2","ep_8"],
+              "frame_ids":["fr_12"],"expires_at":"2026-10-29T00:00:00Z"},
+  "unknowns":["source values unrecorded","destination schema unconfirmed"],
+  "execution_policy":{"mode":"preview_only","external_writes":false},
+  "provenance":{"normalizer":"v1","miner":"v1","prompt":"v1",
+                "model":"muse-wonder-1.0","policy_version":4}
+}
+```
+
+[assumption] The full object includes all observed steps and branches, first/last seen, occurrence intervals, score inputs, schedule evidence, input/output schemas, capability verification timestamps, preconditions, proposed success checks, and redaction manifests. Suggestion eligibility is separate from builder readiness: missing import schema can allow a promising suggestion but blocks generation until confirmed. Synthetic fixtures are clearly labeled and cannot validate real field meanings. Typed content was never recorded, so real samples must come from a user-selected file or explicit teach session under a new data scope.
+
+[assumption] Show at most three cards/week initially: “You moved invoice fields eight times; about three active minutes each.” Include a small trace and “Why this appeared,” with local evidence links that tolerate expiration. Actions: “Automate this,” “Not repetitive,” “Not worth it,” “Wrong steps,” and “Later.” Acceptance opens a scope/sample review before the builder; it grants no permission to run external writes. Never interpret screen text, observed clicking, or an LLM's goal as authorization.
+
+## 8. Storage, retention, and volumes
+
+[assumption] Bundle SQLCipher plus a pinned SQLite-compatible build of sqlite-vec; static registration avoids arbitrary extension loading. SQLCipher encrypts database pages and WAL page data; its design requires disabling file-backed temporary stores to avoid plaintext temporary data [verified: Zetetic, https://www.zetetic.net/sqlcipher/design/]. Put frames/OCR in a separately encrypted blob directory with per-artifact keys wrapped by the profile key. Keep credentials outside both stores. Integration with the selected Rust bindings, vec extension, and both OS packages is an early spike, not a proven combination.
+
+[assumption] Schema sketch; JSON columns contain sanitized projections. Production migrations add checks, foreign keys, and indexes for every retention/evidence traversal.
+
+```sql
+PRAGMA foreign_keys=ON;
+PRAGMA journal_mode=WAL;
+PRAGMA temp_store=MEMORY;
+CREATE TABLE events(
+ id TEXT PRIMARY KEY, run TEXT, producer TEXT, seq INTEGER,
+
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/09-pattern-engine.md
+diff --git a/plan/research/09-pattern-engine.md b/plan/research/09-pattern-engine.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..76550a2ae1c798abb04391ff1c4a45fd7fa614be
+--- /dev/null
++++ b/plan/research/09-pattern-engine.md
+@@ -0,0 +1,392 @@
++# Pattern engine: evidence before inference
++
++Read in full: `plan/BRIEF.md`. Scope: capture output through the builder handoff; no capture implementation or generated-automation runtime. Date: 2026-10-22.
++
++**Recommendation:** keep a local, replayable evidence pipeline. Discover repetitions with deterministic sequence matching, rank them using measured effort and verified implementation capabilities, then ask a Meta model to explain only the shortlist. A model-generated description must never manufacture repetition, saved time, or app capabilities.
++
++**Evidence convention:** [assumption] marks proposed designs, estimates, thresholds, and untested behavior throughout this document, including illustrative JSON/SQL. These are implementation starting points, not measured performance. External implementation facts have individual source links. [local] means inspected supplied machine references, with execution claims attributed explicitly to the brief.
++
++## 1. Pipeline and operating contract
++
++[assumption] One Rust background worker owns ingestion and SQLite writes on both platforms. Platform adapters supply macOS AX or Windows UI Automation observations in the same vocabulary; never assume equal coverage. Windows UI Automation exposes UI elements and control patterns programmatically [verified: Microsoft, https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32]. Windows capture and automation still require external testers; CI cannot establish real application coverage.
++
++```text
++OS/browser adapters
++  -> in-memory policy gate + redaction
++  -> validated events / redacted media store
++  -> ordered reducer -> actions + dataflow edges
++  -> episodes + overlapping task threads
++  -> local sequence candidates + periodicity
++  -> capability gate + scoring
++  -> optional vector neighbors -> Meta explanation
++  -> validated Opportunity -> user review -> builder
++```
++
++[assumption] Each stage records input revision, algorithm version, policy version, and a durable cursor. Deduplicate by `(capture_run, producer, producer_seq)`. Batch writes every 250 ms or 100 events; bound the memory queue to 10,000 events. Under pressure drop redundant frames first, then emit an explicit capture gap; never silently treat incomplete capture as uninterrupted activity. Recompute affected episodes when delayed OCR arrives. Suspend mining while locked, paused, or on excluded apps. Exclude Macroscope and its generated tools from discovery to avoid learning its own suggestions.
++
++## 2. Event contract
++
++[assumption] Use JSON Schema with a discriminated `kind`, reject unknown required versions, reject unexpected payload properties, and limit strings and arrays. This common envelope accompanies every payload below:
++
++```json
++{
++  "schema_version": 1,
++  "event_id": "ev_1042",
++  "capture_run": "run_22",
++  "producer": "mac.ax",
++  "producer_seq": 1042,
++  "occurred_at": "2026-10-22T01:02:03.456Z",
++  "received_at": "2026-10-22T01:02:03.466Z",
++  "mono_ms": 3123456,
++  "timezone": "Pacific/Auckland",
++  "kind": "ax.focus",
++  "context": {
++    "app_id": "com.google.Chrome",
++    "process_instance": "p_18",
++    "window_id": "w_7",
++    "tab_id": "tab_2",
++    "document_id": "doc_9"
++  },
++  "privacy": {"policy_version": 4, "state": "sanitized"},
++  "quality": {"source": "ax", "confidence": 0.95},
++  "payload": {
++    "element_id": "el_amount",
++    "role": "textbox",
++    "native_role": "AXTextField",
++    "label": "Amount",
++    "label_origin": "approved_ui_label",
++    "selector_ref": "sel_31",
++    "secure": false
++  }
++}
++```
++
++[assumption] IDs are device-local opaque tokens. Window handles are scoped to process instances; element handles are scoped to document revision. A separate sanitized selector registry provides best-effort identities across reloads. `mono_ms` orders and measures durations within a capture run; UTC supports dates and recurrence. Start a new run after restart and record sleep, timezone changes, and clock jumps. A coordinator merges producer streams with a 500 ms reorder window; causal links override receipt order. Late events trigger bounded revision, never an invented total order.
++
++[assumption] Required payload shapes follow. Samples are synthetic; `null` explicitly means unavailable. Persist only approved UI labels, never AX values, arbitrary page text, or text selected by the user.
++
++```json
++[
++  {"kind":"app.focus","payload":{
++    "previous_app_id":"com.apple.finder","app_id":"com.google.Chrome",
++    "display_name":"Chrome","reason":"activated"}},
++  {"kind":"window.change","payload":{
++    "change":"url","window_id":"w_7","tab_id":"tab_2",
++    "title":"Xero bill","document_id":"doc_9",
++    "url":{"origin":"https://example.invalid","route":"/bills/:id",
++           "resource_token":"res_8"}}},
++  {"kind":"ax.focus","payload":{
++    "element_id":"el_amount","role":"textbox","native_role":"AXTextField",
++    "label":"Amount","label_origin":"approved_ui_label",
++    "selector_ref":"sel_31","secure":false}},
++  {"kind":"pointer.click","payload":{
++    "button":"primary","count":1,"target_element_id":"el_amount",
++    "target_observation_id":"ev_1042","target_confidence":0.95,
++    "window_point":[0.42,0.31]}},
++  {"kind":"key.shortcut","payload":{
++    "modifiers":["primary"],"key":"C","command":"copy"}},
++  {"kind":"text.burst","payload":{
++    "field_id":"el_amount","selector_ref":"sel_31",
++    "started_mono_ms":3123500,"ended_mono_ms":3125200,
++    "typed_codepoints":6,"length_bucket":"5-8",
++    "length_quality":"input_method_reported","paste_included":false}},
++  {"kind":"clipboard.copy","payload":{
++    "clipboard_id":"clip_4","types":["text/plain"],"byte_length":6,
++    "hash":{"algorithm":"hmac-sha256","key_epoch":"2026-10-22",
++            "value":"illustrative-device-local-digest"},
++    "source_element_id":"cell_b2","redacted_preview":null}},
++  {"kind":"clipboard.paste","payload":{
++    "clipboard_id":"clip_4","types":["text/plain"],"byte_length":6,
++    "hash":{"algorithm":"hmac-sha256","key_epoch":"2026-10-22",
++            "value":"illustrative-device-local-digest"},
++    "target_element_id":"el_amount","redacted_preview":"[NUMBER]",
++    "link_quality":"matching_clipboard_generation"}},
++  {"kind":"file.download","payload":{
++    "operation":"ready","file_id":"file_3","directory":"Downloads",
++    "name_template":"invoice_<id>.csv","path_token":"path_4",
++    "previous_path_token":null,"extension":"csv","size_bytes":2048,
++    "readiness":"inferred_stable","source_context_event_id":null}},
++  {"kind":"frame.ref","payload":{
++    "frame_id":"fr_12","artifact_id":"blob_12","width":1280,"height":800,
++    "captured_mono_ms":3125300,"redaction_revision":4,
++    "mask_artifact_id":"mask_12","purpose":"post_action",
++    "perceptual_hash":"local-only-phash"}},
++  {"kind":"ocr.ref","payload":{
++    "ocr_id":"ocr_12","frame_id":"fr_12","artifact_id":"txt_12",
++    "engine_version":"adapter-v1","language":"en",
++    "block_count":7,"redaction_revision":4,"mean_confidence":0.91}}
++]
++```
++
++[assumption] `window.change.change` is `window|title|url|tab|document`; file operations are `created|modified|renamed|ready|deleted`. Add lifecycle kinds `idle.start/end`, `capture.gap`, `lock`, `sleep`, and `policy.changed`. Idle events carry timestamps/duration; gaps carry affected producers and lost-count estimates. They are essential boundary evidence.
++
++[assumption] Identity/privacy rules:
++
++- Strip URL query, fragment, credentials, and unapproved path segments before persistence. Retain route templates plus keyed resource tokens, not URLs containing invoice IDs. Titles default to app/page category unless an adapter recognizes safe UI text.
++- Read field role and label, never value. Labels can themselves contain personal data: redact them and default unknown labels to `[FIELD]`. Secure fields and excluded contexts emit no text, clipboard, AX, frame, or OCR details.
++- Record shortcuts from a fixed command vocabulary, no ordinary keys. Normalize Cmd/Ctrl to `primary`, preserving platform separately. A copy shortcut is an attempted command, not proof of clipboard change or successful paste.
++- End a typing burst after 1.5 seconds, field blur, paste, or shortcut; cap at 30 seconds. Persist counts only. IME input may not expose committed length safely: use `typed_codepoints:null`, a nullable bucket, and `length_quality:"unknown"`; never read field contents to recover it.
++- Clipboard observation is opt-in. Canonicalize approved text representations in memory, compute a device-secret HMAC, then discard bytes. Daily key epochs limit linkage; correlate primarily by clipboard generation. Plain hashes make small amounts guessable. Do not export hashes, clipboard IDs, or exact lengths to models. Previews default off, limited to 80 sanitized characters when enabled; images and files receive type metadata only.
++- Downloads events contain metadata, not file bytes. Preserve identity across temporary-file rename; deduplicate watcher bursts. Mark readiness inferred after two seconds of unchanged metadata, re-open it if writes resume. Attribute a download to an app only with corroboration, never temporal proximity alone.
++- Redact frames before persistence. OCR produces only sanitized text blocks with normalized bounding boxes, confidence, and mask linkage; raw OCR remains transient. Redaction failure discards the artifact. Repeated screen text is data, never an instruction.
++
++## 3. Episodes, actions, and task continuity
++
++[assumption] Maintain two levels: a chronological **episode** bounded by inactivity or a sustained task change, and a **task thread** joining related spans across interruptions. Splitting at every app focus would destroy precisely the cross-app workflows we need.
++
++[assumption] Hard-close episodes on lock, pause, sleep, permission loss, or 120 seconds idle. An app/window/tab switch starts a provisional segment. Continue the episode when the previous context returns within 45 seconds, a clipboard edge crosses the switch, or a known document/file relation connects it. Otherwise close at the switch after 45 seconds of unrelated activity. Use a 30-minute episode cap with continuation links. These boundaries have explicit reasons and confidence; they are revisable. Ambiguous segments remain separate, with candidate mining permitted across adjacent segments only when a dataflow or high-confidence task link exists. Never bridge privacy gaps.
++
++[assumption] Estimate active seconds by summing inter-action gaps capped at ten seconds. Keep wall duration, active duration, and observed waiting separate; reading can be effort even without input, so show uncertainty instead of charging all foreground time to a workflow. A known download completion may explain waiting, but it does not establish that the user waited for it.
++
++[assumption] The reducer combines low-level observations into actions:
++
++```text
++Action = {id, episode_id, span_id, verb, app, route, target,
++          object_slot, input_kind, length_bucket, start, end,
++          source_event_ids[], evidence_ids[], confidence}
++Edge   = {from_action, to_action, relation, confidence, evidence_ids[]}
++```
++
++[assumption] Collapse focus-click-focus into one activation; combine shortcut plus clipboard notification into one copy; combine paste plus field focus into one paste. Preserve undo/retry as annotations rather than silently removing them. Clipboard hash/generation match plus timing and focused target supports a transfer edge; mere Cmd+V supports `paste_attempt`. Retain observed and inferred actions distinctly. Never infer cell B2 from screen coordinates alone.
++
++[assumption] Store a lossless action graph and two projections: an instance trace with local document aliases, and a normalized trace for mining. Parameterize row numbers, dates, filenames, and instance IDs while retaining roles, source/destination field semantics, action order, and dataflow direction. Keep both strict document identity and generalized document type so two unrelated spreadsheets are not immediately merged.
++
++```text
++Instance (when adapter evidence actually identifies the cell):
++copy(cell B2 in Sheets 'Invoices')
++ -> paste(field 'Amount' in Chrome 'Xero bill')
++ -> copy(cell C2 in Sheets 'Invoices')
++ -> paste(field 'Reference' in Chrome 'Xero bill')
++ -> activate(button 'Save draft')
++
++Normalized:
++COPY(sheet.cell.amount, row=$r, doc=$source)
++ -> PASTE(bill.amount, from=$v1)
++ -> COPY(sheet.cell.reference, row=$r, doc=$source)
++ -> PASTE(bill.reference, from=$v2) -> SAVE_DRAFT(bill)
++```
++
++[assumption] Without adapter support use `sheet.cell.unknown`, lower confidence, and omit invented semantics. Render model traces from sanitized projections, numbered actions, relative times, and evidence IDs; never send raw event JSON or filesystem paths.
++
++## 4. Discover repetition locally
++
++[assumption] Run incremental exact mining every five minutes and deeper mining nightly over a rolling 28 days; retain aggregate recurrence counts for 90 days.
++
++1. **Seed:** rolling hashes of contiguous normalized action n-grams, lengths 3-12. Require three non-overlapping occurrences, across two episodes, plus either two dates or a five-item batch. Do not count multiple overlapping windows within one execution as separate support. Batch repetitions and task executions have separate counters.
++2. **Extend:** join overlapping seeds into maximal candidates up to 60 actions. Prefer closed patterns: suppress fragments with the same occurrence set when a longer pattern explains them. Remove generic navigation-only patterns such as focus/click/back.
++3. **Recover variants:** bucket by app set, endpoint roles, and dataflow signature. Compare candidate windows using weighted edit distance divided by maximum alignment weight; initially accept distance <=0.20. Navigation insertions cost 0.25, target substitutions cost 1, reversed transfer or changed write destination vetoes a merge. Use medoids and require every member near its medoid; avoid transitive chaining into unrelated tasks.
++4. **Handle gaps:** add constrained PrefixSpan for longer sequences after exact mining works. PrefixSpan grows sequential patterns using projected prefixes [verified: original paper, https://hanj.cs.illinois.edu/pdf/span01.pdf]. Our variant allows at most three skipped actions, 30 seconds between matched actions, ten minutes total span, and no protected boundary crossing. Retain matched intervals, not just subsequences; demand >=70% action coverage to avoid matching arbitrary browser activity. Stop at 10,000 candidates or 60 seconds per job and resume later.
++5. **Consolidate:** assign stable cluster IDs using medoid and occurrence overlap. Record split/merge lineage for feedback and rebuilds. Explain coverage, outliers, and unsupported branches rather than averaging them away.
++
++[assumption] Weekly periodicity uses local weekday/time-of-day histograms with 30-minute bins and +/-60-minute tolerance. Label “usually Tuesdays around 2pm” only after four observed weeks, >=75% matching weeks, and concentration above the user's overall activity baseline. Track recording coverage: an unobserved Tuesday is unknown, not a missed workflow. Preserve original timezone and handle DST in local time. Multiple jobs in a Tuesday batch count as one schedule occurrence. A schedule raises explanatory relevance, never establishes repetition or automatically creates a trigger.
++
++[assumption] Embeddings are a secondary neighbor generator, not evidence. Start with local 384-dimensional signed feature-hash vectors of semantic action bigrams, roles, and app categories; L2-normalize and use cosine distance. These are reproducible structural embeddings, not a claimed Meta embedding product. Retrieve ten nearest medoids, then require sequence/dataflow validation. A learned semantic embedding provider is a later adapter, enabled only after verifying an appropriate Meta API model, dimensions, cost, and privacy. No unverified endpoint, context size, or embedding service is required to ship v1.
++
++## 5. Friction, feasibility, and ranking
++
++[assumption] For each cluster, compute robust per-occurrence medians over non-overlapping spans. Missing observations reduce confidence rather than becoming zeros.
++
++```text
++F = observed executions / covered workdays * 5        # weekly rate
++D = median active minutes per execution
++e = min(undo_or_retry_annotations / eligible_actions, 0.25)
++s = min(median task-relevant app switches / 6, 1)
++c = min(median verified cross-field transfers / 6, 1)
++Friction = F * D * (1 + 2*e) * (1 + 0.5*s) * (1 + 0.5*c)
++```
++
++[assumption] Undo and retries are friction proxies, not proven mistakes. Count an undo followed by re-entry to the same field within ten seconds once; do not label ordinary undo as user error. Cap multipliers to prevent noisy capture dominating ranking. Show `F*D` as observed weekly effort; Friction is a ranking unit, never minutes saved.
++
++[assumption] Maintain an app/route/OS/version **capability registry** populated by adapters and builder probes, not LLM opinion. Each essential step records supported operation, evidence, test date, permission/auth prerequisites, and confidence. Assign implementation reliability `r`: tested local file transform 0.95; documented API operation plus successful read-only/schema probe 0.90; tested application script 0.85; stable browser DOM action 0.75; tested native accessibility action 0.60; coordinate/OCR-only action 0.20; unknown 0. These numbers are priors requiring calibration, not vendor reliability claims. Browser does not automatically mean automatable; native does not automatically mean impossible.
++
++```text
++coverage = supported essential steps / all essential steps
++A = coverage * min(r for essential steps)
++Q = min(capture_coverage, alignment_consistency, identity_quality,
++        support_strength)                 # each in [0,1]
++Rank = Friction * A * Q * preference_weight
++Savings = F * max(D - estimated_review_and_runtime_minutes, 0)
++```
++
++[assumption] Capture coverage is healthy required-producer seconds divided by eligible foreground seconds within matched spans; alignment consistency is one minus median normalized edit distance; identity quality is the fraction of essential targets with stable semantic selectors, weighted by adapter confidence. Preference weight begins at 1 and stays within [0.5,1.5]. Bootstrap occurrence-level savings intervals; with fewer than eight executions show a rough range rather than a precise forecast. Require at least five covered workdays before extrapolating a weekly rate; earlier batch cards use observed batch totals only.
++
++[assumption] Support strength starts at 0.6 for three executions and reaches 1 at eight executions across three dates; cap at 0.7 for a single-day batch. Offer buildable suggestions only with complete essential-step coverage, `A>=0.60`, `Q>=0.65`, and estimated savings >=10 minutes/week, or a batch saving >=5 minutes. Schedule-specific suggestions additionally require the periodicity threshold. Unavailable capability evidence yields an internal candidate or “teach this workflow” state, never an “Automate this” promise. Prefer automating a verified subset, such as producing an import CSV, when the full write path is unsupported.
++
++[assumption] Example: five executions/week, D=3, e=.05, s=c=1 gives Friction=37.1 but observed effort=15 minutes. With A=.75 and Q=.8, Rank=22.3; with 0.5 minute review per execution, proposed savings=12.5 minutes/week. Require user confirmation of the goal and samples before treating that estimate as reliable. Deduplicate overlapping opportunities so the same fifteen minutes are not promised twice.
++
++## 6. Meta inference: bounded explanation jobs
++
++[local: inspected `plan/reference/muse-cli-help.txt`] `muse exec` supports `--provider meta`, `--api-key-stdin`, `--prompt-file`, `--output-schema`, repeatable `--image`, `--no-session-log`, and model-step limits. [local: execution facts reported in `plan/BRIEF.md`] Muse Code 1.4.11 ran `muse-wonder-1.0`; a deliberately invalid `META_API_KEY` reached the Meta provider and was rejected. Successful real-key inference and `muse serve` environment authentication remain unverified. Do not depend on either for discovery.
++
++[assumption] Initial transport: the user enters their Meta developer API key into Macroscope; store it in the platform credential vault. A supervised child receives the key through stdin with `--api-key-stdin`, the prompt through a private file, and `--provider meta` explicitly. Never put the key in argv, trace payloads, logs, or inherited general-purpose child environments. Use an isolated disposable workspace and no workspace trust, no shell/write/web tools, no foreign personal context, no persisted session log. Verify effective tool denial before enabling unattended calls; CLI flags alone do not establish total tool isolation. The miner sends a description request, never a coding task. Use the installed model ID provisionally; test availability, schema conformance, and image support with the owner's real key before enabling each feature. No guessed API base URL.
++
++[assumption] Default nightly execution occurs at the next idle/unlocked opportunity after 02:00, on power when possible. No LLM per click or per frame. Explain at most five new/materially changed clusters per day, with one request per cluster; cache by sanitized packet hash plus model/prompt version. Near-real-time means local scoring when an episode closes. A model request occurs early only when the user opens an unexplained candidate and explicitly requests its explanation, using the same daily budget.
++
++[assumption] Per-cluster packet: task-neutral instruction and output schema; metrics; supported capability IDs; one medoid and two contrasting occurrences, up to 60 actions each; observed field/type mappings; missing evidence; up to three cropped redacted keyframes illustrating source, destination, and result. Images are omitted by default and added only when text evidence cannot resolve ambiguity and the user has enabled image sharing. Recheck redaction at egress; drop unsafe artifacts. Use request-local aliases and relative times, omit document tokens and full OCR dumps. Treat all OCR, labels, and previews as quoted untrusted evidence.
++
++[assumption] Reserve <=4,000 text input tokens and <=1,000 visible output tokens/job; daily text ceiling 20,000 input and 5,000 output, plus a separately metered image allowance <=six crops/day. Downsample crops to 768 pixels on the long edge; actual image token accounting and hidden reasoning costs are unknown until a successful call. These are application admission budgets, not a claim that the CLI enforces token maxima. Set low reasoning and one model step; reserve conservatively, reconcile provider usage, and stop admitting calls on quota/cost exhaustion. Until pricing and image metering are verified, disable image jobs and use a conservative owner-configurable monetary ceiling; one in-flight call may exceed a soft estimate. Budget failure leaves deterministic suggestions available.
++
++[assumption] The model returns only cluster name, tentative goal, observed-versus-inferred explanation, unresolved questions, and an approach referencing existing capability IDs. Reject nonexistent evidence, capability IDs, or unsupported factual claims. One invalid response gets one repair within the daily allowance; then use a deterministic label. The model cannot increase measured Q, support, savings, or A. Authentication/quota errors become actionable UI states; no consumer login fallback and no automatic replay storm.
++
++## 7. Opportunity and user experience
++
++[assumption] This synthetic, abbreviated builder contract is versioned, immutable by revision, and local by default:
++
++```json
++{
++  "schema_version":1,"id":"opp_7","revision":3,"cluster_id":"cl_9",
++  "status":"suggested","title":"Prepare invoice import rows",
++  "goal":{"text":"Turn invoice sheet rows into an import CSV",
++          "origin":"proposed","user_confirmed":false},
++  "observed_steps":[
++    {"id":"s1","verb":"copy","target":"sheet.amount",
++     "evidence":["action:a1","frame:fr_12"],"confidence":0.94},
++    {"id":"s2","verb":"paste","target":"bill.amount",
++     "evidence":["action:a2"],"confidence":0.90}
++  ],
++  "observations":{"executions":8,"covered_workdays":10,
++                  "median_active_seconds":180,"weekly_rate":4},
++  "sample_inputs":[{"fixture_id":"fx_in","kind":"synthetic",
++                    "data":{"amount":"123.45","reference":"INV-001"}}],
++  "sample_outputs":[{"fixture_id":"fx_out","kind":"synthetic",
++                     "data":{"csv_row":"INV-001,123.45"}}],
++  "apps":[{"id":"sheets.web","os":"macos"},
++          {"id":"accounting.web","os":"macos"}],
++  "suggested_approach":{"kind":"local_csv_transform",
++    "capability_ids":["csv.map.v1"],"scope":"verified_subset",
++    "manual_steps":["export source rows","review and import CSV"],
++    "prerequisites":["user selects source export and confirms field meanings"],
++    "alternatives":["browser_draft_fill_if_verified"]},
++  "scores":{"friction":29.7,"automatability":0.95,
++            "evidence_quality":0.80,"acceptance_probability":null},
++  "confidence":{"goal":0.65,"field_mapping":0.82},
++  "evidence":{"episode_ids":["ep_2","ep_8"],
++              "frame_ids":["fr_12"],"expires_at":"2026-10-29T00:00:00Z"},
++  "unknowns":["source values unrecorded","user's intended field meanings"],
++  "execution_policy":{"mode":"preview_only","external_writes":false},
++  "provenance":{"normalizer":"v1","miner":"v1","prompt":"v1",
++                "model":"muse-wonder-1.0","policy_version":4}
++}
++```
++
++[assumption] The full object includes all observed steps and branches, first/last seen, occurrence intervals, score inputs, schedule evidence, input/output schemas, capability verification timestamps, preconditions, proposed success checks, and redaction manifests. In this example `csv.map.v1` includes a tested destination import schema; without that verification the object becomes `needs_evidence`, without an “Automate this” action. Suggestion eligibility is separate from builder readiness: selecting real samples and confirming field meanings still precedes generation. Synthetic fixtures are clearly labeled and cannot validate real field meanings. Typed content was never recorded, so real samples must come from a user-selected file or explicit teach session under a new data scope.
++
++[assumption] Show at most three cards/week initially: “You moved invoice fields eight times; about three active minutes each.” Include a small trace and “Why this appeared,” with local evidence links that tolerate expiration. Actions: “Automate this,” “Not repetitive,” “Not worth it,” “Wrong steps,” and “Later.” Acceptance opens a scope/sample review before the builder; it grants no permission to run external writes. Never interpret screen text, observed clicking, or an LLM's goal as authorization.
++
++## 8. Storage, retention, and volumes
++
++[assumption] Bundle SQLCipher plus a pinned SQLite-compatible build of sqlite-vec; static registration avoids arbitrary extension loading. SQLCipher encrypts database pages and WAL page data; its design requires disabling file-backed temporary stores to avoid plaintext temporary data [verified: Zetetic, https://www.zetetic.net/sqlcipher/design/]. Put frames/OCR in a separately encrypted blob directory with per-artifact keys wrapped by the profile key. Keep credentials outside both stores. Integration with the selected Rust bindings, vec extension, and both OS packages is an early spike, not a proven combination.
++
++[assumption] Schema sketch; JSON columns contain sanitized projections. Production migrations add checks, foreign keys, and indexes for every retention/evidence traversal.
++
++```sql
++PRAGMA foreign_keys=ON;
++PRAGMA journal_mode=WAL;
++PRAGMA temp_store=MEMORY;
++CREATE TABLE events(
++ id TEXT PRIMARY KEY, run TEXT, producer TEXT, seq INTEGER,
++ wall_ms INTEGER, mono_ms INTEGER, kind TEXT, app_id TEXT,
++ payload_json TEXT, policy_version INTEGER,
++ UNIQUE(run,producer,seq));
++CREATE INDEX event_time ON events(run,mono_ms);
++CREATE TABLE artifacts(
++ id TEXT PRIMARY KEY, kind TEXT, encrypted_path TEXT,
++ key_ref TEXT, redaction_revision INTEGER, expires_ms INTEGER);
++CREATE TABLE episodes(
++ id TEXT PRIMARY KEY, start_ms INTEGER, end_ms INTEGER,
++ boundary_json TEXT, metrics_json TEXT, revision INTEGER);
++CREATE TABLE actions(
++ id TEXT PRIMARY KEY, episode_id TEXT REFERENCES episodes(id),
++ ordinal INTEGER, normalized_token TEXT, detail_json TEXT);
++CREATE TABLE evidence_links(
++ owner_type TEXT, owner_id TEXT, ref_type TEXT, ref_id TEXT,
++ PRIMARY KEY(owner_type,owner_id,ref_type,ref_id));
++CREATE TABLE action_edges(
++ source_id TEXT, target_id TEXT, relation TEXT, confidence REAL);
++CREATE TABLE clusters(
++ id TEXT PRIMARY KEY, medoid_json TEXT, metrics_json TEXT,
++ algorithm_version TEXT, lineage_json TEXT);
++CREATE TABLE occurrences(
++ id TEXT PRIMARY KEY, cluster_id TEXT REFERENCES clusters(id),
++ episode_id TEXT, first_action TEXT, last_action TEXT,
++ alignment_json TEXT, active_ms INTEGER);
++CREATE TABLE embedding_rows(
++ id INTEGER PRIMARY KEY, cluster_id TEXT, projection_hash TEXT,
++ model_version TEXT, dimension INTEGER);
++CREATE VIRTUAL TABLE trace_vec USING vec0(embedding float[384]);
++CREATE TABLE capabilities(
++ id TEXT PRIMARY KEY, os TEXT, app_version TEXT, operation TEXT,
++ verification_json TEXT, expires_ms INTEGER);
++CREATE TABLE opportunities(
++ id TEXT, revision INTEGER, cluster_id TEXT, status TEXT,
++ object_json TEXT, PRIMARY KEY(id,revision));
++CREATE TABLE feedback(
++ id TEXT PRIMARY KEY, opportunity_id TEXT, revision INTEGER,
++ response TEXT, reason TEXT, occurred_ms INTEGER);
++CREATE TABLE jobs(
++ id TEXT PRIMARY KEY, kind TEXT, input_revision TEXT,
++ state TEXT, cursor_json TEXT, attempts INTEGER);
++CREATE TABLE model_runs(
++ id TEXT PRIMARY KEY, packet_hash TEXT, model TEXT,
++ usage_json TEXT, validation_json TEXT, created_ms INTEGER);
++```
++
++[verified: sqlite-vec documentation, https://alexgarcia.xyz/sqlite-vec/features/vec0.html] `vec0` supports declared float vector columns and nearest-neighbor queries using `MATCH` with `k`. [verified: project API reference, https://github.com/asg017/sqlite-vec/blob/main/site/api-reference.md] It is pre-v1 and warns of breaking changes. [assumption] Align vec rowids with `embedding_rows.id`; never mix vector versions/dimensions. Rebuild derived vectors after normalizer changes. For this small medoid corpus, exact cosine scan in Rust is the fallback if extension packaging fails; do not add a server vector database.
++
++[verified: SQLite, https://www.sqlite.org/wal.html] WAL allows readers alongside a writer and needs checkpoint management. [assumption] Use one writer, short reader transactions, bounded background checkpoints, and a disk-full stop state. Select a currently patched SQLite baseline compatible with SQLCipher; the WAL documentation now records a WAL-reset bug, so version selection must include its fix rather than trusting the OS library. Resume idempotent jobs after crashes and reconstruct derived tables from retained sanitized data.
++
++[assumption] Eight-hour workday estimates, decimal MB, before database/index overhead:
++
++| Data | Assumed daily count/size | Daily volume |
++|---|---|---:|
++| Events | 40,000 x 700 bytes | 28 MB |
++| Actions, links, episodes, metrics | 6,000 actions plus links | 8 MB |
++| Changed redacted frames | 6,000 x 80 KB | 480 MB |
++| Sanitized OCR, selected frames only | 2,000 x 2 KB | 4 MB |
++| Cluster vectors | 100 x 384 x 4 bytes | 0.154 MB |
++
++[assumption] Frames dominate: 480 MB/day means 3.36 GB for seven days. Raw sanitized events: 28 days x 28 MB = 784 MB. Retain frames/OCR seven days; events/actions 28 days; sanitized medoids, aggregate recurrence counts, and feedback 90 days. Expect roughly 5-7 GB including indexes and working space, not a guarantee. Enforce a 10 GB default quota; stop frames at 750 MB/day, prune oldest eligible artifacts first, and report reduced evidence coverage. Never record screenshots at video rates for this engine. At 100 medoid vectors/day, 90-day float storage is about 13.8 MB before overhead.
++
++[assumption] User deletion traverses evidence lineage to actions, occurrences, clusters, vectors, cached prompts, and builder handoffs; cancel queued model jobs first. Recompute surviving aggregates and rebuild derivative indexes. Do not claim secure erasure from SQL DELETE: SQLite documents limitations for virtual-table shadow data [verified: SQLite, https://www.sqlite.org/pragma.html#pragma_secure_delete]. [assumption] Profile wipe destroys local encryption keys; selective deletion needs checkpoint/compaction and cannot recall data already sent to the provider. Do not back up capture storage by default; audit Muse temporary files and crash logs for copies.
++
++## 9. Evaluation and feedback
++
++[assumption] Build a consented, local corpus by recording the developer doing 12 workflow families with eight executions each across six weeks: spreadsheet-to-form transfer, download/rename/import, weekly report, expense draft, file conversion, and native-app equivalents. Include exceptions, interruptions, IME typing, permission denial, and unrelated browsing. Add at least 100 negative episodes: research, creative writing, navigation, and coincidental copy/paste. Use sandbox accounts and fabricated business data. Hand-label episode boundaries, task identity, essential steps, transfers, correct automation scope, and reasonable savings. A second reviewer checks 20%; owner-only labels are useful development evidence, not a product-quality estimate.
++
++[assumption] Generate >=1,000 reproducible synthetic trace variants from labeled traces: insert distractions, drop events, duplicate notifications, change labels/rows, invert transfers, reorder timestamps, simulate clipboard overwrite, midnight/DST, batch loops, and download renames. Plant secrets and malicious OCR instructions to test leakage and injection. Synthetic quality measures robustness, not market demand. Split by whole workflow family and time; never put perturbed copies of the same seed in train and test.
++
++[assumption] Release gates:
++
++- Boundary F1 >=0.85 with +/-10-second tolerance; transfer-edge precision >=0.95; false task merges <5% on held-out labeled episodes.
++- Candidate precision >=0.80 and family recall >=0.60; report matching tolerance, capture coverage, and each platform separately.
++- Every surfaced buildable suggestion has a verified essential-step path; manually audit unsupported capability claims with a target of zero.
++- Initial field target: >50% **explicit acceptance to investigate/build** within seven days of a viewed card; also report accepted/all-viewed, accepted/all-displayed, dismissed, ignored, and pending. Seek >=100 viewed suggestions across >=10 consenting users, bootstrap uncertainty by user, and avoid claiming success from one developer's repeated cards. Builder completion, first successful run, repeat use, and measured net time saved are separate outcomes.
++- Zero seeded secret leakage in retained or outbound artifacts; bounded ingestion lag <1 second, nightly mining <2 minutes on the owner's Mac at the estimated volume. These are targets to measure, not benchmarks.
++
++[assumption] Log feedback against opportunity revision and evidence. “Not repetitive” corrects cluster membership and suppresses the same pattern until materially new evidence; “Wrong steps” requests local boundary/mapping correction; “Not worth it” lowers that user's threshold preference; “Later” snoozes 30 days without a negative label. Accept is a positive relevance signal, not proof of feasibility. Failed builds lower the affected capability prior; successful runs update measured savings after subtracting review/repair time. Keep the original baseline and note workload changes to avoid attributing unrelated speedups to automation.
++
++[assumption] Begin with explicit rules and a Beta(1,1) acceptance prior by pattern category, using only resolved responses. Do not treat ignores as dismissals. Calibrate acceptance probabilities later with user-grouped validation; until then expose evidence-quality components rather than a spurious “92% confidence.” Hold out a small, budget-limited shadow candidate set for offline review to detect ranking blind spots without increasing notification volume.
++
++## 10. Product-killing risks and implementation order
++
++[assumption] The largest risk is insufficient identity: pixels and click coordinates may never reveal stable source/destination semantics. Ship a narrow adapter-supported workflow set first and abstain elsewhere. Permission loss or weak Windows coverage must be visible, not compensated for by model confidence. Privacy failures in labels, OCR, and clipboard can destroy trust; redaction and egress tests precede cloud inference. Screen prompt injection must have no route to tools or authority. Meta model availability, API-key success, provider retention/terms, quotas, and actual pricing remain launch gates; the local engine must work when inference is unavailable. Capture/helper distribution, notarization, and possible store restrictions require a separate platform review; no store eligibility is assumed here.
++
++[assumption] Implement in order: (1) schemas, privacy gate, encrypted replay store, and teach-session fixture recording; (2) deterministic actions, boundaries, and n-gram mining with evidence viewer; (3) capability registry and ranked cards; (4) real-key Meta transport and schema-validated explanations; (5) constrained PrefixSpan and vector neighbors only when held-out recall justifies them. This keeps a solo developer's first milestone testable without an open-ended multimodal agent.
++
++## Open questions for the owner
++
++- May nightly analysis send sanitized traces to Meta by default after setup, or should every batch require a user action? Images should have a separate setting either way.
++- Is opt-in clipboard metadata/HMAC correlation acceptable, or should v1 rely on shortcut and field evidence until a teach session?
++- Which two real workflows should define the first supported adapter/capability set, and can consenting Windows testers be recruited before cross-platform claims?
++- What daily API spending ceiling and local storage quota are acceptable? Proposed storage default: 10 GB.
++
++## Decisions I made
++
++- Discover repetition locally; use Meta to explain a bounded shortlist.
++- Preserve dataflow and provenance; never retain typed contents or invent samples.
++- Separate episodes from task continuity so app switches remain useful evidence.
++- Gate suggestions on a verified implementation path and rank friction separately from minutes saved.
++- Start with n-grams/edit distance and structural embeddings; add constrained PrefixSpan only when needed.
++- Use API-key-authenticated `muse exec` first; assume neither a successful real-key call nor serve authentication.
++- Keep encrypted SQLite/blob storage, seven-day visual evidence, and explicit deletion lineage.
++- Treat acceptance, build success, repeat use, and saved time as distinct evaluation outcomes.
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+import json,re,sqlite3
+s=Path('plan/research/09-pattern-engine.md').read_text()
+for block in re.findall(r'"'```json'"\\n(.*?)\\n"'```'"',s,re.S):
+    json.loads(block)
+sql=re.search(r'"'```sql'"\\n(.*?)\\n"'```'"',s,re.S).group(1)
+sql=re.sub(r'CREATE VIRTUAL TABLE trace_vec.*?;', '',sql)
+conn=sqlite3.connect(':memory:')
+conn.executescript(sql)
+print('All 3 JSON examples parse; ordinary SQLite schema statements execute.')
+print('Vector extension declaration remains a documented integration spike.')
+print('Word count:',len(s.split()))
+PY" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+All 3 JSON examples parse; ordinary SQLite schema statements execute.
+Vector extension declaration remains a documented integration spike.
+Word count: 4693
+
+codex
+Created [09-pattern-engine.md](/Users/todd/StudioProjects/macroscope/plan/research/09-pattern-engine.md), roughly 4,700 words covering the full pipeline, schemas, mining, scoring, Meta usage, builder handoff, evaluation, and storage.
+
+Validated all JSON examples and ordinary SQLite schema statements. No other files edited.
+tokens used
+50,137
+Created [09-pattern-engine.md](/Users/todd/StudioProjects/macroscope/plan/research/09-pattern-engine.md), roughly 4,700 words covering the full pipeline, schemas, mining, scoring, Meta usage, builder handoff, evaluation, and storage.
+
+Validated all JSON examples and ordinary SQLite schema statements. No other files edited.

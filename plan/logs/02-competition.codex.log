@@ -1,0 +1,793 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /Users/todd/StudioProjects/macroscope
+model: gpt-6.1-sol
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a16323-67dd-7122-b8db-d5b39eb4dca5
+--------
+user
+You are one of several planning agents working in parallel on a new desktop app. First read plan/BRIEF.md fully. Then do the track below. Write your output file yourself (markdown), make it substantive and specific (roughly 2,000-5,000 words, ASCII diagrams welcome), and do not edit any other agent's files.
+
+Track: COMPETITIVE LANDSCAPE AND LESSONS. Output: plan/research/02-competition.md
+Use web search. Research the current state (as of late 2026) of: Rewind / Limitless (and Meta's acquisition of Limitless, if verified), Screenpipe, Microsoft Recall, Highlight AI, Littlebird, Granola-style ambient tools, OpenAI/Anthropic/Google "computer use" and desktop agents, Apple Intelligence / Shortcuts / App Intents, Raycast AI extensions, Zapier/Make AI builders, process-mining/task-mining products (Celonis Task Mining, UiPath Task Mining, Microsoft Power Automate Process Advisor / task mining), Codex app, Claude desktop, Muse/Meta developer products.
+For each relevant one: what it does, how it captures, what went wrong (privacy backlash for Recall, Rewind's pivot, etc.), and what Macroscope should copy or avoid. Then identify Macroscope's real differentiation (discovery + generating bespoke tools) and whether task-mining vendors already do it for enterprises. End with the 5 lessons that should shape the plan.
+codex
+I’ll read the brief, research the current products and their lessons, then write the competitive analysis to `plan/research/02-competition.md`.
+exec
+/bin/zsh -lc "pwd && rg --files -g 'AGENTS.md' -g 'BRIEF.md' -g '02-competition.md' -g '*competition*' plan .agents .codex" in /Users/todd/StudioProjects/macroscope
+ exited 2 in 0ms:
+/Users/todd/StudioProjects/macroscope
+rg: .agents: No such file or directory (os error 2)
+rg: .codex: No such file or directory (os error 2)
+plan/BRIEF.md
+plan/logs/02-competition.codex.log
+plan/tasks/02-competition.codex.md
+
+exec
+/bin/zsh -lc 'cat plan/BRIEF.md' in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+# Macroscope: planning brief (shared by every planning agent)
+
+Today is 2026-10-22. Everything here is about planning; no app code exists yet.
+
+## The idea (the owner's words, condensed)
+
+A desktop app that watches what the user does on their computer (screen frames plus
+interaction events), uses AI to find repetitive, tedious work, and then **builds small,
+specific apps, scripts or automations** that do that work for them. Automation tools like
+Zapier and Shortcuts make you decide what to automate and build it yourself; Macroscope
+discovers it for you and writes the tool.
+
+Original pipeline sketch (feel free to change any of it):
+
+1. **Capture**: a background process records screen state only when the UI changes, plus
+   events (active app, window titles, clicks, keystroke patterns but not content).
+   Sensitive data is masked on the device before anything reaches a model.
+2. **Pattern engine**: groups activity into recurring workflows ("every Tuesday: open Jira,
+   copy three fields into a CSV, format dates, email a status update") and ranks them by
+   time spent, frequency and cognitive load.
+3. **Micro-app generator**: on "Automate this", an AI coding agent writes a dedicated
+   tool (script, browser extension, menu-bar widget, Shortcut...), shows a preview or
+   diff, the user tests it in a sandbox and pins it.
+
+## Hard requirements from the owner
+
+- **Desktop app for macOS and Windows. macOS is primary**: the owner can only test on a Mac.
+  Windows must be designed for, but cannot be hand-tested by the owner.
+- Mobile is out of scope for v1 (a prior analysis concluded mobile can only ever be a
+  companion: approvals, notifications, triggers). At most, mention it as a later phase.
+- **Must use Meta's APIs/models.** The owner specifically wants Meta's developer models,
+  the **Muse** family, and floated using **Muse Code** (Meta's terminal coding agent)
+  *from a terminal inside the application*, "or another way to build software/scripts
+  inside of software".
+- **All Meta model use is via API calls billed to an API key** (the owner's Meta developer
+  API key), not a consumer account login. Every design that uses Muse (`muse serve`,
+  `muse exec`) or calls Meta models directly MUST work with API-key auth, and the plan must
+  say exactly how the key gets from our app to the model (see "API-key auth" below).
+- **UI/UX matters**: plan the experience, not just the plumbing.
+- The owner is a solo developer who builds with AI coding agents (Codex, Claude, Muse) and
+  is comfortable with Flutter, Python, Rust and TypeScript.
+
+## Verified local facts (checked on the owner's Mac today)
+
+- `muse` CLI is installed: **Muse Code 1.4.11**. Full help text: `plan/reference/muse-cli-help.txt`.
+  - `muse exec` runs one headless prompt (`--json` gives JSONL events, `--output-schema`,
+    `--image`, `--workspace`, `--worktree`, `--approval-mode`, `--session-id`,
+    `--max-model-steps`, `--reasoning-effort none..ultra`).
+  - `muse serve` serves an **MSP (Muse Session Protocol) v1 session host over stdio**; the
+    client owns stdin/stdout. Sandbox posture is fixed per host process (`--disable-sandbox`,
+    `--sandbox-network`, `--disable-write`, `--disable-shell`); approval mode is chosen over
+    the wire. Providers: `meta`, `local`, `echo`.
+  - The full MSP v1 wire schema is exported at `plan/reference/msp/msp.d.ts` (TypeScript,
+    ~3,600 lines) and `plan/reference/msp/msp.schema.json`. Methods include `session/start`,
+    `session/resume`, `session/fork`, `session/read`, `session/sideChat`, `session/userShell`,
+    `session/setModel`, `session/tokenUsage`, `session/contextUsage`, `approval/request`,
+    `approval/decide`, `goal/set|pause|resume`, `subagent/*`, `task/*`, `skill/*`,
+    `plugin/*`, `hook/list`, `media/upload`, `model/list`, `item/started|delta|completed`.
+  - Known model ids: `muse-spark-1.3` (in the catalog) and **`muse-wonder-1.0`, which is
+    the default model `muse exec` used in a test today** [local].
+- **API-key auth (tested today)** [local]:
+  - `META_API_KEY` env var: "always takes priority over the account login" (`muse login --help`).
+    Verified: `META_API_KEY=<bogus> muse exec --json ...` sent the request to the Meta provider
+    (model `muse-wonder-1.0`) and failed with
+    `run.terminal.failed: "your API key from META_API_KEY was rejected — update or unset it"`.
+    So the key path works for `muse exec`, and failures come back as structured JSONL.
+  - `muse auth set --provider meta --api-key-stdin` stores a key in muse's own store (stdin only,
+    never argv).
+  - `muse exec --api-key-stdin` passes a key for a single run. `--base-url` overrides the endpoint.
+  - `-c KEY=VALUE` on exec/serve accepts secrets only as whole-value `${VAR}` references.
+  - MSP turn errors include `TurnErrorKind = "authRequired"` and a typed `quota` detail
+    (`QuotaDetail`, reset instant), so a desktop client can show "key missing/rejected" and
+    "rate-limited until X" without parsing text.
+  - NOT yet verified: that `muse serve` picks up `META_API_KEY` from its environment
+    the same way (expected, since it's the same binary and provider), and a *successful*
+    call with a real key (the owner has to supply that).
+- `codex` (0.163, has `codex app-server`) and `claude` (Claude Code) CLIs are also installed.
+- The owner already runs `muse exec` headless overnight via a keeper script
+  (`~/StudioProjects/agent-loop/scripts/muse_keeper.py`), so headless Muse is proven here.
+
+## Claims from the earlier chat that are NOT verified
+
+The idea came from a chat with another assistant. Treat these as **unverified, possibly
+invented**, and verify with web search before relying on them: "Muse Wonder", "Muse Glimmer
+(open-weight 30B)", "SAM 3.1 in the Meta Model API", base URLs like `dev.meta.ai/v1` or
+`llama.developer.meta.ai/v1`, a `@meta/llama` npm SDK, Muse model context sizes, Llama 4
+Scout's 10M-token context being usable for hours of screenshots. If you cannot verify
+something, say so plainly and design so the plan does not depend on it.
+
+## Rules for every planning agent
+
+- Write only inside `plan/`. Your assigned output file is given in your task.
+- Be concrete and opinionated: make decisions, give reasons, name the trade-off you accepted.
+  Do not survey every option evenly.
+- Mark every external fact as **[verified: source/URL]**, **[local: checked on machine]**
+  or **[assumption]**.
+- Call out risks that could kill the product (OS permissions, privacy, cost, App Store /
+  notarization rules, prompt injection from screen contents, Meta API terms).
+- End your file with **Open questions for the owner** (only real decisions) and
+  **Decisions I made** (one line each).
+
+exec
+/bin/zsh -lc 'for f in /AGENTS.md /Users/AGENTS.md /Users/todd/AGENTS.md /Users/todd/StudioProjects/AGENTS.md /Users/todd/StudioProjects/macroscope/AGENTS.md; do if test -f "$f"; then cat "$f"; fi; done; rg --files -g AGENTS.md plan; cat /Users/todd/.codex/skills/.system/openai-docs/SKILL.md' in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+---
+name: "openai-docs"
+description: "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex."
+metadata:
+  short-description: "Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, and self-knowledge; OpenAI APIs and ChatGPT Work. 'You'/'this app' means Codex only."
+---
+
+# OpenAI Docs
+
+Provide current, cited OpenAI product, API, model, and Codex guidance. Read zero or one primary reference.
+
+**First substantive action:** Search the user's exact requested official OpenAI documentation topic and any explicitly named model using a concise, topic-specific query of 2-6 essential terms. When an already-available direct official documentation search and page-retrieval capability is present, use it first: search, then fetch or open the matching official page before general web search. Otherwise, immediately use official-domain web search, then actually open or fetch the relevant official page. Complete this source order before reading a reference, inspecting local or repository files, running a Codex manual or model resolver, drafting a plan, or answering from memory. Use the actual fetched page, not a search snippet or an unopened link. If one official search or page does not establish the answer, search another appropriate official domain and actually open or fetch the result. Preserve the exact requested model; never substitute a newer model.
+
+**Only exception:** An explicitly requested, genuinely broad, cross-topic Codex setup, orientation, or system-map synthesis may use the manual first when shell execution and an allowed temporary cache are available. A specific Codex feature, setting, command, error, model, or requested citation remains docs-first. Mixed Chat/Work/Codex comparisons are official documentation questions, not manual-first Codex requests.
+
+For generic software tasks, answer the software task directly. OpenAI implementation, debugging, SDK, API, prompting, agent, and eval requests are not generic.
+
+For a straightforward factual or citation-only request, follow the source order and do not read a route reference. This includes straightforward API facts, ChatGPT Work or mixed Chat/Work/Codex comparisons, model tiers, aliases, Pro mode, reasoning settings, factual migration baselines, and narrow Codex facts. Prioritize `learn.chatgpt.com` for ChatGPT Work.
+
+## Choose one primary route
+
+Use the first matching route, and read its reference only when the requested task needs that specialized workflow:
+
+- **Explicitly requested local documentation integration:** Read [integration guidance](references/mcp-diagnostics.md) only when the user explicitly requests that local integration.
+- **Model migration, upgrades, or model-specific prompting:** Read [model-migration.md](references/model-migration.md) for actual migration planning, implementation, dynamic target resolution, or prompt changes. Preserve an explicitly requested target.
+- **Model selection and comparisons:** Read [model-selection.md](references/model-selection.md) only when nuanced current, latest, default, cost, latency, quality, or modality tradeoffs need more guidance. Do not run a migration resolver for selection alone.
+- **Product, API, ChatGPT Work, and mixed Chat/Work/Codex documentation:** Read [official-docs.md](references/official-docs.md) only when fetched official pages leave source selection, API schemas, or the requested implementation unresolved. This route is not manual-first.
+- **Explicitly broad Codex setup, orientation, or cross-topic synthesis:** Read [codex-self-knowledge.md](references/codex-self-knowledge.md) when the eligible Codex manual or deeper Codex procedures are needed.
+
+Read at most one primary reference. Do not open every route, bundled model guide, or helper script. Read a supporting reference or run a helper only when the chosen workflow demonstrably needs it.
+
+## Source and execution boundaries
+
+- Search, open, fetch, and cite only `developers.openai.com`, `platform.openai.com`, and `learn.chatgpt.com`. Cite the page that supports the claim. State uncertainty when official sources do not establish pricing, availability, account access, limits, or behavior.
+- Preserve an explicitly requested model for selection, migration, and prompting. Resolve an unspecified latest or current migration target only after searching and fetching current official guidance.
+- Use `references/latest-model.md` only as a disclosed fallback after current official model guidance does not answer the question. Read `references/upgrading-to-gpt-6-astra.md` only for an actual, requested GPT-6 migration; read `references/prompting-guide.md` only for requested prompting work.
+- Before building, running, editing, debugging, or testing an API-backed app or tool, use `openai-platform-api-key` first when available. Documentation, conceptual examples, model selection, and read-only guidance do not require an API key.
+- Say "OpenAI Docs" or "official OpenAI documentation" in user-facing answers. Keep exact official citations and examples concise.
+
+codex
+I’ve read the brief. I’ll use official OpenAI documentation for Codex and computer use, and distinguish public evidence from the locally verified Muse facts. The main comparison will be how each product connects observation, workflow discovery, and tool generation.
+web search: 
+web search: site:developers.openai.com Codex app automations computer use ...
+web search: 
+web search: Limitless acquired Meta December 2025 Rewind discontinued official ...
+web search: 
+web search: site:limitless.ai Meta acquisition Rewind December 19 2025 ...
+web search: 
+web search: site:granola.ai security audio not stored notes microphone system audio ...
+web search: 
+web search: site:granola.ai security audio stored microphone system audio privacy ...
+web search: 
+web search: 
+web search: 
+web search: site:learn.microsoft.com power automate task mining recordings screenshots automation recommendations process advisor ...
+web search: site:celonis.com task mining capture desktop automation opportunities screenshots ...
+web search: Granola AI security audio never stored official ...
+codex
+The evidence narrows the differentiation: Zapier and Make now build workflows from natural language, while enterprise task-mining vendors already discover automation candidates. Screenpipe and Littlebird also extend desktop memory toward agent context and actions. I’ll assess Macroscope’s opportunity around turning observed repetition into a tested, reusable personal tool.
+web search: 
+web search: 
+web search: 
+web search: site:docs.uipath.com task mining unassisted automation export xaml 2026
+web search: site:learn.microsoft.com power-automate process-advisor automation recommendations task mining desktop flow
+web search: site:docs.celonis.com task mining screenshots clicks automation opportunities
+web search: 
+web search: 
+web search: 
+web search: site:dev.meta.ai "Muse" "META_API_KEY" ...
+web search: site:celonis.com "Task Mining" "capture" "automation" ...
+web search: site:docs.uipath.com "FAQ on Unassisted Task Mining deprecation"
+web search: 
+web search: 
+web search: 
+web search: 
+web search: site:dev.meta.ai "computer use" "Muse" ...
+web search: https://help.highlightai.com/articles/1492080632
+web search: site:developers.openai.com/codex/app features automations skills worktrees computer use ...
+web search: site:platform.claude.com/docs computer use tool screenshot prompt injection ...
+web search: 
+web search: 
+web search: 
+web search: site:developers.openai.com/codex/app "Automations" "review" ...
+web search: Kevin Beaumont Recall 2024 database plaintext research ...
+web search: site:screenpipe.com "automation" "pipes" ...
+web search: 
+web search: https://screenpipe.com/pipes
+web search: 
+web search: 
+web search: 
+web search: https://www.limitless.ai/
+web search: site:developers.openai.com "Codex app" "automations" "inbox" ...
+web search: site:screenpipe.com "Automation Opportunity Radar" ...
+codex
+Two findings will shape the recommendations. UiPath removed Unassisted Task Mining from Automation Cloud in December 2025, while retaining capture and merging of known tasks. Meta’s current public docs also verify Muse Wonder, API-key authentication, and native macOS computer-use examples. The remaining question is how reliably Macroscope can discover useful work and validate the tools it builds.
+web search: 
+web search: 
+web search: 
+web search: https://developers.openai.com/codex/app
+web search: https://docs.uipath.com/task-mining/automation-cloud/latest/release-notes/december-2025
+web search: site:github.com/xaitax/TotalRecall "2024" ...
+web search: 
+web search: 'Codex'
+web search: 
+web search: 
+web search: 
+web search: site:doublepulsar.com "Recall" "database" "2024"
+web search: site:docs.littlebird.ai "Routines" "MCP" ...
+web search: https://dev.meta.ai/docs/muse-code/auth
+web search: 
+web search: https://docs.littlebird.ai/changelog/2026-08-21/
+exec
+/bin/zsh -lc "ls -la plan/research; cat plan/tasks/02-competition.codex.md; rg -n 'META_API_KEY|muse serve|muse exec|Muse Session' plan/reference/muse-cli-help.txt | head -35" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+total 0
+drwxr-xr-x@  2 todd  staff   64 Oct 22 23:20 .
+drwxr-xr-x@ 11 todd  staff  352 Oct 22 23:24 ..
+Track: COMPETITIVE LANDSCAPE AND LESSONS. Output: plan/research/02-competition.md
+Use web search. Research the current state (as of late 2026) of: Rewind / Limitless (and Meta's acquisition of Limitless, if verified), Screenpipe, Microsoft Recall, Highlight AI, Littlebird, Granola-style ambient tools, OpenAI/Anthropic/Google "computer use" and desktop agents, Apple Intelligence / Shortcuts / App Intents, Raycast AI extensions, Zapier/Make AI builders, process-mining/task-mining products (Celonis Task Mining, UiPath Task Mining, Microsoft Power Automate Process Advisor / task mining), Codex app, Claude desktop, Muse/Meta developer products.
+For each relevant one: what it does, how it captures, what went wrong (privacy backlash for Recall, Rewind's pivot, etc.), and what Macroscope should copy or avoid. Then identify Macroscope's real differentiation (discovery + generating bespoke tools) and whether task-mining vendors already do it for enterprises. End with the 5 lessons that should shape the plan.
+110:muse exec — run one prompt non-interactively (headless)
+112:Usage: muse exec [OPTIONS] [PROMPT]
+216:muse serve — serve an MSP session host over stdio
+218:Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [OPTIONS]
+262:  muse serve --provider meta
+263:  muse serve --model <MODEL>
+264:  muse serve --provider meta --model <MODEL>
+
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/02-competition.md
+diff --git a/plan/research/02-competition.md b/plan/research/02-competition.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..18134c04c1b95fa4a73b965d723274d7ab6e5fc5
+--- /dev/null
++++ b/plan/research/02-competition.md
+@@ -0,0 +1,201 @@
++# Competitive landscape and lessons for Macroscope
++
++Research cutoff: **22 October 2026**. Read against [the planning brief](../BRIEF.md).
++
++## 1. The competitive conclusion
++
++**Macroscope should sell a completed improvement to someone's work: discover a recurring task, explain the evidence, and deliver a tested tool that removes it.** Desktop memory, conversational automation building, and computer control are already competitive categories. Combining them is a useful product thesis, but not a defensible claim of invention. [assumption: strategic conclusion from the evidence below]
++
++The closest threats are Screenpipe plus its coding-agent ecosystem, Littlebird's context-aware routines, and task-mining suites connected to automation development. General desktop agents are substitutes whenever the user already knows what to delegate. The opportunity is a much shorter, trustworthy path from **"I did not realize this was automatable"** to **"this small tool works reliably for me."** [assumption: positioning hypothesis]
++
++Evidence notation: linked **[verified: source]** labels identify public first-party documentation or announcements; they establish what the vendor documents, not independent performance or security certification. **[local]** identifies machine evidence or the supplied local reference. **[assumption]** identifies inference, proposed behavior, or an unresolved claim. Products were researched, not installed and benchmarked. An absence of documented capability is not proof that a competitor cannot provide it.
++
++```text
++                         MACROSCOPE'S PROPOSED LOOP
++  scoped observation -> repeated task -> evidence + expected value
++         ^                                      |
++         |                                      v
++  measured real outcome <- pinned tool <- preview + fixture tests
++
++  Memory products:         strong observation / retrieval
++  Desktop agents:          strong requested execution / generation
++  Automation builders:     strong integration / deployment / operations
++  Task-mining suites:      strong discovery / variants / enterprise handoff
++```
++
++The diagram is a strategic abstraction, not a feature exclusion matrix. Several products span multiple rows. [assumption]
++
++## 2. Desktop memory and ambient assistance
++
++### Rewind / Limitless: a verified acquisition, and an exit lesson
++
++Rewind's earlier proposition was a searchable record of what a person saw and heard on their computer. Its subsequent Limitless identity emphasized a conversation-recording Pendant. Meta's acquisition is verified: Limitless's own announcement says it joined Meta's AI-wearables effort. The FAQ dates the stop in Pendant sales to **5 December 2025**, disables Rewind screen/audio capture from **19 December 2025**, and says desktop/web meeting recording is discontinued, with earlier meetings accessible through 2026. It promises existing Pendant support through 2026. Do not describe Limitless as an actively expanding desktop competitor today. [verified: [Limitless acquisition announcement and FAQ](https://www.limitless.ai/)]
++
++The current `rewind.ai` domain explicitly says its operator is independent and unaffiliated with the original Rewind, Limitless, or Meta. It is therefore unsuitable as the original company's product documentation. [verified: [Current domain's ownership disclosure](https://rewind.ai/what-happened-to-rewind/)]
++
++**What went wrong:** the verified events are a change in product direction and shutdown of capture, not proof that privacy or technical failure caused the pivot. Strategically, a personal memory product creates unusually high continuity expectations; an acquisition can strand the very history users trusted it to preserve. [assumption: interpretation of the documented shutdown]
++
++**Copy:** effortless context and a visible personal timeline. **Avoid:** making a user's installed tools or historical evidence depend on Macroscope's continued operation. Export source, fixtures, manifests, and run history; make offline tools keep working after cancellation. Do not imply that using Meta's model makes Macroscope part of Meta, or that the acquisition gives us access to Limitless technology. [assumption: product recommendation]
++
++### Screenpipe: the closest architectural competitor
++
++Screenpipe currently describes itself as **source-available**, local-first desktop memory for macOS, Windows, and Linux. Its documentation describes change-triggered screenshots, accessibility-first text extraction with OCR fallback, app/window/browser context, local Whisper transcription, and local SQLite/media storage. Cloud AI and sync are optional paths; local capture does not mean a selected cloud model never receives context. [verified: [Screenpipe architecture overview](https://screenpipe.com/about)]
++
++Its Pipes system already bridges capture and action. A pipe is a Markdown-defined agent task with a schedule; an underlying coding agent can query local screen history, write files, call APIs, and notify the user. The public setup example asks a coding tool to create a custom pipe and supplies local search and interaction-event APIs. These are substantially closer to Macroscope than ordinary searchable recording. [verified: [Screenpipe Pipes specification and creation instructions](https://screenpipe.com/pipes)]
++
++An indexed version of that same official catalog advertises a workflow-intelligence pack, Workflow & Automation Scout, and Automation Opportunity Radar. The directly opened page returned no populated catalog entries while retaining its creation instructions. Treat the indexed names as evidence of competitive direction, **not a verified end-to-end discovery-to-deployed-tool demonstration**. [verified: [Official catalog, with retrieval discrepancy](https://screenpipe.com/pipes)]
++
++Its September 2026 changelog includes editable workflow SOPs, agent integrations, Windows capture/transcription fixes, and database-recovery work. Those are documented operational issues and improvements, not evidence of a public privacy scandal. [verified: [Screenpipe changelog](https://screenpipe.com/changelog)]
++
++**Copy:** local queryable history, structured events, inspectable capture, and portable task definitions. **Avoid:** competing primarily on screenshots plus chat, or claiming nobody else discovers automation opportunities. Macroscope must beat a realistic baseline: Screenpipe plus a competent coding agent. Prove that a nondeveloper gets a useful, tested tool with less setup and maintenance. [assumption: competitive test]
++
++### Microsoft Recall: privacy architecture is part of the product
++
++Recall remains documented as a preview for Copilot+ PCs. It periodically saves searchable screen snapshots and processes them locally; it does not record audio or continuous video. Current controls include explicit opt-in, pause, app/site exclusions, retention limits, deletion, Windows Hello access, encrypted snapshots/indexes, and TPM/VBS-protected keys. Sensitive-information filtering is enabled by default, but Microsoft documents limitations, including excluded sites appearing inside embedded content or browser history. [verified: [Recall privacy and controls](https://support.microsoft.com/en-us/windows/privacy/privacy-and-control-over-your-recall-experience)]
++
++Recall is no longer just a passive image browser: Click to Do can offer actions on recognized text and images. This still does not establish automatic generation of a bespoke persistent tool from repeated workflows. [verified: [Recall usage and Click to Do](https://support.microsoft.com/en-au/windows/ai/ai-features/retrace-your-steps-with-recall)]
++
++**What went wrong:** the 2024 privacy/security backlash produced a conspicuous redesign and delayed rollout. Microsoft's contemporaneous response documents the move to opt-in, required Hello authentication, additional data protection, and subsequent schedule changes. Calling today's implementation an unencrypted recorder would confuse the original controversy with current documented architecture. Nor do new controls establish that all attack paths are solved. [verified: [Microsoft's 2024 response and rollout updates](https://blogs.windows.com/windowsexperience/2024/06/07/update-on-the-recall-preview-feature-for-copilot-pcs/)]
++
++**Copy:** meaningful capture state, local processing, authentication before history access, and deletion users can understand. **Avoid:** "everything is safe because it is local" and promises that redaction catches all secrets. Prefer active-window capture and explicit app allowlists initially. Retained embeddings, OCR, logs, thumbnails, and backups must obey deletion too. [assumption: design implications]
++
++### Highlight AI: proactive follow-through, not merely a hotkey
++
++Highlight's current positioning is contextual assistance that drafts follow-ups in work tools. Examples include scorecards, briefs, status roll-ups, and SOP capture. Its onboarding requests screen-recording and accessibility permissions. Current privacy documentation describes per-app-window capture following a May 2026 rewrite, encrypted local context, default sensitive-category exclusions, custom rules, and three context levels: broad, work-only, and off. [verified: [Highlight product](https://highlightai.com/); [Onboarding](https://help.highlightai.com/articles/9791804699-your-first-10-minutes-with-highlight); [Privacy settings](https://help.highlightai.com/articles/1492080632)]
++
++**Failure/uncertainty:** the privacy page says screenshots are never saved, but also offers erasure of "Screenshot History." It describes filtering followed by LLM summarization. That wording does not establish that every sensitive item is removed locally before a remote model sees it. This is a documentation ambiguity, not a demonstrated breach. [verified: [Highlight privacy settings](https://help.highlightai.com/articles/1492080632)]
++
++**Copy:** concrete deliverables waiting for review where work happens; a restrained suggestion can be more useful than another chat window. **Avoid:** ambiguous terminology for screenshots, extracted text, derived memory, and transmission. Macroscope should show a literal outbound-context preview, not rely on a privacy adjective. [assumption]
++
++### Littlebird: discovery is already entering personal assistants
++
++Littlebird combines work memory, meeting notes, integrations, artifacts, and scheduled Routines. Its documentation says capture reads the active window's text/elements through accessibility permissions. Its own privacy page clearly says captured context is stored encrypted in AWS, rather than promising local-only storage, and offers pause, exclusion, and deletion controls. [verified: [Littlebird product](https://littlebird.ai/); [Capture explanation](https://asklittlebird.com/does-littlebird-take-screenshots); [Storage/privacy](https://littlebird.ai/privacy)]
++
++The changelog explicitly says a user can ask what to automate, receive Routine suggestions based on actual work, and have Littlebird offer to set them up. Its August release also documents a library of built artifacts and one-off window sharing, including the ability to share an otherwise excluded app for one message. These materially overlap with discovery and generation; artifacts alone do not prove installed, independently runnable desktop utilities. [verified: [Routine recommendations](https://docs.littlebird.ai/changelog/); [21 August 2026 release](https://docs.littlebird.ai/changelog/2026-08-21/)]
++
++**Failure/constraint:** cloud retention is an explicit trade-off, not an undisclosed local architecture. The August changelog records a fix for offering the macOS login window as context, illustrating why exclusion behavior needs testing. No broader failure claim is established here. [verified: [Privacy](https://littlebird.ai/privacy); [Login-window fix](https://docs.littlebird.ai/changelog/2026-08-21/)]
++
++**Copy:** suggested work grounded in personal context, clear cloud disclosure, and temporary sharing separate from standing capture permission. **Avoid:** claiming "we discover, they only remember." The proposed distinction must be a tested, reusable tool with bounded permissions and measurable results. [assumption]
++
++### Granola-style ambient tools: constrain capture to a valuable moment
++
++Granola requires the user to start a meeting session, transcribes microphone and system audio without a meeting bot, and enhances notes. Its desktop security page says audio is not retained; transcripts and notes are retained in encrypted US-hosted AWS infrastructure. It prohibits model-provider training on customer data, while its own anonymized-data training has a user opt-out and is off by default for enterprise users. These are different promises. [verified: [Granola security and data handling](https://www.granola.ai/security)]
++
++**What can go wrong:** bot-free capture is less visible to other participants. Granola acknowledges that trade-off and provides transparency mechanisms, including messaging/watermarks and enterprise controls. This is a documented consent challenge, not evidence that every bot-free note taker records secretly or unlawfully. [verified: [Why Granola avoids bots](https://www.granola.ai/blog/why-granola-doesnt-use-a-bot); [Transparency features](https://www.granola.ai/transparency)]
++
++**Copy:** a narrow activity, predictable artifact, and immediate value. **Avoid:** adding ambient audio to Macroscope v1 just because competitors have it. Screen/event evidence can test the central workflow hypothesis without introducing meeting consent, diarization, and transcription as another product. [assumption]
++
++## 3. Agents that can operate computers and generate software
++
++### OpenAI computer use and the Codex desktop experience
++
++OpenAI's current computer-use documentation supports screenshot-driven browser/desktop actions and code-driven interaction. The developer supplies or chooses the execution environment; the API does not inherently provide a trusted lifetime observer of a person's work. The guide explicitly requires isolation, untrusted-screen handling, confirmation for consequential actions, run bounds, and outcome verification. [verified: [OpenAI computer-use guide](https://developers.openai.com/api/docs/guides/tools-computer-use)]
++
++**Codex app needs a late-2026 naming correction:** its former app documentation now redirects to the ChatGPT desktop app. Current official documentation describes Codex within that desktop experience, plugins, local projects/worktrees, and scheduled tasks whose findings appear in a review inbox. Scheduled local work requires the computer and app to remain running. This research should not freeze the February 2026 standalone-app story as today's entire product. [verified: [Current desktop documentation](https://learn.chatgpt.com/docs/app); [Scheduled tasks](https://learn.chatgpt.com/docs/automations?surface=app)]
++
++OpenAI also documents `codex exec`, an SDK, and `codex app-server` for applications embedding durable sessions, progress, interruption, tools, and approvals. Its reusable harness is explicitly presented as infrastructure for specialized products. [verified: [Codex as a platform](https://developers.openai.com/blog/codex-as-a-platform)]
++
++**Copy:** reviewable changes, isolated workspaces, persistent task state, and a focused inbox. **Avoid:** a terminal emulator as the primary nondeveloper interface. The competitive threat is substantial: an existing desktop assistant can already build and schedule tools once given the job. Our advantage must precede that prompt and persist after generation. [assumption]
++
++### Anthropic computer use and Claude desktop / Cowork
++
++Claude's API computer-use tool exposes screenshots and mouse/keyboard actions executed by the client's runtime; browser tools additionally use page structure. Anthropic warns about prompt injection and describes computer use as slower and more general than specialized tools because fresh observations are needed. [verified: [Computer-use tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool); [Tool-selection trade-offs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations)]
++
++Claude desktop's Cowork experience completes multistep tasks using selected files, connected services, and computer control. Current documentation says chat and Cowork are being unified, with rollout differences by plan; scheduled cloud tasks can continue with the computer off, while local access requires Claude Desktop. Computer use is documented for Mac and Windows. [verified: [Claude unification/current behavior](https://support.claude.com/en/articles/16761823-claude-cowork-and-chat-are-one-claude); [Desktop computer use](https://claude.com/resources/articles/dispatch-and-computer-use)]
++
++**Failure/constraint:** Anthropic's containment research says ordinary users cannot reasonably judge dangerous shell commands. It describes the first Cowork implementation's VM boundary and host-held credentials as the response. This is a valuable disclosed design constraint, not proof that a VM makes every workflow safe. [verified: [How Anthropic contains Claude](https://www.anthropic.com/research/how-we-contain-claude)]
++
++**Copy:** task-level permissions and output review that a nonprogrammer can understand. **Avoid:** treating approval of an opaque script as meaningful informed review. A generated tool should say which files, services, and actions it needs, with sample output and a reversible test. [assumption]
++
++### Google computer use
++
++Google's current Gemini API documentation supports browser, mobile, and desktop environments, with screenshots, returned actions/intents, client-side execution, and allow/confirmation/block safety decisions. It also describes opt-in prompt-injection scanning and labels computer use a preview that may contain errors and vulnerabilities. Claims that Gemini computer use is browser-only are outdated relative to this documentation. [verified: [Gemini computer-use guide](https://ai.google.dev/gemini-api/docs/computer-use)]
++
++**Copy:** explicit action rationale, environment separation, and machine-readable safety decisions. **Avoid:** making arbitrary GUI replay the default generated artifact. A small deterministic data transformer or API-backed tool can remove an entire click sequence and be tested on fixtures. A general visual agent is a fallback for inaccessible applications, with higher latency and supervision expectations. [assumption: engineering/product recommendation]
++
++### Muse / Meta developer products: viable foundation, not differentiation
++
++Public Meta documentation now verifies both **`muse-wonder-1.0`** and **`muse-spark-1.3`**, multimodal/tool capabilities, and availability through Model API. Wonder is available through pay-as-you-go; **Wonder Full is not available on Model API**. Standard mode excludes content from model training; Contributor variants have different training terms. Thus the brief's uncertainty about Wonder can be resolved publicly, but a consumer subscription's capabilities must not be assumed available with the owner's API key. [verified: [Meta model catalog](https://dev.meta.ai/docs/models)]
++
++Muse Code plans, edits files, runs commands, and provides sandbox/approval facilities. Public documentation verifies headless use and the versioned `muse serve` session protocol; this is a supported programmatic integration direction rather than terminal-screen scraping. [verified: [Muse Code integration documentation](https://dev.meta.ai/docs/muse-code)]
++
++Meta also supplies a macOS computer-use cookbook: `metacua` sends screenshots and GUI tool definitions to the model, then executes native mouse/keyboard events. It controls the real Mac; the Linux example uses a disposable Cua sandbox. Cookbook availability does not establish production reliability or a security boundary for host applications. [verified: [macOS recipe](https://dev.meta.ai/docs/cookbook/computer-use-macos); [Sandbox recipe](https://dev.meta.ai/docs/cookbook/computer-use)]
++
++**API-key path to adopt:** store the owner's key in the OS credential store; retrieve it in Macroscope's host process; provide it only to a dedicated Muse child as `META_API_KEY`, or to `muse exec --api-key-stdin` for a single run. Never put it in generated workspaces, prompts, or argv. Public docs verify environment-key precedence over browser sessions; the supplied local evidence additionally verifies the stdin option and structured rejected-key errors. Successful billing and environment-key inheritance through `muse serve` still need the owner's real-key smoke test. [verified: [Muse authentication](https://dev.meta.ai/docs/muse-code/auth)] [local: [brief's authentication checks](../BRIEF.md), [installed CLI reference](../reference/muse-cli-help.txt); not rerun in this research]
++
++**Copy:** the existing harness and typed event stream. **Avoid:** building a coding agent loop from scratch, Contributor models for captured work by default, and exposing a general host-control session to untrusted screen text. Meta dependence also creates policy, pricing, distribution, and availability risks; public feature documentation does not itself authorize every commercial embedding arrangement. [assumption: implementation and diligence recommendation]
++
++## 4. Native launchers and automation builders
++
++### Apple Intelligence / Shortcuts / App Intents
++
++Apple's App Intents expose structured actions/entities to system features; Shortcuts combines app actions. Apple documents model-assisted actions on Mac, including on-device or Private Cloud Compute processing and structured output. WWDC26 adds more model/transcript inspection and storage capabilities; platform availability must be checked individually. Do not confuse App Intents support on Mac with the separately named App Shortcuts feature, whose design documentation lists a macOS limitation. [verified: [App Intents](https://developer.apple.com/documentation/appintents); [Mac Shortcuts and models](https://developer.apple.com/videos/play/wwdc2025/260/); [WWDC26 changes](https://developer.apple.com/videos/play/wwdc2026/310/); [App Shortcuts platform note](https://developer.apple.com/design/human-interface-guidelines/app-shortcuts)]
++
++**Constraint:** declared actions provide semantic access where apps participate; these documents do not establish unrestricted observation or control of every app, nor automatic discovery of arbitrary cross-app repetitions. **Copy:** native intent execution and system launching where useful. **Avoid:** assuming Siri's broad vision equals shipped universal automation, or making every generated artifact Apple-only when Windows remains required. Keep a portable tool specification with platform adapters. [assumption]
++
++### Raycast AI extensions
++
++Raycast AI Commands package reusable prompts; AI Extensions expose installed commands as tools. Screen Awareness can read foreground app content and capture its window; browser and selected-text tools provide narrower context. Tool calls can request approval. Raycast's June 2026 Windows changelog also documents AI Chat, extensions, and MCP, so Windows is already part of its competitive surface. [verified: [AI Commands](https://manual.raycast.com/ai/ai-commands); [AI Extensions](https://manual.raycast.com/ai/ai-extensions); [Windows changelog](https://www.raycast.com/changelog/windows/2)]
++
++**Constraint:** the reviewed docs establish invocation and tool composition, not continuous mining of all work. No failure narrative is substantiated. **Copy:** keyboard-first invocation, pinning, small forms, and instant results. **Avoid:** rebuilding a general launcher or an extension store. Later, a discovered Macroscope tool could be exported to Raycast while remaining independently runnable. [assumption]
++
++### Zapier and Make AI builders
++
++The brief's "they make you build it yourself" premise needs revision. Make's Maia selects and configures workflow modules from natural language, shows construction on the visual canvas, asks clarifying questions, and helps debug. Its official release listing dates the public launch to August 2026. [verified: [Maia announcement](https://www.make.com/en/maia-by-make-announcement); [Release listing](https://www.make.com/whats-new)]
++
++Zapier's September 2026 Next Gen Zaps announcement describes construction from natural language, code, visual editing, and MCP-enabled assistants; it adds richer branching, pause/resume, and agent-assisted failure diagnosis. The announcement explicitly offers **early access**, so do not imply universal general availability. Capture is primarily connected-service events and user-provided intent, not a documented continuous screen recorder. [verified: [Zapier product announcement](https://community.zapier.com/product-updates/the-next-generation-of-zaps-is-here-53832?trk=article-ssr-frontend-pulse_little-text-block)]
++
++**Copy:** managed credentials, visible data mappings, run history, retry/recovery, and editable workflows. **Avoid:** differentiating on "AI builds an automation" alone, or rebuilding hundreds of connectors as a solo developer. Macroscope can discover a workflow, then choose a script, local utility, or external automation backend according to the job. Connector coverage and operational maturity are incumbents' strengths. [assumption]
++
++## 5. Enterprise task mining: yes, much of the idea already exists
++
++**Process mining** reconstructs organization-wide processes from transactional event logs. **Task mining** examines desktop interactions within/between applications. Celonis and Microsoft explicitly distinguish these data sources. Macroscope is principally personal task mining plus tool delivery, not a novel replacement for enterprise process mining. [verified: [Celonis discovery methods](https://www.celonis.com/blog/process-discovery-methods); [Microsoft overview](https://learn.microsoft.com/en-us/power-automate/process-advisor-overview)]
++
++### Celonis Task Mining
++
++Celonis captures desktop activities and combines them with process data to reveal off-system work, friction, and automation opportunities. Its event-processing documentation includes selective logging and active-window/full-desktop screenshot rules. Its wider platform includes automation mechanisms, rather than stopping at dashboards. [verified: [Celonis discovery tools](https://www.celonis.com/blog/process-discovery-tools); [Capture rules](https://docs.celonis.com/en/event-processing-rules---visual-editor); [Reusable Action Flow blueprints](https://docs.celonis.com/en/how-to-deal-with-blueprints)]
++
++**Constraint:** enterprise discovery and automation are established, but these sources do not demonstrate one-click generation of arbitrary, independently installed personal apps from ambient evidence. Some technical documentation now requires login; current deployment details need procurement verification. [verified: [Celonis 2026 product updates/documentation access](https://community.celonis.com/product-updates)] [assumption: scope boundary]
++
++**Copy:** variants, bottlenecks, business-object context, and value measurement. **Avoid:** manager-facing worker rankings as the initial buyer story. The worker should own observation and get the benefit directly. [assumption]
++
++### UiPath Task Mining: the most instructive retreat
++
++UiPath's earlier Unassisted Task Mining captured screenshots and logs at user actions, used machine learning to discover repeated tasks, and suggested automation opportunities. However, official release notes confirm its **removal from Automation Cloud on 1 December 2025**, including deletion of those projects. Current Task Mining emphasizes recording known tasks, merging variants, and helping analysts identify improvements. [verified: [Historical unassisted capability](https://docs.uipath.com/task-mining/automation-suite/2023.4/user-guide/unassisted-task-minining-introduction); [Removal](https://docs.uipath.com/task-mining/automation-cloud/latest/release-notes/december-2025); [Current introduction](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/assisted-task-mining-introduction)]
++
++Generation already exists in an important qualified form: a trace exports as a **XAML automation skeleton** for continued implementation in UiPath Studio, with limited supported actions. That is a real bridge from observation to executable development, but the docs explicitly require completing the design. [verified: [Studio export and limitations](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/uipath-studio)]
++
++**What went wrong:** removal is verified; its root cause is not established here. Do not invent a claim that privacy, poor economics, or accuracy killed it. **Copy:** trace merging and development handoff. **Avoid:** betting v1 entirely on unconstrained ambient discovery. Offer "teach one task" as a fallback and measure whether unsolicited discovery actually outperforms it. [assumption]
++
++### Microsoft Power Automate Process Advisor / task mining
++
++Microsoft's current documentation uses process-mining/task-mining terminology while retaining `process-advisor` URLs. Task mining records desktop steps, produces process maps and timing/application analytics, and identifies automation opportunities. An **Automate activities** action opens the flow designer with connector recommendations. Recordings can contain screenshots and text that users edit or remove before analysis/sharing. This already resembles the proposed discovery-to-builder pipeline. [verified: [Task-mining overview](https://learn.microsoft.com/en-us/power-automate/task-mining-overview); [Automation handoff](https://learn.microsoft.com/en-us/power-automate/process-advisor-automation); [Recording data protection](https://learn.microsoft.com/en-us/power-automate/process-advisor-protect)]
++
++**Constraint:** a recommended connector and designer handoff are not proof of an automatically finished bespoke application. **Copy:** evidence attached to opportunities and an actionable handoff. **Avoid:** treating our three-stage diagram as absent from enterprise products, or relying on manual after-capture cleanup to meet the brief's pre-model masking requirement. [assumption]
++
++## 6. The differentiation that remains worth testing
++
++The honest answer is **enterprise vendors already discover tasks and connect discovery to automation; some generate implementation skeletons. Personal assistants are also suggesting context-based routines, and Screenpipe exposes the raw ingredients to coding agents.** Macroscope's differentiation is therefore the quality and accessibility of the complete loop, not unique possession of its components. [assumption: synthesis of Sections 2-5]
++
++Adopt this narrower promise: **"Macroscope spots repeated work you choose to share, then builds a small tool you can inspect, test, and keep."** Start with file/report transformations spanning browser exports, CSVs, folders, and a reviewable final artifact. Defer financial submissions, messaging on the user's behalf, and arbitrary cross-app GUI automation until the evidence and runtime are strong. [assumption: recommended wedge]
++
++The proposal card should show two or more observed examples, editable boundaries, estimated active time saved, confidence, required data/access, and a concrete output preview. For example: "You combined these three exports four times; build a reconciliation tool that produces this workbook?" User correction supplies the business rule screens cannot reveal. Count active work separately from waiting time. [assumption: proposed UX]
++
++Test against three baselines: a user explaining the task to Muse/Codex/Claude, Screenpipe plus a coding agent, and a manually taught task. Proposed pilot gates are one accepted opportunity in a week, first useful tool within 20 minutes of approval, and three successful fixture/shadow runs before pinning. These are targets, not market evidence. Track net saved time after review, repair, and API spend; generated-tool count is not the success metric. [assumption: validation plan]
++
++Potential product killers remain: users refusing OS permissions; Windows capture/execution failing without owner testing; redaction missing confidential context; screen-borne instructions reaching a privileged generator; Meta API cost exceeding savings; incompatible API terms or redistribution requirements; and macOS distribution constraints on generated code. Make these explicit go/no-go experiments, not claims that competitor documentation has resolved them. [assumption: risk assessment]
++
++## Open questions for the owner
++
++- Is the initial buyer an individual professional who controls their data, or a company authorizing capture? This changes onboarding, deployment, and the meaning of consent.
++- Will you accept a narrow v1 of export/file/report tools, with connected-service writes and arbitrary GUI execution deferred?
++- Should user-owned generated tools remain runnable without a Macroscope subscription? I recommend yes; decide how maintenance and cloud inference are charged.
++- Can a real Meta key and a Windows test partner/CI machine be funded for validation before broader product promises?
++
++## Decisions I made: the five lessons that should shape the plan
++
++1. **Compete on the completed discovery-to-tool loop.** Memory, computer use, natural-language builders, and enterprise task discovery are established. Make the differentiator an evidence-backed proposal that becomes a tested, persistent personal utility; benchmark the full journey against Screenpipe plus a coding agent and existing desktop assistants. [assumption]
++2. **Make capture permission and data boundaries visible product behavior.** Recall shows how quickly observation becomes a trust problem; Highlight illustrates why vague retention language is inadequate. Default to scoped capture, local exclusion before transmission, short retention, clear pause/delete, and inspectable outbound context. Promise risk reduction rather than perfect redaction. [assumption]
++3. **Keep discovery fallible and correctable.** UiPath's unassisted retreat is a warning to validate demand and accuracy, not an explanation of why its product changed. Combine conservative suggestions with a teach-one-task fallback, editable examples, and explicit business-rule questions. Reject repetitive activity that has no economical, safe automation path. [assumption]
++4. **Generate maintainable tools and borrow mature execution infrastructure.** Use Muse's supported programmatic harness with the owner's API key; favor narrow deterministic artifacts, fixtures, scoped credentials, versions, and rollback. Follow native/API actions before GUI control. Review expected behavior and results in plain language rather than expecting users to audit shell commands. [assumption]
++5. **Earn retention through measured savings and user ownership.** Granola demonstrates the value of a bounded moment and useful artifact; Limitless demonstrates continuity risk. Start with one valuable workflow class, preserve exportable tools and evidence, and measure time saved after inference cost and maintenance. A growing surveillance archive or a pile of generated apps is not the product outcome. [assumption]
+
+codex
+The draft is written. It covers every requested product and separates documented limitations from unverified explanations for product pivots. I’m checking the citations and length now, particularly the overlap with Screenpipe, Littlebird, and enterprise task mining.
+exec
+/bin/zsh -lc "wc -w -l plan/research/02-competition.md; rg -n '\\[verified:|\\[assumption|\\[local' plan/research/02-competition.md; git status --short" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+     201    4114 plan/research/02-competition.md
+7:**Macroscope should sell a completed improvement to someone's work: discover a recurring task, explain the evidence, and deliver a tested tool that removes it.** Desktop memory, conversational automation building, and computer control are already competitive categories. Combining them is a useful product thesis, but not a defensible claim of invention. [assumption: strategic conclusion from the evidence below]
+9:The closest threats are Screenpipe plus its coding-agent ecosystem, Littlebird's context-aware routines, and task-mining suites connected to automation development. General desktop agents are substitutes whenever the user already knows what to delegate. The opportunity is a much shorter, trustworthy path from **"I did not realize this was automatable"** to **"this small tool works reliably for me."** [assumption: positioning hypothesis]
+11:Evidence notation: linked **[verified: source]** labels identify public first-party documentation or announcements; they establish what the vendor documents, not independent performance or security certification. **[local]** identifies machine evidence or the supplied local reference. **[assumption]** identifies inference, proposed behavior, or an unresolved claim. Products were researched, not installed and benchmarked. An absence of documented capability is not proof that a competitor cannot provide it.
+26:The diagram is a strategic abstraction, not a feature exclusion matrix. Several products span multiple rows. [assumption]
+32:Rewind's earlier proposition was a searchable record of what a person saw and heard on their computer. Its subsequent Limitless identity emphasized a conversation-recording Pendant. Meta's acquisition is verified: Limitless's own announcement says it joined Meta's AI-wearables effort. The FAQ dates the stop in Pendant sales to **5 December 2025**, disables Rewind screen/audio capture from **19 December 2025**, and says desktop/web meeting recording is discontinued, with earlier meetings accessible through 2026. It promises existing Pendant support through 2026. Do not describe Limitless as an actively expanding desktop competitor today. [verified: [Limitless acquisition announcement and FAQ](https://www.limitless.ai/)]
+34:The current `rewind.ai` domain explicitly says its operator is independent and unaffiliated with the original Rewind, Limitless, or Meta. It is therefore unsuitable as the original company's product documentation. [verified: [Current domain's ownership disclosure](https://rewind.ai/what-happened-to-rewind/)]
+36:**What went wrong:** the verified events are a change in product direction and shutdown of capture, not proof that privacy or technical failure caused the pivot. Strategically, a personal memory product creates unusually high continuity expectations; an acquisition can strand the very history users trusted it to preserve. [assumption: interpretation of the documented shutdown]
+38:**Copy:** effortless context and a visible personal timeline. **Avoid:** making a user's installed tools or historical evidence depend on Macroscope's continued operation. Export source, fixtures, manifests, and run history; make offline tools keep working after cancellation. Do not imply that using Meta's model makes Macroscope part of Meta, or that the acquisition gives us access to Limitless technology. [assumption: product recommendation]
+42:Screenpipe currently describes itself as **source-available**, local-first desktop memory for macOS, Windows, and Linux. Its documentation describes change-triggered screenshots, accessibility-first text extraction with OCR fallback, app/window/browser context, local Whisper transcription, and local SQLite/media storage. Cloud AI and sync are optional paths; local capture does not mean a selected cloud model never receives context. [verified: [Screenpipe architecture overview](https://screenpipe.com/about)]
+44:Its Pipes system already bridges capture and action. A pipe is a Markdown-defined agent task with a schedule; an underlying coding agent can query local screen history, write files, call APIs, and notify the user. The public setup example asks a coding tool to create a custom pipe and supplies local search and interaction-event APIs. These are substantially closer to Macroscope than ordinary searchable recording. [verified: [Screenpipe Pipes specification and creation instructions](https://screenpipe.com/pipes)]
+46:An indexed version of that same official catalog advertises a workflow-intelligence pack, Workflow & Automation Scout, and Automation Opportunity Radar. The directly opened page returned no populated catalog entries while retaining its creation instructions. Treat the indexed names as evidence of competitive direction, **not a verified end-to-end discovery-to-deployed-tool demonstration**. [verified: [Official catalog, with retrieval discrepancy](https://screenpipe.com/pipes)]
+48:Its September 2026 changelog includes editable workflow SOPs, agent integrations, Windows capture/transcription fixes, and database-recovery work. Those are documented operational issues and improvements, not evidence of a public privacy scandal. [verified: [Screenpipe changelog](https://screenpipe.com/changelog)]
+50:**Copy:** local queryable history, structured events, inspectable capture, and portable task definitions. **Avoid:** competing primarily on screenshots plus chat, or claiming nobody else discovers automation opportunities. Macroscope must beat a realistic baseline: Screenpipe plus a competent coding agent. Prove that a nondeveloper gets a useful, tested tool with less setup and maintenance. [assumption: competitive test]
+54:Recall remains documented as a preview for Copilot+ PCs. It periodically saves searchable screen snapshots and processes them locally; it does not record audio or continuous video. Current controls include explicit opt-in, pause, app/site exclusions, retention limits, deletion, Windows Hello access, encrypted snapshots/indexes, and TPM/VBS-protected keys. Sensitive-information filtering is enabled by default, but Microsoft documents limitations, including excluded sites appearing inside embedded content or browser history. [verified: [Recall privacy and controls](https://support.microsoft.com/en-us/windows/privacy/privacy-and-control-over-your-recall-experience)]
+56:Recall is no longer just a passive image browser: Click to Do can offer actions on recognized text and images. This still does not establish automatic generation of a bespoke persistent tool from repeated workflows. [verified: [Recall usage and Click to Do](https://support.microsoft.com/en-au/windows/ai/ai-features/retrace-your-steps-with-recall)]
+58:**What went wrong:** the 2024 privacy/security backlash produced a conspicuous redesign and delayed rollout. Microsoft's contemporaneous response documents the move to opt-in, required Hello authentication, additional data protection, and subsequent schedule changes. Calling today's implementation an unencrypted recorder would confuse the original controversy with current documented architecture. Nor do new controls establish that all attack paths are solved. [verified: [Microsoft's 2024 response and rollout updates](https://blogs.windows.com/windowsexperience/2024/06/07/update-on-the-recall-preview-feature-for-copilot-pcs/)]
+60:**Copy:** meaningful capture state, local processing, authentication before history access, and deletion users can understand. **Avoid:** "everything is safe because it is local" and promises that redaction catches all secrets. Prefer active-window capture and explicit app allowlists initially. Retained embeddings, OCR, logs, thumbnails, and backups must obey deletion too. [assumption: design implications]
+64:Highlight's current positioning is contextual assistance that drafts follow-ups in work tools. Examples include scorecards, briefs, status roll-ups, and SOP capture. Its onboarding requests screen-recording and accessibility permissions. Current privacy documentation describes per-app-window capture following a May 2026 rewrite, encrypted local context, default sensitive-category exclusions, custom rules, and three context levels: broad, work-only, and off. [verified: [Highlight product](https://highlightai.com/); [Onboarding](https://help.highlightai.com/articles/9791804699-your-first-10-minutes-with-highlight); [Privacy settings](https://help.highlightai.com/articles/1492080632)]
+66:**Failure/uncertainty:** the privacy page says screenshots are never saved, but also offers erasure of "Screenshot History." It describes filtering followed by LLM summarization. That wording does not establish that every sensitive item is removed locally before a remote model sees it. This is a documentation ambiguity, not a demonstrated breach. [verified: [Highlight privacy settings](https://help.highlightai.com/articles/1492080632)]
+68:**Copy:** concrete deliverables waiting for review where work happens; a restrained suggestion can be more useful than another chat window. **Avoid:** ambiguous terminology for screenshots, extracted text, derived memory, and transmission. Macroscope should show a literal outbound-context preview, not rely on a privacy adjective. [assumption]
+72:Littlebird combines work memory, meeting notes, integrations, artifacts, and scheduled Routines. Its documentation says capture reads the active window's text/elements through accessibility permissions. Its own privacy page clearly says captured context is stored encrypted in AWS, rather than promising local-only storage, and offers pause, exclusion, and deletion controls. [verified: [Littlebird product](https://littlebird.ai/); [Capture explanation](https://asklittlebird.com/does-littlebird-take-screenshots); [Storage/privacy](https://littlebird.ai/privacy)]
+74:The changelog explicitly says a user can ask what to automate, receive Routine suggestions based on actual work, and have Littlebird offer to set them up. Its August release also documents a library of built artifacts and one-off window sharing, including the ability to share an otherwise excluded app for one message. These materially overlap with discovery and generation; artifacts alone do not prove installed, independently runnable desktop utilities. [verified: [Routine recommendations](https://docs.littlebird.ai/changelog/); [21 August 2026 release](https://docs.littlebird.ai/changelog/2026-08-21/)]
+76:**Failure/constraint:** cloud retention is an explicit trade-off, not an undisclosed local architecture. The August changelog records a fix for offering the macOS login window as context, illustrating why exclusion behavior needs testing. No broader failure claim is established here. [verified: [Privacy](https://littlebird.ai/privacy); [Login-window fix](https://docs.littlebird.ai/changelog/2026-08-21/)]
+78:**Copy:** suggested work grounded in personal context, clear cloud disclosure, and temporary sharing separate from standing capture permission. **Avoid:** claiming "we discover, they only remember." The proposed distinction must be a tested, reusable tool with bounded permissions and measurable results. [assumption]
+82:Granola requires the user to start a meeting session, transcribes microphone and system audio without a meeting bot, and enhances notes. Its desktop security page says audio is not retained; transcripts and notes are retained in encrypted US-hosted AWS infrastructure. It prohibits model-provider training on customer data, while its own anonymized-data training has a user opt-out and is off by default for enterprise users. These are different promises. [verified: [Granola security and data handling](https://www.granola.ai/security)]
+84:**What can go wrong:** bot-free capture is less visible to other participants. Granola acknowledges that trade-off and provides transparency mechanisms, including messaging/watermarks and enterprise controls. This is a documented consent challenge, not evidence that every bot-free note taker records secretly or unlawfully. [verified: [Why Granola avoids bots](https://www.granola.ai/blog/why-granola-doesnt-use-a-bot); [Transparency features](https://www.granola.ai/transparency)]
+86:**Copy:** a narrow activity, predictable artifact, and immediate value. **Avoid:** adding ambient audio to Macroscope v1 just because competitors have it. Screen/event evidence can test the central workflow hypothesis without introducing meeting consent, diarization, and transcription as another product. [assumption]
+92:OpenAI's current computer-use documentation supports screenshot-driven browser/desktop actions and code-driven interaction. The developer supplies or chooses the execution environment; the API does not inherently provide a trusted lifetime observer of a person's work. The guide explicitly requires isolation, untrusted-screen handling, confirmation for consequential actions, run bounds, and outcome verification. [verified: [OpenAI computer-use guide](https://developers.openai.com/api/docs/guides/tools-computer-use)]
+94:**Codex app needs a late-2026 naming correction:** its former app documentation now redirects to the ChatGPT desktop app. Current official documentation describes Codex within that desktop experience, plugins, local projects/worktrees, and scheduled tasks whose findings appear in a review inbox. Scheduled local work requires the computer and app to remain running. This research should not freeze the February 2026 standalone-app story as today's entire product. [verified: [Current desktop documentation](https://learn.chatgpt.com/docs/app); [Scheduled tasks](https://learn.chatgpt.com/docs/automations?surface=app)]
+96:OpenAI also documents `codex exec`, an SDK, and `codex app-server` for applications embedding durable sessions, progress, interruption, tools, and approvals. Its reusable harness is explicitly presented as infrastructure for specialized products. [verified: [Codex as a platform](https://developers.openai.com/blog/codex-as-a-platform)]
+98:**Copy:** reviewable changes, isolated workspaces, persistent task state, and a focused inbox. **Avoid:** a terminal emulator as the primary nondeveloper interface. The competitive threat is substantial: an existing desktop assistant can already build and schedule tools once given the job. Our advantage must precede that prompt and persist after generation. [assumption]
+102:Claude's API computer-use tool exposes screenshots and mouse/keyboard actions executed by the client's runtime; browser tools additionally use page structure. Anthropic warns about prompt injection and describes computer use as slower and more general than specialized tools because fresh observations are needed. [verified: [Computer-use tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool); [Tool-selection trade-offs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations)]
+104:Claude desktop's Cowork experience completes multistep tasks using selected files, connected services, and computer control. Current documentation says chat and Cowork are being unified, with rollout differences by plan; scheduled cloud tasks can continue with the computer off, while local access requires Claude Desktop. Computer use is documented for Mac and Windows. [verified: [Claude unification/current behavior](https://support.claude.com/en/articles/16761823-claude-cowork-and-chat-are-one-claude); [Desktop computer use](https://claude.com/resources/articles/dispatch-and-computer-use)]
+106:**Failure/constraint:** Anthropic's containment research says ordinary users cannot reasonably judge dangerous shell commands. It describes the first Cowork implementation's VM boundary and host-held credentials as the response. This is a valuable disclosed design constraint, not proof that a VM makes every workflow safe. [verified: [How Anthropic contains Claude](https://www.anthropic.com/research/how-we-contain-claude)]
+108:**Copy:** task-level permissions and output review that a nonprogrammer can understand. **Avoid:** treating approval of an opaque script as meaningful informed review. A generated tool should say which files, services, and actions it needs, with sample output and a reversible test. [assumption]
+112:Google's current Gemini API documentation supports browser, mobile, and desktop environments, with screenshots, returned actions/intents, client-side execution, and allow/confirmation/block safety decisions. It also describes opt-in prompt-injection scanning and labels computer use a preview that may contain errors and vulnerabilities. Claims that Gemini computer use is browser-only are outdated relative to this documentation. [verified: [Gemini computer-use guide](https://ai.google.dev/gemini-api/docs/computer-use)]
+114:**Copy:** explicit action rationale, environment separation, and machine-readable safety decisions. **Avoid:** making arbitrary GUI replay the default generated artifact. A small deterministic data transformer or API-backed tool can remove an entire click sequence and be tested on fixtures. A general visual agent is a fallback for inaccessible applications, with higher latency and supervision expectations. [assumption: engineering/product recommendation]
+118:Public Meta documentation now verifies both **`muse-wonder-1.0`** and **`muse-spark-1.3`**, multimodal/tool capabilities, and availability through Model API. Wonder is available through pay-as-you-go; **Wonder Full is not available on Model API**. Standard mode excludes content from model training; Contributor variants have different training terms. Thus the brief's uncertainty about Wonder can be resolved publicly, but a consumer subscription's capabilities must not be assumed available with the owner's API key. [verified: [Meta model catalog](https://dev.meta.ai/docs/models)]
+120:Muse Code plans, edits files, runs commands, and provides sandbox/approval facilities. Public documentation verifies headless use and the versioned `muse serve` session protocol; this is a supported programmatic integration direction rather than terminal-screen scraping. [verified: [Muse Code integration documentation](https://dev.meta.ai/docs/muse-code)]
+122:Meta also supplies a macOS computer-use cookbook: `metacua` sends screenshots and GUI tool definitions to the model, then executes native mouse/keyboard events. It controls the real Mac; the Linux example uses a disposable Cua sandbox. Cookbook availability does not establish production reliability or a security boundary for host applications. [verified: [macOS recipe](https://dev.meta.ai/docs/cookbook/computer-use-macos); [Sandbox recipe](https://dev.meta.ai/docs/cookbook/computer-use)]
+124:**API-key path to adopt:** store the owner's key in the OS credential store; retrieve it in Macroscope's host process; provide it only to a dedicated Muse child as `META_API_KEY`, or to `muse exec --api-key-stdin` for a single run. Never put it in generated workspaces, prompts, or argv. Public docs verify environment-key precedence over browser sessions; the supplied local evidence additionally verifies the stdin option and structured rejected-key errors. Successful billing and environment-key inheritance through `muse serve` still need the owner's real-key smoke test. [verified: [Muse authentication](https://dev.meta.ai/docs/muse-code/auth)] [local: [brief's authentication checks](../BRIEF.md), [installed CLI reference](../reference/muse-cli-help.txt); not rerun in this research]
+126:**Copy:** the existing harness and typed event stream. **Avoid:** building a coding agent loop from scratch, Contributor models for captured work by default, and exposing a general host-control session to untrusted screen text. Meta dependence also creates policy, pricing, distribution, and availability risks; public feature documentation does not itself authorize every commercial embedding arrangement. [assumption: implementation and diligence recommendation]
+132:Apple's App Intents expose structured actions/entities to system features; Shortcuts combines app actions. Apple documents model-assisted actions on Mac, including on-device or Private Cloud Compute processing and structured output. WWDC26 adds more model/transcript inspection and storage capabilities; platform availability must be checked individually. Do not confuse App Intents support on Mac with the separately named App Shortcuts feature, whose design documentation lists a macOS limitation. [verified: [App Intents](https://developer.apple.com/documentation/appintents); [Mac Shortcuts and models](https://developer.apple.com/videos/play/wwdc2025/260/); [WWDC26 changes](https://developer.apple.com/videos/play/wwdc2026/310/); [App Shortcuts platform note](https://developer.apple.com/design/human-interface-guidelines/app-shortcuts)]
+134:**Constraint:** declared actions provide semantic access where apps participate; these documents do not establish unrestricted observation or control of every app, nor automatic discovery of arbitrary cross-app repetitions. **Copy:** native intent execution and system launching where useful. **Avoid:** assuming Siri's broad vision equals shipped universal automation, or making every generated artifact Apple-only when Windows remains required. Keep a portable tool specification with platform adapters. [assumption]
+138:Raycast AI Commands package reusable prompts; AI Extensions expose installed commands as tools. Screen Awareness can read foreground app content and capture its window; browser and selected-text tools provide narrower context. Tool calls can request approval. Raycast's June 2026 Windows changelog also documents AI Chat, extensions, and MCP, so Windows is already part of its competitive surface. [verified: [AI Commands](https://manual.raycast.com/ai/ai-commands); [AI Extensions](https://manual.raycast.com/ai/ai-extensions); [Windows changelog](https://www.raycast.com/changelog/windows/2)]
+140:**Constraint:** the reviewed docs establish invocation and tool composition, not continuous mining of all work. No failure narrative is substantiated. **Copy:** keyboard-first invocation, pinning, small forms, and instant results. **Avoid:** rebuilding a general launcher or an extension store. Later, a discovered Macroscope tool could be exported to Raycast while remaining independently runnable. [assumption]
+144:The brief's "they make you build it yourself" premise needs revision. Make's Maia selects and configures workflow modules from natural language, shows construction on the visual canvas, asks clarifying questions, and helps debug. Its official release listing dates the public launch to August 2026. [verified: [Maia announcement](https://www.make.com/en/maia-by-make-announcement); [Release listing](https://www.make.com/whats-new)]
+146:Zapier's September 2026 Next Gen Zaps announcement describes construction from natural language, code, visual editing, and MCP-enabled assistants; it adds richer branching, pause/resume, and agent-assisted failure diagnosis. The announcement explicitly offers **early access**, so do not imply universal general availability. Capture is primarily connected-service events and user-provided intent, not a documented continuous screen recorder. [verified: [Zapier product announcement](https://community.zapier.com/product-updates/the-next-generation-of-zaps-is-here-53832?trk=article-ssr-frontend-pulse_little-text-block)]
+148:**Copy:** managed credentials, visible data mappings, run history, retry/recovery, and editable workflows. **Avoid:** differentiating on "AI builds an automation" alone, or rebuilding hundreds of connectors as a solo developer. Macroscope can discover a workflow, then choose a script, local utility, or external automation backend according to the job. Connector coverage and operational maturity are incumbents' strengths. [assumption]
+152:**Process mining** reconstructs organization-wide processes from transactional event logs. **Task mining** examines desktop interactions within/between applications. Celonis and Microsoft explicitly distinguish these data sources. Macroscope is principally personal task mining plus tool delivery, not a novel replacement for enterprise process mining. [verified: [Celonis discovery methods](https://www.celonis.com/blog/process-discovery-methods); [Microsoft overview](https://learn.microsoft.com/en-us/power-automate/process-advisor-overview)]
+156:Celonis captures desktop activities and combines them with process data to reveal off-system work, friction, and automation opportunities. Its event-processing documentation includes selective logging and active-window/full-desktop screenshot rules. Its wider platform includes automation mechanisms, rather than stopping at dashboards. [verified: [Celonis discovery tools](https://www.celonis.com/blog/process-discovery-tools); [Capture rules](https://docs.celonis.com/en/event-processing-rules---visual-editor); [Reusable Action Flow blueprints](https://docs.celonis.com/en/how-to-deal-with-blueprints)]
+158:**Constraint:** enterprise discovery and automation are established, but these sources do not demonstrate one-click generation of arbitrary, independently installed personal apps from ambient evidence. Some technical documentation now requires login; current deployment details need procurement verification. [verified: [Celonis 2026 product updates/documentation access](https://community.celonis.com/product-updates)] [assumption: scope boundary]
+160:**Copy:** variants, bottlenecks, business-object context, and value measurement. **Avoid:** manager-facing worker rankings as the initial buyer story. The worker should own observation and get the benefit directly. [assumption]
+164:UiPath's earlier Unassisted Task Mining captured screenshots and logs at user actions, used machine learning to discover repeated tasks, and suggested automation opportunities. However, official release notes confirm its **removal from Automation Cloud on 1 December 2025**, including deletion of those projects. Current Task Mining emphasizes recording known tasks, merging variants, and helping analysts identify improvements. [verified: [Historical unassisted capability](https://docs.uipath.com/task-mining/automation-suite/2023.4/user-guide/unassisted-task-minining-introduction); [Removal](https://docs.uipath.com/task-mining/automation-cloud/latest/release-notes/december-2025); [Current introduction](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/assisted-task-mining-introduction)]
+166:Generation already exists in an important qualified form: a trace exports as a **XAML automation skeleton** for continued implementation in UiPath Studio, with limited supported actions. That is a real bridge from observation to executable development, but the docs explicitly require completing the design. [verified: [Studio export and limitations](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/uipath-studio)]
+168:**What went wrong:** removal is verified; its root cause is not established here. Do not invent a claim that privacy, poor economics, or accuracy killed it. **Copy:** trace merging and development handoff. **Avoid:** betting v1 entirely on unconstrained ambient discovery. Offer "teach one task" as a fallback and measure whether unsolicited discovery actually outperforms it. [assumption]
+172:Microsoft's current documentation uses process-mining/task-mining terminology while retaining `process-advisor` URLs. Task mining records desktop steps, produces process maps and timing/application analytics, and identifies automation opportunities. An **Automate activities** action opens the flow designer with connector recommendations. Recordings can contain screenshots and text that users edit or remove before analysis/sharing. This already resembles the proposed discovery-to-builder pipeline. [verified: [Task-mining overview](https://learn.microsoft.com/en-us/power-automate/task-mining-overview); [Automation handoff](https://learn.microsoft.com/en-us/power-automate/process-advisor-automation); [Recording data protection](https://learn.microsoft.com/en-us/power-automate/process-advisor-protect)]
+174:**Constraint:** a recommended connector and designer handoff are not proof of an automatically finished bespoke application. **Copy:** evidence attached to opportunities and an actionable handoff. **Avoid:** treating our three-stage diagram as absent from enterprise products, or relying on manual after-capture cleanup to meet the brief's pre-model masking requirement. [assumption]
+178:The honest answer is **enterprise vendors already discover tasks and connect discovery to automation; some generate implementation skeletons. Personal assistants are also suggesting context-based routines, and Screenpipe exposes the raw ingredients to coding agents.** Macroscope's differentiation is therefore the quality and accessibility of the complete loop, not unique possession of its components. [assumption: synthesis of Sections 2-5]
+180:Adopt this narrower promise: **"Macroscope spots repeated work you choose to share, then builds a small tool you can inspect, test, and keep."** Start with file/report transformations spanning browser exports, CSVs, folders, and a reviewable final artifact. Defer financial submissions, messaging on the user's behalf, and arbitrary cross-app GUI automation until the evidence and runtime are strong. [assumption: recommended wedge]
+182:The proposal card should show two or more observed examples, editable boundaries, estimated active time saved, confidence, required data/access, and a concrete output preview. For example: "You combined these three exports four times; build a reconciliation tool that produces this workbook?" User correction supplies the business rule screens cannot reveal. Count active work separately from waiting time. [assumption: proposed UX]
+184:Test against three baselines: a user explaining the task to Muse/Codex/Claude, Screenpipe plus a coding agent, and a manually taught task. Proposed pilot gates are one accepted opportunity in a week, first useful tool within 20 minutes of approval, and three successful fixture/shadow runs before pinning. These are targets, not market evidence. Track net saved time after review, repair, and API spend; generated-tool count is not the success metric. [assumption: validation plan]
+186:Potential product killers remain: users refusing OS permissions; Windows capture/execution failing without owner testing; redaction missing confidential context; screen-borne instructions reaching a privileged generator; Meta API cost exceeding savings; incompatible API terms or redistribution requirements; and macOS distribution constraints on generated code. Make these explicit go/no-go experiments, not claims that competitor documentation has resolved them. [assumption: risk assessment]
+197:1. **Compete on the completed discovery-to-tool loop.** Memory, computer use, natural-language builders, and enterprise task discovery are established. Make the differentiator an evidence-backed proposal that becomes a tested, persistent personal utility; benchmark the full journey against Screenpipe plus a coding agent and existing desktop assistants. [assumption]
+198:2. **Make capture permission and data boundaries visible product behavior.** Recall shows how quickly observation becomes a trust problem; Highlight illustrates why vague retention language is inadequate. Default to scoped capture, local exclusion before transmission, short retention, clear pause/delete, and inspectable outbound context. Promise risk reduction rather than perfect redaction. [assumption]
+199:3. **Keep discovery fallible and correctable.** UiPath's unassisted retreat is a warning to validate demand and accuracy, not an explanation of why its product changed. Combine conservative suggestions with a teach-one-task fallback, editable examples, and explicit business-rule questions. Reject repetitive activity that has no economical, safe automation path. [assumption]
+200:4. **Generate maintainable tools and borrow mature execution infrastructure.** Use Muse's supported programmatic harness with the owner's API key; favor narrow deterministic artifacts, fixtures, scoped credentials, versions, and rollback. Follow native/API actions before GUI control. Review expected behavior and results in plain language rather than expecting users to audit shell commands. [assumption]
+201:5. **Earn retention through measured savings and user ownership.** Granola demonstrates the value of a bounded moment and useful artifact; Limitless demonstrates continuity risk. Start with one valuable workflow class, preserve exportable tools and evidence, and measure time saved after inference cost and maintenance. A growing surveillance archive or a pile of generated apps is not the product outcome. [assumption]
+?? plan/
+
+web search: 
+web search: 
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('plan/research/02-competition.md')
+s=p.read_text()
+required=['Rewind','Limitless','Screenpipe','Recall','Highlight','Littlebird','Granola','OpenAI','Anthropic','Google','Apple','Raycast','Zapier','Make','Celonis','UiPath','Power Automate','Codex','Claude','Muse','Open questions for the owner','Decisions I made']
+print('Word count:', len(s.split()))
+print('Missing coverage:', [v for v in required if v not in s])
+print('Final lessons:', sum(s.count('\\n'+str(i)+'. **') for i in range(1,6)))
+print('Local references resolve:', all((p.parent / f).resolve().exists() for f in ['../BRIEF.md','../reference/muse-cli-help.txt']))
+PY" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+Word count: 4114
+Missing coverage: []
+Final lessons: 5
+Local references resolve: True
+
+web search: 
+web search: 
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/02-competition.md
+diff --git a/plan/research/02-competition.md b/plan/research/02-competition.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9b1e095fdc9137de26affa6ac2eb1a68676dac6
+--- /dev/null
++++ b/plan/research/02-competition.md
+@@ -0,0 +1,201 @@
++# Competitive landscape and lessons for Macroscope
++
++Research cutoff: **22 October 2026**. Read against [the planning brief](../BRIEF.md).
++
++## 1. The competitive conclusion
++
++**Macroscope should sell a completed improvement to someone's work: discover a recurring task, explain the evidence, and deliver a tested tool that removes it.** Desktop memory, conversational automation building, and computer control are already competitive categories. Combining them is a useful product thesis, but not a defensible claim of invention. [assumption: strategic conclusion from the evidence below]
++
++The closest threats are Screenpipe plus its coding-agent ecosystem, Littlebird's context-aware routines, and task-mining suites connected to automation development. General desktop agents are substitutes whenever the user already knows what to delegate. The opportunity is a much shorter, trustworthy path from **"I did not realize this was automatable"** to **"this small tool works reliably for me."** [assumption: positioning hypothesis]
++
++Evidence notation: linked **[verified: source]** labels identify public first-party documentation or announcements; they establish what the vendor documents, not independent performance or security certification. **[local]** identifies machine evidence or the supplied local reference. **[assumption]** identifies inference, proposed behavior, or an unresolved claim. Products were researched, not installed and benchmarked. An absence of documented capability is not proof that a competitor cannot provide it.
++
++```text
++                         MACROSCOPE'S PROPOSED LOOP
++  scoped observation -> repeated task -> evidence + expected value
++         ^                                      |
++         |                                      v
++  measured real outcome <- pinned tool <- preview + fixture tests
++
++  Memory products:         strong observation / retrieval
++  Desktop agents:          strong requested execution / generation
++  Automation builders:     strong integration / deployment / operations
++  Task-mining suites:      strong discovery / variants / enterprise handoff
++```
++
++The diagram is a strategic abstraction, not a feature exclusion matrix. Several products span multiple rows. [assumption]
++
++## 2. Desktop memory and ambient assistance
++
++### Rewind / Limitless: a verified acquisition, and an exit lesson
++
++Rewind's earlier proposition was a searchable record of what a person saw and heard on their computer. Its subsequent Limitless identity emphasized a conversation-recording Pendant. Meta's acquisition is verified: Limitless's own announcement says it joined Meta's AI-wearables effort. The FAQ dates the stop in Pendant sales to **5 December 2025**, disables Rewind screen/audio capture from **19 December 2025**, and says desktop/web meeting recording is discontinued, with earlier meetings accessible through 2026. It promises existing Pendant support through 2026. Do not describe Limitless as an actively expanding desktop competitor today. [verified: [Limitless acquisition announcement and FAQ](https://www.limitless.ai/)]
++
++The current `rewind.ai` domain explicitly says its operator is independent and unaffiliated with the original Rewind, Limitless, or Meta. It is therefore unsuitable as the original company's product documentation. [verified: [Current domain's ownership disclosure](https://rewind.ai/what-happened-to-rewind/)]
++
++**What went wrong:** the verified events are a change in product direction and shutdown of capture, not proof that privacy or technical failure caused the pivot. Strategically, a personal memory product creates unusually high continuity expectations; an acquisition can strand the very history users trusted it to preserve. [assumption: interpretation of the documented shutdown]
++
++**Copy:** effortless context and a visible personal timeline. **Avoid:** making a user's installed tools or historical evidence depend on Macroscope's continued operation. Export source, fixtures, manifests, and run history; make offline tools keep working after cancellation. Do not imply that using Meta's model makes Macroscope part of Meta, or that the acquisition gives us access to Limitless technology. [assumption: product recommendation]
++
++### Screenpipe: the closest architectural competitor
++
++Screenpipe currently describes itself as **source-available**, local-first desktop memory for macOS, Windows, and Linux. Its documentation describes change-triggered screenshots, accessibility-first text extraction with OCR fallback, app/window/browser context, local Whisper transcription, and local SQLite/media storage. Cloud AI and sync are optional paths; local capture does not mean a selected cloud model never receives context. [verified: [Screenpipe architecture overview](https://screenpipe.com/about)]
++
++Its Pipes system already bridges capture and action. A pipe is a Markdown-defined agent task with a schedule; an underlying coding agent can query local screen history, write files, call APIs, and notify the user. The public setup example asks a coding tool to create a custom pipe and supplies local search and interaction-event APIs. These are substantially closer to Macroscope than ordinary searchable recording. [verified: [Screenpipe Pipes specification and creation instructions](https://screenpipe.com/pipes)]
++
++An indexed version of that same official catalog advertises a workflow-intelligence pack, Workflow & Automation Scout, and Automation Opportunity Radar. The directly opened page returned no populated catalog entries while retaining its creation instructions. Treat the indexed names as evidence of competitive direction, **not a verified end-to-end discovery-to-deployed-tool demonstration**. [verified: [Official catalog, with retrieval discrepancy](https://screenpipe.com/pipes)]
++
++Its September 2026 changelog includes editable workflow SOPs, agent integrations, Windows capture/transcription fixes, and database-recovery work. Those are documented operational issues and improvements, not evidence of a public privacy scandal. [verified: [Screenpipe changelog](https://screenpipe.com/changelog)]
++
++**Copy:** local queryable history, structured events, inspectable capture, and portable task definitions. **Avoid:** competing primarily on screenshots plus chat, or claiming nobody else discovers automation opportunities. Macroscope must beat a realistic baseline: Screenpipe plus a competent coding agent. Prove that a nondeveloper gets a useful, tested tool with less setup and maintenance. [assumption: competitive test]
++
++### Microsoft Recall: privacy architecture is part of the product
++
++Recall remains documented as a preview for Copilot+ PCs. It periodically saves searchable screen snapshots and processes them locally; it does not record audio or continuous video. Current controls include explicit opt-in, pause, app/site exclusions, retention limits, deletion, Windows Hello access, encrypted snapshots/indexes, and TPM/VBS-protected keys. Sensitive-information filtering is enabled by default, but Microsoft documents limitations, including excluded sites appearing inside embedded content or browser history. [verified: [Recall privacy and controls](https://support.microsoft.com/en-us/windows/privacy/privacy-and-control-over-your-recall-experience)]
++
++Recall is no longer just a passive image browser: Click to Do can offer actions on recognized text and images. This still does not establish automatic generation of a bespoke persistent tool from repeated workflows. [verified: [Recall usage and Click to Do](https://support.microsoft.com/en-au/windows/ai/ai-features/retrace-your-steps-with-recall)]
++
++**What went wrong:** the 2024 privacy/security backlash produced a conspicuous redesign and delayed rollout. Microsoft's contemporaneous response documents the move to opt-in, required Hello authentication, additional data protection, and subsequent schedule changes. Calling today's implementation an unencrypted recorder would confuse the original controversy with current documented architecture. Nor do new controls establish that all attack paths are solved. [verified: [Microsoft's 2024 response and rollout updates](https://blogs.windows.com/windowsexperience/2024/06/07/update-on-the-recall-preview-feature-for-copilot-pcs/)]
++
++**Copy:** meaningful capture state, local processing, authentication before history access, and deletion users can understand. **Avoid:** "everything is safe because it is local" and promises that redaction catches all secrets. Prefer active-window capture and explicit app allowlists initially. Retained embeddings, OCR, logs, thumbnails, and backups must obey deletion too. [assumption: design implications]
++
++### Highlight AI: proactive follow-through, not merely a hotkey
++
++Highlight's current positioning is contextual assistance that drafts follow-ups in work tools. Examples include scorecards, briefs, status roll-ups, and SOP capture. Its onboarding requests screen-recording and accessibility permissions. Current privacy documentation describes per-app-window capture following a May 2026 rewrite, encrypted local context, default sensitive-category exclusions, custom rules, and three context levels: broad, work-only, and off. [verified: [Highlight product](https://highlightai.com/); [Onboarding](https://help.highlightai.com/articles/9791804699-your-first-10-minutes-with-highlight); [Privacy settings](https://help.highlightai.com/articles/1492080632)]
++
++**Failure/uncertainty:** the privacy page says screenshots are never saved, but also offers erasure of "Screenshot History." It describes filtering followed by LLM summarization. That wording does not establish that every sensitive item is removed locally before a remote model sees it. This is a documentation ambiguity, not a demonstrated breach. [verified: [Highlight privacy settings](https://help.highlightai.com/articles/1492080632)]
++
++**Copy:** concrete deliverables waiting for review where work happens; a restrained suggestion can be more useful than another chat window. **Avoid:** ambiguous terminology for screenshots, extracted text, derived memory, and transmission. Macroscope should show a literal outbound-context preview, not rely on a privacy adjective. [assumption]
++
++### Littlebird: discovery is already entering personal assistants
++
++Littlebird combines work memory, meeting notes, integrations, artifacts, and scheduled Routines. Its documentation says it reads visible text/interface elements every few seconds instead of recording screenshots/video or individual keystrokes; Google Docs may need screen-reader support enabled. Its own privacy page clearly says captured context is stored encrypted in AWS, rather than promising local-only storage, and offers pause, exclusion, and deletion controls. [verified: [Littlebird product](https://littlebird.ai/); [Capture explanation](https://docs.littlebird.ai/docs/context/); [Storage/privacy](https://littlebird.ai/privacy)]
++
++The changelog explicitly says a user can ask what to automate, receive Routine suggestions based on actual work, and have Littlebird offer to set them up. Its August release also documents a library of built artifacts and one-off window sharing, including the ability to share an otherwise excluded app for one message. These materially overlap with discovery and generation; artifacts alone do not prove installed, independently runnable desktop utilities. [verified: [Routine recommendations](https://docs.littlebird.ai/changelog/); [21 August 2026 release](https://docs.littlebird.ai/changelog/2026-08-21/)]
++
++**Failure/constraint:** cloud retention is an explicit trade-off, not an undisclosed local architecture. The August changelog records a fix for offering the macOS login window as context, illustrating why exclusion behavior needs testing. No broader failure claim is established here. [verified: [Privacy](https://littlebird.ai/privacy); [Login-window fix](https://docs.littlebird.ai/changelog/2026-08-21/)]
++
++**Copy:** suggested work grounded in personal context, clear cloud disclosure, and temporary sharing separate from standing capture permission. **Avoid:** claiming "we discover, they only remember." The proposed distinction must be a tested, reusable tool with bounded permissions and measurable results. [assumption]
++
++### Granola-style ambient tools: constrain capture to a valuable moment
++
++Granola requires the user to start a meeting session, transcribes microphone and system audio without a meeting bot, and enhances notes. Its desktop security page says audio is not retained; transcripts and notes are retained in encrypted US-hosted AWS infrastructure. It prohibits model-provider training on customer data, while its own anonymized-data training has a user opt-out and is off by default for enterprise users. These are different promises. [verified: [Granola security and data handling](https://www.granola.ai/security)]
++
++**What can go wrong:** bot-free capture is less visible to other participants. Granola acknowledges that trade-off and provides transparency mechanisms, including messaging/watermarks and enterprise controls. This is a documented consent challenge, not evidence that every bot-free note taker records secretly or unlawfully. [verified: [Why Granola avoids bots](https://www.granola.ai/blog/why-granola-doesnt-use-a-bot); [Transparency features](https://www.granola.ai/transparency)]
++
++**Copy:** a narrow activity, predictable artifact, and immediate value. **Avoid:** adding ambient audio to Macroscope v1 just because competitors have it. Screen/event evidence can test the central workflow hypothesis without introducing meeting consent, diarization, and transcription as another product. [assumption]
++
++## 3. Agents that can operate computers and generate software
++
++### OpenAI computer use and the Codex desktop experience
++
++OpenAI's current computer-use documentation supports screenshot-driven browser/desktop actions and code-driven interaction. The developer supplies or chooses the execution environment; the API does not inherently provide a trusted lifetime observer of a person's work. The guide explicitly requires isolation, untrusted-screen handling, confirmation for consequential actions, run bounds, and outcome verification. [verified: [OpenAI computer-use guide](https://developers.openai.com/api/docs/guides/tools-computer-use)]
++
++**Codex app needs a late-2026 naming correction:** its former app documentation now redirects to the ChatGPT desktop app. Current official documentation describes Codex within that desktop experience, plugins, local projects/worktrees, and scheduled tasks whose findings appear in a review inbox. Scheduled local work requires the computer and app to remain running. This research should not freeze the February 2026 standalone-app story as today's entire product. [verified: [Current desktop documentation](https://learn.chatgpt.com/docs/app); [Scheduled tasks](https://learn.chatgpt.com/docs/automations?surface=app)]
++
++OpenAI also documents `codex exec`, an SDK, and `codex app-server` for applications embedding durable sessions, progress, interruption, tools, and approvals. Its reusable harness is explicitly presented as infrastructure for specialized products. [verified: [Codex as a platform](https://developers.openai.com/blog/codex-as-a-platform)]
++
++**Copy:** reviewable changes, isolated workspaces, persistent task state, and a focused inbox. **Avoid:** a terminal emulator as the primary nondeveloper interface. The competitive threat is substantial: an existing desktop assistant can already build and schedule tools once given the job. Our advantage must precede that prompt and persist after generation. [assumption]
++
++### Anthropic computer use and Claude desktop / Cowork
++
++Claude's API computer-use tool exposes screenshots and mouse/keyboard actions executed by the client's runtime; browser tools additionally use page structure. Anthropic warns about prompt injection and describes computer use as slower and more general than specialized tools because fresh observations are needed. [verified: [Computer-use tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool); [Tool-selection trade-offs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations)]
++
++Claude desktop's Cowork experience completes multistep tasks using selected files, connected services, and computer control. Current documentation says chat and Cowork are being unified, with rollout differences by plan; scheduled cloud tasks can continue with the computer off, while local access requires Claude Desktop. Computer use is documented for Mac and Windows. [verified: [Claude unification/current behavior](https://support.claude.com/en/articles/16761823-claude-cowork-and-chat-are-one-claude); [Desktop computer use](https://claude.com/resources/articles/dispatch-and-computer-use)]
++
++**Failure/constraint:** Anthropic's containment research says ordinary users cannot reasonably judge dangerous shell commands. It describes the first Cowork implementation's VM boundary and host-held credentials as the response. This is a valuable disclosed design constraint, not proof that a VM makes every workflow safe. [verified: [How Anthropic contains Claude](https://www.anthropic.com/research/how-we-contain-claude)]
++
++**Copy:** task-level permissions and output review that a nonprogrammer can understand. **Avoid:** treating approval of an opaque script as meaningful informed review. A generated tool should say which files, services, and actions it needs, with sample output and a reversible test. [assumption]
++
++### Google computer use
++
++Google's current Gemini API documentation supports browser, mobile, and desktop environments, with screenshots, returned actions/intents, client-side execution, and allow/confirmation/block safety decisions. It also describes opt-in prompt-injection scanning and labels computer use a preview that may contain errors and vulnerabilities. Claims that Gemini computer use is browser-only are outdated relative to this documentation. [verified: [Gemini computer-use guide](https://ai.google.dev/gemini-api/docs/computer-use)]
++
++**Copy:** explicit action rationale, environment separation, and machine-readable safety decisions. **Avoid:** making arbitrary GUI replay the default generated artifact. A small deterministic data transformer or API-backed tool can remove an entire click sequence and be tested on fixtures. A general visual agent is a fallback for inaccessible applications, with higher latency and supervision expectations. [assumption: engineering/product recommendation]
++
++### Muse / Meta developer products: viable foundation, not differentiation
++
++Public Meta documentation now verifies both **`muse-wonder-1.0`** and **`muse-spark-1.3`**, multimodal/tool capabilities, and availability through Model API. Wonder is available through pay-as-you-go; **Wonder Full is not available on Model API**. Standard mode excludes content from model training; Contributor variants have different training terms. Thus the brief's uncertainty about Wonder can be resolved publicly, but a consumer subscription's capabilities must not be assumed available with the owner's API key. [verified: [Meta model catalog](https://dev.meta.ai/docs/models)]
++
++Muse Code plans, edits files, runs commands, and provides sandbox/approval facilities. Public documentation verifies headless use and the versioned `muse serve` session protocol; this is a supported programmatic integration direction rather than terminal-screen scraping. [verified: [Muse Code integration documentation](https://dev.meta.ai/docs/muse-code)]
++
++Meta also supplies a macOS computer-use cookbook: `metacua` sends screenshots and GUI tool definitions to the model, then executes native mouse/keyboard events. It controls the real Mac; the Linux example uses a disposable Cua sandbox. Cookbook availability does not establish production reliability or a security boundary for host applications. [verified: [macOS recipe](https://dev.meta.ai/docs/cookbook/computer-use-macos); [Sandbox recipe](https://dev.meta.ai/docs/cookbook/computer-use)]
++
++**API-key path to adopt:** store the owner's key in the OS credential store; retrieve it in Macroscope's host process; provide it only to a dedicated Muse child as `META_API_KEY`, or to `muse exec --api-key-stdin` for a single run. Never put it in generated workspaces, prompts, or argv. Public docs verify environment-key precedence over browser sessions; the supplied local evidence additionally verifies the stdin option and structured rejected-key errors. Successful billing and environment-key inheritance through `muse serve` still need the owner's real-key smoke test. [verified: [Muse authentication](https://dev.meta.ai/docs/muse-code/auth)] [local: [brief's authentication checks](../BRIEF.md), [installed CLI reference](../reference/muse-cli-help.txt); not rerun in this research]
++
++**Copy:** the existing harness and typed event stream. **Avoid:** building a coding agent loop from scratch, Contributor models for captured work by default, and exposing a general host-control session to untrusted screen text. Meta dependence also creates policy, pricing, distribution, and availability risks; public feature documentation does not itself authorize every commercial embedding arrangement. [assumption: implementation and diligence recommendation]
++
++## 4. Native launchers and automation builders
++
++### Apple Intelligence / Shortcuts / App Intents
++
++Apple's App Intents expose structured actions/entities to system features; Shortcuts combines app actions. Apple documents model-assisted actions on Mac, including on-device or Private Cloud Compute processing and structured output. WWDC26 adds more model/transcript inspection and storage capabilities; platform availability must be checked individually. Do not confuse App Intents support on Mac with the separately named App Shortcuts feature, whose design documentation lists a macOS limitation. [verified: [App Intents](https://developer.apple.com/documentation/appintents); [Mac Shortcuts and models](https://developer.apple.com/videos/play/wwdc2025/260/); [WWDC26 changes](https://developer.apple.com/videos/play/wwdc2026/310/); [App Shortcuts platform note](https://developer.apple.com/design/human-interface-guidelines/app-shortcuts)]
++
++**Constraint:** declared actions provide semantic access where apps participate; these documents do not establish unrestricted observation or control of every app, nor automatic discovery of arbitrary cross-app repetitions. **Copy:** native intent execution and system launching where useful. **Avoid:** assuming Siri's broad vision equals shipped universal automation, or making every generated artifact Apple-only when Windows remains required. Keep a portable tool specification with platform adapters. [assumption]
++
++### Raycast AI extensions
++
++Raycast AI Commands package reusable prompts; AI Extensions expose installed commands as tools. Screen Awareness can read foreground app content and capture its window; browser and selected-text tools provide narrower context. Tool calls can request approval. Raycast's June 2026 Windows changelog also documents AI Chat, extensions, and MCP, so Windows is already part of its competitive surface. [verified: [AI Commands](https://manual.raycast.com/ai/ai-commands); [AI Extensions](https://manual.raycast.com/ai/ai-extensions); [Windows changelog](https://www.raycast.com/changelog/windows/2)]
++
++**Constraint:** the reviewed docs establish invocation and tool composition, not continuous mining of all work. No failure narrative is substantiated. **Copy:** keyboard-first invocation, pinning, small forms, and instant results. **Avoid:** rebuilding a general launcher or an extension store. Later, a discovered Macroscope tool could be exported to Raycast while remaining independently runnable. [assumption]
++
++### Zapier and Make AI builders
++
++The brief's "they make you build it yourself" premise needs revision. Make's Maia selects and configures workflow modules from natural language, shows construction on the visual canvas, asks clarifying questions, and helps debug. Its official release listing dates the public launch to August 2026. [verified: [Maia announcement](https://www.make.com/en/maia-by-make-announcement); [Release listing](https://www.make.com/whats-new)]
++
++Zapier's September 2026 Next Gen Zaps announcement describes construction from natural language, code, visual editing, and MCP-enabled assistants; it adds richer branching, pause/resume, and agent-assisted failure diagnosis. The announcement explicitly offers **early access**, so do not imply universal general availability. Capture is primarily connected-service events and user-provided intent, not a documented continuous screen recorder. [verified: [Zapier product announcement](https://community.zapier.com/product-updates/the-next-generation-of-zaps-is-here-53832?trk=article-ssr-frontend-pulse_little-text-block)]
++
++**Copy:** managed credentials, visible data mappings, run history, retry/recovery, and editable workflows. **Avoid:** differentiating on "AI builds an automation" alone, or rebuilding hundreds of connectors as a solo developer. Macroscope can discover a workflow, then choose a script, local utility, or external automation backend according to the job. Connector coverage and operational maturity are incumbents' strengths. [assumption]
++
++## 5. Enterprise task mining: yes, much of the idea already exists
++
++**Process mining** reconstructs organization-wide processes from transactional event logs. **Task mining** examines desktop interactions within/between applications. Celonis and Microsoft explicitly distinguish these data sources. Macroscope is principally personal task mining plus tool delivery, not a novel replacement for enterprise process mining. [verified: [Celonis discovery methods](https://www.celonis.com/blog/process-discovery-methods); [Microsoft overview](https://learn.microsoft.com/en-us/power-automate/process-advisor-overview)]
++
++### Celonis Task Mining
++
++Celonis captures desktop activities and combines them with process data to reveal off-system work, friction, and automation opportunities. Its event-processing documentation includes selective logging and active-window/full-desktop screenshot rules. Its wider platform includes automation mechanisms, rather than stopping at dashboards. [verified: [Celonis discovery tools](https://www.celonis.com/blog/process-discovery-tools); [Capture rules](https://docs.celonis.com/en/event-processing-rules---visual-editor); [Reusable Action Flow blueprints](https://docs.celonis.com/en/how-to-deal-with-blueprints)]
++
++**Constraint:** enterprise discovery and automation are established, but these sources do not demonstrate one-click generation of arbitrary, independently installed personal apps from ambient evidence. Some technical documentation now requires login; current deployment details need procurement verification. [verified: [Celonis 2026 product updates/documentation access](https://community.celonis.com/product-updates)] [assumption: scope boundary]
++
++**Copy:** variants, bottlenecks, business-object context, and value measurement. **Avoid:** manager-facing worker rankings as the initial buyer story. The worker should own observation and get the benefit directly. [assumption]
++
++### UiPath Task Mining: the most instructive retreat
++
++UiPath's earlier Unassisted Task Mining captured screenshots and logs at user actions, used machine learning to discover repeated tasks, and suggested automation opportunities. However, official release notes confirm its **removal from Automation Cloud on 1 December 2025**, including deletion of those projects. Current Task Mining emphasizes recording known tasks, merging variants, and helping analysts identify improvements. [verified: [Historical unassisted capability](https://docs.uipath.com/task-mining/automation-suite/2023.4/user-guide/unassisted-task-minining-introduction); [Removal](https://docs.uipath.com/task-mining/automation-cloud/latest/release-notes/december-2025); [Current introduction](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/assisted-task-mining-introduction)]
++
++Generation already exists in an important qualified form: a trace exports as a **XAML automation skeleton** for continued implementation in UiPath Studio, with limited supported actions. That is a real bridge from observation to executable development, but the docs explicitly require completing the design. [verified: [Studio export and limitations](https://docs.uipath.com/task-mining/automation-cloud/latest/user-guide/uipath-studio)]
++
++**What went wrong:** removal is verified; its root cause is not established here. Do not invent a claim that privacy, poor economics, or accuracy killed it. **Copy:** trace merging and development handoff. **Avoid:** betting v1 entirely on unconstrained ambient discovery. Offer "teach one task" as a fallback and measure whether unsolicited discovery actually outperforms it. [assumption]
++
++### Microsoft Power Automate Process Advisor / task mining
++
++Microsoft's current documentation uses process-mining/task-mining terminology while retaining `process-advisor` URLs. Task mining records desktop steps, produces process maps and timing/application analytics, and identifies automation opportunities. An **Automate activities** action opens the flow designer with connector recommendations. Recordings can contain screenshots and text that users edit or remove before analysis/sharing. This already resembles the proposed discovery-to-builder pipeline. [verified: [Task-mining overview](https://learn.microsoft.com/en-us/power-automate/task-mining-overview); [Automation handoff](https://learn.microsoft.com/en-us/power-automate/process-advisor-automation); [Recording data protection](https://learn.microsoft.com/en-us/power-automate/process-advisor-protect)]
++
++**Constraint:** a recommended connector and designer handoff are not proof of an automatically finished bespoke application. **Copy:** evidence attached to opportunities and an actionable handoff. **Avoid:** treating our three-stage diagram as absent from enterprise products, or relying on manual after-capture cleanup to meet the brief's pre-model masking requirement. [assumption]
++
++## 6. The differentiation that remains worth testing
++
++The honest answer is **enterprise vendors already discover tasks and connect discovery to automation; some generate implementation skeletons. Personal assistants are also suggesting context-based routines, and Screenpipe exposes the raw ingredients to coding agents.** Macroscope's differentiation is therefore the quality and accessibility of the complete loop, not unique possession of its components. [assumption: synthesis of Sections 2-5]
++
++Adopt this narrower promise: **"Macroscope spots repeated work you choose to share, then builds a small tool you can inspect, test, and keep."** Start with file/report transformations spanning browser exports, CSVs, folders, and a reviewable final artifact. Defer financial submissions, messaging on the user's behalf, and arbitrary cross-app GUI automation until the evidence and runtime are strong. [assumption: recommended wedge]
++
++The proposal card should show two or more observed examples, editable boundaries, estimated active time saved, confidence, required data/access, and a concrete output preview. For example: "You combined these three exports four times; build a reconciliation tool that produces this workbook?" User correction supplies the business rule screens cannot reveal. Count active work separately from waiting time. [assumption: proposed UX]
++
++Test against three baselines: a user explaining the task to Muse/Codex/Claude, Screenpipe plus a coding agent, and a manually taught task. Proposed pilot gates are one accepted opportunity in a week, first useful tool within 20 minutes of approval, and three successful fixture/shadow runs before pinning. These are targets, not market evidence. Track net saved time after review, repair, and API spend; generated-tool count is not the success metric. [assumption: validation plan]
++
++Potential product killers remain: users refusing OS permissions; Windows capture/execution failing without owner testing; redaction missing confidential context; screen-borne instructions reaching a privileged generator; Meta API cost exceeding savings; incompatible API terms or redistribution requirements; and macOS distribution constraints on generated code. Make these explicit go/no-go experiments, not claims that competitor documentation has resolved them. [assumption: risk assessment]
++
++## Open questions for the owner
++
++- Is the initial buyer an individual professional who controls their data, or a company authorizing capture? This changes onboarding, deployment, and the meaning of consent.
++- Will you accept a narrow v1 of export/file/report tools, with connected-service writes and arbitrary GUI execution deferred?
++- Should user-owned generated tools remain runnable without a Macroscope subscription? I recommend yes; decide how maintenance and cloud inference are charged.
++- Can a real Meta key and a Windows test partner/CI machine be funded for validation before broader product promises?
++
++## Decisions I made: the five lessons that should shape the plan
++
++1. **Compete on the completed discovery-to-tool loop.** Memory, computer use, natural-language builders, and enterprise task discovery are established. Make the differentiator an evidence-backed proposal that becomes a tested, persistent personal utility; benchmark the full journey against Screenpipe plus a coding agent and existing desktop assistants. [assumption]
++2. **Make capture permission and data boundaries visible product behavior.** Recall shows how quickly observation becomes a trust problem; Highlight illustrates why vague retention language is inadequate. Default to scoped capture, local exclusion before transmission, short retention, clear pause/delete, and inspectable outbound context. Promise risk reduction rather than perfect redaction. [assumption]
++3. **Keep discovery fallible and correctable.** UiPath's unassisted retreat is a warning to validate demand and accuracy, not an explanation of why its product changed. Combine conservative suggestions with a teach-one-task fallback, editable examples, and explicit business-rule questions. Reject repetitive activity that has no economical, safe automation path. [assumption]
++4. **Generate maintainable tools and borrow mature execution infrastructure.** Use Muse's supported programmatic harness with the owner's API key; favor narrow deterministic artifacts, fixtures, scoped credentials, versions, and rollback. Follow native/API actions before GUI control. Review expected behavior and results in plain language rather than expecting users to audit shell commands. [assumption]
++5. **Earn retention through measured savings and user ownership.** Granola demonstrates the value of a bounded moment and useful artifact; Limitless demonstrates continuity risk. Start with one valuable workflow class, preserve exportable tools and evidence, and measure time saved after inference cost and maintenance. A growing surveillance archive or a pile of generated apps is not the product outcome. [assumption]
+
+codex
+Wrote [02-competition.md](/Users/todd/StudioProjects/macroscope/plan/research/02-competition.md), roughly 4,100 words with linked sources.
+
+Covers every requested competitor, verified product changes, capture methods, lessons, differentiation, and five concluding decisions. Only the assigned file was edited.
+tokens used
+170,846
+Wrote [02-competition.md](/Users/todd/StudioProjects/macroscope/plan/research/02-competition.md), roughly 4,100 words with linked sources.
+
+Covers every requested competitor, verified product changes, capture methods, lessons, differentiation, and five concluding decisions. Only the assigned file was edited.

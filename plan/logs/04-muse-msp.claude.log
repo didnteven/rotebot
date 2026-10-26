@@ -1,0 +1,32 @@
+First, something I broke: one of my probes logged you out of your personal Muse account. You need to run `muse login` again. Until you do, anything that relies on that login, including the overnight keeper, will fail with `authRequired`. The probe called muse's experimental `account/loginStart` with a fake key, then `account/logout`, inside what I thought was an isolated muse home. Muse stores its credential in one shared login-Keychain entry (`ai.meta.dev.credentials`), and the isolated home doesn't cover it; its timestamp matches the probe to the second. I've made "never call `account/*`, `muse auth set`, `muse login` or `muse logout`" a hard design rule in the plan and saved it to memory.
+
+The plan is in `plan/research/04-muse-msp.md` (about 7,000 words including a Rust client sketch). It starts with the section "API-key auth: verified behaviour". The probe scripts and 20+ raw transcripts are in `plan/probes/`, and every probe used the free echo provider or a fake key.
+
+**API-key results:**
+- **`muse serve` does pick up `META_API_KEY` from its environment.** A bad key is accepted at handshake, session start and turn start. It only fails in the turn's final `turn/completed` event: `error.kind:"authRequired"`, `retryable:false`, "your API key from META_API_KEY was rejected", about 300 ms after the turn starts.
+- **In a fresh muse home the error message is wrong.** The host quietly falls back to a logged-out mode: the model list comes back empty and the turn says "not logged in". So the app must recognise a bad key from that empty model list and a stderr line, not from the message text.
+- **`muse exec --api-key-stdin` is the same credential as the env var.** With a fresh home it exits before printing any JSON (stderr only); with a warm home it prints a `run.terminal.failed` event.
+- **No successful call was run.** There's no `META_API_KEY` set, and your stored muse credential is an account login, which I didn't use. Model id, token usage and latency are still unmeasured; the doc has the one command to run once you provide a key.
+- **Security problem:** shell commands that muse runs can read `META_API_KEY`. My recommendation is to default build hosts to `--sandbox-network restricted`, which blocked network access in the probe. Keeping the key out of muse entirely would need a local proxy, and only `muse exec` supports a custom base URL; `muse serve` doesn't.
+
+**Main decisions in the plan:**
+- **Hosting:** one long-lived `muse serve` per sandbox setting, shared by all micro-apps, not one per app.
+- **Durable sessions:** always on. Fork, read and resume don't exist with `--no-session-log`.
+- **Isolated muse home:** muse gets its own home under Macroscope's app folder, via the `XDG_*` variables.
+- **The key:** it lives in Macroscope's own Keychain or Credential Manager entry and reaches muse only through the child process's environment. Rotating it means restarting the host and resuming sessions, which I tested after a restart.
+- **Workspaces:** one git repo per micro-app, with a commit after every turn.
+- **"Try another approach":** a git worktree plus a new session. Forking a session only copies the conversation; the files stay shared.
+- **Distribution:** don't bundle the 387 MB, Meta-signed binary. Detect the installed one and run the version-specific binary directly, so the launcher can't update it mid-build. Check the schema fingerprint on startup and run an echo-provider smoke test when it changes.
+- **Raw terminal:** yes, as an advanced drawer, handing the session over to the TUI and back.
+
+**Not verified:**
+- **Approval cards:** the echo provider never calls tools, so the approval flow comes from the schema only.
+- **Rewinding to a mid-history point:** fork with a cut point failed on echo.
+- **Windows:** the installed launcher has no Windows path.
+
+**Questions for you:**
+1. **Your login:** will you re-run `muse login`, and does the overnight keeper need it?
+2. **A key:** can you supply one, as an environment variable only, for the single measured turn?
+3. **Key exposure:** for v1, is it acceptable that the agent can read the key as long as it has no network by default?
+4. **Network for builds:** is "no network unless you approve package downloads" the right default?
+5. **Windows:** ship it with building disabled until Meta documents an install path?

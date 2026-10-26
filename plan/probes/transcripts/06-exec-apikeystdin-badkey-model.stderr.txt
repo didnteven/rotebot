@@ -1,0 +1,2 @@
+muse: local session messaging disabled: unsafe_registry_root: unsafe local Session registry root /tmp/msp-iso/muse/runtime/muse: root component is unsafe or unreadable
+failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected — update or unset it

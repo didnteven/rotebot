@@ -1,0 +1,40 @@
+I've written `plan/research/13-ux.md`, and no other files were touched. It's longer than you asked for: about 6,300 words of prose and tables, plus around 25 ASCII wireframes. I left it long because every one of the eight sections you listed has its own screens and states; it can be trimmed if needed.
+
+**The 5 principles:**
+1. Show, then ask.
+2. Nothing invisible.
+3. The user is the author.
+4. Quiet by default.
+5. Reversible, or loudly irreversible.
+
+**Main design calls:**
+- **Onboarding:**
+  - **Observation levels:** you pick Light, Standard or Detailed, and each level says which macOS permission it needs.
+  - **Exclusions first:** the "never watch" list is pre-filled and set before any permission is granted.
+  - **Live mirror:** a screen shows exactly what Macroscope captures and how it's redacted. It stays available from the menu bar.
+  - **Teach mode:** you record a task once and get a first automation the same day. Without it, the first week shows nothing.
+- **Menu bar:** the icon changes shape (not just color) for each state, with a fixed order when several apply. Only Teach mode animates. There are four global hotkeys, including "delete the last 15 minutes" with an undo.
+- **Sidebar:** Discoveries / Automations / Builds / Activity / Privacy. Privacy is in the sidebar, not in Settings, because its request log changes daily. There's no chat-first window; chat only appears inside a build.
+- **Opportunity detail:**
+  - The time-saved estimate shows its arithmetic.
+  - Confidence is a word plus a reason, never a percentage.
+  - "Automate this" opens an editable build brief first, showing exactly what will be sent to Meta.
+- **Builder:** it maps Muse's session-protocol events to UI elements.
+  - **Approval cards** list the narrowest permission first, put "always allow" in a small secondary link, and are never granted from a notification.
+  - **Injection tripwire:** a "never seen in your workflow" warning appears when a build asks for a website or file path you never used.
+  - **Terminal toggle:** it runs `muse resume` in a terminal pane, and the structured view goes read-only while it's open.
+- **Automations:** the dry run is the main button when a build finishes. The "what it can do" list comes from the sandbox rules actually enforced, not from Muse's own description. New and repaired versions always start at "ask before each run".
+- **Privacy center:** every request is logged before it's sent, with a viewer showing the exact payload. Retention is set separately per data class, and "delete everything" is the only typed confirmation in the app.
+
+**Assumptions other tracks need to confirm:**
+- Whether a Muse terminal and the app's own Muse session can drive one session at the same time (track 04).
+- Whether we can log the requests Muse makes itself, or only what we hand to Muse (tracks 04/12).
+- How macOS permissions map to capture features, and whether macOS now periodically re-asks about screen recording (track 06).
+- Whether Windows has any OS permission gates for capture (track 07).
+
+**Open questions for you:**
+1. Do screenshots ever leave the Mac outside a build you started? The onboarding copy promises they don't.
+2. Native UI on each platform, or one cross-platform toolkit? I'd pick native for UX, but it means two UI codebases.
+3. Should the default observation level be Standard (screenshots) or Light (apps and window titles only)?
+4. Is Teach mode in v1?
+5. What should the default monthly API budget be? I used $20 as a placeholder.

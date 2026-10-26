@@ -1,0 +1,18 @@
+I've written `plan/research/01-product.md`. It comes to about 6,400 words by `wc`, a bit over the 2,000–5,000 target, partly because the tables and diagrams count. I didn't edit any other files.
+
+**Findings that change the plan:**
+- **The name "Macroscope" is taken.** A San Francisco AI code-review company founded by the Periscope co-founders uses it and has raised $40M ([TechCrunch](https://techcrunch.com/2025/09/17/meet-macroscope-an-ai-tool-for-understanding-your-code-base-fixing-bugs/)). A separate Mac app on Product Hunt also uses it. I recommend keeping it only as an internal codename. Top alternative is **Rote**, then Busywork and Showhand. Quick web searches found no product conflicts for Rote or Busywork; I didn't look into Showhand much, and none of the three has had a trademark or domain check.
+- **"Learn a task by watching once" isn't new.** OpenAI shipped Codex Record & Replay on macOS on 2026-06-18 ([docs](https://learn.chatgpt.com/docs/extend/record-and-replay)), and it turns a recording into a skill that an AI agent replays each time. So I set the product's core idea as **"compile, don't replay"**: a recording becomes a readable program the user owns, which runs without AI and costs nothing per run.
+- **Meta's "Contributor mode" trains on what you send.** Meta's [pricing page](https://dev.meta.ai/docs/pricing-rate-limits) says Contributor mode lets Meta use prompts, files and responses to train future models. The plan requires Muse to always run with `--contributor-mode off` and never to use the `*-contributor` models with user data.
+- **Token cost:** official prices are Muse Wonder at $4 in / $20 out and Muse Spark at $1.25 / $4.25 per million tokens. My rough estimate is $0.40–$1.50 to build a typical tool. That rests on guessed image-token and agent-step counts, which the cost track needs to measure.
+
+**Main product decisions:**
+- **Who it's for:** the private beta targets technical Mac users who can bring their own Meta API key. Non-technical operations staff come in v1, once there's bundled billing.
+- **How tasks get in (v1 wedge):** the user records a task once ("Show") or describes it in text ("Tell"). Passive discovery waits. In v1 it arrives only as low-key "teach me this?" suggestions based on file and app activity, with no screen frames. Full frame-based discovery comes later.
+- **Approval step:** before anything is built, the user sees and edits a plain-language Task Card. It doubles as the list of files and network access the tool is allowed.
+- **Onboarding:** a "Try a sample" path builds a real tool before asking for screen-recording permission. The goal is a working tool within 10 minutes of install (median).
+- **Workflows and test set:** the 10 workflows map to four tool types and become the test set; the generator ships only if at least 8 of 10 pass.
+- **Pricing:** bring-your-own-key in MVP. Bundled credits come in v1, and only if Meta's terms allow it. Proposed tiers are Free (3 tools), Pro at $8/month, Plus at $19/month with bundled credits. Never charge per run, and existing tools keep working if a subscription lapses.
+- **Success metric:** "Weekly Active Tools", with written kill-or-pivot thresholds at day 60 and day 90.
+
+The file ends with six open questions for you, covering the rename, a key-only beta, a billing proxy, the lapsed-subscription policy, open-sourcing the recorder, and whether tools may call AI at run time. A decisions list follows them.

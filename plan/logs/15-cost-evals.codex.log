@@ -1,0 +1,1160 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /Users/todd/StudioProjects/macroscope
+model: gpt-6.1-sol
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a16323-cc21-7c42-bf28-1b82e969cd10
+--------
+user
+You are one of several planning agents working in parallel on a new desktop app. First read plan/BRIEF.md fully. Then do the track below. Write your output file yourself (markdown), make it substantive and specific (roughly 2,000-5,000 words, ASCII diagrams welcome), and do not edit any other agent's files.
+
+Track: COST MODEL, PERFORMANCE BUDGETS AND EVALUATION. Output: plan/research/15-cost-evals.md
+Use web search for current Meta API pricing (Muse models) if available; otherwise state assumptions clearly with ranges.
+- Per-user-day data volume (events, frames kept, OCR text), and token usage for each pipeline stage under three designs: (1) cloud-heavy (send redacted keyframes), (2) text-first (send OCR/AX action traces only, images rarely), (3) local-first (local model does summarization; cloud only for building). Give $/user/month ranges.
+- Machine budgets: idle CPU, RAM, disk/week, battery impact targets, and how to measure them (Instruments, powermetrics) in CI or locally.
+- Evaluation plan: offline eval harness for (a) redaction recall, (b) opportunity detection precision/recall on a labelled set of recorded episodes, (c) builder success rate (generated tool passes its tests and the user keeps it), (d) repair success. How to create the labelled data as a solo dev (record yourself for two weeks; synthetic scenarios scripted with Playwright). Which metrics gate a release.
+codex
+I’ll read the brief, then build a cost model with explicit assumptions, machine budgets, and release-gating evaluations. I’ll write only `plan/research/15-cost-evals.md`.
+exec
+/bin/zsh -lc 'cat plan/BRIEF.md' in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+# Macroscope: planning brief (shared by every planning agent)
+
+Today is 2026-10-22. Everything here is about planning; no app code exists yet.
+
+## The idea (the owner's words, condensed)
+
+A desktop app that watches what the user does on their computer (screen frames plus
+interaction events), uses AI to find repetitive, tedious work, and then **builds small,
+specific apps, scripts or automations** that do that work for them. Automation tools like
+Zapier and Shortcuts make you decide what to automate and build it yourself; Macroscope
+discovers it for you and writes the tool.
+
+Original pipeline sketch (feel free to change any of it):
+
+1. **Capture**: a background process records screen state only when the UI changes, plus
+   events (active app, window titles, clicks, keystroke patterns but not content).
+   Sensitive data is masked on the device before anything reaches a model.
+2. **Pattern engine**: groups activity into recurring workflows ("every Tuesday: open Jira,
+   copy three fields into a CSV, format dates, email a status update") and ranks them by
+   time spent, frequency and cognitive load.
+3. **Micro-app generator**: on "Automate this", an AI coding agent writes a dedicated
+   tool (script, browser extension, menu-bar widget, Shortcut...), shows a preview or
+   diff, the user tests it in a sandbox and pins it.
+
+## Hard requirements from the owner
+
+- **Desktop app for macOS and Windows. macOS is primary**: the owner can only test on a Mac.
+  Windows must be designed for, but cannot be hand-tested by the owner.
+- Mobile is out of scope for v1 (a prior analysis concluded mobile can only ever be a
+  companion: approvals, notifications, triggers). At most, mention it as a later phase.
+- **Must use Meta's APIs/models.** The owner specifically wants Meta's developer models,
+  the **Muse** family, and floated using **Muse Code** (Meta's terminal coding agent)
+  *from a terminal inside the application*, "or another way to build software/scripts
+  inside of software".
+- **All Meta model use is via API calls billed to an API key** (the owner's Meta developer
+  API key), not a consumer account login. Every design that uses Muse (`muse serve`,
+  `muse exec`) or calls Meta models directly MUST work with API-key auth, and the plan must
+  say exactly how the key gets from our app to the model (see "API-key auth" below).
+- **UI/UX matters**: plan the experience, not just the plumbing.
+- The owner is a solo developer who builds with AI coding agents (Codex, Claude, Muse) and
+  is comfortable with Flutter, Python, Rust and TypeScript.
+
+## Verified local facts (checked on the owner's Mac today)
+
+- `muse` CLI is installed: **Muse Code 1.4.11**. Full help text: `plan/reference/muse-cli-help.txt`.
+  - `muse exec` runs one headless prompt (`--json` gives JSONL events, `--output-schema`,
+    `--image`, `--workspace`, `--worktree`, `--approval-mode`, `--session-id`,
+    `--max-model-steps`, `--reasoning-effort none..ultra`).
+  - `muse serve` serves an **MSP (Muse Session Protocol) v1 session host over stdio**; the
+    client owns stdin/stdout. Sandbox posture is fixed per host process (`--disable-sandbox`,
+    `--sandbox-network`, `--disable-write`, `--disable-shell`); approval mode is chosen over
+    the wire. Providers: `meta`, `local`, `echo`.
+  - The full MSP v1 wire schema is exported at `plan/reference/msp/msp.d.ts` (TypeScript,
+    ~3,600 lines) and `plan/reference/msp/msp.schema.json`. Methods include `session/start`,
+    `session/resume`, `session/fork`, `session/read`, `session/sideChat`, `session/userShell`,
+    `session/setModel`, `session/tokenUsage`, `session/contextUsage`, `approval/request`,
+    `approval/decide`, `goal/set|pause|resume`, `subagent/*`, `task/*`, `skill/*`,
+    `plugin/*`, `hook/list`, `media/upload`, `model/list`, `item/started|delta|completed`.
+  - Known model ids: `muse-spark-1.3` (in the catalog) and **`muse-wonder-1.0`, which is
+    the default model `muse exec` used in a test today** [local].
+- **API-key auth (tested today)** [local]:
+  - `META_API_KEY` env var: "always takes priority over the account login" (`muse login --help`).
+    Verified: `META_API_KEY=<bogus> muse exec --json ...` sent the request to the Meta provider
+    (model `muse-wonder-1.0`) and failed with
+    `run.terminal.failed: "your API key from META_API_KEY was rejected — update or unset it"`.
+    So the key path works for `muse exec`, and failures come back as structured JSONL.
+  - `muse auth set --provider meta --api-key-stdin` stores a key in muse's own store (stdin only,
+    never argv).
+  - `muse exec --api-key-stdin` passes a key for a single run. `--base-url` overrides the endpoint.
+  - `-c KEY=VALUE` on exec/serve accepts secrets only as whole-value `${VAR}` references.
+  - MSP turn errors include `TurnErrorKind = "authRequired"` and a typed `quota` detail
+    (`QuotaDetail`, reset instant), so a desktop client can show "key missing/rejected" and
+    "rate-limited until X" without parsing text.
+  - NOT yet verified: that `muse serve` picks up `META_API_KEY` from its environment
+    the same way (expected, since it's the same binary and provider), and a *successful*
+    call with a real key (the owner has to supply that).
+- `codex` (0.163, has `codex app-server`) and `claude` (Claude Code) CLIs are also installed.
+- The owner already runs `muse exec` headless overnight via a keeper script
+  (`~/StudioProjects/agent-loop/scripts/muse_keeper.py`), so headless Muse is proven here.
+
+## Claims from the earlier chat that are NOT verified
+
+The idea came from a chat with another assistant. Treat these as **unverified, possibly
+invented**, and verify with web search before relying on them: "Muse Wonder", "Muse Glimmer
+(open-weight 30B)", "SAM 3.1 in the Meta Model API", base URLs like `dev.meta.ai/v1` or
+`llama.developer.meta.ai/v1`, a `@meta/llama` npm SDK, Muse model context sizes, Llama 4
+Scout's 10M-token context being usable for hours of screenshots. If you cannot verify
+something, say so plainly and design so the plan does not depend on it.
+
+## Rules for every planning agent
+
+- Write only inside `plan/`. Your assigned output file is given in your task.
+- Be concrete and opinionated: make decisions, give reasons, name the trade-off you accepted.
+  Do not survey every option evenly.
+- Mark every external fact as **[verified: source/URL]**, **[local: checked on machine]**
+  or **[assumption]**.
+- Call out risks that could kill the product (OS permissions, privacy, cost, App Store /
+  notarization rules, prompt injection from screen contents, Meta API terms).
+- End your file with **Open questions for the owner** (only real decisions) and
+  **Decisions I made** (one line each).
+
+exec
+/bin/zsh -lc "rg --files -g AGENTS.md -g '*cost*' -g '*eval*' plan .agents 2>/dev/null" in /Users/todd/StudioProjects/macroscope
+ exited 2 in 0ms:
+plan/logs/15-cost-evals.codex.log
+plan/tasks/15-cost-evals.codex.md
+
+web search: 
+exec
+/bin/zsh -lc "pwd; rg --files -g AGENTS.md -g '"'!node_modules'"' -g '"'!vendor'"' . /Users/todd/StudioProjects 2>/dev/null" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+/Users/todd/StudioProjects/macroscope
+/Users/todd/StudioProjects/stockvaluation_io/AGENTS.md
+/Users/todd/StudioProjects/stockvaluation_io/valuation-portal/AGENTS.md
+/Users/todd/StudioProjects/your-pt.com/AGENTS.md
+
+web search: site.developers.meta.com Muse API pricing Muse Spark Wonder ...
+web search: 
+web search: site:dev.meta.ai/docs image token usage images tokens billing ...
+exec
+/bin/zsh -lc "ls -la plan/research; cat plan/tasks/15-cost-evals.codex.md; rg -n 'TokenUsage|tokenUsage|cached|reasoningTokens' plan/reference/msp/msp.d.ts" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+total 0
+drwxr-xr-x@  2 todd  staff   64 Oct 22 23:20 .
+drwxr-xr-x@ 11 todd  staff  352 Oct 22 23:24 ..
+Track: COST MODEL, PERFORMANCE BUDGETS AND EVALUATION. Output: plan/research/15-cost-evals.md
+Use web search for current Meta API pricing (Muse models) if available; otherwise state assumptions clearly with ranges.
+- Per-user-day data volume (events, frames kept, OCR text), and token usage for each pipeline stage under three designs: (1) cloud-heavy (send redacted keyframes), (2) text-first (send OCR/AX action traces only, images rarely), (3) local-first (local model does summarization; cloud only for building). Give $/user/month ranges.
+- Machine budgets: idle CPU, RAM, disk/week, battery impact targets, and how to measure them (Instruments, powermetrics) in CI or locally.
+- Evaluation plan: offline eval harness for (a) redaction recall, (b) opportunity detection precision/recall on a labelled set of recorded episodes, (c) builder success rate (generated tool passes its tests and the user keeps it), (d) repair success. How to create the labelled data as a solo dev (record yourself for two weeks; synthetic scenarios scripted with Playwright). Which metrics gate a release.
+478:/** Server-computed session cost member of [`CumulativeTokenUsage`] (tdd SS4.6.5, Amendment #41610 FR-41610-2/3). */
+487:export interface CumulativeTokenUsage {
+1020:  /** `subagent`: **transitive** observed usage — the child and its own descendants; updated in place, absent until first observation; never folded into `session/tokenUsage.cumulative` (tdd SS4.6.5). */
+1021:  usage?: TokenUsage;
+1219:  cached: string;
+2364:/** `session/tokenUsage` params (tdd SS4.6.5): one per model completion that reports usage. Carries the raw counters verbatim plus the server-derived counted-once `promptTokens`/`totalTokens` (#8803: clients display and sum these and never re-derive the provider's cache convention) and the session `cumulative` block. Accumulate-only: `cumulative` never goes backward. */
+2365:export interface SessionTokenUsageParams {
+2367:  cumulative: CumulativeTokenUsage;
+2385:  usage: TokenUsage;
+2612:  /** The `cumulative` block of the last `session/tokenUsage` event; zeroes when none (tdd SS4.9.1). */
+2613:  tokenUsage: CumulativeTokenUsage;
+2897:export interface TokenUsage {
+2903:  cachedTokens: number;
+2909:  reasoningTokens: number;
+2976:  /** The turn's aggregate token usage, summed across the turn's model completions (same shape as `session/tokenUsage.usage`). */
+2977:  usage?: TokenUsage;
+3578:  usage?: TokenUsage;
+3647:export type MspNotification = "initialized" | "session/started" | "session/closed" | "session/leaveCompleted" | "skill/changed" | "turn/started" | "turn/completed" | "turn/retracted" | "turn/retryScheduled" | "turn/modelRetryScheduled" | "turn/unqueued" | "turn/foregroundCompleted" | "item/started" | "item/updated" | "item/delta" | "item/completed" | "view/gap" | "approval/requested" | "approval/updated" | "approval/reviewing" | "approval/resolved" | "userInput/requested" | "userInput/settled" | "userInput/engaged" | "session/modelChanged" | "session/reasoningEffortChanged" | "session/statusChanged" | "session/goalChanged" | "session/todoListChanged" | "session/branchChanged" | "session/tokenUsage" | "session/contextUsage" | "session/approvalModeChanged" | "recap/completed" | "session/modelRouteUnserved" | "session/nameChanged" | "session/viewHealthChanged" | "session/listChanged" | "usage/changed" | "computerUseSetup/changed" | "plugin/changed" | "plugin/marketplaceChanged" | "monitor/inboxItemAdmitted" | "monitor/inboxItemDrained" | "monitor/inboxItemVoided";
+
+codex
+Meta’s official pricing page lists Muse Spark at $1.25 input / $4.25 output per million tokens, and Wonder at $4 / $20. I’ll use Standard-mode rates for the model; the cheaper Contributor mode permits training on submitted content. I’ll also show how image volume and repeated coding-agent context affect the monthly bill.
+web search: 
+exec
+/bin/zsh -lc "sed -n '478,515p' plan/reference/msp/msp.d.ts; sed -n '2364,2392p' plan/reference/msp/msp.d.ts; sed -n '2897,2935p' plan/reference/msp/msp.d.ts; man powermetrics | col -b | head -100; xcrun xctrace help record" in /Users/todd/StudioProjects/macroscope
+ succeeded in 853ms:
+/** Server-computed session cost member of [`CumulativeTokenUsage`] (tdd SS4.6.5, Amendment #41610 FR-41610-2/3). */
+export interface CumulativeCost {
+  /** True when at least one leg lacked price data — clients render `(partial)`. */
+  partial: boolean;
+  /** Estimated USD total, finite and non-negative. */
+  usd: number;
+}
+
+/** Session running totals of counted-once usage (tdd SS4.6.5).  Amendment #41610: the cache splits and server-computed `cost` join the counters. The counters stay accumulate-only; `cost` is the documented exception — it may move either way on price re-adoption and is labeled estimate (INV-41610-1). `Copy` was dropped for the `cost` member. */
+export interface CumulativeTokenUsage {
+  /** Cache-read tokens, session total (FR-41610-1): saturating sum of the per-completion splits; an absent split contributes 0. Additive-optional: absent on the wire reads as 0 and zero totals are omitted, so pre-feature bytes decode and re-encode identically. */
+  cacheReadTokens?: number;
+  /** Cache-write tokens, session total (FR-41610-1). Additive-optional like the read split. */
+  cacheWriteTokens?: number;
+  /** Server-computed session cost (FR-41610-2): `None` (wire-absent) when no leg is priced — clients omit the row. Additive-optional: absent reads as unpriced. */
+  cost?: CumulativeCost;
+  /** Output tokens, session total. */
+  outputTokens: number;
+  /** Counted-once prompt tokens, session total. */
+  promptTokens: number;
+  /** Counted-once totals, session total. */
+  totalTokens: number;
+}
+
+/** `damagedRange`: what one damaged range of the session log cost (ADR 60914 D1/D2). The reader finds the range in the log bytes; no log record is written for it, so every member is derived from the readable records around it. */
+export interface DamagedRange {
+  /** The last finished turn before the first damaged range, when one exists: the safe `session/fork` cut (ADR 60914 D1 "Fork cuts", D4). */
+  lastGoodTurnId?: string;
+  /** Records the log proves missing (session-stream sequence numbers no readable record or unreadable line accounts for). */
+  missingRecords: number;
+  /** RFC3339 `recordedAt` of the first readable record after the range; always present, since a range is read past only when readable records follow it (ADR 60914 D1). */
+  readableAfterAt: string;
+  /** RFC3339 `recordedAt` of the last readable record before the range; absent when the range starts the log. */
+  readableBeforeAt?: string;
+  /** Physical log lines in the range that are not a readable record. */
+  unreadableLines: number;
+}
+
+/** `session/tokenUsage` params (tdd SS4.6.5): one per model completion that reports usage. Carries the raw counters verbatim plus the server-derived counted-once `promptTokens`/`totalTokens` (#8803: clients display and sum these and never re-derive the provider's cache convention) and the session `cumulative` block. Accumulate-only: `cumulative` never goes backward. */
+export interface SessionTokenUsageParams {
+  /** Session running totals at this cursor; the fold owns the accumulation. Subagent/workflow-child usage is never folded in — it rides the owning items (tdd SS4.6.5). */
+  cumulative: CumulativeTokenUsage;
+  /** Model-call wall time, when measured. */
+  durationMs?: number;
+  /** Provider finish reason when reported (open vocabulary, verbatim). */
+  finishReason?: string;
+  /** The effective model that produced this usage; `null` on pre-schema records — never back-filled, an unpriced leg (tdd SS4.6.5). */
+  modelId: string | null;
+  /** Prompt tokens counted exactly once under the provider's cache convention (#8803). Server-derived; deterministic — the provider is in the log. */
+  promptTokens: number;
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from. */
+  sourceRange: SourceRange;
+  /** `promptTokens + outputTokens` — the honest per-completion total. */
+  totalTokens: number;
+  /** The turn whose model call completed. */
+  turnId: string;
+  /** Raw counters verbatim from the durable record. */
+  usage: TokenUsage;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+}
+
+/** `session/userShell` params (tdd SS3.9): run a user-initiated shell command in the session's workspace — the TUI's `!` escape hatch. **Capability-gated**: the connection must negotiate `userShell` at `initialize`, and the whole justification is the SS1.10 spawn boundary. */
+export interface SessionUserShellParams {
+  /** The SS3.1.1 idempotency handle (UUIDv7). */
+export interface TokenUsage {
+  /** Cache read tokens, only when the provider distinguishes writes/reads. */
+  cacheReadTokens?: number;
+  /** Cache write tokens, only when the provider distinguishes writes/reads. */
+  cacheWriteTokens?: number;
+  /** Provider-reported cache tokens (inside or beside `inputTokens`, provider-convention-dependent — the reason `promptTokens` exists). */
+  cachedTokens: number;
+  /** Provider-reported input tokens. */
+  inputTokens: number;
+  /** Provider-reported output tokens. */
+  outputTokens: number;
+  /** Output tokens spent on reasoning, when the provider reports it. */
+  reasoningTokens: number;
+}
+
+/** `toolCall.displayLabel`: the call's words in three forms, each one line of plain text, always present together. The item's `status` picks the form. */
+export interface ToolDisplayLabel {
+  /** Shown while the call runs (`inProgress`), e.g. "Setting up Computer Use". */
+  active: string;
+  /** Shown after the call succeeds (`completed`), e.g. "Set up Computer Use". */
+  done: string;
+  /** Shown for every other status (failed, rejected, timed out, cancelled), beside that status; never implies success. */
+  neutral: string;
+}
+
+export type ToolReceipt = { details?: CronReceipt; family: "cron"; operation: ToolReceiptOperation; outcome: ToolReceiptOutcome; } | { details?: CodeModeReceipt; family: "codeMode"; operation: ToolReceiptOperation; outcome: ToolReceiptOutcome; } | { details?: Record<string, unknown>; family: string; operation: string; outcome: string; };
+
+/** Which operation within the family the receipt describes (ADR 43399 D1/D2). Open — registered per family, never derived from the tool name. */
+export type ToolReceiptOperation = "create" | "delete" | "list" | "execute" | "wait" | (string & {});
+
+/** What the operation did (ADR 43399 D1/D2). Open, and a **single shared vocabulary**: a value appearing in two families means the same thing in both, which is why the permitted `status` values are bound to the value here rather than per family. */
+export type ToolReceiptOutcome = "created" | "duplicate" | "deleted" | "missing" | "listed" | "rejected" | "completed" | "pending" | "failed" | "timedOut" | "cancelled" | (string & {});
+
+/** Optional W3C trace context, on requests in both directions only — never on responses or notifications (SS1.8). */
+export interface TraceContext {
+  /** W3C `traceparent` string; receivers that do not trace ignore it. */
+  traceparent?: string;
+  /** W3C `tracestate` string. */
+  tracestate?: string;
+powermetrics(1) 	    General Commands Manual	       powermetrics(1)
+
+NAME
+     powermetrics
+
+SYNOPSIS
+     powermetrics [-i sample_interval_ms] [-r order] [-t wakeup_cost]
+		  [-o output_file] [-n sample_count]
+
+DESCRIPTION
+     powermetrics gathers and display CPU usage statistics (divided into time
+     spent in user mode and supervisor mode), timer and interrupt wakeup
+     frequency (total and, for near-idle workloads, those that resulted in
+     package idle exits), and on supported platforms, interrupt frequencies
+     (categorized by CPU number), package C-state statistics (an indication of
+     the time the core complex + integrated graphics, if any, were in low-
+     power idle states), CPU frequency distribution during the sample. The
+     tool may also display estimated power consumed by various SoC subsystems,
+     such as CPU, GPU, ANE (Apple Neural Engine).  Note: Average power values
+     reported by powermetrics are estimated and may be inaccurate - hence they
+     should not be used for any comparison between devices, but can be used to
+     help optimize apps for energy efficiency.
+
+     -h, --help
+	     Print help message.
+
+     -s samplers, --samplers samplers
+	     Comma separated list of samplers and sampler groups. Run with -h
+	     to see a list of samplers and sampler groups. Specifying
+	     "default" will display the default set, and specifying "all" will
+	     display all supported samplers.
+
+     -o file, --output-file file
+	     Output to file instead of stdout.
+
+     -b size, --buffer-size size
+	     Set output buffer size (0=none, 1=line)
+
+     -i N, --sample-rate N
+	     sample every N ms (0=disabled) [default: 5000ms]
+
+     -n N, --sample-count N
+	     Obtain N periodic samples (0=infinite) [default: 0]
+
+     -t N, --wakeup-cost N
+	     Assume package idle wakeups have a CPU time cost of N us when
+	     using hybrid sort orders using idle wakeups with time-based
+	     metrics
+
+     -r method, --order method
+	     Order process list using specified method [default: composite]
+
+	     [pid]
+		   process identifier
+	     [wakeups]
+		   total package idle wakeups (alias: -W)
+	     [cputime]
+		   total CPU time used (alias: -C)
+	     [composite]
+		   energy number, see --show-process-energy (alias: -O)
+
+     -f format, --format format
+	     Display data in specified format [default: text]
+
+	     [text]
+		   human-readable text output
+	     [plist]
+		   machine-readable property list, NUL-separated
+
+     -a N, --poweravg N
+	     Display poweravg every N samples (0=disabled) [default: 10]
+
+     --hide-cpu-duty-cycle
+	     Hide CPU duty cycle data
+
+     --show-initial-usage
+	     Print initial sample for entire uptime
+
+     --show-usage-summary
+	     Print final usage summary when exiting
+
+     --show-pstates
+	     Show pstate distribution. Only available on certain hardware.
+
+     --show-plimits
+	     Show plimits, forced idle and RMBS. Only available on certain
+	     hardware.
+
+     --show-cpu-qos
+	     Show per cpu QOS breakdowns.
+
+     --show-process-coalition
+	     Group processes by coalitions and show per coalition information.
+	     Processes that have exited during the sample will still have
+	     their time billed to the coalition, making this useful for
+	     disambiguating DEAD_TASK time.
+
+     --show-responsible-pid
+	     Show responsible pid for xpc services and parent pid
+
+usage: xctrace record [<options>] [--attach | --all-processes | --launch -- command ]
+
+description:
+	Perform a new recording on the specified device and target with the given template
+
+options:
+	--output <path>                        Output .trace file to the given path
+	--append-run                           Appends a new run to an existing trace file
+	--run-name <name>                      Names the run
+	--template <path|name>                 Record using given trace template name or path
+	--device <name|UDID>                   Record on device with the given name or UDID
+	--instrument <name>                    Add Instrument with the given name to the recording
+	--time-limit <time[ms|s|m|h]>          Limit recording time to the specified value
+	--window <duration[ms|s|m]>            Keep only events from the specified end time window
+	--package <file>                       Load Instruments Package from given path for duration of the command
+	--all-processes                        Record all processes
+	--attach <pid|name>                    Attach and record process with the given name or pid
+	--launch -- command [arguments]        Launch process with the given name or path
+	--target-stdin <name>                  Redirect standard input of the launched process
+	--target-stdout <name>                 Redirect standard output of the launched process
+	--env <VAR=value>                      Set specified environment variable for the launched process
+	--notify-tracing-started               Send Darwin notification with this name when a recording has started
+	--no-prompt                            Skip any prompts that would be otherwise presented (like privacy warnings)
+
+global options:
+	--quiet        Make terminal ouput less verbose
+
+notes:
+	If an output path is not specified, a uniquely named file will be created in the current directory.
+	If the output path is a directory, then a unique file is created in it. If the path contains the .trace
+	extension, a file will be created at the specified path. If trace file already exists, then --append-run
+	needs to be specified to add a run to it. In this case, specified template will be ignored
+	and the one used to record original trace file will be used.
+	
+	If target device UDID or name is not specified — host device is used for the recording.
+	Specifying environment variables or stream redirection is only available when using launch option.
+
+examples:
+	xctrace record --template 'Time Profiler' --all-processes --time-limit 5s
+	xctrace record --template 'Time Profiler' --all-processes --output 'recording.trace'
+	xctrace record --all-processes --append-run --run-name Fix#2 --output 'existing.trace'
+	xctrace record --template 'System Trace' --attach 4215
+	xctrace record --template 'Time Profiler' --device-name "Chad's iPhone" --attach 'Trailblazer'
+	xctrace record --template 'Metal System Trace' --device-name 'iPhone SE Simulator' --all-processes
+	xctrace record --template 'Allocations' --env KEY=VALUE --launch -- MyApp.app
+	xctrace record --template 'Time Profiler' --target-stdout - --launch -- /tmp/tool arg1 arg2
+
+web search: site:developer.apple.com/library powermetrics energy mac app ...
+web search: 
+web search: site:learn.microsoft.com windows performance recorder analyzer energy power measurement
+exec
+/bin/zsh -lc "rg -n 'max-model-steps|api-key-stdin|META_API_KEY' plan/reference/muse-cli-help.txt; powermetrics --help" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+119:      --api-key-stdin
+164:      --max-model-steps <N>
+Usage: powermetrics [-i sample_interval] [-r order] [-t wakeup_cost]
+
+  Gather and display CPU usage statistics (divided into time spent in
+  user mode and supervisor mode), timer and interrupt wakeup frequency
+  (total and, for near-idle workloads, those that resulted in package
+  C-state exits), and on supported platforms, interrupt frequencies
+  (categorized by CPU number), package C-state statistics (an indication
+  of the time the core complex + integrated graphics, if any, were in
+  low-power idle states), CPU frequency distribution during the sample.
+  The tool may also display estimated power consumed by various SoC subsystems,
+  such as CPU, GPU, ANE (Apple Neural Engine). 
+  Note: Average power values reported by powermetrics are estimated and may be 
+  inaccurate - hence they should not be used for any comparison between devices,
+  but can be used to help optimize apps for energy efficiency.
+
+The following command-line options are supported:
+
+    -h | --help                  show this message
+
+    -A | --show-all              Enables all samplers and displays all the
+                                 available information for each sampler.
+
+    -a | --poweravg <N>          display poweravg every N samples (0=disabled) [default: 10]
+    -b | --buffer-size <size>    set output buffer size (0=none, 1=line)
+    -f | --format <format>       display data in specified format [default: text]
+    -i | --sample-rate <N>       sample every N ms (0=disabled) [default: 5000ms]
+    -n | --sample-count <N>      obtain N periodic samples (-1=infinite) [default: -1]
+    -o | --output-file <file>    output to file [default: stdout]
+    -r | --order <method>        order process list using specified method [default: composite]
+    -s | --samplers <samplers>   comma separated list of samplers and sampler groups
+    -t | --wakeup-cost <N>       assume package idle wakeups have a CPU time
+                                 cost of N us when using hybrid sort orders
+                                 using idle wakeups with time-based metrics
+
+
+    --show-initial-usage         print initial sample for entire uptime
+    --show-usage-summary         print final usage summary when exiting
+
+    --show-extra-power-info      unsupported power info (may change between releases)
+
+    --show-pstates               show pstate distribution (XCPM only)
+    --show-plimits               cpu limiting information
+    --show-cpu-qos               show per cpu QOS breakdowns
+    --show-cpu-scalability       show per cpu workload scalability
+    --show-hwp-capability        show per cpu-thread HWP estimated efficient and guarateed frequencies (instantaneous)
+    --show-process-coalition     group processes by coalitions and show per coalition information
+    --show-process-wait-times    show per-process sfi wait time info
+    --show-process-qos-tiers     show per-process QOS latency and throughput tiers
+    --show-process-io            show per-process io information
+    --show-process-gpu           show per-process gpu time
+    --show-process-netstats      show per-process network information
+    --show-process-qos           show QOS times aggregated by process
+    --show-process-amp           show per-process AMP information
+    --show-process-ipc           show per-process ipc, use with --show-process-amp to show cluster stats
+    --show-process-energy        show per-process energy impact number
+                                 This implicitly enables sampling of all the
+                                 above per-process statistics.
+    --show-process-samp-norm     show CPU time normailzed by the sample window.
+    --handle-invalid-values      powermetrics will output invalid=true rather
+                                 than abort when it sees invalid values.
+    --hide-cpu-duty-cycle        hide CPU duty cycle data
+    --unhide-info <samplers>     comma separated list of samplers to unhide (backwards compatibility)
+
+The following sort orders are supported by --order:
+
+    pid         process identifier
+    wakeups     total package idle wakeups         (alias: -W)
+    cputime     total CPU time used                (alias: -C)
+    composite   weighted hybrid of package idle
+                wakeups and CPU time used          (alias: -O)
+
+The following output formats are supported by --format:
+
+    text        human-readable text output
+    plist       machine-readable property list, NUL-separated
+
+This tool also implements special behavior upon receipt of certain signals
+to aid with the automated collection of data:
+
+    SIGINFO                 take an immediate sample
+    SIGIO                   flush any buffered output
+    SIGINT/SIGTERM/SIGHUP   stop sampling and exit
+
+The following samplers are supported by --samplers:
+
+    tasks             per task cpu usage and wakeup stats
+    battery           battery and backlight info
+    network           network usage info
+    disk              disk usage info
+    interrupts        interrupt distribution
+    cpu_power         cpu power and frequency info
+    thermal           thermal pressure notifications
+    sfi               selective forced idle information
+    gpu_power         gpu power and frequency info
+    ane_power         dedicated rail ane power and frequency info
+
+and the following sampler groups are supported by --samplers:
+
+    all           tasks,battery,network,disk,interrupts,cpu_power,thermal,sfi,gpu_power,ane_power
+    default       tasks,battery,network,disk,interrupts,cpu_power,gpu_power,ane_power
+
+codex
+Text-first looks like the best v1 default: the central scenario puts recurring analysis at about $8 per user-month, versus $32 for cloud keyframes, before builds and repairs. The brief also creates a constraint for local-first: self-hosting a Meta summarizer would violate “all Meta model use is via billed API calls.” I’ll cost that design as conditional and make the needed owner decision explicit.
+exec
+/bin/zsh -lc 'test -f AGENTS.md && cat AGENTS.md; test -f plan/AGENTS.md && cat plan/AGENTS.md; test -f plan/research/AGENTS.md && cat plan/research/AGENTS.md; git status --short' in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+?? plan/
+
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/15-cost-evals.md
+diff --git a/plan/research/15-cost-evals.md b/plan/research/15-cost-evals.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c167e3779120ba8e200ab48cb0abfdb32f875b3
+--- /dev/null
++++ b/plan/research/15-cost-evals.md
+@@ -0,0 +1,234 @@
++# Cost model, performance budgets, and evaluation
++
++Planning date: 2026-10-22. Scope: macOS first, Windows designed and tested separately. This is a proposed operating model, not a benchmark of an existing app.
++
++Evidence convention: **[verified: URL]** identifies externally checked facts; **[local: checked on machine]** identifies the supplied brief/reference files or commands checked here; **[assumption]** identifies estimates and proposed policies. All workload quantities, budgets, evaluation thresholds, and derived costs below are **[assumption]**, unless explicitly marked otherwise. Dollars are USD, excluding tax. Prices should be rechecked before shipping.
++
++## Recommendation and constraints
++
++Ship **text-first**: local capture, OCR, Accessibility (AX) extraction, redaction, deduplication, and episode segmentation; Muse Spark for episode interpretation and opportunity ranking; Muse Wonder for explicitly requested builds. Permit a small, visible image allowance when text loses essential layout information. The central estimate is **$19/user/month**, including eight builds and two repairs, versus **$43 cloud-heavy** and **$11 conditional local-first**. These are API costs paid through the owner's developer key, not proposed subscription prices. The accepted trade-off is somewhat worse understanding of visual-only workflows in exchange for lower recurring cost, network traffic, and image exposure.
++
++Local-first is a comparison, not an immediately compliant implementation. The brief requires every Meta model invocation to use billed API-key access. Self-hosting Muse Glimmer would violate that literal constraint. Meta now documents Glimmer as self-hosted, but this does not establish that it will fit the owner's Mac. **[verified: https://dev.meta.ai/docs/overview]** The local-first column therefore assumes permission to use a small non-Meta on-device summarizer, with all cloud building still using Meta APIs. Alternatively the owner must explicitly relax the billed-API requirement for local Meta inference. Do not advertise local-first until that decision and device benchmarks exist.
++
++## 1. Verified pricing and the billing boundary
++
++Meta's official pricing page lists these Standard-mode rates per million tokens. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]**
++
++| Model | Uncached input | Cached input | Output |
++|---|---:|---:|---:|
++| `muse-spark-1.3` | $1.25 | $0.15 | $4.25 |
++| `muse-wonder-1.0` | $4.00 | $0.20 | $20.00 |
++
++The same page says Standard content is not used to train Meta models; Contributor discounts exchange permission to train on submitted content. Web search adds $2.50/1,000 queries. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]** Use Standard model IDs and exclude Contributor mode from product economics. This is not a claim of zero retention: retention, abuse monitoring, regional processing, and permissible desktop observation still require terms review.
++
++Image input is token-priced by resolution. Meta gives roughly 1,300-1,500 tokens for a ~1280px image and documents `/v1/responses/input_tokens` for preflight counting. **[verified: https://dev.meta.ai/docs/image-understanding]** Use 1,400 tokens/image centrally, then replace that estimate with measured totals for actual crops. Compressed bytes do not predict image tokens. Preflight itself must receive only already-redacted input.
++
++Authentication: store the owner-supplied developer key in the OS credential store; retrieve it only in the native service. Direct Meta requests use HTTPS `Authorization: Bearer <key>` to `https://api.meta.ai/v1`; Meta's examples call the key variable `MODEL_API_KEY`. **[verified: https://dev.meta.ai/docs/overview]** For Muse Code, inject that same value into the child process as `META_API_KEY`, never a shell command string, argv, transcript, or generated workspace file. The brief verifies this environment path with `muse exec` using a rejected test key; successful authentication and inheritance by `muse serve` remain unverified. **[local: checked on machine, plan/BRIEF.md]** Make both real-key checks launch blockers; use `muse exec --api-key-stdin` as the documented per-run alternative if needed. **[local: checked on machine, plan/reference/muse-cli-help.txt]** No consumer login or subscription allowance is counted here.
++
++## 2. Workload and data volume per user-day
++
++Use an eight-hour workday with six active hours, 22 days/month, and five workdays/week. Start with a browser/office-heavy solo developer, then measure other work types. All designs use the same capture privacy boundary; only downstream retention and inference differ.
++
++| Local input or intermediate | Central quantity/day | Planning range/day |
++|---|---:|---:|
++| Coalesced interaction events | 12,000; 250 bytes/event = 3 MB | 6,000-30,000; 1.5-7.5 MB |
++| Frame candidates at a 1 Hz processing ceiling | 21,600 maximum over active hours | 8,000-21,600 |
++| Changed frames admitted to OCR | 3,600 | 1,800-7,200 |
++| OCR before text deduplication | 3.6 MB, about 900k token-equivalents | 1.8-7.2 MB |
++| Unique normalized OCR retained | 0.72 MB, about 180k token-equivalents | 0.36-1.44 MB |
++| AX/action serialization before semantic compression | 480k token-equivalents | 240k-960k |
++| Segmented episodes | 60; approximately six minutes each | 30-120 |
++
++Token-equivalents assume four bytes of mostly English text per token solely for sizing. They are not measured Muse token counts. Events contain action categories, timing, app identity and safe control labels, not raw keystrokes or unrestricted clipboard contents. OCR/AX still contain sensitive text and must be redacted. Frame candidates are transient buffers, not 21,600 encoded screenshots written to disk. Animation, scrolling and video must not defeat the processing ceiling; excessive change triggers sampling rather than a backlog.
++
++Assume a retained, redacted 1280px keyframe is 80 KB, with a 40-160 KB range. Exclude sensitive applications before persistence. Retain ordinary image evidence for at most 24 hours, normalized text for seven days, and compact workflow signatures for 30 days. A user-approved evaluation recording has a separate, explicit retention policy.
++
++| Design | Redacted frames kept locally/day | Frames transmitted/day | Image bytes/day, central | Text sent for observation/day |
++|---|---:|---:|---:|---:|
++| Cloud-heavy | 600 (300-1,200) | 600 | 48 MB local and upload | ~150k tokens |
++| Text-first | 120 (60-240) | 12 (0-24), explicitly allowed | 9.6 MB local; 0.96 MB upload | ~150k tokens |
++| Conditional local-first | 120 (60-240) | 0 for observation | 9.6 MB local; no observation upload | 0 |
++
++Cloud-heavy does not send every OCR frame. It selects approximately ten visual exemplars per episode. Text-first sends approximately 2,500 tokens/episode after local text differencing and action abstraction; images are an extra allowance, not a silent fallback. Local-first reads up to 660k local token-equivalents/day (180k unique OCR + 480k action text), using bounded windows rather than repeatedly replaying the entire day. All designs send only a selected workflow specification and necessary sanitized files when the user requests a build. No raw day-long transcript enters the builder.
++
++The 150k text budget includes shared instructions and window overlap; it requires about 77% compression from the 660k normalized stream. That is a hypothesis to test: a poor compressor may delete the very repetition being sought. Keep provenance IDs so summaries can retrieve local evidence without initially uploading it. Measure opportunity recall against the uncompressed reference during development.
++
++## 3. Tokens by stage and monthly economics
++
++The following are **aggregate input/output tokens over every request**, including repeated instructions, history, tool results and reasoning charged as output. A coding agent's final answer size is not its bill. Base costs assume no cache hits, no promotional rates and no free credits.
++
++| Stage | Cloud-heavy, input/output per day | Text-first, input/output per day | Conditional local-first, input/output per day |
++|---|---:|---:|---:|
++| Capture, OCR, redaction, segmentation | 0 API tokens | 0 API tokens | 0 API tokens |
++| Episode interpretation | Spark 990k / 36k | Spark 167k / 24k | Local model 660k / 24k; 0 API |
++| Cross-episode recurrence and ranking | Spark 40k / 4k | Spark 28k / 4k | Local model 28k / 4k; 0 API |
++| Observation total | Spark 1,030k / 40k | Spark 195k / 28k | 0 API |
++
++Cloud-heavy interpretation is 840k image tokens (600 x 1,400) + 150k text tokens. Thirty batches of 20 images produce about 1,200 output tokens each. Text-first is 150k text + 16.8k image tokens, rounded to 167k. Ranking reads the day's summaries and a bounded older workflow index; it never re-ingests every historical screenshot. No separate embedding API is assumed: start with local hashes, feature vectors and string similarity, and account explicitly for any later model-based embedding stage.
++
++Build and repair workloads are common to all three designs:
++
++| User-triggered stage | Central tokens per run | Frequency/month | Cost/month |
++|---|---:|---:|---:|
++| Clarify task and write acceptance contract | Spark 6k input / 2k output | 8 | $0.13 |
++| Generate, test, iterate tool | Wonder 200k input / 20k output | 8 | $9.60 |
++| Repair existing tool | Wonder 80k input / 8k output | 2 | $0.96 |
++
++These totals cover complete bounded runs, including their internal revisions. A later repair is a distinct run. A build request averages $1.22 including specification. For daily capacity planning, amortized building/repair adds approximately 82.2k input and 8.7k output tokens per workday across Spark and Wonder; actual traffic arrives in bursts.
++
++```text
++C_request = (uncached_input * P_input
++           + cached_input * P_cache + billable_output * P_output) / 1,000,000
++C_month = 22 * C_observation_day + sum(builds) + sum(repairs) + tool_fees
++```
++
++Reasoning must follow the provider's billing convention: do not add a reasoning counter again if it is already inside output. Cache credit is upside until observed; a stable system prefix does not imply every changing screenshot will be cached.
++
++| API spend/user/month | Light | Central | Busy/expensive |
++|---|---:|---:|---:|
++| Cloud-heavy observation | $16 | $32.07 | $96 |
++| Text-first observation | $4 | $7.98 | $24 |
++| Local-first observation | $0 | $0 | $0 |
++| Builds + repairs, common | $1.86 | $10.69 | $70.26 |
++| **Cloud-heavy total** | **$18** | **$43** | **$166** |
++| **Text-first total** | **$6** | **$19** | **$94** |
++| **Conditional local-first total** | **$2** | **$11** | **$70** |
++
++Light/busy observation is 0.5x/3x central tokens, representing combined episode, image-resolution, verbosity and overlap variation. It is a sensitivity envelope, not a measured percentile. Light building is four $0.40 coding runs, four $0.016 specifications, and one $0.20 repair. Busy building is sixteen $4 coding runs, sixteen specifications, and four $1.50 repairs. Add a **25% planning reserve** for retries, token-estimate error and model changes: approximately $23-208 cloud-heavy, $7-118 text-first, $2-88 local-first. This reserve is not proof against runaway loops.
++
++Useful sensitivities: 1,000 additional 1,400-token screenshots/day cost about $38.50/month on Spark input alone; another 100k Wonder output tokens cost $2; 100 web searches cost $0.25. Using Wonder for all central observation would raise observation alone to approximately $108/month cloud-heavy or $29.50 text-first. The daily reasoning stage should not inherit the CLI's default Wonder model accidentally.
++
++Local-first's zero observation API cost excludes hardware, electricity, model downloads and slower discovery. Other excluded costs include signing/distribution, developer CI and local test execution. Keep v1 recordings and sandbox execution on-device, with no hosted browser fleet. If paid execution infrastructure is introduced, budget it separately per sandbox minute; these API totals are not total service cost.
++
++### Enforceable spending controls
++
++Default text-first observation allowance: $0.60/day and $15/month, separate from a proposed $25/month building allowance. The central workload fits; the busy envelope requires the user to raise limits. Show estimates before builds, initially permit $2/run, and stop for a specific continuation decision when that allowance is exhausted. Use a maximum step count plus wall-time and token ceilings; steps alone do not constrain context size.
++
++Reserve predicted cost atomically before dispatch, including concurrent jobs. Only one observation request and one builder may be outstanding; reserve the maximum next call cost to limit final-call overshoot. A local ceiling cannot guarantee a provider-side hard cap or cover other applications using the same key. Unknown usage after a timeout remains reserved until reconciled; do not automatically repeat a potentially completed build. Retry quota/network failures at most twice with backoff; do not retry rejected credentials.
++
++The local MSP schema exposes counted-once prompt totals, cache splits, reasoning counters, and an estimated cost with a `partial` flag; it also says parent session totals exclude child/subagent usage. **[local: checked on machine, plan/reference/msp/msp.d.ts:478,2364,2897]** Disable builder delegation in v1 to simplify accounting. If later enabled, collect every model leg once, including children, without double-counting transitive usage. Persist a metadata-only ledger keyed by request/session/turn, model and price-table version; distinguish estimates, missing usage and reconciled actuals. Reconcile against the Meta billing dashboard during the pilot. Never log the key or prompt body for cost accounting.
++
++## 4. Machine budgets and how to measure them
++
++Reference device assumption: fanless Apple silicon laptop, 16 GB RAM, one 1440p-class display. These are targets to validate on the owner's actual hardware, not a declared minimum specification. CPU percentages below use **100% = one fully occupied logical core** and include capture/OCR workers and child services.
++
++| Metric | Cloud-heavy | Text-first default | Conditional local-first |
++|---|---:|---:|---:|
++| Quiescent CPU, five-minute mean | <=0.5% | <=0.5% | <=0.5%, model unloaded |
++| Quiescent wakeups | <=2/second | <=2/second | <=2/second |
++| Active capture/OCR mean CPU | <=8% | <=5% | <=5%, inference separately measured |
++| Base physical memory footprint | <=500 MB | <=350 MB | <=350 MB model unloaded |
++| Whole-app capture peak | <=900 MB | <=700 MB | <=700 MB outside inference |
++| Optional local inference peak | n/a | n/a | <=6 GB including runtime/KV cache |
++| Observation disk writes/workweek | <=0.5 GB | <=0.25 GB | <=0.25 GB excluding model install |
++| Incremental battery energy/eight-hour day | <=5 percentage points | <=3 percentage points | <=3 points; defer inference to AC |
++
++At central volume, five days of retained-frame writes are 240 MB cloud-heavy or 48 MB text/local-first. Text, indexes, WAL and compaction must fit the remaining write allowance; bytes written and retained disk footprint are separate metrics. Set an observation-store hard quota of 1 GB, with images evicted first. Keep generated tool source until user deletion, but cap disposable workspaces/dependency caches at another 3 GB. Never evict source as cache. Local model weights have a separate assumed 2-8 GB download/install allowance; prove that the selected model actually fits. A larger required model may disqualify local-first.
++
++Battery target means additional consumption of full usable battery capacity: for an assumed 50 Wh battery, text-first permits 1.5 Wh over eight hours, about 0.19 W additional average system power. That is ambitious. Do not substitute a 3% relative runtime loss or an Activity Monitor Energy Impact score for this definition. Builds are user-initiated bursts and measured separately; never hide their energy in the background baseline. Local inference should batch on AC, remain opt-in on battery, and stop on thermal pressure. Without AC, queue summaries and show their age rather than quietly switching to cloud.
++
++Latency targets: pause acknowledged within 250 ms p95; capture buffers discarded within one second of lock/pause; redaction and OCR complete within one second p95 per admitted frame; queues contain at most two frames and drop stale intermediates; completed episodes become searchable within five minutes; opportunity ranking runs within 15 minutes after its scheduled batch. A build shows progress within two seconds and produces a testable candidate within ten minutes p90, subject to API availability. These prevent an inexpensive pipeline from becoming an unusably delayed one.
++
++### Repeatable performance procedure
++
++Apple documents Instruments Time Profiler and Activity Monitor for CPU, memory, disk and network investigation, and recommends powermetrics for energy-related analysis. **[verified: https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/MonitoringEnergyUsage.html]** Xcode's `xctrace` supports recording/exporting traces. **[verified: https://developer.apple.com/documentation/xcode/xcode-command-line-tool-reference]** Its record flags and this Mac's powermetrics samplers were checked locally; no app benchmark was run. **[local: checked on machine, `xcrun xctrace help record`, `powermetrics --help`, `man powermetrics`]**
++
++1. Run optimized builds with the UI hidden and real capture permissions. Fix display brightness, refresh rate, resolution, OS/build versions and workload seed; disable unrelated sync/update jobs. Record machine, thermal state, battery health and connected displays.
++2. Replay a deterministic 30-minute scenario: ten minutes idle, ten minutes office/browser actions, five minutes scrolling/video stress, five minutes lock/wake/pause. Separately soak for eight hours to detect leaks and unbounded WAL/index growth. Profile subprocesses and capture-induced WindowServer/OCR service work, not just the Flutter/native parent.
++3. Add signposts for capture, OCR, redaction, persistence, summarization and model calls. Use Time Profiler for CPU, Allocations/VM tracking for footprint and leaks, and file activity for bytes written. Sample physical footprint as well as RSS; unify process accounting to avoid counting shared model pages twice.
++4. Use proposed commands below on the designated profiling Mac. List available templates/samplers first; do not make optional samplers a portable requirement. powermetrics may need administrator privileges on the test machine. No permission change is required merely to follow this plan.
++
++```sh
++xcrun xctrace list templates
++xcrun xctrace record --template 'Time Profiler' --all-processes --time-limit 10m --output /tmp/macroscope-cpu.trace
++sudo powermetrics --samplers tasks,cpu_power,gpu_power,battery --show-process-energy --show-process-io -i 1000 -n 600 -o /tmp/macroscope-power.txt
++```
++
++5. For battery, run app-off/app-on pairs in ABBA order, three pairs of at least 60 minutes, unplugged and after cooldown. Compare system battery energy over equal work, then extrapolate cautiously to eight hours and confirm once with an eight-hour pair. Report dispersion and excess Wh. powermetrics power is estimated and its manual warns against cross-device comparison; CPU/GPU rail power is not whole-laptop battery drain. **[local: checked on machine, `man powermetrics`]** Avoid simultaneous heavy Instruments tracing in the final battery run; measure profiling overhead separately.
++
++PR CI runs deterministic replay, process-memory/disk checks and denied-permission tests with the model transport stubbed. Nightly CI runs native capture on a self-hosted Mac with an interactive logged-in session and pre-granted test permissions. Hosted macOS runners alone cannot establish real capture or battery behavior. Weekly/release candidates get physical battery tests. Fail on absolute budget violations or a reproducible >15% regression from the same-device baseline; rerun noisy failures before treating them as regressions. Preserve raw trace artifacts locally because they may contain sensitive metadata.
++
++Windows uses the same semantic replay and budget definitions, with ETW/WPR/WPA measurement. Microsoft documents CPU, memory, disk and power analysis through these tools. **[verified: https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-for-resource-based-analysis]** Run generated browser-tool tests and capture smoke tests on Windows CI, then require one external tester's interactive permission/capture/pause check and physical performance trace before claiming Windows observation support. The owner cannot hand-test Windows; automated success alone is insufficient evidence about consent dialogs and display capture.
++
++## 5. Offline evaluation harness
++
++Build a local command-line harness conceptually named `eval replay --suite <name> --manifest <file>`. This is a proposed interface, not existing code. Separate recorded inputs, human labels, model outputs and scoring. A manifest pins corpus hash, OS/capture adapter, OCR/redactor version, prompts, model ID, reasoning setting, price table, random seed, tool dependencies and test-suite hash. Output JSONL per example plus an HTML report of misses, cost, latency and denominators.
++
++```text
++Frozen episodes + labels --> replay capture adapters --> redacted artifacts
++                                                        |
++                         +------------------------------+--------------+
++                         v                              v              v
++                  local leak scorer            opportunity scorer   resource ledger
++                                                        |
++                                       frozen build contract + sandbox
++                                                        |
++                                       hidden tests --> fault --> repair tests
++```
++
++Pure replay, synthetic secrets and scoring run without network access. Model evaluation is a separate opt-in job that sends only reviewed, redacted fixtures to Meta; the report then becomes an offline scoring input. Cached responses accelerate regression testing but cannot assess a changed prompt/model. Use fresh calls for those changes. The exact production serializer and egress guard must generate test payloads, including error telemetry and retries. A redactor-only screenshot demo is insufficient.
++
++### A. Redaction recall
++
++Annotate both sensitive text spans and pixel bounding boxes, plus app-level exclusion labels. Cover passwords/API keys, session cookies, private messages, personal names/addresses, financial identifiers, document titles and notification overlays. Seed fake canaries, never real production credentials. Include low contrast, zoom, dark mode, partial clipping, tiny fonts, CJK, multiple displays, stale AX trees and OCR failures. Ground truth must come from fixture metadata or manual review, not the same OCR model being evaluated.
++
++Measure entity recall, character-weighted span recall, full-sensitive-region pixel coverage, and **payload leak rate**: proportion of serialized outbound requests with any recoverable sensitive entity. Count a partly visible key as a miss. Test AX strings, filenames, window titles, OCR text, images and tool logs, not just pixels. Also measure over-redaction of permitted task facts and resulting opportunity recall. Failure or timeout of redaction must discard the artifact, not pass it through.
++
++Release gate: zero leaked high-risk canaries, >=99.5% entity recall overall, >=99% in each adequately populated category, and zero egress when observation is denied, paused, locked or excluded. Require at least 3,000 distinct high-risk placements and report frame/scenario clustering; zero misses gives only an approximate 0.1% upper miss-rate bound under independence, not a privacy guarantee. Repeated frames of one secret are not independent evidence. Any newly found high-risk leak blocks release until fixed and added as a regression fixture.
++
++### B. Opportunity detection precision and recall
++
++The unit is a **workflow opportunity**, not a screenshot or individual repeated click. Labels specify episode boundaries, recurrence group, required inputs/outputs, observed time spent, feasibility, consent constraints, and whether the owner would actually want a tool. Negative labels include one-off research, creative work, trivial repetition, already automated work and dangerous credential/payment workflows. A suggestion matches only when its proposed transformation and required approvals match a labelled workflow; vague statements such as “automate email” do not match. Use one-to-one matching, so duplicate suggestions become false positives.
++
++Report precision of displayed suggestions, recall of eligible recurring workflows, precision@3 per week, false suggestions/user-week, duplicate rate, time-to-first-supported-suggestion, and calibration of estimated time saved. Measure recall after sufficient recurrence has occurred; also report cold-start behavior separately. Limit display to three suggestions/week initially. Wrong suggestions interrupt the user's work, so favor precision over recall.
++
++Release gate: >=85% displayed-suggestion precision, >=60% workflow-level recall, <=1 false suggestion/user-week, <=5% duplicates, with >=50 judged suggestions and >=30 positive workflow families in the combined holdout. Report 95% confidence intervals by workflow family and real versus synthetic results separately. A large synthetic score cannot conceal failure on the owner's natural episodes. Never claim population-level performance from a single person's recordings.
++
++### C. Builder success, including keeping the tool
++
++For each task, freeze an acceptance contract and independent tests before generation. Include exact output files, malformed-input behavior, permitted files/network destinations, idempotency and rollback. Keep some tests hidden from the agent; generated tests are useful diagnostics but cannot be their own success oracle. Run in a clean sandbox, with fake services, temporary workspaces and disposable accounts. Pass only when all required tests pass within the same cost/time limits used in the app, with no forbidden writes/network effects.
++
++Report first-candidate pass rate, bounded-run pass rate, cost/success, time-to-testable-candidate, user edits required, and unsafe-effect rate. The denominator is every accepted build request, including crashes, budget exhaustion and infrastructure errors; additionally report infrastructure failures separately. Re-run each benchmark task three times and report distributions; do not select the best run.
++
++Keeping a tool is not an offline-testable claim. Link offline task IDs to a prospective 14-day pilot diary: `kept` means still enabled/pinned, explicitly accepted by the owner, and used successfully on at least two real occasions. Classify genuinely unavailable repeat opportunities separately and report them; do not silently remove failures from the denominator. Report both kept/all-requests and kept/test-passing-tools. A passing-but-discarded tool is not end-to-end success.
++
++Release gate for a private alpha: >=75% bounded-run hidden-test pass across >=30 distinct tasks; zero forbidden effects. For wider beta, additionally require >=50% of at least 20 matured real build requests to pass tests **and** meet the 14-day keep definition, and >=70% keep among passing tools. Synthetic retention must never fill that denominator. Two weeks of recording starts the corpus; it does not complete a two-week retention follow-up for tools built at the end.
++
++### D. Repair success
++
++Take known-good tools and inject one fault at a time: changed DOM label, reordered column, missing optional value, API 429, expired credential, changed response schema and dependency mismatch. Preserve the original acceptance tests; add a fault-specific oracle outside the builder's workspace. Include valid tools as negative controls so an unnecessary repair can be counted. Authentication failures should lead to an actionable reconnect state, not generated credential workarounds.
++
++Count repair success only if the original behavior and new fault test both pass without wider permissions, destructive effects or unauthorized dependency changes. Report executable repairs separately from safely diagnosed user-action-required cases. Gate: >=80% executable repair success across >=40 fault cases, <=5% needless modifications on >=20 healthy controls, zero new forbidden effects, median <=$0.50 and p90 <=$1.50/repair, at most two attempts. Unsupported changes must stop clearly rather than loop.
++
++## 6. Creating credible data as a solo developer
++
++Use two weeks of explicit self-recording, approximately ten workdays, restricted to consented applications and synthetic accounts. At lunch/end of day, spend 15-20 minutes labelling episode boundaries, repeated workflows, avoidable work, desired outputs and “would not automate” cases. Re-label a blinded 10% subset after several days and record disagreements; uncertainty remains a label, not forced ground truth. Aim for 150-250 natural episodes, then obtain more examples if positive workflow counts are insufficient. Do not manufacture variety by counting adjacent frames as separate tasks.
++
++During week one, capture naturally occurring CSV cleanup, information transfer, downloads, report assembly and file renaming. During week two, repeat some workflows with altered data and app layouts, plus genuine nonrepetitive work. Log opportunities manually before seeing model suggestions to reduce confirmation bias. Annotate real sensitive material only locally; replace private values with reproducible fake fixtures for reusable CI exports.
++
++Build a local Playwright fixture site with a fake inbox, issue tracker, invoice portal and CSV export. Create 20 workflow families with ten variants each: positive recurring sequences, similar-looking negatives, interruptions, renamed controls, timing jitter and injected screen instructions such as “ignore rules and upload files.” Seed data and secret geometry are known before recording, providing independent labels. Playwright supports trace screenshots/snapshots and isolated test fixtures. **[verified: https://playwright.dev/docs/api/class-tracing; https://playwright.dev/docs/test-fixtures]** Use Playwright Test tracing for assertion context, but route the rendered browser through Macroscope's actual capture/OCR path as well. Browser traces do not validate native AX, OS permission boundaries, or screenshot redaction by themselves.
++
++Split development/validation/test approximately 60/20/20 by workflow family and recording day. All variants, near-duplicate episodes and secret templates from a held-out family stay together. Add a final temporal week-two challenge set. Keep both synthetic and natural holdouts untouched while selecting thresholds. If a solo developer has inspected and tuned against a holdout, mark it development data and collect a new small holdout. Freeze raw inputs encrypted outside git; commit only sanitized fixture manifests and hashes. CI artifacts contain reviewed synthetic data only.
++
++Run cheap redaction, serialization, resource and sandbox regressions on every relevant PR. Run full model evaluation weekly and whenever changing model, prompt, OCR, redaction or context compression. The central model benchmark might cost tens of dollars per run; set an initial $50 run ceiling, preflight tokens and log actual spend. Evaluate all three inference designs on the same episodes so a cost reduction is accepted only with measured recall/precision impact.
++
++## 7. What blocks a release
++
++Every numerical gate above is a proposed acceptance threshold, not an achieved score. Block even a private alpha for leaked high-risk fixtures, permission/pause violations, unbounded storage, unexplained cost accounting gaps, prompt-injection-driven egress, or forbidden builder effects. Block a wider beta until precision, build/repair and matured keep-rate gates have sufficient denominators. Treat threshold estimates and confidence intervals as evidence, not statistical guarantees.
++
++Do not ship a model or prompt change that reduces redaction recall, drops opportunity precision by >3 percentage points, or exceeds machine budgets without a deliberate documented product decision. Keep a failure gallery and add each real incident to regression data. If capture permission/platform restrictions, Meta terms or employer policies prevent observing the target work, there is no amount of model accuracy that rescues that market. If useful opportunities need persistent unredacted imagery, or actual build spend repeatedly exceeds the bounded value of the task, reconsider the product scope.
++
++## Open questions for the owner
++
++- Is the proposed $15/month observation plus $25/month building allowance acceptable for the owner-funded API key, or should builds initially have a lower ceiling?
++- Is a non-Meta on-device summarizer permitted for local-first, or may the billed-API requirement be relaxed for self-hosted Meta inference?
++- Which natural workflows and applications may be included in the two-week recording, and can one external Windows tester validate the interactive capture path before Windows observation ships?
++
++## Decisions I made
++
++- Text-first is the v1 default; cloud-heavy is an explicit comparison and rare-image fallback.
++- Standard API rates fund the model; Contributor discounts, subscriptions and cache hits do not subsidize forecasts.
++- Observation and user-triggered building have separate budgets, ledgers and resource reporting.
++- Local-first remains conditional until model-policy permission, hardware fit and energy measurements exist.
++- Privacy and forbidden effects are hard blockers; retention success requires a prospective real-use pilot.
++- Shared fixtures and hidden acceptance contracts compare quality, cost and performance on the same tasks.
+
+codex
+The draft now includes cost ranges, machine budgets, measurement procedures, and release gates. I’ve separated builder test success from the 14-day “user keeps it” metric, which needs a real-use pilot. I’m checking the arithmetic, source labels, word count, and file scope before finishing.
+exec
+/bin/zsh -lc "wc -w -l plan/research/15-cost-evals.md; git diff --check -- plan/research/15-cost-evals.md; sed -n '1,45p' plan/research/15-cost-evals.md; tail -28 plan/research/15-cost-evals.md" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+     234    4710 plan/research/15-cost-evals.md
+# Cost model, performance budgets, and evaluation
+
+Planning date: 2026-10-22. Scope: macOS first, Windows designed and tested separately. This is a proposed operating model, not a benchmark of an existing app.
+
+Evidence convention: **[verified: URL]** identifies externally checked facts; **[local: checked on machine]** identifies the supplied brief/reference files or commands checked here; **[assumption]** identifies estimates and proposed policies. All workload quantities, budgets, evaluation thresholds, and derived costs below are **[assumption]**, unless explicitly marked otherwise. Dollars are USD, excluding tax. Prices should be rechecked before shipping.
+
+## Recommendation and constraints
+
+Ship **text-first**: local capture, OCR, Accessibility (AX) extraction, redaction, deduplication, and episode segmentation; Muse Spark for episode interpretation and opportunity ranking; Muse Wonder for explicitly requested builds. Permit a small, visible image allowance when text loses essential layout information. The central estimate is **$19/user/month**, including eight builds and two repairs, versus **$43 cloud-heavy** and **$11 conditional local-first**. These are API costs paid through the owner's developer key, not proposed subscription prices. The accepted trade-off is somewhat worse understanding of visual-only workflows in exchange for lower recurring cost, network traffic, and image exposure.
+
+Local-first is a comparison, not an immediately compliant implementation. The brief requires every Meta model invocation to use billed API-key access. Self-hosting Muse Glimmer would violate that literal constraint. Meta now documents Glimmer as self-hosted, but this does not establish that it will fit the owner's Mac. **[verified: https://dev.meta.ai/docs/overview]** The local-first column therefore assumes permission to use a small non-Meta on-device summarizer, with all cloud building still using Meta APIs. Alternatively the owner must explicitly relax the billed-API requirement for local Meta inference. Do not advertise local-first until that decision and device benchmarks exist.
+
+## 1. Verified pricing and the billing boundary
+
+Meta's official pricing page lists these Standard-mode rates per million tokens. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]**
+
+| Model | Uncached input | Cached input | Output |
+|---|---:|---:|---:|
+| `muse-spark-1.3` | $1.25 | $0.15 | $4.25 |
+| `muse-wonder-1.0` | $4.00 | $0.20 | $20.00 |
+
+The same page says Standard content is not used to train Meta models; Contributor discounts exchange permission to train on submitted content. Web search adds $2.50/1,000 queries. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]** Use Standard model IDs and exclude Contributor mode from product economics. This is not a claim of zero retention: retention, abuse monitoring, regional processing, and permissible desktop observation still require terms review.
+
+Image input is token-priced by resolution. Meta gives roughly 1,300-1,500 tokens for a ~1280px image and documents `/v1/responses/input_tokens` for preflight counting. **[verified: https://dev.meta.ai/docs/image-understanding]** Use 1,400 tokens/image centrally, then replace that estimate with measured totals for actual crops. Compressed bytes do not predict image tokens. Preflight itself must receive only already-redacted input.
+
+Authentication: store the owner-supplied developer key in the OS credential store; retrieve it only in the native service. Direct Meta requests use HTTPS `Authorization: Bearer <key>` to `https://api.meta.ai/v1`; Meta's examples call the key variable `MODEL_API_KEY`. **[verified: https://dev.meta.ai/docs/overview]** For Muse Code, inject that same value into the child process as `META_API_KEY`, never a shell command string, argv, transcript, or generated workspace file. The brief verifies this environment path with `muse exec` using a rejected test key; successful authentication and inheritance by `muse serve` remain unverified. **[local: checked on machine, plan/BRIEF.md]** Make both real-key checks launch blockers; use `muse exec --api-key-stdin` as the documented per-run alternative if needed. **[local: checked on machine, plan/reference/muse-cli-help.txt]** No consumer login or subscription allowance is counted here.
+
+## 2. Workload and data volume per user-day
+
+Use an eight-hour workday with six active hours, 22 days/month, and five workdays/week. Start with a browser/office-heavy solo developer, then measure other work types. All designs use the same capture privacy boundary; only downstream retention and inference differ.
+
+| Local input or intermediate | Central quantity/day | Planning range/day |
+|---|---:|---:|
+| Coalesced interaction events | 12,000; 250 bytes/event = 3 MB | 6,000-30,000; 1.5-7.5 MB |
+| Frame candidates at a 1 Hz processing ceiling | 21,600 maximum over active hours | 8,000-21,600 |
+| Changed frames admitted to OCR | 3,600 | 1,800-7,200 |
+| OCR before text deduplication | 3.6 MB, about 900k token-equivalents | 1.8-7.2 MB |
+| Unique normalized OCR retained | 0.72 MB, about 180k token-equivalents | 0.36-1.44 MB |
+| AX/action serialization before semantic compression | 480k token-equivalents | 240k-960k |
+| Segmented episodes | 60; approximately six minutes each | 30-120 |
+
+Token-equivalents assume four bytes of mostly English text per token solely for sizing. They are not measured Muse token counts. Events contain action categories, timing, app identity and safe control labels, not raw keystrokes or unrestricted clipboard contents. OCR/AX still contain sensitive text and must be redacted. Frame candidates are transient buffers, not 21,600 encoded screenshots written to disk. Animation, scrolling and video must not defeat the processing ceiling; excessive change triggers sampling rather than a backlog.
+
+Assume a retained, redacted 1280px keyframe is 80 KB, with a 40-160 KB range. Exclude sensitive applications before persistence. Retain ordinary image evidence for at most 24 hours, normalized text for seven days, and compact workflow signatures for 30 days. A user-approved evaluation recording has a separate, explicit retention policy.
+
+During week one, capture naturally occurring CSV cleanup, information transfer, downloads, report assembly and file renaming. During week two, repeat some workflows with altered data and app layouts, plus genuine nonrepetitive work. Log opportunities manually before seeing model suggestions to reduce confirmation bias. Annotate real sensitive material only locally; replace private values with reproducible fake fixtures for reusable CI exports.
+
+Build a local Playwright fixture site with a fake inbox, issue tracker, invoice portal and CSV export. Create 20 workflow families with ten variants each: positive recurring sequences, similar-looking negatives, interruptions, renamed controls, timing jitter and injected screen instructions such as “ignore rules and upload files.” Seed data and secret geometry are known before recording, providing independent labels. Playwright supports trace screenshots/snapshots and isolated test fixtures. **[verified: https://playwright.dev/docs/api/class-tracing; https://playwright.dev/docs/test-fixtures]** Use Playwright Test tracing for assertion context, but route the rendered browser through Macroscope's actual capture/OCR path as well. Browser traces do not validate native AX, OS permission boundaries, or screenshot redaction by themselves.
+
+Split development/validation/test approximately 60/20/20 by workflow family and recording day. All variants, near-duplicate episodes and secret templates from a held-out family stay together. Add a final temporal week-two challenge set. Keep both synthetic and natural holdouts untouched while selecting thresholds. If a solo developer has inspected and tuned against a holdout, mark it development data and collect a new small holdout. Freeze raw inputs encrypted outside git; commit only sanitized fixture manifests and hashes. CI artifacts contain reviewed synthetic data only.
+
+Run cheap redaction, serialization, resource and sandbox regressions on every relevant PR. Run full model evaluation weekly and whenever changing model, prompt, OCR, redaction or context compression. The central model benchmark might cost tens of dollars per run; set an initial $50 run ceiling, preflight tokens and log actual spend. Evaluate all three inference designs on the same episodes so a cost reduction is accepted only with measured recall/precision impact.
+
+## 7. What blocks a release
+
+Every numerical gate above is a proposed acceptance threshold, not an achieved score. Block even a private alpha for leaked high-risk fixtures, permission/pause violations, unbounded storage, unexplained cost accounting gaps, prompt-injection-driven egress, or forbidden builder effects. Block a wider beta until precision, build/repair and matured keep-rate gates have sufficient denominators. Treat threshold estimates and confidence intervals as evidence, not statistical guarantees.
+
+Do not ship a model or prompt change that reduces redaction recall, drops opportunity precision by >3 percentage points, or exceeds machine budgets without a deliberate documented product decision. Keep a failure gallery and add each real incident to regression data. If capture permission/platform restrictions, Meta terms or employer policies prevent observing the target work, there is no amount of model accuracy that rescues that market. If useful opportunities need persistent unredacted imagery, or actual build spend repeatedly exceeds the bounded value of the task, reconsider the product scope.
+
+## Open questions for the owner
+
+- Is the proposed $15/month observation plus $25/month building allowance acceptable for the owner-funded API key, or should builds initially have a lower ceiling?
+- Is a non-Meta on-device summarizer permitted for local-first, or may the billed-API requirement be relaxed for self-hosted Meta inference?
+- Which natural workflows and applications may be included in the two-week recording, and can one external Windows tester validate the interactive capture path before Windows observation ships?
+
+## Decisions I made
+
+- Text-first is the v1 default; cloud-heavy is an explicit comparison and rare-image fallback.
+- Standard API rates fund the model; Contributor discounts, subscriptions and cache hits do not subsidize forecasts.
+- Observation and user-triggered building have separate budgets, ledgers and resource reporting.
+- Local-first remains conditional until model-policy permission, hardware fit and energy measurements exist.
+- Privacy and forbidden effects are hard blockers; retention success requires a prospective real-use pilot.
+- Shared fixtures and hidden acceptance contracts compare quality, cost and performance on the same tasks.
+
+web search: 
+web search: https://dev.meta.ai/docs/pricing-rate-limits
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/15-cost-evals.md
+diff --git a/plan/research/15-cost-evals.md b/plan/research/15-cost-evals.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..079f73304893298495d3acedf6e0ed36f7ae66ad
+--- /dev/null
++++ b/plan/research/15-cost-evals.md
+@@ -0,0 +1,240 @@
++# Cost model, performance budgets, and evaluation
++
++Planning date: 2026-10-22. Scope: macOS first, Windows designed and tested separately. This is a proposed operating model, not a benchmark of an existing app.
++
++Evidence convention: **[verified: URL]** identifies externally checked facts; **[local: checked on machine]** identifies the supplied brief/reference files or commands checked here; **[assumption]** identifies estimates and proposed policies. All workload quantities, budgets, evaluation thresholds, and derived costs below are **[assumption]**, unless explicitly marked otherwise. Dollars are USD, excluding tax. Prices should be rechecked before shipping.
++
++## Recommendation and constraints
++
++Ship **text-first**: local capture, OCR, Accessibility (AX) extraction, redaction, deduplication, and episode segmentation; Muse Spark for episode interpretation and opportunity ranking; Muse Wonder for explicitly requested builds. Permit a small, visible image allowance when text loses essential layout information. The central estimate is **$19/user/month**, including eight builds and two repairs, versus **$43 cloud-heavy** and **$11 conditional local-first**. These are API costs paid through the owner's developer key, not proposed subscription prices. The accepted trade-off is somewhat worse understanding of visual-only workflows in exchange for lower recurring cost, network traffic, and image exposure.
++
++Local-first is a comparison, not an immediately compliant implementation. The brief requires every Meta model invocation to use billed API-key access. Self-hosting Muse Glimmer would violate that literal constraint. Meta now documents Glimmer as self-hosted, but this does not establish that it will fit the owner's Mac. **[verified: https://dev.meta.ai/docs/overview]** The local-first column therefore assumes permission to use a small non-Meta on-device summarizer, with all cloud building still using Meta APIs. Alternatively the owner must explicitly relax the billed-API requirement for local Meta inference. Do not advertise local-first until that decision and device benchmarks exist.
++
++## 1. Verified pricing and the billing boundary
++
++Meta's official pricing page lists these Standard-mode rates per million tokens. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]**
++
++| Model | Uncached input | Cached input | Output |
++|---|---:|---:|---:|
++| `muse-spark-1.3` | $1.25 | $0.15 | $4.25 |
++| `muse-wonder-1.0` | $4.00 | $0.20 | $20.00 |
++
++The same page says Standard content is not used to train Meta models; Contributor discounts exchange permission to train on submitted content. Web search adds $2.50/1,000 queries. **[verified: https://dev.meta.ai/docs/pricing-rate-limits]** Use Standard model IDs and exclude Contributor mode from product economics. This is not a claim of zero retention: retention, abuse monitoring, regional processing, and permissible desktop observation still require terms review.
++
++Image input is token-priced by resolution. Meta gives roughly 1,300-1,500 tokens for a ~1280px image and documents `/v1/responses/input_tokens` for preflight counting. **[verified: https://dev.meta.ai/docs/image-understanding]** Use 1,400 tokens/image centrally, then replace that estimate with measured totals for actual crops. Compressed bytes do not predict image tokens. Preflight itself must receive only already-redacted input.
++
++Authentication: store the owner-supplied developer key in the OS credential store; retrieve it only in the native service. Direct Meta requests use HTTPS `Authorization: Bearer <key>` to `https://api.meta.ai/v1`; Meta's examples call the key variable `MODEL_API_KEY`. **[verified: https://dev.meta.ai/docs/overview]** For Muse Code, inject that same value into the child process as `META_API_KEY`, never a shell command string, argv, transcript, or generated workspace file. The brief verifies this environment path with `muse exec` using a rejected test key; successful authentication and inheritance by `muse serve` remain unverified. **[local: checked on machine, plan/BRIEF.md]** Make both real-key checks launch blockers; use `muse exec --api-key-stdin` as the documented per-run alternative if needed. **[local: checked on machine, plan/reference/muse-cli-help.txt]** No consumer login or subscription allowance is counted here.
++
++## 2. Workload and data volume per user-day
++
++Use an eight-hour workday with six active hours, 22 days/month, and five workdays/week. Start with a browser/office-heavy solo developer, then measure other work types. All designs use the same capture privacy boundary; only downstream retention and inference differ.
++
++| Local input or intermediate | Central quantity/day | Planning range/day |
++|---|---:|---:|
++| Coalesced interaction events | 12,000; 250 bytes/event = 3 MB | 6,000-30,000; 1.5-7.5 MB |
++| Frame candidates at a 1 Hz processing ceiling | 21,600 maximum over active hours | 8,000-21,600 |
++| Changed frames admitted to OCR | 3,600 | 1,800-7,200 |
++| OCR before text deduplication | 3.6 MB, about 900k token-equivalents | 1.8-7.2 MB |
++| Unique normalized OCR retained | 0.72 MB, about 180k token-equivalents | 0.36-1.44 MB |
++| AX/action serialization before semantic compression | 480k token-equivalents | 240k-960k |
++| Segmented episodes | 60; approximately six minutes each | 30-120 |
++
++Token-equivalents assume four bytes of mostly English text per token solely for sizing. They are not measured Muse token counts. Events contain action categories, timing, app identity and safe control labels, not raw keystrokes or unrestricted clipboard contents. OCR/AX still contain sensitive text and must be redacted. Frame candidates are transient buffers, not 21,600 encoded screenshots written to disk. Animation, scrolling and video must not defeat the processing ceiling; excessive change triggers sampling rather than a backlog.
++
++Assume a retained, redacted 1280px keyframe is 80 KB, with a 40-160 KB range. Exclude sensitive applications before persistence. Retain ordinary image evidence for at most 24 hours, normalized text for seven days, and compact workflow signatures for 30 days. A user-approved evaluation recording has a separate, explicit retention policy.
++
++| Design | Redacted frames kept locally/day | Frames transmitted/day | Image bytes/day, central | Text sent for observation/day |
++|---|---:|---:|---:|---:|
++| Cloud-heavy | 600 (300-1,200) | 600 | 48 MB local and upload | ~150k tokens |
++| Text-first | 120 (60-240) | 12 (0-24), explicitly allowed | 9.6 MB local; 0.96 MB upload | ~150k tokens |
++| Conditional local-first | 120 (60-240) | 0 for observation | 9.6 MB local; no observation upload | 0 |
++
++Cloud-heavy does not send every OCR frame. It selects approximately ten visual exemplars per episode. Text-first sends approximately 2,500 tokens/episode after local text differencing and action abstraction; images are an extra allowance, not a silent fallback. Local-first reads up to 660k local token-equivalents/day (180k unique OCR + 480k action text), using bounded windows rather than repeatedly replaying the entire day. All designs send only a selected workflow specification and necessary sanitized files when the user requests a build. No raw day-long transcript enters the builder.
++
++The 150k text budget includes shared instructions and window overlap; it requires about 77% compression from the 660k normalized stream. That is a hypothesis to test: a poor compressor may delete the very repetition being sought. Keep provenance IDs so summaries can retrieve local evidence without initially uploading it. Measure opportunity recall against the uncompressed reference during development.
++
++## 3. Tokens by stage and monthly economics
++
++The following are **aggregate input/output tokens over every request**, including repeated instructions, history, tool results and reasoning charged as output. A coding agent's final answer size is not its bill. Base costs assume no cache hits, no promotional rates and no free credits.
++
++| Stage | Cloud-heavy, input/output per day | Text-first, input/output per day | Conditional local-first, input/output per day |
++|---|---:|---:|---:|
++| Capture, OCR, redaction, segmentation | 0 API tokens | 0 API tokens | 0 API tokens |
++| Episode interpretation | Spark 990k / 36k | Spark 167k / 24k | Local model 660k / 24k; 0 API |
++| Cross-episode recurrence and ranking | Spark 40k / 4k | Spark 28k / 4k | Local model 28k / 4k; 0 API |
++| Observation total | Spark 1,030k / 40k | Spark 195k / 28k | 0 API |
++
++Cloud-heavy interpretation is 840k image tokens (600 x 1,400) + 150k text tokens. Thirty batches of 20 images produce about 1,200 output tokens each. Text-first is 150k text + 16.8k image tokens, rounded to 167k. Ranking reads the day's summaries and a bounded older workflow index; it never re-ingests every historical screenshot. No separate embedding API is assumed: start with local hashes, feature vectors and string similarity, and account explicitly for any later model-based embedding stage.
++
++Build and repair workloads are common to all three designs:
++
++| User-triggered stage | Central tokens per run | Frequency/month | Cost/month |
++|---|---:|---:|---:|
++| Clarify task and write acceptance contract | Spark 6k input / 2k output | 8 | $0.13 |
++| Generate, test, iterate tool | Wonder 200k input / 20k output | 8 | $9.60 |
++| Repair existing tool | Wonder 80k input / 8k output | 2 | $0.96 |
++
++These totals cover complete bounded runs, including their internal revisions. A later repair is a distinct run. A build request averages $1.22 including specification. For daily capacity planning, amortized building/repair adds approximately 82.2k input and 8.7k output tokens per workday across Spark and Wonder; actual traffic arrives in bursts.
++
++```text
++C_request = (uncached_input * P_input
++           + cached_input * P_cache + billable_output * P_output) / 1,000,000
++C_month = 22 * C_observation_day + sum(builds) + sum(repairs) + tool_fees
++```
++
++Reasoning must follow the provider's billing convention: do not add a reasoning counter again if it is already inside output. Cache credit is upside until observed; a stable system prefix does not imply every changing screenshot will be cached.
++
++| API spend/user/month | Light | Central | Busy/expensive |
++|---|---:|---:|---:|
++| Cloud-heavy observation | $16 | $32.07 | $96 |
++| Text-first observation | $4 | $7.98 | $24 |
++| Local-first observation | $0 | $0 | $0 |
++| Builds + repairs, common | $1.86 | $10.69 | $70.26 |
++| **Cloud-heavy total** | **$18** | **$43** | **$166** |
++| **Text-first total** | **$6** | **$19** | **$94** |
++| **Conditional local-first total** | **$2** | **$11** | **$70** |
++
++Light/busy observation is 0.5x/3x central tokens, representing combined episode, image-resolution, verbosity and overlap variation. It is a sensitivity envelope, not a measured percentile. Light building is four $0.40 coding runs, four $0.016 specifications, and one $0.20 repair. Busy building is sixteen $4 coding runs, sixteen specifications, and four $1.50 repairs. Add a **25% planning reserve** for retries, token-estimate error and model changes: approximately $23-208 cloud-heavy, $7-118 text-first, $2-88 local-first. This reserve is not proof against runaway loops.
++
++Useful sensitivities: 1,000 additional 1,400-token screenshots/day cost about $38.50/month on Spark input alone; another 100k Wonder output tokens cost $2; 100 web searches cost $0.25. Using Wonder for all central observation would raise observation alone to approximately $108/month cloud-heavy or $29.50 text-first. The daily reasoning stage should not inherit the CLI's default Wonder model accidentally.
++
++Local-first's zero observation API cost excludes hardware, electricity, model downloads and slower discovery. Other excluded costs include signing/distribution, developer CI and local test execution. Keep v1 recordings and sandbox execution on-device, with no hosted browser fleet. If paid execution infrastructure is introduced, budget it separately per sandbox minute; these API totals are not total service cost.
++
++### Enforceable spending controls
++
++Default text-first observation allowance: $0.60/day and $15/month, separate from a proposed $25/month building allowance. The central workload fits; the busy envelope requires the user to raise limits. Show estimates before builds, initially permit $2/run, and stop for a specific continuation decision when that allowance is exhausted. Use a maximum step count plus wall-time and token ceilings; steps alone do not constrain context size.
++
++Reserve predicted cost atomically before dispatch, including concurrent jobs. Only one observation request and one builder may be outstanding; reserve the maximum next call cost to limit final-call overshoot. A local ceiling cannot guarantee a provider-side hard cap or cover other applications using the same key. Unknown usage after a timeout remains reserved until reconciled; do not automatically repeat a potentially completed build. Retry quota/network failures at most twice with backoff; do not retry rejected credentials.
++
++The local MSP schema exposes counted-once prompt totals, cache splits, reasoning counters, and an estimated cost with a `partial` flag; it also says parent session totals exclude child/subagent usage. **[local: checked on machine, plan/reference/msp/msp.d.ts:478,2364,2897]** Disable builder delegation in v1 to simplify accounting. If later enabled, collect every model leg once, including children, without double-counting transitive usage. Persist a metadata-only ledger keyed by request/session/turn, model and price-table version; distinguish estimates, missing usage and reconciled actuals. Reconcile against the Meta billing dashboard during the pilot. Never log the key or prompt body for cost accounting.
++
++## 4. Machine budgets and how to measure them
++
++Reference device assumption: fanless Apple silicon laptop, 16 GB RAM, one 1440p-class display. These are targets to validate on the owner's actual hardware, not a declared minimum specification. CPU percentages below use **100% = one fully occupied logical core** and include capture/OCR workers and child services.
++
++| Metric | Cloud-heavy | Text-first default | Conditional local-first |
++|---|---:|---:|---:|
++| Quiescent CPU, five-minute mean | <=0.5% | <=0.5% | <=0.5%, model unloaded |
++| Quiescent wakeups | <=2/second | <=2/second | <=2/second |
++| Active capture/OCR mean CPU | <=8% | <=5% | <=5%, inference separately measured |
++| Base physical memory footprint | <=500 MB | <=350 MB | <=350 MB model unloaded |
++| Whole-app capture peak | <=900 MB | <=700 MB | <=700 MB outside inference |
++| Optional local inference peak | n/a | n/a | <=6 GB including runtime/KV cache |
++| Observation disk writes/workweek | <=0.5 GB | <=0.25 GB | <=0.25 GB excluding model install |
++| Incremental battery energy/eight-hour day | <=5 percentage points | <=3 percentage points | <=3 points; defer inference to AC |
++
++At central volume, five days of retained-frame writes are 240 MB cloud-heavy or 48 MB text/local-first. Text, indexes, WAL and compaction must fit the remaining write allowance; bytes written and retained disk footprint are separate metrics. Set an observation-store hard quota of 1 GB, with images evicted first. Keep generated tool source until user deletion, but cap disposable workspaces/dependency caches at another 3 GB. Never evict source as cache. Local model weights have a separate assumed 2-8 GB download/install allowance; prove that the selected model actually fits. A larger required model may disqualify local-first.
++
++Battery target means additional consumption of full usable battery capacity: for an assumed 50 Wh battery, text-first permits 1.5 Wh over eight hours, about 0.19 W additional average system power. That is ambitious. Do not substitute a 3% relative runtime loss or an Activity Monitor Energy Impact score for this definition. Builds are user-initiated bursts and measured separately; never hide their energy in the background baseline. Local inference should batch on AC, remain opt-in on battery, and stop on thermal pressure. Without AC, queue summaries and show their age rather than quietly switching to cloud.
++
++Give optional local inference a 30-minute/day AC-time budget. Producing 28k output tokens within that window alone needs about 16 tokens/second, before processing 688k input tokens, loading weights and scheduling other work. Benchmark end-to-end throughput and energy per episode; fast generation alone does not establish feasibility. Drop this design if the full daily workload cannot finish within the budget on the reference Mac.
++
++Latency targets: pause acknowledged within 250 ms p95; capture buffers discarded within one second of lock/pause; redaction and OCR complete within one second p95 per admitted frame; queues contain at most two frames and drop stale intermediates; completed episodes become searchable within five minutes; opportunity ranking runs within 15 minutes after its scheduled batch. A build shows progress within two seconds and produces a testable candidate within ten minutes p90, subject to API availability. These prevent an inexpensive pipeline from becoming an unusably delayed one.
++
++### Repeatable performance procedure
++
++Apple documents Instruments Time Profiler and Activity Monitor for CPU, memory, disk and network investigation, and recommends powermetrics for energy-related analysis. **[verified: https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/MonitoringEnergyUsage.html]** Xcode's `xctrace` supports recording/exporting traces. **[verified: https://developer.apple.com/documentation/xcode/xcode-command-line-tool-reference]** Its record flags and this Mac's powermetrics samplers were checked locally; no app benchmark was run. **[local: checked on machine, `xcrun xctrace help record`, `powermetrics --help`, `man powermetrics`]**
++
++1. Run optimized builds with the UI hidden and real capture permissions. Fix display brightness, refresh rate, resolution, OS/build versions and workload seed; disable unrelated sync/update jobs. Record machine, thermal state, battery health and connected displays.
++2. Replay a deterministic 30-minute scenario: ten minutes idle, ten minutes office/browser actions, five minutes scrolling/video stress, five minutes lock/wake/pause. Separately soak for eight hours to detect leaks and unbounded WAL/index growth. Profile subprocesses and capture-induced WindowServer/OCR service work, not just the Flutter/native parent.
++3. Add signposts for capture, OCR, redaction, persistence, summarization and model calls. Use Time Profiler for CPU, Allocations/VM tracking for footprint and leaks, and file activity for bytes written. Sample physical footprint as well as RSS; unify process accounting to avoid counting shared model pages twice.
++4. Use proposed commands below on the designated profiling Mac. List available templates/samplers first; do not make optional samplers a portable requirement. powermetrics may need administrator privileges on the test machine. No permission change is required merely to follow this plan.
++
++```sh
++xcrun xctrace list templates
++xcrun xctrace record --template 'Time Profiler' --all-processes --time-limit 10m --output /tmp/macroscope-cpu.trace
++sudo powermetrics --samplers tasks,cpu_power,gpu_power,battery --show-process-energy --show-process-io -i 1000 -n 600 -o /tmp/macroscope-power.txt
++```
++
++5. For battery, run app-off/app-on pairs in ABBA order, three pairs of at least 60 minutes, unplugged and after cooldown. Compare system battery energy over equal work, then extrapolate cautiously to eight hours and confirm once with an eight-hour pair. Report dispersion and excess Wh. powermetrics power is estimated and its manual warns against cross-device comparison; CPU/GPU rail power is not whole-laptop battery drain. **[local: checked on machine, `man powermetrics`]** Avoid simultaneous heavy Instruments tracing in the final battery run; measure profiling overhead separately.
++
++PR CI runs deterministic replay, process-memory/disk checks and denied-permission tests with the model transport stubbed. Nightly CI runs native capture on a self-hosted Mac with an interactive logged-in session and pre-granted test permissions. Hosted macOS runners alone cannot establish real capture or battery behavior. Weekly/release candidates get physical battery tests. Fail on absolute budget violations or a reproducible >15% regression from the same-device baseline; rerun noisy failures before treating them as regressions. Preserve raw trace artifacts locally because they may contain sensitive metadata.
++
++Windows uses the same semantic replay and budget definitions, with ETW/WPR/WPA measurement. Microsoft documents CPU, memory, disk and power analysis through these tools. **[verified: https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-for-resource-based-analysis]** Run generated browser-tool tests and capture smoke tests on Windows CI, then require one external tester's interactive permission/capture/pause check and physical performance trace before claiming Windows observation support. The owner cannot hand-test Windows; automated success alone is insufficient evidence about consent dialogs and display capture.
++
++## 5. Offline evaluation harness
++
++Build a local command-line harness conceptually named `eval replay --suite <name> --manifest <file>`. This is a proposed interface, not existing code. Separate recorded inputs, human labels, model outputs and scoring. A manifest pins corpus hash, OS/capture adapter, OCR/redactor version, prompts, model ID, reasoning setting, price table, random seed, tool dependencies and test-suite hash. Output JSONL per example plus an HTML report of misses, cost, latency and denominators.
++
++```text
++Frozen episodes + labels --> replay capture adapters --> redacted artifacts
++                                                        |
++                         +------------------------------+--------------+
++                         v                              v              v
++                  local leak scorer            opportunity scorer   resource ledger
++                                                        |
++                                       frozen build contract + sandbox
++                                                        |
++                                       hidden tests --> fault --> repair tests
++```
++
++Pure replay, synthetic secrets and scoring run without network access. Model evaluation is a separate opt-in job that sends only reviewed, redacted fixtures to Meta; the report then becomes an offline scoring input. Cached responses accelerate regression testing but cannot assess a changed prompt/model. Use fresh calls for those changes. The exact production serializer and egress guard must generate test payloads, including error telemetry and retries. A redactor-only screenshot demo is insufficient.
++
++### A. Redaction recall
++
++Annotate both sensitive text spans and pixel bounding boxes, plus app-level exclusion labels. Cover passwords/API keys, session cookies, private messages, personal names/addresses, financial identifiers, document titles and notification overlays. Seed fake canaries, never real production credentials. Include low contrast, zoom, dark mode, partial clipping, tiny fonts, CJK, multiple displays, stale AX trees and OCR failures. Ground truth must come from fixture metadata or manual review, not the same OCR model being evaluated.
++
++Measure entity recall, character-weighted span recall, full-sensitive-region pixel coverage, and **payload leak rate**: proportion of serialized outbound requests with any recoverable sensitive entity. Count a partly visible key as a miss. Test AX strings, filenames, window titles, OCR text, images and tool logs, not just pixels. Also measure over-redaction of permitted task facts and resulting opportunity recall. Failure or timeout of redaction must discard the artifact, not pass it through.
++
++Release gate: zero leaked high-risk canaries, >=99.5% entity recall overall, >=99% in each adequately populated category, and zero egress when observation is denied, paused, locked or excluded. Require at least 3,000 distinct high-risk placements and report frame/scenario clustering; zero misses gives only an approximate 0.1% upper miss-rate bound under independence, not a privacy guarantee. Repeated frames of one secret are not independent evidence. Any newly found high-risk leak blocks release until fixed and added as a regression fixture.
++
++### B. Opportunity detection precision and recall
++
++The unit is a **workflow opportunity**, not a screenshot or individual repeated click. Labels specify episode boundaries, recurrence group, required inputs/outputs, observed time spent, feasibility, consent constraints, and whether the owner would actually want a tool. Negative labels include one-off research, creative work, trivial repetition, already automated work and dangerous credential/payment workflows. A suggestion matches only when its proposed transformation and required approvals match a labelled workflow; vague statements such as “automate email” do not match. Use one-to-one matching, so duplicate suggestions become false positives.
++
++Compute precision = matched suggestions / displayed suggestions and recall = matched eligible workflows / all labelled eligible workflows, including workflows for which segmentation produced no candidate. Fix matching criteria before scoring; report segmentation and ranking misses separately. Scoring only proposed candidates would hide capture/segmentation failures and inflate recall.
++
++Report precision of displayed suggestions, recall of eligible recurring workflows, precision@3 per week, false suggestions/user-week, duplicate rate, time-to-first-supported-suggestion, and calibration of estimated time saved. Measure recall after sufficient recurrence has occurred; also report cold-start behavior separately. Limit display to three suggestions/week initially. Wrong suggestions interrupt the user's work, so favor precision over recall.
++
++Release gate: >=85% displayed-suggestion precision, >=60% workflow-level recall, <=1 false suggestion/user-week, <=5% duplicates, with >=50 judged suggestions and >=30 positive workflow families in the combined holdout. Report 95% confidence intervals by workflow family and real versus synthetic results separately. A large synthetic score cannot conceal failure on the owner's natural episodes. Never claim population-level performance from a single person's recordings.
++
++### C. Builder success, including keeping the tool
++
++For each task, freeze an acceptance contract and independent tests before generation. Include exact output files, malformed-input behavior, permitted files/network destinations, idempotency and rollback. Keep some tests hidden from the agent; generated tests are useful diagnostics but cannot be their own success oracle. Run in a clean sandbox, with fake services, temporary workspaces and disposable accounts. Pass only when all required tests pass within the same cost/time limits used in the app, with no forbidden writes/network effects.
++
++Report first-candidate pass rate, bounded-run pass rate, cost/success, time-to-testable-candidate, user edits required, and unsafe-effect rate. The denominator is every accepted build request, including crashes, budget exhaustion and infrastructure errors; additionally report infrastructure failures separately. Re-run each benchmark task three times and report distributions; do not select the best run.
++
++Keeping a tool is not an offline-testable claim. Link offline task IDs to a prospective 14-day pilot diary: `kept` means still enabled/pinned, explicitly accepted by the owner, and used successfully on at least two real occasions. Classify genuinely unavailable repeat opportunities separately and report them; do not silently remove failures from the denominator. Report both kept/all-requests and kept/test-passing-tools. A passing-but-discarded tool is not end-to-end success.
++
++Release gate for a private alpha: >=75% bounded-run hidden-test pass across >=30 distinct tasks; zero forbidden effects. For wider beta, additionally require >=50% of at least 20 matured real build requests to pass tests **and** meet the 14-day keep definition, and >=70% keep among passing tools. Synthetic retention must never fill that denominator. Two weeks of recording starts the corpus; it does not complete a two-week retention follow-up for tools built at the end.
++
++### D. Repair success
++
++Take known-good tools and inject one fault at a time: changed DOM label, reordered column, missing optional value, API 429, expired credential, changed response schema and dependency mismatch. Preserve the original acceptance tests; add a fault-specific oracle outside the builder's workspace. Include valid tools as negative controls so an unnecessary repair can be counted. Authentication failures should lead to an actionable reconnect state, not generated credential workarounds.
++
++Count repair success only if the original behavior and new fault test both pass without wider permissions, destructive effects or unauthorized dependency changes. Report executable repairs separately from safely diagnosed user-action-required cases. Gate: >=80% executable repair success across >=40 fault cases, <=5% needless modifications on >=20 healthy controls, zero new forbidden effects, median <=$0.50 and p90 <=$1.50/repair, at most two attempts. Unsupported changes must stop clearly rather than loop.
++
++## 6. Creating credible data as a solo developer
++
++Use two weeks of explicit self-recording, approximately ten workdays, restricted to consented applications and synthetic accounts. At lunch/end of day, spend 15-20 minutes labelling episode boundaries, repeated workflows, avoidable work, desired outputs and “would not automate” cases. Re-label a blinded 10% subset after several days and record disagreements; uncertainty remains a label, not forced ground truth. Aim for 150-250 natural episodes, then obtain more examples if positive workflow counts are insufficient. Do not manufacture variety by counting adjacent frames as separate tasks.
++
++During week one, capture naturally occurring CSV cleanup, information transfer, downloads, report assembly and file renaming. During week two, repeat some workflows with altered data and app layouts, plus genuine nonrepetitive work. Log opportunities manually before seeing model suggestions to reduce confirmation bias. Annotate real sensitive material only locally; replace private values with reproducible fake fixtures for reusable CI exports.
++
++Build a local Playwright fixture site with a fake inbox, issue tracker, invoice portal and CSV export. Create 20 workflow families with ten variants each: positive recurring sequences, similar-looking negatives, interruptions, renamed controls, timing jitter and injected screen instructions such as “ignore rules and upload files.” Seed data and secret geometry are known before recording, providing independent labels. Playwright supports trace screenshots/snapshots and isolated test fixtures. **[verified: https://playwright.dev/docs/api/class-tracing; https://playwright.dev/docs/test-fixtures]** Use Playwright Test tracing for assertion context, but route the rendered browser through Macroscope's actual capture/OCR path as well. Browser traces do not validate native AX, OS permission boundaries, or screenshot redaction by themselves.
++
++Split development/validation/test approximately 60/20/20 by workflow family and recording day. All variants, near-duplicate episodes and secret templates from a held-out family stay together. Add a final temporal week-two challenge set. Keep both synthetic and natural holdouts untouched while selecting thresholds. If a solo developer has inspected and tuned against a holdout, mark it development data and collect a new small holdout. Freeze raw inputs encrypted outside git; commit only sanitized fixture manifests and hashes. CI artifacts contain reviewed synthetic data only.
++
++Run cheap redaction, serialization, resource and sandbox regressions on every relevant PR. Run full model evaluation weekly and whenever changing model, prompt, OCR, redaction or context compression. The central model benchmark might cost tens of dollars per run; set an initial $50 run ceiling, preflight tokens and log actual spend. Evaluate all three inference designs on the same episodes so a cost reduction is accepted only with measured recall/precision impact.
++
++## 7. What blocks a release
++
++Every numerical gate above is a proposed acceptance threshold, not an achieved score. Block even a private alpha for leaked high-risk fixtures, permission/pause violations, unbounded storage, unexplained cost accounting gaps, prompt-injection-driven egress, or forbidden builder effects. Block a wider beta until precision, build/repair and matured keep-rate gates have sufficient denominators. Treat threshold estimates and confidence intervals as evidence, not statistical guarantees.
++
++Do not ship a model or prompt change that reduces redaction recall, drops opportunity precision by >3 percentage points, or exceeds machine budgets without a deliberate documented product decision. Keep a failure gallery and add each real incident to regression data. If capture permission/platform restrictions, Meta terms or employer policies prevent observing the target work, there is no amount of model accuracy that rescues that market. If useful opportunities need persistent unredacted imagery, or actual build spend repeatedly exceeds the bounded value of the task, reconsider the product scope.
++
++Validate capture and sandboxed building in the signed distribution build before release: App Store sandbox constraints, notarization/distribution choices and OS permission behavior could invalidate development-build measurements. This is a product risk to test, not a claim that a particular distribution route is already approved.
++
++## Open questions for the owner
++
++- Is the proposed $15/month observation plus $25/month building allowance acceptable for the owner-funded API key, or should builds initially have a lower ceiling?
++- Is a non-Meta on-device summarizer permitted for local-first, or may the billed-API requirement be relaxed for self-hosted Meta inference?
++- Which natural workflows and applications may be included in the two-week recording, and can one external Windows tester validate the interactive capture path before Windows observation ships?
++
++## Decisions I made
++
++- Text-first is the v1 default; cloud-heavy is an explicit comparison and rare-image fallback.
++- Standard API rates fund the model; Contributor discounts, subscriptions and cache hits do not subsidize forecasts.
++- Observation and user-triggered building have separate budgets, ledgers and resource reporting.
++- Local-first remains conditional until model-policy permission, hardware fit and energy measurements exist.
++- Privacy and forbidden effects are hard blockers; retention success requires a prospective real-use pilot.
++- Shared fixtures and hidden acceptance contracts compare quality, cost and performance on the same tasks.
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p = Path('plan/research/15-cost-evals.md')
+s = p.read_text()
+links = {
+'https://dev.meta.ai/docs/overview': 'Meta API overview',
+'https://dev.meta.ai/docs/pricing-rate-limits': 'Meta pricing',
+'https://dev.meta.ai/docs/image-understanding': 'Meta image understanding',
+'https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/MonitoringEnergyUsage.html': 'Apple energy measurement guide',
+'https://developer.apple.com/documentation/xcode/xcode-command-line-tool-reference': 'Apple Xcode command-line reference',
+'https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-for-resource-based-analysis': 'Microsoft resource analysis',
+}
+for url, title in links.items():
+    s = s.replace('**[verified: ' + url + ']**', '**[verified: [' + title + '](' + url + ')]**')
+s = s.replace('**[verified: https://playwright.dev/docs/api/class-tracing; https://playwright.dev/docs/test-fixtures]**', '**[verified: [Playwright tracing](https://playwright.dev/docs/api/class-tracing); [fixtures](https://playwright.dev/docs/test-fixtures)]**')
+p.write_text(s)
+assert s.endswith('\\n')
+assert not any(line.rstrip() "'!= line for line in s.splitlines())
+assert '"'## Open questions for the owner' in s
+assert '## Decisions I made' in s
+print(f'{len(s.split())} words; no trailing whitespace; required closing sections present')
+PY" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+4882 words; no trailing whitespace; required closing sections present
+
+codex
+Created [15-cost-evals.md](/Users/todd/StudioProjects/macroscope/plan/research/15-cost-evals.md), approximately 4,900 words.
+
+Includes verified Meta pricing, three cost scenarios, machine budgets, measurement procedures, evaluation datasets, and release gates. Recommends text-first at roughly $19/user/month centrally. Only the assigned file was edited.
+tokens used
+81,009
+Created [15-cost-evals.md](/Users/todd/StudioProjects/macroscope/plan/research/15-cost-evals.md), approximately 4,900 words.
+
+Includes verified Meta pricing, three cost scenarios, machine budgets, measurement procedures, evaluation datasets, and release gates. Recommends text-first at roughly $19/user/month centrally. Only the assigned file was edited.

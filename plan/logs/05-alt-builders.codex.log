@@ -1,0 +1,1830 @@
+Reading additional input from stdin...
+OpenAI Codex v0.163.0
+--------
+workdir: /Users/todd/StudioProjects/macroscope
+model: gpt-6.1-sol
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a16323-7dc4-7f02-9998-2d1fc31d6956
+--------
+user
+You are one of several planning agents working in parallel on a new desktop app. First read plan/BRIEF.md fully. Then do the track below. Write your output file yourself (markdown), make it substantive and specific (roughly 2,000-5,000 words, ASCII diagrams welcome), and do not edit any other agent's files.
+
+Track: WAYS TO BUILD SOFTWARE INSIDE THE APP (alternatives and fallbacks). Output: plan/research/05-alt-builders.md
+The owner wants Muse Code from a terminal inside the app, "or another way to build software/scripts inside of software". Compare concretely (use web search):
+1. Muse Code via `muse serve` (MSP over stdio) with a native UI. (The schema is in plan/reference/msp/msp.d.ts; skim it.)
+2. Muse Code TUI in an embedded PTY terminal (xterm.js / SwiftTerm / portable-pty).
+3. `muse exec --json` one-shot headless jobs.
+4. Our own small agent loop calling the Meta Model API directly with a constrained tool set (write file, run test, read UI tree), with no general shell.
+5. Other agents as optional backends: `codex app-server`, Claude Agent SDK. Explain the value of a provider-agnostic "Builder" interface even if Meta is the default.
+6. Non-agent generation: a constrained DSL / workflow graph (like Shortcuts) that the model fills in, which is far safer and easier to verify than arbitrary code.
+Recommend a layered answer: likely, generated automations target a small, typed Macroscope SDK/DSL first (safe, inspectable, repairable), with full code via Muse for the cases that need it. Define that SDK surface: primitives (read clipboard, file ops, HTTP, browser actions via Playwright/CDP, AX UI actions, spreadsheets, notifications, LLM call), triggers, parameters, and how each primitive maps to permissions. Show 3 example automations written against it.
+codex
+I’ll read the brief and MSP schema, research the builder options, then write `plan/research/05-alt-builders.md` with a recommendation and concrete SDK examples.
+exec
+/bin/zsh -lc "pwd && rg --files -g 'AGENTS.md' -g 'BRIEF.md' -g 'msp.d.ts' -g 'SKILL.md' plan .agents .codex 2>/dev/null" in /Users/todd/StudioProjects/macroscope
+ exited 2 in 0ms:
+/Users/todd/StudioProjects/macroscope
+plan/reference/msp/msp.d.ts
+plan/BRIEF.md
+
+exec
+/bin/zsh -lc "ls -la; rg --files -g AGENTS.md -g '"'!node_modules'"' -g '"'!vendor'"' /Users/todd/StudioProjects 2>/dev/null | head -60; cat plan/BRIEF.md; cat /Users/todd/.codex/skills/.system/openai-docs/SKILL.md" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+total 0
+drwxr-xr-x@  4 todd  staff  128 Oct 22 23:20 .
+drwxr-xr-x@ 19 todd  staff  608 Oct 22 23:20 ..
+drwxr-xr-x@  9 todd  staff  288 Oct 22 23:20 .git
+drwxr-xr-x@ 10 todd  staff  320 Oct 22 23:23 plan
+/Users/todd/StudioProjects/stockvaluation_io/AGENTS.md
+/Users/todd/StudioProjects/stockvaluation_io/valuation-portal/AGENTS.md
+/Users/todd/StudioProjects/your-pt.com/AGENTS.md
+# Macroscope: planning brief (shared by every planning agent)
+
+Today is 2026-10-22. Everything here is about planning; no app code exists yet.
+
+## The idea (the owner's words, condensed)
+
+A desktop app that watches what the user does on their computer (screen frames plus
+interaction events), uses AI to find repetitive, tedious work, and then **builds small,
+specific apps, scripts or automations** that do that work for them. Automation tools like
+Zapier and Shortcuts make you decide what to automate and build it yourself; Macroscope
+discovers it for you and writes the tool.
+
+Original pipeline sketch (feel free to change any of it):
+
+1. **Capture**: a background process records screen state only when the UI changes, plus
+   events (active app, window titles, clicks, keystroke patterns but not content).
+   Sensitive data is masked on the device before anything reaches a model.
+2. **Pattern engine**: groups activity into recurring workflows ("every Tuesday: open Jira,
+   copy three fields into a CSV, format dates, email a status update") and ranks them by
+   time spent, frequency and cognitive load.
+3. **Micro-app generator**: on "Automate this", an AI coding agent writes a dedicated
+   tool (script, browser extension, menu-bar widget, Shortcut...), shows a preview or
+   diff, the user tests it in a sandbox and pins it.
+
+## Hard requirements from the owner
+
+- **Desktop app for macOS and Windows. macOS is primary**: the owner can only test on a Mac.
+  Windows must be designed for, but cannot be hand-tested by the owner.
+- Mobile is out of scope for v1 (a prior analysis concluded mobile can only ever be a
+  companion: approvals, notifications, triggers). At most, mention it as a later phase.
+- **Must use Meta's APIs/models.** The owner specifically wants Meta's developer models,
+  the **Muse** family, and floated using **Muse Code** (Meta's terminal coding agent)
+  *from a terminal inside the application*, "or another way to build software/scripts
+  inside of software".
+- **All Meta model use is via API calls billed to an API key** (the owner's Meta developer
+  API key), not a consumer account login. Every design that uses Muse (`muse serve`,
+  `muse exec`) or calls Meta models directly MUST work with API-key auth, and the plan must
+  say exactly how the key gets from our app to the model (see "API-key auth" below).
+- **UI/UX matters**: plan the experience, not just the plumbing.
+- The owner is a solo developer who builds with AI coding agents (Codex, Claude, Muse) and
+  is comfortable with Flutter, Python, Rust and TypeScript.
+
+## Verified local facts (checked on the owner's Mac today)
+
+- `muse` CLI is installed: **Muse Code 1.4.11**. Full help text: `plan/reference/muse-cli-help.txt`.
+  - `muse exec` runs one headless prompt (`--json` gives JSONL events, `--output-schema`,
+    `--image`, `--workspace`, `--worktree`, `--approval-mode`, `--session-id`,
+    `--max-model-steps`, `--reasoning-effort none..ultra`).
+  - `muse serve` serves an **MSP (Muse Session Protocol) v1 session host over stdio**; the
+    client owns stdin/stdout. Sandbox posture is fixed per host process (`--disable-sandbox`,
+    `--sandbox-network`, `--disable-write`, `--disable-shell`); approval mode is chosen over
+    the wire. Providers: `meta`, `local`, `echo`.
+  - The full MSP v1 wire schema is exported at `plan/reference/msp/msp.d.ts` (TypeScript,
+    ~3,600 lines) and `plan/reference/msp/msp.schema.json`. Methods include `session/start`,
+    `session/resume`, `session/fork`, `session/read`, `session/sideChat`, `session/userShell`,
+    `session/setModel`, `session/tokenUsage`, `session/contextUsage`, `approval/request`,
+    `approval/decide`, `goal/set|pause|resume`, `subagent/*`, `task/*`, `skill/*`,
+    `plugin/*`, `hook/list`, `media/upload`, `model/list`, `item/started|delta|completed`.
+  - Known model ids: `muse-spark-1.3` (in the catalog) and **`muse-wonder-1.0`, which is
+    the default model `muse exec` used in a test today** [local].
+- **API-key auth (tested today)** [local]:
+  - `META_API_KEY` env var: "always takes priority over the account login" (`muse login --help`).
+    Verified: `META_API_KEY=<bogus> muse exec --json ...` sent the request to the Meta provider
+    (model `muse-wonder-1.0`) and failed with
+    `run.terminal.failed: "your API key from META_API_KEY was rejected — update or unset it"`.
+    So the key path works for `muse exec`, and failures come back as structured JSONL.
+  - `muse auth set --provider meta --api-key-stdin` stores a key in muse's own store (stdin only,
+    never argv).
+  - `muse exec --api-key-stdin` passes a key for a single run. `--base-url` overrides the endpoint.
+  - `-c KEY=VALUE` on exec/serve accepts secrets only as whole-value `${VAR}` references.
+  - MSP turn errors include `TurnErrorKind = "authRequired"` and a typed `quota` detail
+    (`QuotaDetail`, reset instant), so a desktop client can show "key missing/rejected" and
+    "rate-limited until X" without parsing text.
+  - NOT yet verified: that `muse serve` picks up `META_API_KEY` from its environment
+    the same way (expected, since it's the same binary and provider), and a *successful*
+    call with a real key (the owner has to supply that).
+- `codex` (0.163, has `codex app-server`) and `claude` (Claude Code) CLIs are also installed.
+- The owner already runs `muse exec` headless overnight via a keeper script
+  (`~/StudioProjects/agent-loop/scripts/muse_keeper.py`), so headless Muse is proven here.
+
+## Claims from the earlier chat that are NOT verified
+
+The idea came from a chat with another assistant. Treat these as **unverified, possibly
+invented**, and verify with web search before relying on them: "Muse Wonder", "Muse Glimmer
+(open-weight 30B)", "SAM 3.1 in the Meta Model API", base URLs like `dev.meta.ai/v1` or
+`llama.developer.meta.ai/v1`, a `@meta/llama` npm SDK, Muse model context sizes, Llama 4
+Scout's 10M-token context being usable for hours of screenshots. If you cannot verify
+something, say so plainly and design so the plan does not depend on it.
+
+## Rules for every planning agent
+
+- Write only inside `plan/`. Your assigned output file is given in your task.
+- Be concrete and opinionated: make decisions, give reasons, name the trade-off you accepted.
+  Do not survey every option evenly.
+- Mark every external fact as **[verified: source/URL]**, **[local: checked on machine]**
+  or **[assumption]**.
+- Call out risks that could kill the product (OS permissions, privacy, cost, App Store /
+  notarization rules, prompt injection from screen contents, Meta API terms).
+- End your file with **Open questions for the owner** (only real decisions) and
+  **Decisions I made** (one line each).
+---
+name: "openai-docs"
+description: "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex."
+metadata:
+  short-description: "Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, and self-knowledge; OpenAI APIs and ChatGPT Work. 'You'/'this app' means Codex only."
+---
+
+# OpenAI Docs
+
+Provide current, cited OpenAI product, API, model, and Codex guidance. Read zero or one primary reference.
+
+**First substantive action:** Search the user's exact requested official OpenAI documentation topic and any explicitly named model using a concise, topic-specific query of 2-6 essential terms. When an already-available direct official documentation search and page-retrieval capability is present, use it first: search, then fetch or open the matching official page before general web search. Otherwise, immediately use official-domain web search, then actually open or fetch the relevant official page. Complete this source order before reading a reference, inspecting local or repository files, running a Codex manual or model resolver, drafting a plan, or answering from memory. Use the actual fetched page, not a search snippet or an unopened link. If one official search or page does not establish the answer, search another appropriate official domain and actually open or fetch the result. Preserve the exact requested model; never substitute a newer model.
+
+**Only exception:** An explicitly requested, genuinely broad, cross-topic Codex setup, orientation, or system-map synthesis may use the manual first when shell execution and an allowed temporary cache are available. A specific Codex feature, setting, command, error, model, or requested citation remains docs-first. Mixed Chat/Work/Codex comparisons are official documentation questions, not manual-first Codex requests.
+
+For generic software tasks, answer the software task directly. OpenAI implementation, debugging, SDK, API, prompting, agent, and eval requests are not generic.
+
+For a straightforward factual or citation-only request, follow the source order and do not read a route reference. This includes straightforward API facts, ChatGPT Work or mixed Chat/Work/Codex comparisons, model tiers, aliases, Pro mode, reasoning settings, factual migration baselines, and narrow Codex facts. Prioritize `learn.chatgpt.com` for ChatGPT Work.
+
+## Choose one primary route
+
+Use the first matching route, and read its reference only when the requested task needs that specialized workflow:
+
+- **Explicitly requested local documentation integration:** Read [integration guidance](references/mcp-diagnostics.md) only when the user explicitly requests that local integration.
+- **Model migration, upgrades, or model-specific prompting:** Read [model-migration.md](references/model-migration.md) for actual migration planning, implementation, dynamic target resolution, or prompt changes. Preserve an explicitly requested target.
+- **Model selection and comparisons:** Read [model-selection.md](references/model-selection.md) only when nuanced current, latest, default, cost, latency, quality, or modality tradeoffs need more guidance. Do not run a migration resolver for selection alone.
+- **Product, API, ChatGPT Work, and mixed Chat/Work/Codex documentation:** Read [official-docs.md](references/official-docs.md) only when fetched official pages leave source selection, API schemas, or the requested implementation unresolved. This route is not manual-first.
+- **Explicitly broad Codex setup, orientation, or cross-topic synthesis:** Read [codex-self-knowledge.md](references/codex-self-knowledge.md) when the eligible Codex manual or deeper Codex procedures are needed.
+
+Read at most one primary reference. Do not open every route, bundled model guide, or helper script. Read a supporting reference or run a helper only when the chosen workflow demonstrably needs it.
+
+## Source and execution boundaries
+
+- Search, open, fetch, and cite only `developers.openai.com`, `platform.openai.com`, and `learn.chatgpt.com`. Cite the page that supports the claim. State uncertainty when official sources do not establish pricing, availability, account access, limits, or behavior.
+- Preserve an explicitly requested model for selection, migration, and prompting. Resolve an unspecified latest or current migration target only after searching and fetching current official guidance.
+- Use `references/latest-model.md` only as a disclosed fallback after current official model guidance does not answer the question. Read `references/upgrading-to-gpt-6-astra.md` only for an actual, requested GPT-6 migration; read `references/prompting-guide.md` only for requested prompting work.
+- Before building, running, editing, debugging, or testing an API-backed app or tool, use `openai-platform-api-key` first when available. Documentation, conceptual examples, model selection, and read-only guidance do not require an API key.
+- Say "OpenAI Docs" or "official OpenAI documentation" in user-facing answers. Keep exact official citations and examples concise.
+
+exec
+/bin/zsh -lc "wc -l plan/reference/msp/msp.d.ts; sed -n '1,240p' plan/reference/msp/msp.d.ts; rg --files plan/reference" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+    3651 plan/reference/msp/msp.d.ts
+// Muse Session Protocol (MSP) v1 TypeScript declarations.
+// STABLE surface only; experimental twin: experimental/msp.d.ts.
+// Generated by tbh-protocol (spec 206) from the same schema model as
+// the JSON Schema bundle (INV-017). Do not edit by hand.
+
+export interface ApprovalAmendment {
+  durability: ApprovalAmendmentDurability;
+  rulePreview: string;
+}
+
+export type ApprovalAmendmentDurability = "session" | "localPersistent" | (string & {});
+
+export interface ApprovalChange {
+  choiceId?: string;
+  decision?: ApprovalDecision;
+  executable?: boolean;
+  kind: string;
+  reason?: string;
+  reparsed?: boolean;
+  requirementId?: ApprovalRequirementRef;
+  status?: ApprovalPersistenceStatus;
+}
+
+export interface ApprovalChoice {
+  acceptsFeedback?: boolean;
+  choiceId: string;
+  decision: ApprovalDecision;
+  label: string;
+  rulePreview?: string;
+  scope: ApprovalChoiceScope;
+}
+
+export type ApprovalChoiceScope = "once" | "session" | "localPersistent" | (string & {});
+
+/** `approval/decide` params (tdd SS5.4): the decision. A standard SS3 command — requires the session loaded on this host, requires `commandId`, durable intake before ack, value-identical replay. */
+export interface ApprovalDecideParams {
+  /** The approval being decided. */
+  approvalId: string;
+  /** One of the current `availableChoices`; else -32052. */
+  choiceId: string;
+  /** The SS3.1.1 idempotency handle (UUIDv7). */
+  commandId: string;
+  /** Free-text guidance delivered to the model with the denial. Only valid on choices with `acceptsFeedback`. Never persisted in the durable audit record (live steer only), so it is absent from `approval/resolved` (tdd SS5.4). Omitted and explicit `null` both mean "no feedback" (#23468). */
+  feedback?: string | null;
+  /** Must equal the approval's `currentRequirementId`. The multi-stage race guard: a decision aimed at stage 1 can never accidentally satisfy stage 2, and a stale value is -32053 (tdd SS5.4). */
+  requirementId: ApprovalRequirementRef;
+  /** The target session. */
+  sessionId: string;
+}
+
+/** `approval/decide` result (tdd SS5.4). Admission-ack rules still apply: the authoritative outcome is `approval/resolved` / `approval/updated` on the view stream. */
+export interface ApprovalDecideResult {
+  /** The approval this decision was applied to. */
+  approvalId: string;
+  /** Echoes the client's id. */
+  commandId: string;
+  /** Admission status. */
+  status: CommandStatus;
+  /** `false` when the choice satisfied a stage but further requirements remain (the approval stays pending and an updated `approval/request` follows); `true` when this decision produced the terminal `DecisionApplied` (tdd SS5.4). */
+  terminal: boolean;
+}
+
+export type ApprovalDecision = "approved" | "approvedForSession" | "approvedPolicyAmendment" | "denied" | "deniedPolicyAmendment" | "timedOut" | "abort" | (string & {});
+
+/** `approval/listPending` params (tdd SS5.7): the pull dual of the re-issued requests. A log-fold read — no lease, works on loaded and unloaded sessions, never subscribes. */
+export interface ApprovalListPendingParams {
+  /** The session to read. */
+  sessionId: string;
+}
+
+/** `approval/listPending` result (tdd SS5.7). Ordering is by opening `viewCursor`; empty arrays when nothing is pending. The result is point-in-time — to act on it race-safely, `approval/decide` carries the `requirementId` guard regardless of how the client learned the state. */
+export interface ApprovalListPendingResult {
+  /** Exactly the `approval/request` params of tdd SS5.3, one per pending approval. */
+  approvals: ApprovalRequestParams[];
+  /** Exactly the `userInput/request` params of tdd SS5.10, one per pending prompt. */
+  userInputs: UserInputRequestParams[];
+}
+
+/** The approval enforcement modes (tdd SS5.12, camelCased `ApprovalBackendMode`). **Closed** by design (D-006, select-never-create): a client selects a preconfigured mode and can never construct one; widening this enum is a deliberate, gate-visible protocol change. */
+export type ApprovalMode = "allowAll" | "promptUnmatched" | "onRequest" | "denyUnmatched";
+
+/** Whether a mode change did anything (tdd SS5.12), mirroring `ApprovalReconfigureApplyOutcome`. Apply failures are `commandRejected`. */
+export type ApprovalModeApplyOutcome = "completed" | "noop" | (string & {});
+
+/** How an approval mode took effect (tdd SS5.12, the effective-mode projection's `source` vocabulary). Open. */
+export type ApprovalModeSource = "startup" | "replay" | "approvalReconfigure" | (string & {});
+
+export interface ApprovalOrigin {
+  command?: string;
+  kind: string;
+  url?: string;
+}
+
+export type ApprovalPersistenceStatus = "succeeded" | "failed" | (string & {});
+
+export type ApprovalPolicyResult = "allow" | "deny" | (string & {});
+
+/** Full params shared by `approval/request` and `approval/requested`. */
+export interface ApprovalRequestParams {
+  approvalId: string;
+  availableChoices: ApprovalChoice[];
+  currentRequirementId: ApprovalRequirementRef;
+  itemId: string;
+  judgeEscalated: boolean;
+  protectedWrite: boolean;
+  rawArgs: string;
+  sessionId: string;
+  sourceRange: SourceRange;
+  /** Present only for a child (native subagent) approval projected onto the parent session's plane (ADR 36182); parent-own approvals omit it. */
+  subagentOrigin?: ApprovalSubagentOrigin;
+  subject: ApprovalSubject;
+  taskId: string;
+  toolCallId: string;
+  toolName: string;
+  turnId: string;
+  viewCursor: string;
+}
+
+/** Approval-stage token carried in SS5 params and stale-requirement errors. */
+export interface ApprovalRequirementRef {
+  approvalId: string;
+  sourceIndex: number;
+}
+
+/** Winning terminal returned to a losing `approval/decide` command. */
+export interface ApprovalResolutionSummary {
+  decision: string;
+  resolvedBy: string;
+  viewCursor: string;
+}
+
+export type ApprovalResolvedBy = "user" | "policy" | "llmJudge" | (string & {});
+
+/** `approval/resolved` params: the first durable terminal decision. */
+export interface ApprovalResolvedParams {
+  amendment?: ApprovalAmendment;
+  approvalId: string;
+  /** The decision time as RFC3339, projected from the durable `DecisionApplied` record's own stamp (ADR 45450 D3): optional on the wire so decoders tolerate its absence, always populated by current hosts. */
+  decidedAt?: string;
+  decidedByCommandId?: string;
+  decision: ApprovalDecision;
+  itemId: string;
+  policyResult: ApprovalPolicyResult;
+  resolvedBy: ApprovalResolvedBy;
+  sessionId: string;
+  sourceRange: SourceRange;
+  stageEvidence: ApprovalStageEvidence[];
+  /** Present only for a child (native subagent) approval projected onto the parent session's plane (ADR 36182); parent-own approvals omit it. */
+  subagentOrigin?: ApprovalSubagentOrigin;
+  turnId: string;
+  viewCursor: string;
+}
+
+export interface ApprovalStage {
+  argv: string[];
+  argvComplete: boolean;
+  position: number;
+  requirementId: ApprovalRequirementRef;
+  resolution: ApprovalStageResolution;
+  suggestedPrefix?: ApprovalSuggestedPrefix;
+  totalStages: number;
+}
+
+export interface ApprovalStageEvidence {
+  argv: string[];
+  position: number;
+  requirementId: ApprovalRequirementRef;
+  resolution: ApprovalStageResolution;
+  totalStages: number;
+}
+
+export interface ApprovalStageResolution {
+  argvPrefix?: string[];
+  diagnostic?: string;
+  kind: string;
+}
+
+/** Child (native subagent) provenance for an approval projected onto the PARENT session's approval plane (#36182 / ADR 36182): identifies the originating child run/agent so a client can attribute the prompt. Omitted (`skip_serializing_if`) on the parent's own approvals, so pre-existing parent frames stay byte-identical. */
+export interface ApprovalSubagentOrigin {
+  /** The child run that parked on this approval. */
+  childRunId: string;
+  /** The child session stream id whose records carry this approval. */
+  childSessionId: string;
+  /** The originating child's subagent id, from the parent session's durable subagent control records. */
+  subagentId: string;
+}
+
+/** Open approval subject union. Unknown kinds are rendered generically and never auto-approved by clients (tdd SS5.2). */
+export interface ApprovalSubject {
+  access?: string;
+  command?: string;
+  host?: string;
+  /** Open discriminator: `shell | fileAccess | network | unixSocket | process | tool`. */
+  kind: string;
+  origin?: ApprovalOrigin;
+  path?: string;
+  port?: number;
+  protocol?: string;
+  stages?: ApprovalStage[];
+  target?: string;
+  toolName?: string;
+  workspaceRoot?: string;
+}
+
+export interface ApprovalSuggestedPrefix {
+  argvPrefix: string[];
+  label: string;
+}
+
+/** `approval/updated` params: the refreshed pending view plus one change. */
+export interface ApprovalUpdatedParams {
+  approvalId: string;
+  availableChoices: ApprovalChoice[];
+  change: ApprovalChange;
+  currentRequirementId: ApprovalRequirementRef;
+  sessionId: string;
+  sourceRange: SourceRange;
+  /** Present only for a child (native subagent) approval projected onto the parent session's plane (ADR 36182); parent-own approvals omit it. */
+  subagentOrigin?: ApprovalSubagentOrigin;
+  subject: ApprovalSubject;
+  viewCursor: string;
+}
+
+/** One attention flag (tdd SS2.4, ADR 31983 D3): a pending server-initiated request class parked on the session. Open on the wire — clients MUST ignore unknown values; future attention kinds are additive. */
+export type AttentionFlag = "approvalPending" | "inputPending" | (string & {});
+
+/** Who durably backgrounded a task (tdd SS4.5.5, `TaskBackgroundedInitiator`). Open — runtime vocabulary. */
+export type BackgroundInitiator = "user" | "timeout" | (string & {});
+
+/** The latest branch observation in the snapshot (tdd SS4.6.4, SS4.9.1). */
+export interface BranchState {
+  /** The observed branch; `null` on a detached-HEAD observation. */
+  branch: string | null;
+  /** The detected version-control system; absent when none was detected. */
+  vcs?: Vcs;
+  /** The observed workspace root. */
+  workspaceRoot: string;
+}
+
+/** A grantable capability name (SS1.4.4). Open: the reserved `rawLog` entry joins this domain as an additive open-enum extension when SS6 un-defers (#13929, Scenario 5 AS-3) — closed would make that a retype. */
+plan/reference/msp/manifest.json
+plan/reference/msp/msp.d.ts
+plan/reference/msp/msp.schema.json
+plan/reference/muse-cli-help.txt
+
+codex
+The brief supports a layered design: a typed automation runtime for common tasks, with Muse available for full-code work. I’m using the OpenAI Docs skill to verify the optional `codex app-server` backend; Muse remains the primary builder under consideration.
+web search: 
+web search: site:developers.openai.com codex app-server protocol initialize approval ...
+exec
+/bin/zsh -lc "cat plan/reference/muse-cli-help.txt; rg -n 'interface (Initialize|SessionStart|SessionResume|SessionRead|TurnStart|TurnError|QuotaDetail|ItemStarted|ItemDelta|ItemCompleted)|type (ClientRequest|ServerNotification)|viewCursor|lease|framing|JSON-RPC' plan/reference/msp/msp.d.ts" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+muse — interactive terminal coding agent
+
+If no subcommand is given, options run the interactive TUI; pass a prompt to start
+a session, or use a command below.
+
+Usage: muse [OPTIONS] [PROMPT]
+       muse [OPTIONS] <COMMAND>
+
+Commands:
+  resume           Resume a previous session (--last or <session-ref>)
+  exec             Run one prompt non-interactively (headless)
+  config           Validate enterprise configuration documents
+  export           Export a session transcript to a file
+  trace            Inspect a recorded session or run trace
+  model-profile    Show what a model resolves to per knob and effort tier
+  skills           List, inspect, enable, or disable skills
+  voice            Transcribe an audio clip into text
+  plugins          Validate and manage plugin bundles
+  sandbox          Check or set up the OS sandbox
+  schema           Export the MSP wire schema (JSON Schema or TypeScript)
+  serve            Serve an MSP session host over stdio
+  session-message  List or send cross-session messages
+  mcp              Log in to or out of an MCP server (OAuth)
+  auth             Store provider API credentials
+  login            Log in to a provider
+  logout           Remove stored provider credentials
+  init             Scaffold agent config in this workspace
+
+Options:
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+      --agents <JSON>
+          Supply one ephemeral agent-definition overlay
+      --provider <MODE>
+          Startup provider: echo, meta, or local (default: meta)
+      --preset <NAME>
+          Run a built-in preset: native-basic, miniswe, empty, ac_orch,
+          openai-apply-patch
+      --model <MODEL>
+          Model id for non-echo providers
+      --contributor-mode <on|off>
+          Per-run contributor mode override (this run only; never persisted)
+  -c, --config <KEY=VALUE>
+          Set one setting for this run (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+      --reasoning-effort <EFFORT>
+          Meta reasoning effort: none|minimal|low|medium|high|xhigh|max|ultra
+          (default: high; alias: --effort)
+      --base-url <URL>
+          Override the Meta provider base URL
+      --image <PATH>
+          Attach a local image file to the next submitted prompt
+      --workspace <PATH>
+          Register policy-gated workspace tools rooted at PATH
+  -w, --worktree [<MODE>]
+          Session Git worktree: off|create|existing; a bare -w means create
+          (default: off)
+      --worktree-base <REF>
+          Base ref for --worktree create (default: HEAD)
+      --worktree-existing <PATH>
+          Existing worktree path for --worktree existing
+      --parallel-tool-calls
+          Enable Meta API parallel tool calls
+      --no-parallel-tool-calls
+          Disable Meta API parallel tool calls
+      --subagent-worktree-isolation
+          Compatibility flag; capability defaults on. Only an affirmative
+          per-child request asks for isolation; omission stays shared. Requests
+          may reject when capability, provider, or Git prerequisites are
+          unavailable.
+      --approval-mode <MODE>
+          Tool approval mode: untrusted|on-request|never (default: on-request)
+      --permission-profile <ID>
+          Select a named permission profile for this session.
+      --approval-judge <off|on>
+          LLM approval judge for Prompt-bound calls (default: on)
+      --no-session-log
+          Do not persist session event logs to disk
+      --echo-delay-ms <MS>
+          Deterministic echo reply delay (echo provider only)
+
+Safety (approval and the sandbox are ON by default):
+      --yolo
+          Disable approval and sandbox, trust this workspace, withhold
+          request_user_input (this run)
+      --disable-request-user-input
+          Withhold request_user_input for this run
+      --trust-workspace
+          Trust this workspace for this run (load its skills and rules); does
+          not save trust
+      --disable-approval
+          Disable tool approval prompts for this workspace run
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this run
+      --sandbox-network <MODE>
+          Sandbox network mode: restricted|enabled|proxy-only (default:
+          proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --enable-shell-tool
+          Use the legacy shell tool instead of the managed platform shell
+
+Run `muse <command> --help` for command-specific options.
+
+
+muse exec — run one prompt non-interactively (headless)
+
+Usage: muse exec [OPTIONS] [PROMPT]
+
+Options:
+      --json
+          Emit machine-readable JSONL events on stdout
+      --prompt-file <PATH>
+          Read the prompt from a file instead of an argument
+      --api-key-stdin
+          Read the provider API key from stdin
+      --provider <MODE>
+          Startup provider: echo or meta (default: meta)
+      --preset <NAME>
+          Run a built-in preset: native-basic, miniswe, empty, ac_orch,
+          openai-apply-patch
+      --permission-profile <ID>
+          Select a named permission profile for this session.
+      --model <ID>
+          Model id for non-echo providers
+      --contributor-mode <on|off>
+          Per-run contributor mode override (this run only; never persisted)
+  -c, --config <KEY=VALUE>
+          Set one setting for this run (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+      --reasoning-effort <EFFORT>
+          Meta reasoning effort: none|minimal|low|medium|high|xhigh|max|ultra
+          (default: high; alias: --effort)
+      --parallel-tool-calls
+          Enable Meta API parallel tool calls
+      --no-parallel-tool-calls
+          Disable Meta API parallel tool calls
+      --base-url <URL>
+          Override the provider base URL
+      --image <PATH>
+          Attach a local image file (repeatable)
+      --workspace <PATH>
+          Root policy-gated workspace tools at PATH
+  -w, --worktree [<MODE>]
+          Session git worktree: off|create|existing
+      --worktree-base <REF>
+          Base ref for --worktree create (default: HEAD)
+      --worktree-existing <PATH>
+          Existing worktree path for --worktree existing
+      --context-compaction-strategy <ID>
+          Context compaction strategy: summary-preserved-suffix/v1,
+          prefix-extension-summary/v1, prefix-extension-inventory-summary/v1
+      --context-compaction-soft-threshold <FRAC>
+          Soft compaction threshold
+      --context-compaction-hard-threshold <FRAC>
+          Hard compaction threshold
+      --output-schema <FILE>
+          Shape the final answer with the JSON schema in FILE (meta provider
+          only)
+      --max-model-steps <N>
+          Cap the number of model steps
+      --max-tool-output-bytes <N>
+          Cap tool output bytes fed back to the model (0 or >=9)
+      --session-id <UUID>
+          Use a specific session id
+      --allow-workspace-switch
+          Allow switching the workspace mid-run
+      --user-input-auto-resolve
+          Offer request_user_input and auto-cancel prompts (headless)
+      --subagent-worktree-isolation
+          Compatibility flag; capability defaults on. Only an affirmative
+          per-child request asks for isolation; omission stays shared. Requests
+          may reject when capability, provider, or Git prerequisites are
+          unavailable.
+      --disable-web-tools
+          Disable web tools for this run
+      --disable-reminders
+          Disable reminder agents for this run
+      --disable-request-user-input
+          Withhold request_user_input for this run
+      --no-foreign-personal-context
+          Exclude foreign personal rules and skills from this run
+      --no-session-log
+          Do not persist session event logs to disk
+      --approval-mode <MODE>
+          Tool approval mode: untrusted|on-request|never (default: on-request)
+      --approval-judge <off|on>
+          LLM approval judge for Prompt-bound calls (default: on)
+  -h, --help
+          Print this help
+
+Safety (approval and the sandbox are ON by default):
+      --yolo
+          Disable approval and sandbox, trust this workspace, withhold
+          request_user_input (this run)
+      --trust-workspace
+          Load this workspace's skills and rules (this run)
+      --disable-approval
+          Disable tool approval prompts for this run
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this run
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --enable-shell-tool
+          Use the legacy shell tool instead of the managed platform shell
+
+
+muse serve — serve an MSP session host over stdio
+
+Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [OPTIONS]
+
+The client owns this process's stdin and stdout and is its only
+connection. Sandbox posture and session durability are constructed
+here and apply to every session the host loads; neither is negotiable
+over the wire. Approval mode is the other way round — it is selected
+on the wire, so there is no approval flag here.
+
+Options:
+  -h, --help
+          Print this help
+      --no-session-log
+          Use memory-only sessions
+  -c, --config <KEY=VALUE>
+          Set one setting for this host (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+
+Provider selection (this process only; never rewrites settings):
+      --provider <PROVIDER>
+          Startup provider for this host: echo, meta, or local (default: from
+          your settings, else meta)
+      --model <MODEL>
+          Model id for non-echo providers (default: your configured model, else
+          the provider's default)
+      --contributor-mode <on|off>
+          Per-process contributor mode override (this host only; never
+          persisted)
+      --disable-request-user-input
+          Withhold request_user_input from the main conversation of every served
+          session (side chats keep it)
+
+Sandbox posture (fixed for the host's lifetime):
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this host
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --trust-workspace
+          Load each session workspace's skills and rules
+
+Examples:
+  muse serve --provider meta
+  muse serve --model <MODEL>
+  muse serve --provider meta --model <MODEL>
+
+65:/** `approval/listPending` params (tdd SS5.7): the pull dual of the re-issued requests. A log-fold read — no lease, works on loaded and unloaded sessions, never subscribes. */
+71:/** `approval/listPending` result (tdd SS5.7). Ordering is by opening `viewCursor`; empty arrays when nothing is pending. The result is point-in-time — to act on it race-safely, `approval/decide` carries the `requirementId` guard regardless of how the client learned the state. */
+116:  viewCursor: string;
+129:  viewCursor: string;
+151:  viewCursor: string;
+221:  viewCursor: string;
+603:  viewCursor?: string;
+768:/** Why a result served `history.mode: "none"` — spec 208 FM-005's typed unavailability (tdd SS2.5.2; D-050). Open on the client side: an absent (older server) or unknown (newer server) value decodes conservatively as an unknown reason, and `viewCursor` text never substitutes for it (spec 208 INV-19734-1). */
+811:export interface InitializeParams {
+819:export interface InitializeResult {
+904:  /** Server-provided one-line human summary any kind MAY carry, for generic rendering of kinds a client does not recognize; new kinds SHOULD carry it during their first release cycle (tdd SS4.10). */
+1029:export interface ItemCompletedParams {
+1037:  viewCursor: string;
+1041:export interface ItemDeltaParams {
+1051:  viewCursor: string;
+1060:/** `item/readOutput` params (tdd SS4.7.4): byte-ranged fetch of stored full output that the view truncated — the `outputRef` fetch path SS3.9 and SS4.5.5 owe. Read-only; works on loaded and unloaded sessions; no lease. */
+1091:export interface ItemStartedParams {
+1099:  viewCursor: string;
+1114:  viewCursor: string;
+1204:  /** Release date; `null` when the catalog source declared nothing. */
+1205:  releaseDate: string | null;
+1244:  /** Visible rows only, newest `releaseDate` first. */
+1312:  viewCursor: string;
+1330:  viewCursor: string;
+1342:  viewCursor: string;
+1399:  viewCursor: string;
+1405:/** A late-joiner pointer at an unsettled server-initiated request (tdd SS2.5.2, SS2.2.1). The full payloads arrive as re-issued server-to-client requests right after a `session/resume` response (tdd SS5.6); `session/read` never re-issues them (tdd SS2.5.5).  **A second E4 instance, RULED with E4 (#22785, owner, 2026-08-26): the flat discriminated-object precedent is accepted for this type too, on the `ApprovalSubject` precedent, with the serialized JSON unchanged. A strict union node kind may be funded later; if it is, it must cover both this type and `TurnInputPart`.** SS2.5.2 ratifies two kind-discriminated entry shapes (`{kind: "approval", approvalId, viewCursor}` / `{kind: "userInput", userInputId, viewCursor}`); this is one flat object with both ids optional, so the published schema accepts `{"kind":"approval","userInputId":…}` and an entry carrying no id at all. The v1 model names no object-variant union (the `ApprovalSubject` precedent, followed for `TurnInputPart`), and this instance differs from that one in a way the ruling should see: `kind` here is an OPEN enum, where `TurnInputPart.type` is closed. */
+1414:  viewCursor: string;
+1424:  viewCursor: string;
+1621:export interface QuotaDetail {
+1658:/** `recap/completed` params (tdd SS3.28.2): the settlement, delivered to the requesting connection outside the view stream — no `viewCursor`, no `sourceRange`. `text` is required on `completed` (plus optional `title`, untrusted model output — clients MUST sanitize per spec 442 INV-015); `reason` is required on `failed`; neither rides `cancelled`/`timedOut`. The struct marks the conditional members optional; the SS prose pins the per-outcome rule, the `turn/completed` usage/error convention. */
+1839:  viewCursor: string;
+1853:  viewCursor: string;
+1858:/** `session/closed` params (tdd SS2.6.2; enrolled by #33065): a loaded session was unloaded from this host, broadcast to every initialized connection. After it, the session is `notLoaded`; the log remains on disk and `session/resume` reloads it. A crash emits nothing — only the orderly unload paths do (idle unload, host shutdown and a released `session/leave`), and each writes the durable `SessionEnd` record first. */
+1865:  viewCursor: string | null;
+1908:  viewCursor: string;
+1937:  viewCursor: string;
+1949:  viewCursor: string;
+1973:  viewCursor?: string;
+1980:export type SessionLeaveOutcome = "released" | "failed" | (string & {});
+1986:  /** The exact loaded session whose ownership is to be released. */
+2020:/** `session/list` params (tdd SS2.5.4). Read-only; never touches leases. */
+2064:export type SessionMcpServerConfig = { /** Ordered child arguments. */ args?: string[]; /** Executable name or path. Configuration diagnostics never echo it. */ command: string; /** Explicit child environment additions. */ env?: Record<string, string>; /** Stdio framing mode; defaults to automatic detection. */ framing?: SessionMcpStdioFraming; /** Required/optional startup posture; defaults to required. */ mode?: SessionMcpServerMode; transport: "stdio"; } | { /** Explicit request headers. */ headers?: Record<string, string>; /** Required/optional startup posture; defaults to required. */ mode?: SessionMcpServerMode; transport: "streamableHttp"; /** HTTP(S) endpoint. Configuration diagnostics never echo it. */ url: string; };
+2069:/** Stdio framing choices exposed by session MCP configuration. */
+2085:  viewCursor: string;
+2103:  viewCursor: string;
+2119:  viewCursor: string;
+2125:/** `session/read` params (tdd SS2.5.5): read one stored session **without attaching** — no writer lease, no load, no subscription, no `SessionResumed` record. */
+2126:export interface SessionReadParams {
+2133:/** `session/read` result (tdd SS2.5.5). The `viewCursor` is the fold head at read time — a point-in-time read, immediately stale if a foreign host is appending. */
+2134:export interface SessionReadResult {
+2146:  viewCursor: string;
+2160:  viewCursor: string;
+2184:export interface SessionResumeParams {
+2204:export interface SessionResumeResult {
+2214:  viewCursor: string;
+2292:  viewCursor: string;
+2296:export interface SessionStartParams {
+2320:export interface SessionStartResult {
+2324:  viewCursor: string;
+2328:export interface SessionStartedParams {
+2345:  viewCursor: string | null;
+2352:  /** The snapshot revision. Diagnostics only, never an ordering guard — `viewCursor` orders (tdd SS4.6.3). */
+2361:  viewCursor: string;
+2387:  viewCursor: string;
+2962:  /** Present when `terminal` is `"failed"`, except on a synthesized host-death terminal, which carries `reason` instead (tdd SS4.5.1, ADR 36635 D2): mid-turn failures reach the client here — never as a JSON-RPC error. */
+2979:  viewCursor: string;
+2983:export interface TurnError {
+3008:  viewCursor: string;
+3083:  viewCursor: string;
+3111:  viewCursor: string;
+3139:  viewCursor: string;
+3146:export interface TurnStartParams {
+3166:export interface TurnStartResult {
+3180:export interface TurnStartedParams {
+3190:  viewCursor: string;
+3251:  viewCursor: string;
+3275:  viewCursor: string;
+3428:  viewCursor: string;
+3451:  viewCursor: string;
+3457:  viewCursor: string;
+3501:  /** The page's events, always ascending by `viewCursor` in both directions. Durable-sourced only; pages are contiguous and can never skip a cursor. */
+3515:  /** The complete folded view at `viewCursor` (tdd SS4.9.1). */
+3518:  viewCursor: string;
+3521:/** `view/subscribe` params (tdd SS4.7.1): attach this connection's live view subscription for a session at an explicit cursor — the fine-grained counterpart of the SS2 auto-subscribe, and the gap-free re-attachment path after `view/unsubscribe`. It never loads a session, takes no lease, writes nothing. */
+3532:  viewCursor: string;
+
+web search: 
+web search: site:dev.meta.ai/docs muse serve MSP protocol SDK ...
+exec
+/bin/zsh -lc "sed -n '780,850p' plan/reference/msp/msp.d.ts; sed -n '1010,1060p' plan/reference/msp/msp.d.ts; sed -n '1610,1658p' plan/reference/msp/msp.d.ts; sed -n '2180,2225p' plan/reference/msp/msp.d.ts; sed -n '2280,2335p' plan/reference/msp/msp.d.ts; sed -n '2950,3010p' plan/reference/msp/msp.d.ts; sed -n '3140,3185p' plan/reference/msp/msp.d.ts; ls -l plan/research" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+  /** Where the handler comes from (ADR 33398 D7 item 1). */
+  handlerKind: HookHandlerKind;
+  /** The handler key (config key or plugin hook id). */
+  key: string;
+}
+
+/** Hook event names (tdd SS3.26.1, ADR 33398 D7 item 2): the lowercase-first-letter spelling of every `HookEventKind::all()` variant. Open (server-produced result vocabulary, the #22785 enum-openness rule): a future event value is additive. */
+export type HookEventName = "sessionStart" | "userPromptSubmit" | "preToolUse" | "permissionRequest" | "postToolUse" | "preCompact" | "postCompact" | "subagentStart" | "subagentStop" | "stop" | "sessionEnd" | "notification" | "postToolUseFailure" | "stopFailure" | "postToolBatch" | "interrupt" | "sessionFork" | "toolUseStart" | "preLLMCall" | "postLLMCall" | (string & {});
+
+/** A hook row's origin (tdd SS3.26.1, ADR 33398 D7 item 1): the config `HookSourceKind` values plus plugin-contributed. Open (server-produced result vocabulary, the #22785 enum-openness rule): a future origin is additive. */
+export type HookHandlerKind = "managed" | "user" | "project" | "plugin" | (string & {});
+
+/** `hook/list` params (tdd SS3.26.1). Per-session because hook scope follows the session's workspace and plugin state. */
+export interface HookListParams {
+  /** The target session. */
+  sessionId: string;
+}
+
+/** `hook/list` result (tdd SS3.26.1): one row per installed handler per event — a `ResolvedHookHandler` carries one event, and grouping would lose matcher/command identity (ADR 33398 D7 item 1). */
+export interface HookListResult {
+  /** The session's installed hook rows (tdd SS3.26.1 promises the set, not an order). */
+  hooks: HookCatalogEntry[];
+}
+
+/** `hookRun` durable outcome (tdd SS4.5.11). Open: new outcomes are additive, and clients MUST render unknown values generically. */
+export type HookRunStatus = "completed" | "blocked" | "failed" | "timedOut" | "cancelled" | (string & {});
+
+/** Disposition when a turn is already running (tdd SS3.2). The wire default is `queue`: an SDK caller who has not looked at session state should not silently mutate an in-flight turn. */
+export type IfBusy = "queue" | "steer" | "replace";
+
+/** `initialize` request params (SS1.4.1). */
+export interface InitializeParams {
+  /** Capability posture; absent means all defaults. */
+  capabilities?: ClientCapabilities;
+  /** Client identification. */
+  clientInfo: ClientInfo;
+}
+
+/** The `initialize` result (SS1.4.1). */
+export interface InitializeResult {
+  /** Echo of the effective negotiated experimental setting. */
+  experimentalApi: boolean;
+  /** Subset of the requested capabilities, plus policy-implicit grants. Fixed for the connection lifetime (INV-009). */
+  grantedCapabilities: CapabilityName[];
+  /** Absolute path of the muse home directory. */
+  museHome: string;
+  /** Server runtime platform family. */
+  platformFamily: PlatformFamily;
+  /** Server operating system. */
+  platformOs: PlatformOs;
+  /** Whether this host can enforce the sandbox (ADR 50064-startup-report-sandbox-availability D2/D4). Optional so the addition is additive under SS1.5.4; a v1 host always sends it, and a client reads absent as unknown — the host predates the field, so the client falls back to its own probe rather than inventing an answer. */
+  sandboxAvailability?: SandboxAvailability;
+  /** Why enforcement is impossible. Sent only when `sandbox_availability` is `unavailable`; a client MUST NOT infer a reason when none is sent. */
+  sandboxUnavailableReason?: SandboxUnavailableReason;
+  /** Envelope schema version and stable-surface fingerprint. */
+  schema: SchemaInfo;
+  /** Server identification. */
+  serverInfo: ServerInfo;
+  /** Whether this host persists its sessions (SS2.13). Optional so the addition is additive under SS1.5.4; a v1 host always sends it, and a client reads absent as `durable` because no server that omits it has the ephemeral profile. */
+  sessionDurability?: SessionDurability;
+  /** Exact user-agent string presented to upstream model providers. */
+  userAgent: string;
+}
+
+/** One transcript item at one revision (tdd SS4.4.1 common fields plus the per-kind fields of SS4.5.2–4.5.11, all optional and owned by the kind their doc names). `item/started`, `item/updated`, and `item/completed` carry the full object; `item/delta` appends to it by field path. */
+export interface Item {
+  /** `subagent`: agent definition path. */
+  agentPath?: string;
+  /** `toolCall`: the approval that gated this call (tdd SS5); join key for the approval view events. */
+  approvalId?: string;
+  /** `toolCall`: the model-authored argument JSON, **verbatim**; clients parse. Verbatim keeps the fold byte-deterministic and survives model-emitted almost-JSON (tdd SS4.5.5). */
+  /** `toolCall`: the shared semantic receipt — what the operation did, as machine-readable fact (ADR 43399 D1, tdd SS4.5.5). Optional and additive: absence is always valid and is never an error (D3). When present, a server serves the **same** receipt on every item path — `item/completed`, `view/page`, seeded snapshots and resume (D3). Observation only; carries no control authority (D4), and no field in it enters model-visible content (D7). */
+  toolReceipt?: ToolReceipt;
+  /** `compaction`: what initiated the compaction. */
+  trigger?: CompactionTrigger;
+  /** `workflow`: camelCased `WorkflowLaunchTriggerSource`, verbatim (durable runtime vocabulary, e.g. `"modelProposal"`). */
+  triggerSource?: string;
+  /** `true` when the server's per-surface text budget saturated a streamed surface (`agentMessage.text`, `reasoning.summary[*]`, `toolCall.visibleOutput`, `userShell.visibleOutput`), cut a `subagent` surface (`objective`, `fallbackText`, `result.summary`, `result.text`), or cut a `monitorFeed` surface (`text`, `fallbackText`, `monitorDescription`) (ADR 50058-monitor-feed-wire D3). On a `subagent` item the flag is item-level and never cleared: once any of those four is cut, every later update keeps it, even when `result.text` arrives whole (ADR 35691 D9). The durable full text remains in the log (tdd SS4.5.4). */
+  truncated?: boolean;
+  /** The owning turn (== the submitting `commandId` for fresh turns, tdd SS3.1.4). `null` for the kinds outside a turn: `userShell` always (tdd SS4.5.6), `hookRun` for session-boundary runs, `monitorFeed` always (ADR 50058-monitor-feed-wire D1), `sideChat` always (SS4.5.13), `damagedRange` always (ADR 60914 D2). */
+  turnId?: string | null;
+  /** `subagent`: **transitive** observed usage — the child and its own descendants; updated in place, absent until first observation; never folded into `session/tokenUsage.cumulative` (tdd SS4.6.5). */
+  usage?: TokenUsage;
+  /** `toolCall`/`userShell`: bounded transcript-visible result text (budget per tdd SS4.5.4); streams via `item/delta` field `"output"`. */
+  visibleOutput?: string;
+  /** `subagent`/`workflow`: the owning durable workflow run id (opaque string — not a UUID family). */
+  workflowRunId?: string;
+}
+
+/** `item/completed` params (tdd SS4.3): the item reached its terminal state — the authoritative final object. Always cites a durable `sourceRange` (tdd SS4.2). Clients MUST accept `item/completed` for an `itemId` they never saw `item/started` for (single-shot kinds; after a gap fill; tdd SS4.4.1). */
+export interface ItemCompletedParams {
+  /** The full item at its terminal revision. */
+  item: Item;
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from. */
+  sourceRange: SourceRange;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+}
+
+/** `item/delta` params (tdd SS4.3.1): a UTF-8-safe streaming append to an open item's field. Ephemeral-sourced by definition: this params object has **no** `sourceRange` member at all (spec 14653 INV-009 — the schema enforces the exemption). Deltas never bump `revision`. */
+export interface ItemDeltaParams {
+  /** The appended text; concatenation of a field path's deltas in cursor order equals that field's value on `item/completed` unless the surface saturated (spec 14653 INV-005). */
+  delta: string;
+  /** Dotted field path the append targets (`"summary.0"`, `"output"`, ...); absent means `"text"` (tdd SS4.3.1). */
+  field?: string;
+  /** The open item being appended to. */
+  itemId: string;
+  /** The owning session. */
+  sessionId: string;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+}
+
+/** The eleven v1 item kinds (tdd SS4.5.2–4.5.13) plus post-v1 kinds (tdd SS4.5.14+). Open: a new kind is additive evolution, and clients MUST render unknown kinds generically (tdd SS4.10). */
+export type ItemKind = "userMessage" | "agentMessage" | "reasoning" | "toolCall" | "userShell" | "subagent" | "workflow" | "reminderChild" | "compaction" | "hookRun" | "sideChat" | "webSearch" | "monitorFeed" | "damagedRange" | "scheduledFire" | (string & {});
+
+/** The `item/readOutput` content encoding (tdd SS4.7.4). Closed: text media is ALWAYS `utf8` and binary media `base64`; a third value would change the client's decode contract. */
+export type ItemReadOutputEncoding = "utf8" | "base64";
+
+/** `item/readOutput` params (tdd SS4.7.4): byte-ranged fetch of stored full output that the view truncated — the `outputRef` fetch path SS3.9 and SS4.5.5 owe. Read-only; works on loaded and unloaded sessions; no lease. */
+  commandId: string;
+  /** The marketplace name to refresh. */
+  name: string;
+  /** The target session. */
+  sessionId: string;
+}
+
+/** A plugin row's source provenance (tdd SS3.26.2, ADR 33398 D7 item 3): camelCase of `PluginSourceProvenance`. Open (server-produced result vocabulary, the #22785 enum-openness rule): a future provenance is additive. */
+export type PluginSource = "curated" | "marketplaceUserAdded" | "foreignImport" | "nativeLocal" | (string & {});
+
+/** Typed quota-exhaustion detail (tdd SS4.5.1, ADR 50047 D2): the limit kind plus the provider's reset instant. */
+export interface QuotaDetail {
+  /** Which quota was exhausted (open enum; unknown values fall back). */
+  limitKind: LimitKind;
+  /** Epoch milliseconds at which the provider says usage resets. */
+  resetsAtMs: number;
+}
+
+/** The reasoning-effort tier sampled at submission (tdd SS3.2, SS3.3). The **same closed tier vocabulary** on both the fresh-turn and steer lanes, spelled identically; invalid tiers are invalid params. `none` is a tier of the vocabulary (ask for no reasoning), not a way to say "unset". */
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+/** What drove a reasoning-effort default change (tdd SS4.6.9). Open; v1's only producer is `user` (an accepted `session/setReasoningEffort`). */
+export type ReasoningEffortChangeSource = "user" | "default" | "policy" | (string & {});
+
+/** The snapshot's standing session-default reasoning effort (tdd SS4.9.1, ADR 31255 D1): the fold of the latest completed `runtime.reasoning_effort_reconfigure` fact — the same pair `session/reasoningEffortChanged` carries. */
+export interface ReasoningEffortState {
+  /** The standing default tier — the closed SS3.2 vocabulary, spelled identically to `turn/start.reasoningEffort`. */
+  reasoningEffort: ReasoningEffort;
+  /** Which actor class set the default. */
+  source: ReasoningEffortChangeSource;
+}
+
+/** `recap/cancel` params (tdd SS3.28.5): the session plus the cancel's own retry id. No target — one in-flight slot per session makes the target unambiguous. */
+export interface RecapCancelParams {
+  /** The cancel's own retry id (required, SS3.1.1). */
+  commandId: string;
+  /** The session whose in-flight recap to cancel (required). */
+  sessionId: string;
+}
+
+/** `recap/cancel` result (tdd SS3.28.5): admission only. In flight → the recap settles `cancelled`; idle → accepted no-op. */
+export interface RecapCancelResult {
+  /** The cancel's id, echoed. */
+  commandId: string;
+  /** Always `accepted` on this path. */
+  status: CommandStatus;
+}
+
+/** `recap/completed` params (tdd SS3.28.2): the settlement, delivered to the requesting connection outside the view stream — no `viewCursor`, no `sourceRange`. `text` is required on `completed` (plus optional `title`, untrusted model output — clients MUST sanitize per spec 442 INV-015); `reason` is required on `failed`; neither rides `cancelled`/`timedOut`. The struct marks the conditional members optional; the SS prose pins the per-outcome rule, the `turn/completed` usage/error convention. */
+  status: CommandStatus;
+}
+
+/** `session/resume` params (tdd SS2.5.2). */
+export interface SessionResumeParams {
+  /** The SS2.5 idempotency handle (UUIDv7). A resume that loads a session writes a durable `SessionResumed` record. */
+  commandId: string;
+  /** The same open construction-time extension object as `session/start`. */
+  config?: SessionConfig;
+  /** A view cursor previously observed by this client — or an observed `summarizedThrough` compaction anchor (tdd SS4.5.10, D-029). When present the server returns only the suffix and `history.mode` is `none` (tdd SS2.5.2). Omitted and explicit `null` both mean "no cursor" (#23468). */
+  cursor?: string | null;
+  /** Return only session metadata and live resume state; page history separately with `view/page`. Default `false` (tdd SS2.5.2). */
+  excludeItems?: boolean;
+  /** History mode preference, default `auto`. A PREFERENCE, not a budget override: when the requested mode does not fit the history budget the server downgrades it and `history.mode` reports what was actually served (tdd SS2.5.2). Ignored when `cursor` or `excludeItems` makes it moot. */
+  history?: HistoryPreference;
+  /** The launch permission-profile pick (amendment 42624 FR-42624-1, #50054): a profile id the host catalog already admits. Select, never create. Omitted means today's behavior: restore retained authority only, no override. The host restores first, then applies the pick in the same pre-marker step; a pick that fails admission refuses the resume `commandRejected` (-32030; `permission_profile_unknown` / `permission_profile_unavailable`) before any durable byte. Explicit `null` is invalid params (the same closed null-tolerant set as at start). */
+  permissionProfile?: string;
+  /** Cold-resume replacement choice; omission preserves the retained choice. A warm attach rejects a different or unestablished choice as invalidParams. Explicit null is invalid. */
+  recoveryMode?: RecoveryMode;
+  /** The session to load. */
+  sessionId: string;
+}
+
+/** `session/resume` result (tdd SS2.5.2). */
+export interface SessionResumeResult {
+  /** The served history. */
+  history: SessionHistory;
+  /** How the last folded turn ended (tdd SS2.5.2, ADR 36635 D2). **Additive-optional**; absence is a non-assertion. */
+  lastTurn?: LastTurn;
+  /** The late-joiner pointer set; empty when nothing is pending. */
+  pendingRequests: PendingRequestPointer[];
+  /** The loaded session. */
+  session: Session;
+  /** The session view head; the connection is subscribed after it. A still-loaded session a prior `view/unsubscribe` detached is RE-ATTACHED by this resume (spec 208 FR-002a, #28920): live delivery resumes from this head. Explicit-cursor re-attach with `(after, head]` engine replay stays `view/subscribe` (SS4.7.1). */
+  viewCursor: string;
+}
+
+/** `session/setApprovalMode` params (tdd SS5.12): switch the session's approval enforcement mode mid-session. A standard SS3 command.  **Select, never create.** A client may *select* a mode the host's configuration already defines; it may not construct one, supply inline rules, or otherwise describe a policy on the wire — which is why [`ApprovalMode`] is closed. */
+export interface SessionSetApprovalModeParams {
+  /** The SS3.1.1 idempotency handle (UUIDv7). */
+  commandId: string;
+  /** The preconfigured mode to select. The requesting actor is recorded from the connection's `clientInfo.name` (tdd SS1.4.1). */
+  mode: ApprovalMode;
+  /** The target session. */
+  sessionId: string;
+}
+  sessionId: string;
+}
+
+/** `session/sideChat` result (tdd SS2.5.7; ADR 45435 D2): the `session/resume` envelope for the **new** side session, whose `session.sideFrom` carries the provenance. The side opens empty. */
+export interface SessionSideChatResult {
+  /** The served history (inline; SS2.5.7's empty-items half is #49416 — inherited turns surface until the boundary-aware fold lands). */
+  history: SessionHistory;
+  /** The late-joiner pointer set. */
+  pendingRequests: PendingRequestPointer[];
+  /** The new side session, carrying `sideFrom` provenance. */
+  session: Session;
+  /** The new side session's view head. */
+  viewCursor: string;
+}
+
+/** `session/start` params (tdd SS2.5.1). */
+export interface SessionStartParams {
+  /** The session's starting approval mode; server default when omitted or explicit `null` — both spellings select the default (#23468). Select, never create — the value names a mode the host's configuration already defines (tdd SS2.5.1, SS5.12). This is the only surface that declares a non-interactive run's policy (tdd SS5.11, D-008). */
+  approvalMode?: ApprovalMode | null;
+  /** The SS2.5 idempotency handle (UUIDv7). Required; the server never mints one. */
+  commandId: string;
+  /** Reserved for per-session overrides owned by a future Configuration section. Issue #32760 admits only its `mcpServers` member. */
+  config?: SessionConfig;
+  /** Initial model; server default when omitted. */
+  modelId?: string;
+  /** The new session's initial permission profile (amendment 42624 FR-42624-1, ADR 42197 D2): a profile id the host catalog already admits — the rows `permissionProfile/list` serves without `sessionId`. Select, never create. Omitted means today's behavior: the host's configured default under native admission, unchanged. An id the catalog does not carry, or one it serves unavailable, refuses the start `commandRejected` (-32030; `permission_profile_unknown` / `permission_profile_unavailable`) before any durable byte, and an ephemeral host refuses any id (`permission_profile_ephemeral_fixed`). `session/fork` does not admit the member; `session/resume` admits it as the launch pick (FR-42624-1, #50054). Explicit `null` is invalid params: the set of members that tolerate `null` is closed and excludes this one, exactly as it excludes `workspaceRoots`. */
+  permissionProfile?: string;
+  /** Initial provider routing; server default when omitted or explicit `null` — both spellings select the default (#23468). */
+  providerId?: string | null;
+  /** Recovery choice for this construction; omission keeps legacy behavior. Explicit null is invalid. */
+  recoveryMode?: RecoveryMode;
+  /** Exact identity for this new root session. When omitted the server mints a UUIDv7. This field never selects an existing session: a retained or reserved id is rejected `commandRejected` with reason `session_id_conflict` (tdd SS2.5.1). */
+  sessionId?: string;
+  /** Absolute path, folded into the first metadata record. */
+  workspaceRoot?: string;
+  /** The session's initial runtime workspace-root set: ordered absolute canonical existing directory paths; the first root is the CWD and plays the primary-root role; every root receives the ADR 11237 `:workspace_roots` rules; extra roots grant no Project Trust. When `workspaceRoot` is also present the two must name the same folder, compared on canonical forms (the raw `workspaceRoot` is canonicalized first; ADR 37313 D9), or the request is invalid params, and so is explicit `null` (the D-049 null-tolerant set is closed and excludes this member). Omitted preserves single-root behavior (tdd SS2.5.1, ADR 37313, #37313). */
+  workspaceRoots?: string[];
+}
+
+/** `session/start` result (tdd SS2.5.1). */
+export interface SessionStartResult {
+  /** The new session. */
+  session: Session;
+  /** The session view head after the start fold; the connection is subscribed and receives every view event after this cursor. A deduplicated retry returns this same result (tdd SS2.5.1). */
+  viewCursor: string;
+}
+
+/** `session/started` params (tdd SS2.6.1; enrolled by #33065): a session became newly loaded on this host via `session/start`, `session/fork`, or `session/sideChat` (never `session/resume` — Appendix C, OQ-F), broadcast to every initialized connection.  The one member is the same `$defs/Session` object the `session/start`/`session/fork` results carry, so the broadcast and the result describe one fact through one type — the host builds the broadcast payload as a `$defs/Session` — the fresh-start arm reuses the result's `session` member, the start-replay arm builds the live attach snapshot — and the emission is parity-gated against this type at the producer (`session-server` prod-assembly capture) and over the committed transcript corpus (conformance `session_lifecycle_enrollment`). */
+export interface SessionStartedParams {
+  /** The newly loaded session, as of the start/fork fold. */
+  session: Session;
+}
+
+/** A session's load state (tdd SS2.4). */
+export type SessionStatus = "notLoaded" | "idle" | "running" | (string & {});
+
+  /** Echoes the client's id. */
+  commandId: string;
+  /** Admission status. */
+  status: CommandStatus;
+  /** The cancelled turn. */
+  turnId: string;
+}
+
+/** `turn/completed` params (tdd SS4.5.1): the run's durable terminal record landed. */
+export interface TurnCompletedParams {
+  /** Turn duration; absent means unmeasured, never fabricated. */
+  durationMs?: number;
+  /** Present when `terminal` is `"failed"`, except on a synthesized host-death terminal, which carries `reason` instead (tdd SS4.5.1, ADR 36635 D2): mid-turn failures reach the client here — never as a JSON-RPC error. */
+  error?: TurnError;
+  /** The runtime's free-text terminal reason, verbatim. Display and diagnostics only; never branch on it. */
+  reason?: string;
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from. */
+  sourceRange: SourceRange;
+  /** The turn terminal (open enum). */
+  terminal: TurnTerminal;
+  /** Time to first token, when measured. */
+  timeToFirstTokenMs?: number;
+  /** The terminated turn. */
+  turnId: string;
+  /** The turn's aggregate token usage, summed across the turn's model completions (same shape as `session/tokenUsage.usage`). */
+  usage?: TokenUsage;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+}
+
+/** The settled turn-failure object (tdd SS4.5.1): `{kind, message, retryable}`. */
+export interface TurnError {
+  /** The failure class (open camelCase enum grounded in the runtime's terminal failure classification). */
+  kind: TurnErrorKind;
+  /** Human-readable failure text. */
+  message: string;
+  /** Typed quota-exhaustion detail (ADR 50047 D2/D3): present iff the stopping failure was the quota class. Clients branch on presence, never by parsing `message`. */
+  quota?: QuotaDetail;
+  /** The server's judgment that resubmitting the same input may succeed. */
+  retryable: boolean;
+}
+
+/** Turn failure classes (tdd SS4.5.1, `TerminalErrorKind` plus the model-task failure class). Open. */
+export type TurnErrorKind = "stepLimit" | "configError" | "projectionError" | "logError" | "workflowLaunchError" | "environmentError" | "modelError" | "launchError" | "authRequired" | "mcpLinkError" | (string & {});
+
+/** `turn/foregroundCompleted` params (tdd SS4.5.12): the turn's foreground work is done and named background reminder checks hold the turn open. Explicitly non-terminal: the turn ends only at `turn/completed` / `turn/unqueued`. */
+export interface TurnForegroundCompletedParams {
+  /** `reminderAgentId`s of the firing's blocking set, never empty; agent ids, never display names. Live-best-effort: reads, resume, and replay may narrow it to the linked subset. */
+  blockingAgents: string[];
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from, anchored at the first blocking link of the firing window. */
+  sourceRange: SourceRange;
+  /** The turn whose foreground completed. */
+  turnId: string;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+}
+
+}
+
+/** What `turn/start` did with the input (tdd SS3.2). Resolves OQ-H in v1: since `queue` is the default `ifBusy`, clients need to distinguish these without folding history. */
+export type TurnStartDisposition = "started" | "queued" | "steered" | (string & {});
+
+/** `turn/start` params (tdd SS3.2).  `turn/start.providerRequestOptions` is deliberately absent: **RULED (#22785 E3, owner, 2026-08-26) to stay off the published schema.** The schema is the contract, and a free-form-object node kind is revisited only if the experimental field graduates. */
+export interface TurnStartParams {
+  /** The SS3.1.1 idempotency handle (UUIDv7). The fresh turn's `turnId` derives from it (tdd SS3.1.4). */
+  commandId: string;
+  /** Presentation form of the prompt for transcripts. Durable; carried on the resulting user-message view item. Never model-visible (tdd SS3.2). */
+  displayText?: string;
+  /** Disposition when a turn is already running; default `queue`. */
+  ifBusy?: IfBusy;
+  /** Ordered content parts; required and non-empty. */
+  input: TurnInputPart[];
+  /** Reasoning tier sampled at submission for this turn. */
+  reasoningEffort?: ReasoningEffort;
+  /** The target session. */
+  sessionId: string;
+  /** A queued `!` shell action riding this turn (tdd SS3.2, ADR 50034): the `!cmd` typed while a turn runs, executed at the next model-call boundary before any later steer. Exclusive with `text` and `skill` input; `input` may be empty only when this member is present. Capability-gated on `userShell`: a carrying turn on a connection without the grant fails `-32010 capabilityRequired`. Explicit `null` is invalid params (the null-tolerant set is closed). A v1 stable member. */
+  userShell?: TurnUserShell;
+  /** A sticky REPLACEMENT of the session's runtime workspace-root set, binding at this turn's launch and persisting for subsequent turns until replaced again — unlike `reasoningEffort`, which is this-turn-only. Same shape and validation as `session/start.workspaceRoots`; invalid params on an explicit `ifBusy: "steer"` submit and so is explicit `null` (the D-049 null-tolerant set is closed); omitted means "unchanged", never "reset" (tdd SS3.2, ADR 37313 D3, #37313). */
+  workspaceRoots?: string[];
+}
+
+/** `turn/start` result (tdd SS3.2). */
+export interface TurnStartResult {
+  /** Echoes the client's id. */
+  commandId: string;
+  /** What happened to the input. */
+  disposition: TurnStartDisposition;
+  /** `true` iff `disposition` is `started`; retained as the boolean shorthand — `disposition` is authoritative (tdd SS3.2). */
+  startedNewTurn: boolean;
+  /** Admission status. */
+  status: CommandStatus;
+  /** The turn that will carry (or absorbed) this input. Authoritative: always take it from the ack rather than deriving it (tdd SS3.2). */
+  turnId: string;
+}
+
+/** `turn/started` params (tdd SS4.5.1): a foreground turn began running — fresh submits immediately, queued submits at their launch boundary, never steered submits. */
+export interface TurnStartedParams {
+  /** The submitting command; `turnId == commandId` for fresh turns (tdd SS3.1.4). */
+  commandId: string;
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from. */
+total 0
+
+web search: 
+web search: https://developers.openai.com/codex/app-server
+web search: 
+web search: site:dev.meta.ai/docs/muse-code "serve" "stdio" ...
+web search: 
+web search: https://xtermjs.org/docs/guides/security/
+codex
+Meta’s current documentation confirms API-key authentication and a direct model API with function tools. The local MSP schema also provides session recovery and typed approval handling for a native UI. I’ll recommend that integration for full-code work, with an embedded terminal as an advanced fallback and bounded headless jobs for early prototyping.
+web search: 
+web search: site:platform.claude.com/docs/en/agent-sdk "permissions" ...
+web search: 
+web search: https://github.com/migueldeicaza/SwiftTerm
+exec
+/bin/zsh -lc "sed -n '790,842p' plan/reference/msp/msp.d.ts; rg -n 'interface SessionConfig|type RecoveryMode|interface ClientInfo|interface ServerInfo|type TurnTerminal|capabilities' plan/reference/msp/msp.d.ts | head -35; command -v muse; muse --version; command -v codex; codex --version; git status --short" in /Users/todd/StudioProjects/macroscope
+ succeeded in 81ms:
+export type HookHandlerKind = "managed" | "user" | "project" | "plugin" | (string & {});
+
+/** `hook/list` params (tdd SS3.26.1). Per-session because hook scope follows the session's workspace and plugin state. */
+export interface HookListParams {
+  /** The target session. */
+  sessionId: string;
+}
+
+/** `hook/list` result (tdd SS3.26.1): one row per installed handler per event — a `ResolvedHookHandler` carries one event, and grouping would lose matcher/command identity (ADR 33398 D7 item 1). */
+export interface HookListResult {
+  /** The session's installed hook rows (tdd SS3.26.1 promises the set, not an order). */
+  hooks: HookCatalogEntry[];
+}
+
+/** `hookRun` durable outcome (tdd SS4.5.11). Open: new outcomes are additive, and clients MUST render unknown values generically. */
+export type HookRunStatus = "completed" | "blocked" | "failed" | "timedOut" | "cancelled" | (string & {});
+
+/** Disposition when a turn is already running (tdd SS3.2). The wire default is `queue`: an SDK caller who has not looked at session state should not silently mutate an in-flight turn. */
+export type IfBusy = "queue" | "steer" | "replace";
+
+/** `initialize` request params (SS1.4.1). */
+export interface InitializeParams {
+  /** Capability posture; absent means all defaults. */
+  capabilities?: ClientCapabilities;
+  /** Client identification. */
+  clientInfo: ClientInfo;
+}
+
+/** The `initialize` result (SS1.4.1). */
+export interface InitializeResult {
+  /** Echo of the effective negotiated experimental setting. */
+  experimentalApi: boolean;
+  /** Subset of the requested capabilities, plus policy-implicit grants. Fixed for the connection lifetime (INV-009). */
+  grantedCapabilities: CapabilityName[];
+  /** Absolute path of the muse home directory. */
+  museHome: string;
+  /** Server runtime platform family. */
+  platformFamily: PlatformFamily;
+  /** Server operating system. */
+  platformOs: PlatformOs;
+  /** Whether this host can enforce the sandbox (ADR 50064-startup-report-sandbox-availability D2/D4). Optional so the addition is additive under SS1.5.4; a v1 host always sends it, and a client reads absent as unknown — the host predates the field, so the client falls back to its own probe rather than inventing an answer. */
+  sandboxAvailability?: SandboxAvailability;
+  /** Why enforcement is impossible. Sent only when `sandbox_availability` is `unavailable`; a client MUST NOT infer a reason when none is sent. */
+  sandboxUnavailableReason?: SandboxUnavailableReason;
+  /** Envelope schema version and stable-surface fingerprint. */
+  schema: SchemaInfo;
+  /** Server identification. */
+  serverInfo: ServerInfo;
+  /** Whether this host persists its sessions (SS2.13). Optional so the addition is additive under SS1.5.4; a v1 host always sends it, and a client reads absent as `durable` because no server that omits it has the ephemeral profile. */
+  sessionDurability?: SessionDurability;
+  /** Exact user-agent string presented to upstream model providers. */
+  userAgent: string;
+}
+243:/** The client's requested capability posture (SS1.4.1). Every member defaults; an absent `capabilities` object means all defaults. */
+256:export interface ClientInfo {
+813:  capabilities?: ClientCapabilities;
+822:  /** Subset of the requested capabilities, plus policy-implicit grants. Fixed for the connection lifetime (INV-009). */
+1708:export type RecoveryMode = "on" | "off";
+1765:export interface ServerInfo {
+1892:export interface SessionConfig {
+3218:export type TurnTerminal = "completed" | "failed" | "cancelled" | (string & {});
+/Users/todd/.local/bin/muse
+Muse Code 1.4.11 (1.4.11-R6667.1)
+/Users/todd/.local/bin/codex
+WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)
+codex-cli 0.163.0
+?? plan/
+
+web search: 
+web search: https://platform.claude.com/docs/en/agent-sdk/overview
+web search: 
+web search: 'stdio' in https://learn.chatgpt.com/docs/app-server
+web search: 
+web search: site:developer.apple.com AXIsProcessTrustedWithOptions accessibility ...
+web search: 
+web search: 
+web search: 
+web search: https://dev.meta.ai/docs/muse-code/extending
+codex
+The key boundary is between building an automation and running it. A builder may need broad development tools, while a saved automation should receive only its declared capabilities. I’m defining a typed graph format and permission broker around that boundary, with examples for clipboard capture, weekly reporting, and filling a desktop form.
+web search: 
+web search: 'ANTHROPIC_API_KEY'
+exec
+/bin/zsh -lc "sed -n '240,267p' plan/reference/msp/msp.d.ts; sed -n '1885,1910p' plan/reference/msp/msp.d.ts; cat plan/reference/msp/manifest.json; test -e plan/research/05-alt-builders.md && wc -l plan/research/05-alt-builders.md || true" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+/** A grantable capability name (SS1.4.4). Open: the reserved `rawLog` entry joins this domain as an additive open-enum extension when SS6 un-defers (#13929, Scenario 5 AS-3) — closed would make that a retype. */
+export type CapabilityName = "userShell" | "sessionMcp" | "sessionListStream" | "feedback" | "computerUseSetup" | "computerUseHostSetup" | "sessionRename" | (string & {});
+
+/** The client's requested capability posture (SS1.4.1). Every member defaults; an absent `capabilities` object means all defaults. */
+export interface ClientCapabilities {
+  /** Opt into experimental methods, fields, and variants (default `false`). */
+  experimentalApi?: boolean;
+  /** Exact notification method names the client declines; no wildcards; unknown names accepted and ignored; the protected set (SS1.7) cannot be opted out. */
+  optOutNotificationMethods?: string[];
+  /** Names from the capability registry. Unknown entries are not an error and simply do not appear in `grantedCapabilities` — which is why this is a list of free strings rather than of registry names. */
+  requestedCapabilities?: string[];
+  /** Whether this client can render a `userInput/request` dialog and answer it (SS5.10). **Absent means capable** (D-047): a client that predates the member keeps today's contract, so no existing client changes its handshake. `false` makes the host withhold `userInput/request` toward this client — the D-027 additive-optional-field + withheld-method convention.  Deliberately NOT a `requestedCapabilities` name: that registry records operations a host GRANTS (SS1.4.4), and whether a client can draw a dialog is a fact about the client, never a privilege the host hands out. */
+  userInputDialogs?: boolean;
+}
+
+/** Client identification inside `initialize` params (SS1.4.1). Diagnostics and telemetry attribution only; never an authority claim (SS1.10). */
+export interface ClientInfo {
+  /** Machine identifier, `[a-z0-9_]+` (SS1.4.1). */
+  name: string;
+  /** Human display name. */
+  title?: string;
+  /** Client version string. */
+  version: string;
+}
+
+/** The language a Code Mode cell ran in (ADR 42727 D2). Open: values are lowercase VS Code language identifiers, and only `javascript` (the V8 engine) is minted today. */
+export type CodeModeLanguage = "javascript" | (string & {});
+
+  /** Why the command was a noop, e.g. `no_compactable_history`. Present on a `noop` status (tdd SS3.7). */
+  reason?: string;
+  /** Admission status, or `noop`. */
+  status: CompactStatus;
+}
+
+/** The open configuration extension object shared by `session/start` and `session/resume` (ADR 32760 D1).  Unknown keys are ignored on the wire, never rejected (tdd SS1.5.4, spec 206 INV-015; D-052 resolving [#23456](https://github.com/mslsrc/tbh/issues/23456)): the live decoder is D-042's tolerant path, and TEST-024 keeps every exported bundle free of `additionalProperties: false`. The Rust typed model's `deny_unknown_fields` is internal and never exported — the #22785 E6b closedness export applies nowhere, and the `x-msp-closed` opt-in mechanism stays inert. Recognized `mcpServers` values are typed and validated before they leave the wire boundary. */
+export interface SessionConfig {
+  /** Native MCP servers added only to this session runtime. */
+  mcpServers?: Record<string, SessionMcpServerConfig>;
+}
+
+/** `session/contextUsage` params (tdd SS4.6.6, #14405): context-window pressure — the counted-once occupancy at the latest provider-reported durable fact, joined with the host's pressure basis. Replace wholesale; emitted only when the `(windowTokens, usedTokens, pressure)` triple changes value (identical adoptions emit nothing). */
+export interface SessionContextUsageParams {
+  /** Server-computed pressure level over the basis thresholds. */
+  pressure: ContextPressureLevel;
+  /** The owning session. */
+  sessionId: string;
+  /** The durable records this event folded from. */
+  sourceRange: SourceRange;
+  /** Counted-once prompt tokens (#8803) plus output tokens of the driving record, saturating — the honest occupancy floor. */
+  usedTokens: number;
+  /** Opaque, strictly monotonic view cursor (tdd SS4.1). */
+  viewCursor: string;
+  /** The effective context-window size from the host's pressure basis; absent when the basis has no limit — the limit part is omitted, never invented (tdd SS4.6.6). */
+  windowTokens?: number;
+{
+  "experimental": false,
+  "fingerprint": "sha256:f282ad16e21520d0cda68cb190149b86e2b062eef1dd282749360c05aa3d1082",
+  "schemaVersion": 1
+}
+
+apply patch
+patch: completed
+/Users/todd/StudioProjects/macroscope/plan/research/05-alt-builders.md
+diff --git a/plan/research/05-alt-builders.md b/plan/research/05-alt-builders.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6be4f7d3ebe144b77405d7c10597f402cd08dbc2
+--- /dev/null
++++ b/plan/research/05-alt-builders.md
+@@ -0,0 +1,329 @@
++# Building software inside Macroscope: alternatives and fallbacks
++
++Research date: 2026-10-22. Scope: the builder, its generated artifacts, and their execution contract. Read against the complete [brief](../BRIEF.md), [CLI help](../reference/muse-cli-help.txt), and stable [MSP declarations](../reference/msp/msp.d.ts).
++
++Evidence convention: **[verified: URL]** denotes public primary documentation; **[local: checked on machine]** denotes the supplied local evidence or an explicit inspection below; **[assumption]** denotes proposed design, estimates, or unresolved behavior. Design sections and examples are proposals throughout, not existing Macroscope functionality.
++
++## Recommendation: own the automation contract, reuse the coding agent
++
++**[assumption]** Ship two artifact tiers. The default is a small typed workflow graph, rendered as understandable steps and executed by Macroscope's capability broker. Meta generates or repairs that graph. The advanced tier is actual code built by Muse Code in an isolated project, preferably controlled through MSP with a native product UI. An embedded terminal is a useful advanced view and fallback, not the default experience.
++
++**[assumption]** These are complementary layers rather than six competing products:
++
++```text
++Observed repetition -> proposed outcome -> user selects "Automate this"
++                                             |
++                                   Builder request + fixtures
++                                  /                      \
++                   Meta graph generator             Muse Code
++                   constrained repair loop          MSP / exec / PTY
++                                  \                      /
++                           versioned artifact + evidence
++                                        |
++                    schema checks -> replay -> permission review
++                                        |
++                           Macroscope runtime / broker
++                          /          |           \
++                       files      browser     desktop UI
++```
++
++**[assumption]** A saved automation should normally run without an agent. Reformatting a CSV is deterministic work; paying a model to rediscover the steps on every run increases cost and variability. Use an LLM node only where interpretation is necessary. A custom form or menu-bar tool can be a schema-generated parameter screen over the same graph. Full code becomes necessary for new algorithms, unusual formats, richer interfaces, or integrations outside the catalog.
++
++## Comparison and implementation choices
++
++**[assumption]** Relative effort below is a solo-developer planning judgment, not a benchmark. Each option still needs the same independent artifact validation and permission review.
++
++| Route | Best use | Product experience | Main cost / limitation | Decision |
++|---|---|---|---|---|
++| Muse MSP | Interactive full-code builds and repair | Native progress, diffs, structured approvals, resume | Stateful protocol and CLI lifecycle | Preferred full-code integration |
++| Muse embedded TUI | Expert development and debugging | Familiar terminal, immediate feature parity | Terminal output is a poor product-state API | Advanced fallback |
++| Muse exec JSONL | Bounded scaffold, migration, repair jobs | Job card, logs, resulting diff | Limited interactive control | Earliest full-code prototype |
++| Own Meta loop | Graph generation and constrained repair | Precise steps and predictable controls | We own retries, history, validation | Default graph builder |
++| Codex / Claude adapters | Explicit alternative provider choice | Same artifact review | Separate credentials, policy and compatibility | Optional later |
++| Typed DSL runtime | Running routine automations | Inspectable steps, preview and undo | Catalog limits expressiveness | Default artifact target |
++
++### 1. Muse Code through `muse serve`: native UI
++
++Muse documents `muse serve` and the `@muse-code/sdk` TypeScript wrapper; MSP is its session protocol, not MCP. MCP is separately used to connect tools. **[verified: https://dev.meta.ai/docs/muse-code]** The local binary is Muse Code 1.4.11; the schema manifest reports version 1 and a stable fingerprint. **[local: checked on machine: `muse --version`, `plan/reference/msp/manifest.json`]**
++
++**[assumption]** Run a child process owned by the desktop supervisor. Use pipes, not a PTY, for MSP. Prefer a small adapter using the official SDK if its packaged version matches the installed host; otherwise generate typed protocol bindings from the exported schema. For Flutter, keep protocol/state reduction in a Rust or TypeScript helper and send product events to Dart. Avoid implementing all 3,651 lines in the UI.
++
++The useful minimum is concrete:
++
++1. `initialize` identifies the client and returns schema identity, granted capabilities, platform and sandbox availability. Absent sandbox availability means unknown, not safe.
++2. `session/start` sets workspace, model, provider and approval mode; `turn/start` submits typed input. Both use client-issued command IDs. An accepted request is admission, not task completion.
++3. Fold `item/started`, `item/delta`, `item/completed` into a transcript and separate artifact diff. Treat unknown item kinds generically.
++4. Render `approval/request` using the provided choices. Send `approval/decide` with both `commandId` and current `requirementId`; a stale approval must not authorize a newer stage.
++5. Persist the opaque `viewCursor`; resume with `session/resume`. `session/read` is a snapshot read and does not attach or reissue approvals. Resume returns pending-request pointers and reissues requests.
++6. Use `turn/completed.terminal`, typed errors, token usage and quota reset details to settle the run. `authRequired` and `quota.resetsAtMs` enable useful recovery UI.
++
++All six are **[local: checked on machine: inspected `InitializeResult`, `SessionStartParams`, `TurnStartParams`, item events, approval types, `SessionResumeResult`, `TurnCompletedParams`, `TurnError` and `QuotaDetail` in the supplied MSP declarations]**.
++
++**[assumption]** Keep separate hosts for separate sandbox postures. The local help says sandbox and durability are fixed at host construction; approval mode is selected on the wire. Do not attempt to loosen sandboxing using arbitrary `session/start.config` keys: its currently declared member is `mcpServers`, not a general policy document. **[local: checked on machine: CLI help and `SessionConfig`]**
++
++**[assumption]** Initial UI: “Understanding task”, “Changing files”, “Testing”, then “Ready to try”. Show touched files and test evidence, with an expandable technical transcript. On reconnect, show “Recovering build” until replay settles. Unknown approval subjects default to denial. Never map wire `allowAll` to a friendly “safe” button. SDK capabilities such as `userShell` are protocol grants, not substitutes for OS isolation or the runtime's own permissions.
++
++**[assumption]** MSP is the strongest long-term choice because it exposes actual agent state without interpreting a screen of terminal text. Its trade-off is engineering effort in replay, idempotency, process crashes and version compatibility. Pin tested versions and keep golden protocol transcripts; do not let a background CLI update silently change production behavior.
++
++### 2. Muse TUI in an embedded PTY
++
++`muse` provides the interactive terminal interface. **[verified: https://dev.meta.ai/docs/muse-code]** Three components must be distinguished:
++
++| Component | Actual responsibility | Implication |
++|---|---|---|
++| xterm.js | Browser terminal emulator | Embed local assets in a WebView; it does not provide the child process |
++| SwiftTerm | Swift terminal engine and Apple views, including a local-process view | Good native Mac option; requires a distinct Windows integration |
++| portable-pty | Rust cross-platform PTY API with process, read/write and resize support | Useful process layer beneath a renderer; not a UI |
++
++**[verified: https://xtermjs.org/; https://github.com/migueldeicaza/SwiftTerm; https://docs.rs/portable-pty/latest/portable_pty/]**
++
++**[assumption]** For a cross-platform shell, choose xterm.js plus portable-pty, joined by a tightly scoped local IPC bridge. If the product chooses native Swift UI, use SwiftTerm on Mac and accept a second renderer on Windows. Test Windows PTY behavior in Windows CI and with an external tester; a Mac PTY test cannot establish Windows correctness. Muse documents Windows support, PowerShell-based commands and possible first-time sandbox UAC prompts. **[verified: https://dev.meta.ai/docs/muse-code]**
++
++**[assumption]** Spawn the Muse executable directly with an argument array, controlled environment and project working directory. Handle resize, Unicode, bracketed paste, keyboard navigation, suspend/resume and terminating the entire process tree. A terminal is not a sandbox. Do not use terminal text parsing to decide that tests passed, an approval was granted, or a build may be installed. Inspect artifacts independently.
++
++**[assumption]** Disable terminal-driven clipboard writes and unreviewed hyperlink opening; isolate its WebView from application secrets and privileged bridge methods. Terminal output is untrusted, consistent with xterm.js's security guidance. **[verified: https://xtermjs.org/docs/guides/security/]**
++
++**[assumption]** This is the fastest way to satisfy “Muse inside the app” literally. It is weaker for users who want the result rather than an IDE: approvals, failures and navigation remain terminal concepts. Offer “Open builder terminal” on an advanced screen, preferably handing off a session after releasing the existing host's ownership rather than allowing two writers.
++
++### 3. `muse exec --json`: bounded background jobs
++
++The installed CLI supports JSONL, `--output-schema`, `--prompt-file`, `--workspace`, worktrees, `--max-model-steps`, `--session-id` and `--api-key-stdin`. **[local: checked on machine: supplied exec help]** Public documentation confirms headless execution and warns that exit zero means the turn completed, not that generated work is correct. **[verified: https://dev.meta.ai/docs/muse-code/extending]**
++
++**[assumption]** Use an argument-array equivalent of:
++
++```text
++muse exec --provider meta --json
++  --workspace <disposable-project>
++  --prompt-file <app-owned-task.txt>
++  --output-schema <app-owned-build-result.schema.json>
++  --max-model-steps 12 --disable-request-user-input
++  --api-key-stdin
++```
++
++**[assumption]** The result schema contains artifact paths, summary, claimed tests and unresolved limitations. The supervisor computes actual file hashes and runs its own checks; model claims are not evidence. Parse stdout incrementally with bounded buffers; capture stderr separately and redact it. Limit wall time, subprocess count and log size as well as model steps. Kill descendants on cancellation.
++
++**[assumption]** Keep sandboxing on. A task requiring unavailable authority should fail into a “Needs access” state, then be continued interactively through MSP; do not silently retry with `--yolo` or treat a CLI approval-mode name as equivalent to an MSP enum. Establish headless denial behavior with the pinned build before shipping. `--output-schema` constrains the final message, not code edits or side effects.
++
++**[assumption]** This route is ideal for the first vertical slice and batch repair. It remains useful after MSP exists. It should not become the scheduler for ordinary saved automations: building software and executing software are different operations.
++
++### 4. Our own small loop calling Meta directly
++
++Meta currently documents `https://api.meta.ai/v1`, bearer API-key authentication, `muse-spark-1.3` and `muse-wonder-1.0`; Wonder is preview. Earlier guessed endpoints are unnecessary. **[verified: https://dev.meta.ai/docs/overview]** Meta recommends its Responses format for new agent loops and supports an OpenAI-compatible client against the Meta endpoint. That is Meta inference and billing, not an OpenAI model dependency. **[verified: https://dev.meta.ai/docs/protocols]**
++
++**[assumption]** Implement only four builder tools initially:
++
++```text
++read_file(projectHandle, relativePath)
++write_file(projectHandle, relativePath, expectedHash, contents)
++run_test(projectHandle, testProfileId, fixtureSetId)
++read_ui_tree(previewHandle, rootId, maxNodes)
++```
++
++**[assumption]** `write_file` can edit only workflow manifests, schemas and fixtures in staging. `run_test` selects an application-owned validator/replayer; it accepts no shell string, executable path or model-defined package script. Do not execute a model-edited test harness under the label “constrained tools”. `read_ui_tree` reads the local preview or an explicitly authorized, filtered app subtree, never the entire desktop by default. No general shell, arbitrary imports, package installation or unrestricted HTTP tool.
++
++Meta returns function-call items for the application to execute; results are returned with the matching `call_id`. Its documented `tool_choice` supports only `auto`, and `max_tool_calls` does not cap client-side function calls. **[verified: https://dev.meta.ai/docs/tool-calling]**
++
++**[assumption]** Therefore enforce limits in our loop: eight model requests, twenty tool calls, two repair attempts, output-byte ceilings and a per-build token budget. Wait for complete arguments, validate types and authority, then execute serially. Save checkpoints and safe tool errors. Plain text without a valid artifact is “needs clarification”, not success. Preserve the selected API's reasoning replay contract and recheck current schemas before implementation.
++
++**[assumption]** This is manageable for graph generation. It is a poor use of a solo developer's time to recreate a general coding harness, context compaction, dependency repair and shell-policy system. Delegate those jobs to Muse. Direct-loop failure can fall back to Muse generating the same graph; it must not automatically escalate to arbitrary code.
++
++### 5. Optional agent backends and the Builder boundary
++
++Codex app-server documents JSONL over stdio, initialization, thread/turn methods, streamed items, approvals and API-key login through `account/login/start`. Its schema generators emit bindings for the installed version. **[verified: https://learn.chatgpt.com/docs/app-server]** Local Codex is 0.163.0. **[local: checked on machine: `codex --version`]**
++
++Claude Agent SDK exposes the Claude Code loop through TypeScript and Python, with sessions and tools. **[verified: https://code.claude.com/docs/en/agent-sdk/overview]** It supports permission rules and `canUseTool`; these controls still require our artifact and OS boundaries. **[verified: https://code.claude.com/docs/en/agent-sdk/permissions]** Its quickstart specifies `ANTHROPIC_API_KEY` and restricts third-party consumer-login offerings without prior approval. **[verified: https://code.claude.com/docs/en/agent-sdk/quickstart]**
++
++**[assumption]** Keep both optional and disabled initially. Their normal integrations need separate provider keys and explicit user selection. Do not silently send captured activity to another company on a Meta failure. Meta documents compatible Responses and Messages formats, but this alone does not prove every Codex or Claude harness works correctly against Meta; treat such routing as a separate compatibility experiment. **[verified: https://dev.meta.ai/docs/protocols]**
++
++**[assumption]** Define a small provider-agnostic boundary now, without building every adapter:
++
++```ts
++interface Builder {
++  capabilities(): BuilderCapabilities;
++  start(request: BuildRequest): AsyncIterable<BuildEvent>;
++  resume(ref: BuildRef): AsyncIterable<BuildEvent>;
++  answer(ref: BuildRef, answer: ApprovalOrInput): Promise<void>;
++  cancel(ref: BuildRef): Promise<void>;
++}
++// Request: outcome, target="graph-v1"|"code", workspaceHandle,
++// fixtures, permissionCeiling, model, credentialRef, budget.
++// Events: phase, message, artifactChanged, approvalNeeded,
++// usage, failed, completed. Preserve opaque backend references.
++```
++
++**[assumption]** Capabilities declare native approvals, resumability, steering, structured artifacts and terminal handoff. Unsupported features stay unavailable; do not emulate every backend as MSP. Keep provider-native events for diagnostics behind redaction. `completed` means builder completion; only the host's validator can mark an artifact installable. Provider choice must not own runtime permissions, stored automations or the user's library. This boundary buys resilience to CLI changes, outages and evaluation results without diluting the Meta default.
++
++## API-key path: explicit for every Meta route
++
++Muse's published precedence is `META_API_KEY`, stored key, then browser session. **[verified: https://dev.meta.ai/docs/muse-code/auth]** The brief's bogus-key experiment established exec's environment-key path, not a successful billed request or serve-specific inheritance. **[local: checked on machine: evidence recorded in `BRIEF.md`]**
++
++**[assumption]** Settings accepts the owner's Meta developer key into an OS credential-store abstraction. The frontend receives a credential reference and masked suffix only. The native supervisor retrieves the key just in time:
++
++| Route | Exact handoff |
++|---|---|
++| MSP | Put key in the `muse serve --provider meta` child's `META_API_KEY` environment; keep stdin exclusively for MSP |
++| TUI | Same child-only environment for direct PTY launch of `muse --provider meta`; never type the key into the terminal |
++| Exec | Pipe key through `--api-key-stdin`, with prompt in an app-owned file; alternatively use child-only `META_API_KEY` |
++| Direct loop / DSL LLM node | Native HTTP client sends `Authorization: Bearer <key>` to approved Meta origin; no key in graph or WebView |
++
++**[assumption]** Reject missing app credentials before spawning; never fall through to a consumer login or subscription billing. Scrub unrelated inherited provider credentials and redact protocol auth messages, crash reports and logs. Avoid `muse auth set` as the default because it creates a second durable key store outside our settings lifecycle.
++
++**[assumption]** Important unresolved risk: a Muse process with a key in its environment may expose it to descendants or agent-accessible process state. The supplied evidence does not establish secret isolation. Test inheritance; use no-shell mode for graph builds and a brokered credential gateway or stronger process isolation before promising protected credentials in full-code builds. Passing stdin avoids argv exposure but does not prove isolation inside Muse. Key rotation restarts long-lived hosts. Acceptance requires real-key exec and serve calls, rejection tests with stored consumer sessions present, and verification that billing uses the owner's API project.
++
++## The Macroscope SDK/DSL contract
++
++### A graph with typed effects, not JavaScript disguised as data
++
++Apple Shortcuts documents actions as composable steps with typed content flow. **[verified: https://support.apple.com/guide/shortcuts-mac/intro-to-shortcuts-apdf22b0444c/mac]** **[assumption]** Borrow that inspectability, but keep our portable format and runner. Export to Shortcuts later where mappings are exact; do not make a Mac-only format the canonical Windows artifact.
++
++**[assumption]** Store canonical JSON with `sdkVersion`, artifact version/hash, parameter schema, triggers, requested capabilities, nodes, fixtures and expected results. Nodes have stable IDs, versioned opcodes, typed inputs and explicit output references. Expressions support references, comparisons, formatting and a small pure transform catalog. No `eval`, embedded scripts, arbitrary regex execution, recursive subflows or unbounded loops. A bounded `forEach` has an item limit; each node has timeout and output limits.
++
++**[assumption]** Generate TypeScript authoring bindings for developers, but compile into this graph before installation. TypeScript is an authoring convenience, not a security boundary. New native primitives require app development and review. Advanced arbitrary code is visibly classified separately and executed in a sandboxed worker without unrestricted IPC or direct access to desktop privileges.
++
++### Primitives and permissions
++
++**[assumption]** The following is the proposed v1 surface. Capabilities are enforced by the broker on every invocation, never by generated code voluntarily calling a checker.
++
++| Primitive / typed result | Capability and enforced scope |
++|---|---|
++| `clipboard.readText({maxBytes}) -> Text` | `clipboard.read`; manual gesture initially; exclude secure contexts; no history access |
++| `files.list/read/writeAtomic/move/trash(root, relativePath)` | Separate read/write/delete root grants; opaque picked-root handles; canonical-path and symlink escape protection; preimage hashes and backups |
++| `http.request(service, route, method, body) -> Json` | Exact origin/method/path templates, response limits, credential reference and declared data fields; validate redirects; block undeclared loopback/private destinations |
++| `browser.open/readTable/fill/click/download` | Profile, allowed origins, read versus act; semantic locators and expected page state; downloads restricted to granted root |
++| `ui.readTree/readValue/setValue/press` | App identity plus selector and action allowlist; read and act separate; bounded subtree, protected-field filtering and focus/state checks |
++| `sheets.readTable/upsertRows/writeRange` | Workbook handle, sheet/table/range and read/write grants; stable row keys; formula cells distinct from literal strings |
++| `notify.show(title, body, artifactLink)` | Notification grant; sensitive text hidden by default; only local artifact links |
++| `llm.transform(template, input, outputSchema)` | Meta credential reference, explicit cloud-egress fields, model/token/output limits; data-only output; no action authority |
++| `text/date/table` transforms, `assert`, `if`, bounded `forEach` | No external permission; CPU/memory/item limits; locale/timezone explicit |
++| `review.effect(preview) -> ApprovalToken` | Host UI binds approval to artifact hash, resolved target and payload hash; cannot be forged by a node |
++
++**[assumption]** Destructive or externally committing browser/UI/HTTP actions require an approval token unless a narrowly scoped standing grant exists. HTTP GET can still leak data through query strings; all network requests are egress checks. Browser read access is itself sensitive. A notification grant is not permission to email or publish. Clipboard read is not permission to upload its contents.
++
++Playwright documents CDP attachment as Chromium-only and lower fidelity than its own protocol. **[verified: https://playwright.dev/docs/api/class-browsertype#browser-type-connect-over-cdp]** **[assumption]** Default to an app-managed browser profile and semantic Playwright actions; use CDP only for explicitly connected sessions. Expose neither arbitrary page evaluation nor raw CDP through the DSL. Origin policy must cover navigations, subrequests and downloads, not merely the initial URL.
++
++macOS exposes accessibility trust through `AXIsProcessTrustedWithOptions`; Windows offers UI Automation as its accessibility framework. **[verified: https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions; https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-uiautomationoverview]** **[assumption]** Implement separate platform adapters and selector variants. App capability consent cannot grant OS accessibility access; preflight both. Unsupported controls return a typed failure, never an unannounced coordinate-click fallback.
++
++### Triggers, parameters, lifecycle
++
++**[assumption]** Start with manual button/hotkey, scheduled local time with IANA timezone, and file-created/changed within a selected root. Later add app-activated and explicitly opted-in clipboard-change triggers; do not continuously scan clipboard content by default. Event payloads carry opaque file/tab handles, not unrestricted paths. Every trigger has debounce, concurrency=1, maximum runtime and a missed-run policy. UI workflows wait for an unlocked active session; schedules do not imply permission to control an unattended desktop.
++
++**[assumption]** Parameters use JSON Schema: text, enum, date, bounded number, root/workbook/browser/app handle, and secret reference. The generated parameter form comes from that schema. Changing a destination or app outside an existing grant requires renewed consent. Credentials never appear as defaults or fixture values.
++
++**[assumption]** Static validation checks types, graph bounds, referenced outputs and the union of required effects. A dry run replays fixtures and stubs external effects; it cannot prove that a live website still matches. The first real run previews file differences, destination and submitted fields. Each run journals node outcomes and idempotency keys. Recovery resumes after completed safe nodes, but checks uncertain remote mutations before retrying. File writes can have reversible backups; remote sends and UI submissions cannot promise universal undo.
++
++## Three example automations
++
++**[assumption]** These are compact authoring examples for the proposed SDK, not an implemented API. `out(id)` is a typed prior-output reference; `root`, `book`, `profile` and `app` resolve through user-selected handles. `approval` creates a host-bound review token. Helpers compile to catalogued graph nodes and never execute arbitrary source.
++
++### A. Capture a copied expense line into a workbook
++
++```ts
++automation({
++  id: "capture-expense", trigger: manualHotkey(),
++  params: { book: workbookParam(), currency: enumParam(["NZD", "USD"]) },
++  steps: [
++    clipboard.readText("raw", { maxBytes: 2048 }),
++    text.parseDelimited("row", out("raw"), {
++      delimiter: "\t", fields: ["date", "merchant", "amount"]
++    }),
++    assert.valid("valid", out("row"), expenseSchema),
++    review.effect("approval", {
++      target: book.table("Expenses"), rows: [out("row")]
++    }),
++    sheets.upsertRows("saved", book.table("Expenses"), [out("row")], {
++      key: ["date", "merchant", "amount"],
++      currency: param("currency"), approval: out("approval")
++    }),
++    notify.show("done", { title: "Expense saved", body: "1 row" })
++  ]
++});
++```
++
++**[assumption]** Permissions: clipboard read, read/write the selected table, notifications. No network or LLM egress. Blank/ambiguous dates fail; amounts parse as decimal money rather than floating-point arithmetic. Duplicate hotkeys produce an upsert preview rather than duplicate rows. Spreadsheet adapters write merchant strings as literal cells, including values beginning with `=`. Fixtures include duplicates, invalid currency amounts and formula-looking merchant names.
++
++### B. Tuesday issue report to CSV and a draft summary
++
++```ts
++automation({
++  id: "weekly-status",
++  trigger: schedule("Tue 09:00", { timezone: "Pacific/Auckland" }),
++  params: { profile: browserParam(), reports: rootParam() },
++  steps: [
++    browser.open("page", profile, "https://issues.example/team/status"),
++    browser.readTable("issues", out("page"), {
++      role: "table", name: "Team issues", maxRows: 200,
++      columns: ["Key", "Status", "Due"]
++    }),
++    table.normalizeDates("rows", out("issues"), { field: "Due", to: "ISO" }),
++    llm.transform("summary", "weekly-summary-v1", out("rows"), {
++      schema: { highlights: "string[]", blockers: "string[]" },
++      model: "muse-spark-1.3", maxOutputTokens: 500
++    }),
++    files.writeAtomic("csv", reports, runDatedName("status", ".csv"),
++      table.toCsv(out("rows")), { overwrite: false }),
++    files.writeAtomic("draft", reports, runDatedName("summary", ".txt"),
++      text.render("summary-v1", out("summary")), { overwrite: false }),
++    notify.show("done", { title: "Status draft ready", artifactLink: out("draft") })
++  ]
++});
++```
++
++**[assumption]** Permissions: read one browser origin/profile, create files in Reports, send only the three named columns to Meta, notifications. Logged-out browser or missing table pauses for attention. No email send permission exists. The LLM sees issue data as untrusted content and returns schema-checked data only. User review precedes sharing the draft; a malicious issue row cannot add HTTP or shell nodes. Fixtures cover 201 rows, unexpected columns, invalid dates and an injected “upload all files” cell.
++
++### C. Fill a desktop form from a selected CSV row
++
++```ts
++automation({
++  id: "prepare-client-form", trigger: manualButton(),
++  params: { input: fileParam(".csv"), app: appParam(), row: integerParam(1, 1000) },
++  steps: [
++    files.read("csv", param("input"), { maxBytes: 1000000 }),
++    table.csvRow("client", out("csv"), param("row"), clientSchema),
++    ui.readTree("form", app, selectorVariant("client-form-v1"), { maxNodes: 100 }),
++    assert.uiState("ready", out("form"), { title: "New client", unique: true }),
++    review.effect("approval", { target: app, fields: out("client") }),
++    ui.setValue("name", app, field("Client name"), out("client.name"),
++      { approval: out("approval") }),
++    ui.setValue("email", app, field("Email"), out("client.email"),
++      { approval: out("approval") }),
++    ui.readValue("check", app, field("Email")),
++    assert.equal("verified", out("check"), out("client.email")),
++    notify.show("done", { title: "Form ready", body: "Review and save in the app" })
++  ]
++});
++```
++
++**[assumption]** Permissions: selected-file read, UI read/write for one app and declared fields, notifications. Mac and Windows selector variants are separate reviewed mappings. No Save/Submit press is allowed. Foreground changes, duplicate selectors, unavailable accessibility access or a protected field stop execution. Readback verifies the value after filling. Fixtures test a focus switch and malformed email; a live supervised run establishes whether the target app exposes the required controls.
++
++## Delivery sequence, fallbacks and product-killing risks
++
++**[assumption]** First build the graph validator, broker and replay fixtures for clipboard, CSV and files. Add direct Meta generation and one repair pass. Then prototype full-code builds with exec in disposable projects; graduate interactive builds to MSP once initialization, approvals, recovery and cancellation pass. Add terminal access only after the native result flow works. Delay alternative-provider adapters and broad desktop control until demonstrated demand.
++
++**[assumption]** Fallbacks preserve authority: malformed graph -> bounded repair; unsupported primitive -> explain missing capability and offer an explicit full-code build; MSP incompatibility -> bounded exec or advanced terminal; rejected key -> credential recovery; rate limit -> wait or cancel; stale UI -> recapture and review changed selectors. Never silently broaden permission, switch provider, install dependencies globally or rerun an uncertain submission.
++
++**[assumption]** Release gates:
++
++- **Prompt injection/privacy:** captured screen text, web content and tool outputs are data. The generator cannot expand the permission ceiling. Separate consent covers cloud egress; observation permission does not authorize automation. Test attacks through CSV cells, UI labels and issue descriptions.
++- **Isolation:** workspaces/worktrees separate changes but are not security sandboxes. A broad coding worker must not inherit the capture archive, browser cookies, credentials or the privileged AX broker. Prove OS enforcement; stop if the host reports sandbox unavailable.
++- **Verification/cost:** test our invariants and fixture outcomes, not just model-authored tests. Cap nested LLM nodes and build retries. Token reporting supports accounting, but local estimates cannot guarantee a provider-side hard currency limit.
++- **Distribution:** Apple's guidelines constrain downloaded/executed code and Mac App Store behavior. **[verified: https://developer.apple.com/app-store/review/guidelines/]** **[assumption]** Plan direct signed/notarized distribution first, and validate helper signing, entitlements and upgrades early. This is a distribution hypothesis, not an App Store eligibility or notarization guarantee.
++- **Meta terms and packaging:** public SDK documentation is not proof of permission to redistribute the Muse binary or ship unattended generation for other users. **[assumption]** Verify redistribution, API terms, data retention and end-user key arrangements before committing distribution. Let users select an installed CLI until rights are established.
++- **Windows reality:** design backend and capability contracts now; require Windows CI plus hands-on external testing for PTY, filesystem paths, UI Automation and cancellation. **[assumption]** Unsupported Windows capabilities should be explicit, rather than inferred from Mac success.
++
++## Open questions for the owner
++
++- Is advanced arbitrary-code automation part of the first public release, or can v1 ship typed workflows with Muse available in a developer preview?
++- Is direct signed distribution acceptable as the initial Mac channel?
++- Which real recurring task should supply the first consented fixtures and supervised end-to-end acceptance run?
++- Should optional non-Meta providers ever receive observed context, or remain limited to manually supplied build projects?
++
++## Decisions I made
++
++- Make the typed Macroscope graph the default saved artifact and runtime contract.
++- Use direct Meta API generation for constrained workflows; reuse Muse for general coding.
++- Prefer MSP for the finished interactive builder and exec for the earliest full-code slice.
++- Keep the embedded terminal as an advanced view and compatibility fallback.
++- Make API-key handoff explicit and require successful serve/exec billing validation before release.
++- Separate builder authority, artifact approval and per-run capability enforcement.
++- Define the Builder interface now; defer Codex and Claude adapters until needed.
++- Require independent validation and preserve authority across every fallback.
+
+exec
+/bin/zsh -lc "wc -w -l plan/research/05-alt-builders.md; sed -n '1,60p' plan/research/05-alt-builders.md; tail -45 plan/research/05-alt-builders.md; rg -n 'TODO|TBD|turn[0-9]|consumer|serve|\\[assumption\\]' plan/research/05-alt-builders.md | tail -15" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+     329    4267 plan/research/05-alt-builders.md
+# Building software inside Macroscope: alternatives and fallbacks
+
+Research date: 2026-10-22. Scope: the builder, its generated artifacts, and their execution contract. Read against the complete [brief](../BRIEF.md), [CLI help](../reference/muse-cli-help.txt), and stable [MSP declarations](../reference/msp/msp.d.ts).
+
+Evidence convention: **[verified: URL]** denotes public primary documentation; **[local: checked on machine]** denotes the supplied local evidence or an explicit inspection below; **[assumption]** denotes proposed design, estimates, or unresolved behavior. Design sections and examples are proposals throughout, not existing Macroscope functionality.
+
+## Recommendation: own the automation contract, reuse the coding agent
+
+**[assumption]** Ship two artifact tiers. The default is a small typed workflow graph, rendered as understandable steps and executed by Macroscope's capability broker. Meta generates or repairs that graph. The advanced tier is actual code built by Muse Code in an isolated project, preferably controlled through MSP with a native product UI. An embedded terminal is a useful advanced view and fallback, not the default experience.
+
+**[assumption]** These are complementary layers rather than six competing products:
+
+```text
+Observed repetition -> proposed outcome -> user selects "Automate this"
+                                             |
+                                   Builder request + fixtures
+                                  /                      \
+                   Meta graph generator             Muse Code
+                   constrained repair loop          MSP / exec / PTY
+                                  \                      /
+                           versioned artifact + evidence
+                                        |
+                    schema checks -> replay -> permission review
+                                        |
+                           Macroscope runtime / broker
+                          /          |           \
+                       files      browser     desktop UI
+```
+
+**[assumption]** A saved automation should normally run without an agent. Reformatting a CSV is deterministic work; paying a model to rediscover the steps on every run increases cost and variability. Use an LLM node only where interpretation is necessary. A custom form or menu-bar tool can be a schema-generated parameter screen over the same graph. Full code becomes necessary for new algorithms, unusual formats, richer interfaces, or integrations outside the catalog.
+
+## Comparison and implementation choices
+
+**[assumption]** Relative effort below is a solo-developer planning judgment, not a benchmark. Each option still needs the same independent artifact validation and permission review.
+
+| Route | Best use | Product experience | Main cost / limitation | Decision |
+|---|---|---|---|---|
+| Muse MSP | Interactive full-code builds and repair | Native progress, diffs, structured approvals, resume | Stateful protocol and CLI lifecycle | Preferred full-code integration |
+| Muse embedded TUI | Expert development and debugging | Familiar terminal, immediate feature parity | Terminal output is a poor product-state API | Advanced fallback |
+| Muse exec JSONL | Bounded scaffold, migration, repair jobs | Job card, logs, resulting diff | Limited interactive control | Earliest full-code prototype |
+| Own Meta loop | Graph generation and constrained repair | Precise steps and predictable controls | We own retries, history, validation | Default graph builder |
+| Codex / Claude adapters | Explicit alternative provider choice | Same artifact review | Separate credentials, policy and compatibility | Optional later |
+| Typed DSL runtime | Running routine automations | Inspectable steps, preview and undo | Catalog limits expressiveness | Default artifact target |
+
+### 1. Muse Code through `muse serve`: native UI
+
+Muse documents `muse serve` and the `@muse-code/sdk` TypeScript wrapper; MSP is its session protocol, not MCP. MCP is separately used to connect tools. **[verified: https://dev.meta.ai/docs/muse-code]** The local binary is Muse Code 1.4.11; the schema manifest reports version 1 and a stable fingerprint. **[local: checked on machine: `muse --version`, `plan/reference/msp/manifest.json`]**
+
+**[assumption]** Run a child process owned by the desktop supervisor. Use pipes, not a PTY, for MSP. Prefer a small adapter using the official SDK if its packaged version matches the installed host; otherwise generate typed protocol bindings from the exported schema. For Flutter, keep protocol/state reduction in a Rust or TypeScript helper and send product events to Dart. Avoid implementing all 3,651 lines in the UI.
+
+The useful minimum is concrete:
+
+1. `initialize` identifies the client and returns schema identity, granted capabilities, platform and sandbox availability. Absent sandbox availability means unknown, not safe.
+2. `session/start` sets workspace, model, provider and approval mode; `turn/start` submits typed input. Both use client-issued command IDs. An accepted request is admission, not task completion.
+3. Fold `item/started`, `item/delta`, `item/completed` into a transcript and separate artifact diff. Treat unknown item kinds generically.
+4. Render `approval/request` using the provided choices. Send `approval/decide` with both `commandId` and current `requirementId`; a stale approval must not authorize a newer stage.
+5. Persist the opaque `viewCursor`; resume with `session/resume`. `session/read` is a snapshot read and does not attach or reissue approvals. Resume returns pending-request pointers and reissues requests.
+6. Use `turn/completed.terminal`, typed errors, token usage and quota reset details to settle the run. `authRequired` and `quota.resetsAtMs` enable useful recovery UI.
+
+All six are **[local: checked on machine: inspected `InitializeResult`, `SessionStartParams`, `TurnStartParams`, item events, approval types, `SessionResumeResult`, `TurnCompletedParams`, `TurnError` and `QuotaDetail` in the supplied MSP declarations]**.
+    ui.setValue("name", app, field("Client name"), out("client.name"),
+      { approval: out("approval") }),
+    ui.setValue("email", app, field("Email"), out("client.email"),
+      { approval: out("approval") }),
+    ui.readValue("check", app, field("Email")),
+    assert.equal("verified", out("check"), out("client.email")),
+    notify.show("done", { title: "Form ready", body: "Review and save in the app" })
+  ]
+});
+```
+
+**[assumption]** Permissions: selected-file read, UI read/write for one app and declared fields, notifications. Mac and Windows selector variants are separate reviewed mappings. No Save/Submit press is allowed. Foreground changes, duplicate selectors, unavailable accessibility access or a protected field stop execution. Readback verifies the value after filling. Fixtures test a focus switch and malformed email; a live supervised run establishes whether the target app exposes the required controls.
+
+## Delivery sequence, fallbacks and product-killing risks
+
+**[assumption]** First build the graph validator, broker and replay fixtures for clipboard, CSV and files. Add direct Meta generation and one repair pass. Then prototype full-code builds with exec in disposable projects; graduate interactive builds to MSP once initialization, approvals, recovery and cancellation pass. Add terminal access only after the native result flow works. Delay alternative-provider adapters and broad desktop control until demonstrated demand.
+
+**[assumption]** Fallbacks preserve authority: malformed graph -> bounded repair; unsupported primitive -> explain missing capability and offer an explicit full-code build; MSP incompatibility -> bounded exec or advanced terminal; rejected key -> credential recovery; rate limit -> wait or cancel; stale UI -> recapture and review changed selectors. Never silently broaden permission, switch provider, install dependencies globally or rerun an uncertain submission.
+
+**[assumption]** Release gates:
+
+- **Prompt injection/privacy:** captured screen text, web content and tool outputs are data. The generator cannot expand the permission ceiling. Separate consent covers cloud egress; observation permission does not authorize automation. Test attacks through CSV cells, UI labels and issue descriptions.
+- **Isolation:** workspaces/worktrees separate changes but are not security sandboxes. A broad coding worker must not inherit the capture archive, browser cookies, credentials or the privileged AX broker. Prove OS enforcement; stop if the host reports sandbox unavailable.
+- **Verification/cost:** test our invariants and fixture outcomes, not just model-authored tests. Cap nested LLM nodes and build retries. Token reporting supports accounting, but local estimates cannot guarantee a provider-side hard currency limit.
+- **Distribution:** Apple's guidelines constrain downloaded/executed code and Mac App Store behavior. **[verified: https://developer.apple.com/app-store/review/guidelines/]** **[assumption]** Plan direct signed/notarized distribution first, and validate helper signing, entitlements and upgrades early. This is a distribution hypothesis, not an App Store eligibility or notarization guarantee.
+- **Meta terms and packaging:** public SDK documentation is not proof of permission to redistribute the Muse binary or ship unattended generation for other users. **[assumption]** Verify redistribution, API terms, data retention and end-user key arrangements before committing distribution. Let users select an installed CLI until rights are established.
+- **Windows reality:** design backend and capability contracts now; require Windows CI plus hands-on external testing for PTY, filesystem paths, UI Automation and cancellation. **[assumption]** Unsupported Windows capabilities should be explicit, rather than inferred from Mac success.
+
+## Open questions for the owner
+
+- Is advanced arbitrary-code automation part of the first public release, or can v1 ship typed workflows with Muse available in a developer preview?
+- Is direct signed distribution acceptable as the initial Mac channel?
+- Which real recurring task should supply the first consented fixtures and supervised end-to-end acceptance run?
+- Should optional non-Meta providers ever receive observed context, or remain limited to manually supplied build projects?
+
+## Decisions I made
+
+- Make the typed Macroscope graph the default saved artifact and runtime contract.
+- Use direct Meta API generation for constrained workflows; reuse Muse for general coding.
+- Prefer MSP for the finished interactive builder and exec for the earliest full-code slice.
+- Keep the embedded terminal as an advanced view and compatibility fallback.
+- Make API-key handoff explicit and require successful serve/exec billing validation before release.
+- Separate builder authority, artifact approval and per-run capability enforcement.
+- Define the Builder interface now; defer Codex and Claude adapters until needed.
+- Require independent validation and preserve authority across every fallback.
+210:**[assumption]** Parameters use JSON Schema: text, enum, date, bounded number, root/workbook/browser/app handle, and secret reference. The generated parameter form comes from that schema. Changing a destination or app outside an existing grant requires renewed consent. Credentials never appear as defaults or fixture values.
+212:**[assumption]** Static validation checks types, graph bounds, referenced outputs and the union of required effects. A dry run replays fixtures and stubs external effects; it cannot prove that a live website still matches. The first real run previews file differences, destination and submitted fields. Each run journals node outcomes and idempotency keys. Recovery resumes after completed safe nodes, but checks uncertain remote mutations before retrying. File writes can have reversible backups; remote sends and UI submissions cannot promise universal undo.
+216:**[assumption]** These are compact authoring examples for the proposed SDK, not an implemented API. `out(id)` is a typed prior-output reference; `root`, `book`, `profile` and `app` resolve through user-selected handles. `approval` creates a host-bound review token. Helpers compile to catalogued graph nodes and never execute arbitrary source.
+242:**[assumption]** Permissions: clipboard read, read/write the selected table, notifications. No network or LLM egress. Blank/ambiguous dates fail; amounts parse as decimal money rather than floating-point arithmetic. Duplicate hotkeys produce an upsert preview rather than duplicate rows. Spreadsheet adapters write merchant strings as literal cells, including values beginning with `=`. Fixtures include duplicates, invalid currency amounts and formula-looking merchant names.
+271:**[assumption]** Permissions: read one browser origin/profile, create files in Reports, send only the three named columns to Meta, notifications. Logged-out browser or missing table pauses for attention. No email send permission exists. The LLM sees issue data as untrusted content and returns schema-checked data only. User review precedes sharing the draft; a malicious issue row cannot add HTTP or shell nodes. Fixtures cover 201 rows, unexpected columns, invalid dates and an injected “upload all files” cell.
+296:**[assumption]** Permissions: selected-file read, UI read/write for one app and declared fields, notifications. Mac and Windows selector variants are separate reviewed mappings. No Save/Submit press is allowed. Foreground changes, duplicate selectors, unavailable accessibility access or a protected field stop execution. Readback verifies the value after filling. Fixtures test a focus switch and malformed email; a live supervised run establishes whether the target app exposes the required controls.
+300:**[assumption]** First build the graph validator, broker and replay fixtures for clipboard, CSV and files. Add direct Meta generation and one repair pass. Then prototype full-code builds with exec in disposable projects; graduate interactive builds to MSP once initialization, approvals, recovery and cancellation pass. Add terminal access only after the native result flow works. Delay alternative-provider adapters and broad desktop control until demonstrated demand.
+302:**[assumption]** Fallbacks preserve authority: malformed graph -> bounded repair; unsupported primitive -> explain missing capability and offer an explicit full-code build; MSP incompatibility -> bounded exec or advanced terminal; rejected key -> credential recovery; rate limit -> wait or cancel; stale UI -> recapture and review changed selectors. Never silently broaden permission, switch provider, install dependencies globally or rerun an uncertain submission.
+304:**[assumption]** Release gates:
+309:- **Distribution:** Apple's guidelines constrain downloaded/executed code and Mac App Store behavior. **[verified: https://developer.apple.com/app-store/review/guidelines/]** **[assumption]** Plan direct signed/notarized distribution first, and validate helper signing, entitlements and upgrades early. This is a distribution hypothesis, not an App Store eligibility or notarization guarantee.
+310:- **Meta terms and packaging:** public SDK documentation is not proof of permission to redistribute the Muse binary or ship unattended generation for other users. **[assumption]** Verify redistribution, API terms, data retention and end-user key arrangements before committing distribution. Let users select an installed CLI until rights are established.
+311:- **Windows reality:** design backend and capability contracts now; require Windows CI plus hands-on external testing for PTY, filesystem paths, UI Automation and cancellation. **[assumption]** Unsupported Windows capabilities should be explicit, rather than inferred from Mac success.
+318:- Should optional non-Meta providers ever receive observed context, or remain limited to manually supplied build projects?
+326:- Make API-key handoff explicit and require successful serve/exec billing validation before release.
+329:- Require independent validation and preserve authority across every fallback.
+
+codex
+The draft is complete at about 4,300 words. It covers all six routes, explicit API-key handoffs, a permission-mapped SDK, and three worked examples. I’m checking the structure and evidence labels, especially the distinction between documented support and behavior still requiring a real-key test.
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('plan/research/05-alt-builders.md')
+s=p.read_text()
+assert len(s.split()) >= 2000 and len(s.split()) <= 5000
+assert sum(line.startswith('"'```'"') for line in s.splitlines()) % 2 == 0
+for name in ('../BRIEF.md','../reference/muse-cli-help.txt','../reference/msp/msp.d.ts'):
+    assert (p.parent / name).exists(), name
+for section in ('### 1.', '### 2.', '### 3.', '### 4.', '### 5.', '## The Macroscope SDK/DSL contract', '### A.', '### B.', '### C.', '## Open questions for the owner', '## Decisions I made'):
+    assert section in s, section
+assert s.rfind('## Decisions I made') > s.rfind('## Open questions for the owner')
+print(f'Validated {p}: {len(s.split())} words; balanced code fences; local reference links exist; all required sections present.')
+PY" in /Users/todd/StudioProjects/macroscope
+ succeeded in 0ms:
+Validated plan/research/05-alt-builders.md: 4267 words; balanced code fences; local reference links exist; all required sections present.
+
+codex
+Created [05-alt-builders.md](/Users/todd/StudioProjects/macroscope/plan/research/05-alt-builders.md), approximately 4,300 words covering all six options, sourced comparisons, API-key handoffs, the permission-mapped SDK, and three automation examples.
+
+Recommendation: typed workflows first, Muse MSP for full-code builds, exec for bounded jobs, and an embedded terminal as an advanced fallback.
+tokens used
+101,703
+Created [05-alt-builders.md](/Users/todd/StudioProjects/macroscope/plan/research/05-alt-builders.md), approximately 4,300 words covering all six options, sourced comparisons, API-key handoffs, the permission-mapped SDK, and three automation examples.
+
+Recommendation: typed workflows first, Muse MSP for full-code builds, exec for bounded jobs, and an embedded terminal as an advanced fallback.

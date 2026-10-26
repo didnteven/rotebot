@@ -1,0 +1,16 @@
+Track: EMBEDDING MUSE CODE IN THE APP (MSP). Output: plan/research/04-muse-msp.md
+Read plan/reference/msp/msp.d.ts thoroughly (and msp.schema.json as needed) and plan/reference/muse-cli-help.txt.
+You may run local probes with Bash: `muse serve --provider echo` (the echo provider costs nothing) driven by a small Python or Node script you write under plan/probes/, to learn the real framing (JSON-RPC? newline-delimited? Content-Length?), the initialize/handshake, session/start, a turn, item/delta streaming, approval/request + approval/decide. Do not use the meta provider for paid prompts. Record exactly what you observed versus what you inferred from the schema.
+Deliver:
+- How the desktop app should host Muse: one long-lived `muse serve` per app, or one per micro-app workspace? Sandbox posture choices per host (remember: fixed per process). Workspace layout per micro-app (a git repo per tool?).
+- A mapping from MSP concepts to Macroscope UI: sessions -> "build sessions" of a micro-app, item/delta -> streaming transcript, approval/request -> approval cards, goal/* -> the automation spec, subagents, task/background, session/fork -> "try another approach", session/userShell -> an embedded terminal, skills/plugins -> Macroscope-provided skills that teach Muse how to write Macroscope micro-apps (manifest format, SDK).
+- Whether to ALSO offer a raw embedded terminal (PTY running the `muse` TUI inside the app, e.g. xterm.js or SwiftTerm) for power users, and how that coexists with the structured MSP UI.
+- Distribution: can we bundle the muse binary, or must the user install it? Auth (muse login / API key) flow inside our app. Version pinning against schema fingerprint in manifest.json.
+- Failure modes: muse missing, wrong version, auth expired, rate limits, crashes mid-turn, protocol drift.
+- A minimal client sketch (TypeScript or Rust) of the handshake + one turn + approval handling, based on what you observed.
+
+API-KEY REQUIREMENT (top priority, the owner asked for this explicitly): the app will use Meta API keys, not account logins. Prove the key path for `muse serve`:
+- Start `muse serve --provider meta --no-session-log` with `META_API_KEY=sk-invalid-test-key` in its environment, do the MSP handshake, start a session, submit one tiny turn, and capture exactly how the rejection surfaces over MSP (TurnErrorKind authRequired? a session status? a notification?). A rejected key costs nothing. Save the raw transcript under plan/probes/.
+- Also run the same with `muse exec --api-key-stdin` (bogus key piped in) and confirm it behaves the same.
+- If a real key is available in the environment (`META_API_KEY` set, or `muse auth` already holds one), run ONE minimal successful turn ("reply OK", --max-model-steps 1) through `muse serve` and record the model id, token usage events and latency. If no real key is available, say so; do not use the account login.
+- Recommend how Macroscope stores the key (macOS Keychain / Windows Credential Manager) and injects it (env var into the spawned `muse serve` child vs `muse auth set`), how key rotation/revocation is handled while a host is running, and how the same key is used by Macroscope's own direct API calls (pattern engine) so there is one key and one usage meter. Put a section "API-key auth: verified behaviour" at the top of your file.

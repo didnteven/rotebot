@@ -1,0 +1,37 @@
+I've written `plan/research/03-meta-models.md`. It runs about 6,700 words counted with `wc`, over your 2–5k target, because of the code blocks and tables. Nothing has been tested with a real key: every API fact comes from Meta's docs or the Muse files on this Mac, and no paid call was made.
+
+**Two settings on this Mac need attention before the app uses Muse:**
+- **Muse would bill your subscription, not your key.** Muse is logged in with your browser/subscription account. If `META_API_KEY` isn't set, its usage lands on the subscription.
+- **Contributor mode is on.** Your Muse settings have it enabled. Contributor content can be used by Meta for training, and Meta's terms forbid sending personal information to it. Screen recordings are personal information.
+
+The plan handles both: the app always passes the key as `META_API_KEY`, plus `--contributor-mode off` and an explicit `--model`. It also blocks any `-contributor` model in code. It never changes your Muse config files.
+
+**API facts the app will rely on:**
+- **Base URL is `https://api.meta.ai/v1`**, with `Authorization: Bearer <key>` (keys start `LLM_`). It accepts OpenAI Responses, Chat Completions and Anthropic Messages formats at the same price.
+- **Muse uses the same base URL**, so one key covers Muse and the app's direct calls, with one bill and one shared rate limit.
+- **Exact request shapes are in the doc:** image input (`input_image`), strict JSON-schema output (`text.format`), the rate-limit headers (`x-ratelimit-*`, `Retry-After`) and the error codes.
+
+**Claims in BRIEF.md:**
+- **True:** Muse Wonder, Muse Glimmer (an open-weight 30B model that runs locally) and SAM 3.1 are all real. Muse context windows are about 1M tokens.
+- **False:** `dev.meta.ai/v1` and `llama.developer.meta.ai/v1` are not API addresses; the old Llama API was retired in July 2026. There is no `@meta/llama` npm package. Llama 4 Scout's long context doesn't help with hours of screenshots: 8 hours at one frame every 5 seconds is about 8M tokens.
+
+**Terms that shape the product:**
+- Standard (non-contributor) models are not trained on your data, but Meta publishes no retention period, and stored responses are on by default, so the app turns that off.
+- You can't share your API key. If you ship the app to other people, each would need their own key, which I recommend, or you'd have to run a server in between.
+
+**Recommended model routing:**
+
+| Stage | Model |
+|---|---|
+| (a) Per-frame understanding | No model: accessibility tree, on-device OCR and events |
+| (b) PII redaction | Local rules only; nothing leaves the Mac |
+| (c) Episode summaries | `muse-spark-1.3`, low effort, at most 2 redacted keyframes |
+| (d) Pattern mining | Local candidate mining, then nightly `muse-spark-1.3` and a weekly `muse-wonder-1.0` pass, text only |
+| (e) Building micro-apps | Muse Code on `muse-wonder-1.0`, falling back to `muse-spark-1.3` |
+| (f) Repairs | Rule-based fix first, then `muse-spark-1.3`, then `muse-wonder-1.0` |
+
+- **SAM:** not useful here; the accessibility tree gives better information for free.
+- **Running Glimmer locally:** an optional mode for Macs with 64 GB or more, the same limit Muse sets for its own local mode. It needs about 19 GB of memory.
+- **Cost:** about $1.45 per active user-day, roughly $32 a month. A lean setup is about $0.50/day; a heavy building day is $5–8. These rest on my assumptions about usage, which are listed in the doc.
+
+The doc also covers the design for swapping models or providers. It ends with a list of what's verified and what isn't, a first test costing under $1 to settle the open points (including whether `muse serve` picks up the key), five questions for you, and the decisions I made. I didn't touch any other agent's files.

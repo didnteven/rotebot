@@ -1,0 +1,35 @@
+I've written the threat model to `plan/research/08-privacy-security.md` and touched no other agent's files. It's longer than the 2,000–5,000 words you asked for: `wc` counts about 7,600, though tables, diagrams and a JSON example inflate that number.
+
+**Biggest finding: Meta's "Contributor mode" has to be blocked.** I read Meta's terms and pricing page today. Contributor mode lets Meta train on everything sent, and the terms forbid sending "sensitive, confidential, or personal information" in that mode. Muse Code subscriptions default to it. Since screen content is sensitive by nature, using Contributor mode would breach Meta's terms, not just weaken privacy. The plan therefore rejects any `-contributor` model id and always starts Muse with `--contributor-mode off` (a flag the local `muse` already has). Standard mode, where Meta doesn't train on what you send, is the only allowed path.
+
+**Prompt injection (text on screen tricking the AI into writing harmful code)** is stopped by structure at every step, not by the AI behaving well:
+- Every piece of captured data is tagged with where it came from.
+- The model that reads screen content has no tools and must return structured data that our own code checks.
+- A website or file path can only appear in an automation if the user actually visited or used it. Text that merely appeared on screen doesn't count.
+- The coding agent never sees real screen data, only a checked spec plus made-up sample data.
+- Every generated app needs your approval of a plain-language permission list. The approved version is signed so it can't be changed later without re-approval, and it runs inside two layers of sandboxing with network access only through an allowlist.
+
+**Other key decisions:**
+- **Storage:** captured data is encrypted with keys in the Keychain (DPAPI on Windows). Data is split into one file per day with its own key, so deleting old data is reliable even on SSDs. Default retention is 7 days for screenshots, 14 for raw text, and 90 for activity events.
+- **Uploads:** raw screenshots are never sent by default. Text is redacted on the device first, and a "Sent to Meta" log shows exactly what left the machine.
+- **Not looking like spyware:**
+  - No keyboard hooks, clipboard content or audio capture in the first version.
+  - No local web server for other programs to query.
+  - No hidden mode.
+  - Process names that say what they are.
+  - Signed and notarized builds.
+
+**Still unverified (marked as assumptions in the file):**
+- Whether `muse serve` has an equivalent of the `--disable-web-tools` flag.
+- Whether the API key leaks into the environment of Muse's shell tool. I made an automated test for this a launch requirement.
+- Whether Windows AppContainer works for sandboxing generated apps.
+- Exactly how excluding apps works at the capture level, which I've left for the capture track (06) to confirm.
+
+The file ends with the prioritized requirements list: 27 MUST-for-MVP items, then SHOULD and LATER.
+
+**Open questions for you:**
+- **Whose API key if this ships beyond you?** If other people use it with your key, you become legally responsible under GDPR/CCPA for their redacted screen data sent to Meta. I recommend your key for personal use and a closed beta, and each user's own key for any public release.
+- **Work computers:** support them in v1 (stricter defaults, setup docs for IT), or say personal machines only?
+- **Screenshot retention:** keep 7 days (better evidence when suggesting automations) or 24 hours (stronger privacy story)?
+- **Windows:** ship Windows capture and analysis first, with running generated apps behind a flag, since that sandbox is the hardest part to test without Windows hardware?
+- **Slack and Teams:** capture by default (they're full of repetitive work) or exclude them like other messaging apps?

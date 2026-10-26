@@ -1,0 +1,14 @@
+# Build output
+node_modules/
+dist/
+target/
+*.tsbuildinfo
+apps/desktop/src-tauri/gen/schemas/
+
+# Local machine state, never committed
+.DS_Store
+.env
+.env.*
+*.local
+/.dev/
+/scratch/

@@ -1,0 +1,1 @@
+{"method": "GET", "path": "/muse-code/models", "header_names": ["accept", "accept-encoding", "authorization", "host", "user-agent", "x-client-id"], "auth_scheme": "Bearer", "auth_value_masked": "sk-dum...0001", "user_agent": "muse-build/1.4.11 (non-interactive; macos-aarch64; build d654f64987ba0a6f60980e9e89351223c1e4095c)", "body_keys": null, "model": null}

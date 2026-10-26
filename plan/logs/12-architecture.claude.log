@@ -1,0 +1,26 @@
+I've written `plan/research/12-architecture-claude.md`. It runs to about 6,900 words by `wc`, above your 2,000–5,000 target, though tables and folder trees account for a good share of that.
+
+**Pick: Tauri 2.** That means a React + TypeScript UI on top of one Rust codebase that runs every background process, with capture written in Rust on both Macs and Windows. Electron is the runner-up. It actually scored slightly higher in my comparison table, and it's the fallback if a Week-0 test shows the embedded terminal doesn't work well in the Mac's built-in webview. It loses for three reasons:
+- **Two languages:** Electron needs native helpers for capture anyway, so you'd maintain Node plus Rust or Swift.
+- **Trust:** Node would sit in the process that holds the API key and decrypts screen frames.
+- **Memory:** Electron's tray process stays loaded all day. With Tauri, the always-running part doesn't need a webview at all.
+
+Flutter loses because it has no first-party desktop webview and multi-window isn't public on stable yet (one source). Native SwiftUI on Mac plus WinUI 3 on Windows loses because the Windows UI would be agent-written and never hand-tested.
+
+**Two findings from your machine that change the plan:**
+- **Muse Code likely can't run natively on Windows.** The installed `muse` launcher is a bash script that only accepts macOS and Linux and exits with "unsupported platform" on anything else. The plan puts all agent work behind one interface with a fallback, our own small agent loop calling Meta's models with the same API key, so Windows doesn't depend on Muse.
+- **The launcher updates the Muse binary in the background about once an hour.** It can also ask for a Meta account login when a download is refused, even though model calls use the API key. The binary is 386 MB and signed by Meta, so I chose not to bundle it. When the app starts Muse it turns off auto-update and the login prompt, uses a private config folder, and checks the protocol version on every connection.
+
+The document also covers the process model, inter-process communication, storage layout, crash recovery, updates and signing, the folder tree, CI and the component diagram. It ends with six Week-0 go/no-go tests, the risks that could kill the product, five questions for you and a list of the decisions I made.
+
+Several things are still unverified and marked as assumptions in the file:
+- whether `muse serve` picks up the API key from its environment;
+- whether the protocol messages are line-delimited;
+- whether the Muse binary respects the private config folder;
+- whether the community crates I rely on exist and are maintained;
+- the memory and CPU budgets.
+
+The questions that most need your call:
+1. Is a lighter builder without Muse acceptable on Windows v1?
+2. Is a one-time Meta account login to install Muse acceptable, given everything else uses the API key?
+3. Would you run a Windows 11 ARM virtual machine on your M4 for occasional smoke tests?

@@ -1,0 +1,5 @@
+{"t_ms": 0, "dir": "meta", "obj": {"cmd": ["muse", "serve", "--provider", "meta", "--no-session-log", "--base-url", "http://127.0.0.1:18777"], "env_overrides": {"META_API_KEY": "<redacted>", "XDG_DATA_HOME": "/tmp/msp-isoP", "XDG_CONFIG_HOME": "/tmp/msp-isoP/cfg", "XDG_STATE_HOME": "/tmp/msp-isoP/state"}}}
+{"t_ms": 3, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"clientInfo\": {\"name\": \"macroscope_probe\", \"title\": \"Macroscope probe\", \"version\": \"0.0.1\"}, \"capabilities\": {\"requestedCapabilities\": [\"userShell\", \"sessionListStream\", \"sessionRename\", \"feedback\"]}}}"}
+{"t_ms": 153, "dir": "stderr", "raw": "muse serve: unexpected argument '--base-url' found"}
+{"t_ms": 153, "dir": "stderr", "raw": "usage: muse serve [OPTIONS] (run `muse serve --help` for options)"}
+{"t_ms": 30010, "dir": "c2s", "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"initialized\"}"}

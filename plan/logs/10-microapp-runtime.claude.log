@@ -1,0 +1,21 @@
+I've written `plan/research/10-microapp-runtime.md`. It's about 7,800 words by `wc`, over your 2,000–5,000 target, though the full manifest examples and ASCII diagrams account for a fair share of that. I didn't touch any other agent's files.
+
+**The main design choices:**
+- **What a micro-app is:** a small git repo with a `macroscope.yaml` manifest, run only by Macroscope's executor. The v1 default is a TypeScript workflow on a small Macroscope SDK, running in a bundled, version-pinned Deno. I recommend against a custom YAML workflow language: models write TypeScript well, and the step-by-step preview comes from the run log anyway.
+- **Every action goes through the host:** the generated script gets no direct network, subprocess, env or native-code access, and can only write to a scratch folder. File writes, browser clicks, Mail drafts, clipboard, secrets and AI calls all go through SDK calls that Macroscope carries out and checks against the manifest. That's what makes permissions, previews, undo, secret scrubbing and repair enforceable even when the generated code is buggy or manipulated.
+- **Preview and undo:** "preview what it will do" runs the app with real reads and simulated writes, then shows the planned actions as a card. Deletes go to the Trash, overwritten files are saved first, and a per-run log of actions supports a 7-day "Undo this run".
+- **Testing:** the user's own repeated episodes are the answer key. Macroscope writes tests the agent cannot edit, from the input the user saw and the output they produced by hand. Macroscope then runs its own checks (type check, those tests, expected action list, permission review) before an app is offered.
+- **Reliability:** each failure type has a defined response. A dry-run check about an hour before each scheduled run catches breakage early, and seeing the user do the task by hand again is treated as a sign the app is broken. Self-repair forks the original Muse build session with the failing run's log and before/after screenshots, and each failure becomes a new test. A repair can never widen permissions or add an irreversible action without the user approving it. Apps pause after 3 failures in a row, and rollback is one click.
+- **Browser automation:** it uses a separate Macroscope-managed browser profile, not the user's everyday Chrome. Chrome 136+ blocks the automation hook on the default profile on purpose (I checked Chrome's blog post). Acting inside the user's real browser moves to v2 through the companion extension.
+
+**Unverified items that need a week-1 check:** whether Playwright works under Deno (fallback: bundle Node just for the browser part), which Mac signing entitlements Deno needs to pass notarization, and whether `deno compile` keeps permission flags.
+
+The file ends with 6 open questions for the owner. The most important are whether v1 should ever send email or submit forms without a tap (I proposed drafts only), whether locator-only repairs should apply automatically, and the token budget for repairs.
+
+Sources:
+- [Chrome: changes to remote debugging switches](https://developer.chrome.com/blog/remote-debugging-port)
+- [Deno permissions reference](https://docs.deno.com/runtime/reference/permissions/), [Deno security](https://docs.deno.com/runtime/fundamentals/security.md)
+- [Node.js permissions docs](https://nodejs.org/api/permissions.html), [Node latest permissions](https://r2.nodejs.org/docs/latest/api/permissions.html)
+- [Node/Deno/Bun security model comparison (Safeguard)](https://www.safeguard.sh/resources/blog/nodejs-deno-bun-security-model-comparison)
+- [uv python install](https://mintlify.com/astral-sh/uv/cli/python-install)
+- [Apple: run shortcuts from the command line](https://support.apple.com/guide/shortcuts-mac/apd455c82f02/mac)
