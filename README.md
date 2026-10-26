@@ -20,6 +20,9 @@ bash scripts/doctor.sh
 cd apps/desktop && npx tauri dev
 ```
 
+A double-clickable app for this Mac (unsigned, observer included): `scripts/bundle-mac.sh`
+(add `--release` for an optimized build). It prints the path to `Macroscope.app`.
+
 Browser preview with the in-memory mock backend: `npm run -w apps/desktop dev`.
 Native binary: `cd apps/desktop && npx tauri build --debug --no-bundle`.
 All checks (fmt, Clippy, Rust tests, TypeScript, UI tests, Vite build): `bash scripts/check.sh`.
