@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-draft-task"
+description = "Enables the draft_task command without any pre-configured scope."
+commands.allow = ["draft_task"]
+
+[[permission]]
+identifier = "deny-draft-task"
+description = "Denies the draft_task command without any pre-configured scope."
+commands.deny = ["draft_task"]

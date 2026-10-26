@@ -27,5 +27,5 @@ macroscope-effect-broker = { path = "crates/effect-broker" }
 macroscope-connections = { path = "crates/connections" }
 macroscope-app-core = { path = "crates/app-core" }
 futures-core = "0.3"
-tauri = "=2.12.5"
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
 tauri-build = "=2.7.4"

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-muse-unverified-ok"
+description = "Enables the set_muse_unverified_ok command without any pre-configured scope."
+commands.allow = ["set_muse_unverified_ok"]
+
+[[permission]]
+identifier = "deny-set-muse-unverified-ok"
+description = "Denies the set_muse_unverified_ok command without any pre-configured scope."
+commands.deny = ["set_muse_unverified_ok"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-refresh-muse-status"
+description = "Enables the refresh_muse_status command without any pre-configured scope."
+commands.allow = ["refresh_muse_status"]
+
+[[permission]]
+identifier = "deny-refresh-muse-status"
+description = "Denies the refresh_muse_status command without any pre-configured scope."
+commands.deny = ["refresh_muse_status"]

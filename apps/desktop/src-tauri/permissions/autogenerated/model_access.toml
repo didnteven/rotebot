@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-model-access"
+description = "Enables the model_access command without any pre-configured scope."
+commands.allow = ["model_access"]
+
+[[permission]]
+identifier = "deny-model-access"
+description = "Denies the model_access command without any pre-configured scope."
+commands.deny = ["model_access"]

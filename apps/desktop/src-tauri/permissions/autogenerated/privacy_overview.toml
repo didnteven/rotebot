@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-privacy-overview"
+description = "Enables the privacy_overview command without any pre-configured scope."
+commands.allow = ["privacy_overview"]
+
+[[permission]]
+identifier = "deny-privacy-overview"
+description = "Denies the privacy_overview command without any pre-configured scope."
+commands.deny = ["privacy_overview"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-outbound-preview"
+description = "Enables the outbound_preview command without any pre-configured scope."
+commands.allow = ["outbound_preview"]
+
+[[permission]]
+identifier = "deny-outbound-preview"
+description = "Denies the outbound_preview command without any pre-configured scope."
+commands.deny = ["outbound_preview"]

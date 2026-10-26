@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-load-sample-csv"
+description = "Enables the load_sample_csv command without any pre-configured scope."
+commands.allow = ["load_sample_csv"]
+
+[[permission]]
+identifier = "deny-load-sample-csv"
+description = "Denies the load_sample_csv command without any pre-configured scope."
+commands.deny = ["load_sample_csv"]

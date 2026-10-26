@@ -11,7 +11,18 @@ tauri-build.workspace = true
 [dependencies]
 tauri.workspace = true
 serde.workspace = true
-macroscope-storage.workspace = true
+macroscope-app-core.workspace = true
+macroscope-domain.workspace = true
+macroscope-vault.workspace = true
+macroscope-muse-client.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "process", "io-util"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
+tempfile = "3"

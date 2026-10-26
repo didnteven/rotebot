@@ -498,12 +498,29 @@ impl AppCore {
         serde_json::from_value(value).map_err(|e| CoreError::Internal(e.to_string()))
     }
 
-    pub fn draft_task(
-        &self,
-        input_handle: &str,
-        description: &str,
-        mentioned_connectors: Vec<String>,
-    ) -> CoreResult<TaskDraft> {
+    /// Connector ids a typed description mentions (ADR 0001 §2). Only the id and a
+    /// count are recorded; the text itself is not stored by detection.
+    fn mentioned_connectors(&self, text: &str) -> Vec<String> {
+        let catalog = macroscope_connections::catalog::Catalog::embedded();
+        let mut ids: Vec<String> = macroscope_connections::detect::detect(
+            &catalog,
+            macroscope_connections::detect::Signal::TaskText {
+                text: text.to_string(),
+            },
+        )
+        .into_iter()
+        .map(|d| d.connector_id)
+        .collect();
+        ids.sort();
+        ids.dedup();
+        let now = self.now();
+        for id in &ids {
+            let _ = self.db().record_detection(id, "task_text", 1, now);
+        }
+        ids
+    }
+
+    pub fn draft_task(&self, input_handle: &str, description: &str) -> CoreResult<TaskDraft> {
         let (path, handle) = self.handle_path(input_handle, PickKind::File)?;
         let bytes = Self::read_limited(&path)?;
         let parsed = drafts::parse(&bytes, 200).map_err(CoreError::Invalid)?;
@@ -521,7 +538,7 @@ impl AppCore {
             summary: vec![],
             mapping: proposal.mapping,
             questions: proposal.questions,
-            mentioned_connectors,
+            mentioned_connectors: self.mentioned_connectors(description),
             output_name: format!("{stem}_ready.csv"),
             ready_to_build: false,
             blockers: vec![],

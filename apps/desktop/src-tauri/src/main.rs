@@ -1,61 +1,702 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//! Thin Tauri layer over `AppCore`: one command per `Backend` method, native pickers and
+//! dialogs, event forwarding, and the tray. Product logic lives in `macroscope-app-core`.
 
-use macroscope_storage::{MemoryStore, Store};
-use serde::Serialize;
-use std::sync::Mutex;
+use macroscope_app_core::dto::*;
+use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
+use macroscope_domain::CsvMapping;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
+/// Errors cross IPC as `{code, message}`; messages are already safe to display.
 #[derive(Debug, Serialize)]
-struct AppInfo {
-    version: &'static str,
-    platform: &'static str,
+struct CommandError {
+    code: &'static str,
+    message: String,
 }
 
-#[derive(Debug, Serialize)]
-struct ToolSummary {
-    id: String,
-    name: String,
-    version: u32,
+impl From<CoreError> for CommandError {
+    fn from(e: CoreError) -> Self {
+        CommandError {
+            code: e.code(),
+            message: e.to_string(),
+        }
+    }
+}
+
+fn invalid(message: impl Into<String>) -> CommandError {
+    CommandError {
+        code: "invalid",
+        message: message.into(),
+    }
+}
+
+type Cmd<T> = Result<T, CommandError>;
+
+struct Core(AppCore);
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Consent {
+    outbound_reviewed: bool,
+}
+
+// ---------- app and model access ----------
+
+#[tauri::command]
+fn app_info(core: State<'_, Core>) -> AppInfo {
+    core.0.app_info()
 }
 
 #[tauri::command]
-fn app_info() -> AppInfo {
-    AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
-        platform: std::env::consts::OS,
+async fn model_access(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.model_access().await)
+}
+
+/// macOS: a native hidden-input dialog. The key travels only over the osascript
+/// stdout pipe into the core and the Keychain; never argv, logs, or the webview.
+#[tauri::command]
+async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    if !cfg!(target_os = "macos") {
+        return Err(invalid("Use the key field on this platform."));
+    }
+    let script = r#"text returned of (display dialog "Paste your Meta API key. Macroscope stores it in your macOS Keychain." default answer "" with hidden answer with title "Macroscope" buttons {"Cancel", "Save key"} default button "Save key")"#;
+    let output = tokio::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .env_clear()
+        .output()
+        .await
+        .map_err(|_| invalid("The key dialog could not open."))?;
+    if !output.status.success() {
+        return Ok(core.0.model_access().await); // cancelled
+    }
+    let mut key =
+        String::from_utf8(output.stdout).map_err(|_| invalid("That key is not valid text."))?;
+    let trimmed = key.trim_end_matches(['\n', '\r']).to_string();
+    key.clear();
+    if trimmed.is_empty() {
+        return Ok(core.0.model_access().await);
+    }
+    Ok(core.0.save_api_key(&trimmed).await?)
+}
+
+#[tauri::command]
+async fn save_api_key(core: State<'_, Core>, key: String) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.save_api_key(&key).await?)
+}
+
+#[tauri::command]
+async fn remove_api_key(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.remove_api_key().await?)
+}
+
+#[tauri::command]
+async fn test_api_key(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.test_api_key().await?)
+}
+
+#[tauri::command]
+async fn refresh_muse_status(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.refresh_muse_status().await)
+}
+
+/// Opens Terminal running `muse login`, only on this explicit click (ADR 0001 §1).
+/// Macroscope itself never signs in or touches Muse's saved login.
+#[tauri::command]
+async fn open_muse_sign_in() -> Cmd<()> {
+    if !cfg!(target_os = "macos") {
+        return Err(invalid("Run `muse login` in a terminal."));
+    }
+    let status = tokio::process::Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            r#"tell application "Terminal" to do script "muse login""#,
+            "-e",
+            r#"tell application "Terminal" to activate"#,
+        ])
+        .status()
+        .await
+        .map_err(|_| invalid("Terminal could not be opened."))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(invalid(
+            "Terminal could not be opened. Run `muse login` yourself.",
+        ))
     }
 }
 
 #[tauri::command]
-fn list_tools(
-    store: tauri::State<'_, Mutex<MemoryStore>>,
-) -> Result<Vec<ToolSummary>, &'static str> {
-    let store = store.lock().map_err(|_| "storage_unavailable")?;
-    let tools = store.list_tools().map_err(|_| "storage_unavailable")?;
-    Ok(tools
-        .into_iter()
-        .map(|tool| ToolSummary {
-            id: tool.id.0,
-            name: tool.name,
-            version: tool.version,
-        })
-        .collect())
+async fn select_route(core: State<'_, Core>, route: ModelRoute) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.select_route(route).await?)
+}
+
+#[tauri::command]
+async fn set_muse_unverified_ok(core: State<'_, Core>, ok: bool) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.set_muse_unverified_ok(ok).await?)
+}
+
+#[tauri::command]
+async fn set_local_only(core: State<'_, Core>, local_only: bool) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.set_local_only(local_only).await?)
+}
+
+// ---------- create ----------
+
+#[tauri::command]
+async fn pick_csv<R: Runtime>(app: AppHandle<R>, core: State<'_, Core>) -> Cmd<Option<CsvPreview>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose a CSV")
+        .add_filter("CSV", &["csv"])
+        .blocking_pick_file();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let handle = core.0.register_picked_file(&path)?;
+    Ok(Some(core.0.preview_handle(&handle.handle_id)?))
+}
+
+#[tauri::command]
+fn load_sample_csv(core: State<'_, Core>) -> Cmd<CsvPreview> {
+    Ok(core.0.load_sample_csv()?)
+}
+
+#[tauri::command]
+fn draft_task(core: State<'_, Core>, input: FileHandle, description: String) -> Cmd<TaskDraft> {
+    Ok(core.0.draft_task(&input.handle_id, &description)?)
+}
+
+#[tauri::command]
+fn answer_question(
+    core: State<'_, Core>,
+    draft_id: String,
+    question_id: String,
+    answer: String,
+) -> Cmd<TaskDraft> {
+    Ok(core.0.answer_question(&draft_id, &question_id, &answer)?)
+}
+
+#[tauri::command]
+fn update_mapping(
+    core: State<'_, Core>,
+    draft_id: String,
+    mapping: CsvMapping,
+    output_name: String,
+) -> Cmd<TaskDraft> {
+    Ok(core.0.update_mapping(&draft_id, mapping, &output_name)?)
+}
+
+#[tauri::command]
+async fn outbound_preview(core: State<'_, Core>, draft_id: String) -> Cmd<OutboundPreview> {
+    Ok(core.0.outbound_preview(&draft_id).await?)
+}
+
+/// Starts a build and forwards its state changes as `build://<id>` events.
+#[tauri::command]
+async fn start_build<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    draft_id: String,
+    consent: Consent,
+) -> Cmd<BuildState> {
+    let state = core
+        .0
+        .start_build(&draft_id, consent.outbound_reviewed)
+        .await?;
+    let mut rx = core.0.subscribe_build(&state.build_id)?;
+    let channel = format!("build://{}", state.build_id);
+    tauri::async_runtime::spawn(async move {
+        while let Ok(update) = rx.recv().await {
+            let done = matches!(
+                update.phase,
+                BuildPhase::Ready | BuildPhase::Failed | BuildPhase::Stopped
+            );
+            let _ = app.emit(&channel, &update);
+            if done {
+                break;
+            }
+        }
+    });
+    Ok(state)
+}
+
+#[tauri::command]
+fn build_state(core: State<'_, Core>, build_id: String) -> Cmd<BuildState> {
+    Ok(core.0.build_state(&build_id)?)
+}
+
+#[tauri::command]
+fn stop_build(core: State<'_, Core>, build_id: String) -> Cmd<BuildState> {
+    Ok(core.0.stop_build(&build_id)?)
+}
+
+#[tauri::command]
+async fn save_tool(core: State<'_, Core>, build_id: String, name: String) -> Cmd<ToolDetail> {
+    Ok(core.0.save_tool(&build_id, &name).await?)
+}
+
+// ---------- tools and runs ----------
+
+#[tauri::command]
+fn list_tools(core: State<'_, Core>) -> Cmd<Vec<ToolSummary>> {
+    Ok(core.0.list_tools()?)
+}
+
+#[tauri::command]
+fn get_tool(core: State<'_, Core>, tool_id: String) -> Cmd<ToolDetail> {
+    Ok(core.0.get_tool(&tool_id)?)
+}
+
+#[tauri::command]
+fn install_sample_tool(core: State<'_, Core>) -> Cmd<ToolDetail> {
+    Ok(core.0.install_sample_tool()?)
+}
+
+#[tauri::command]
+fn delete_tool(core: State<'_, Core>, tool_id: String) -> Cmd<()> {
+    Ok(core.0.delete_tool(&tool_id)?)
+}
+
+#[tauri::command]
+async fn pick_output_dir<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+) -> Cmd<Option<FileHandle>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose an output folder")
+        .blocking_pick_folder();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    Ok(Some(core.0.register_picked_dir(&path)?))
+}
+
+#[tauri::command]
+fn stage_run(
+    core: State<'_, Core>,
+    tool_id: String,
+    input: FileHandle,
+    output_dir: FileHandle,
+    output_name: String,
+) -> Cmd<StageResult> {
+    Ok(core.0.stage_run(
+        &tool_id,
+        &input.handle_id,
+        &output_dir.handle_id,
+        &output_name,
+    )?)
+}
+
+#[tauri::command]
+fn commit_run(core: State<'_, Core>, run_id: String, plan_hash: String) -> Cmd<CommitResult> {
+    Ok(core.0.commit_run(&run_id, &plan_hash)?)
+}
+
+#[tauri::command]
+fn discard_run(core: State<'_, Core>, run_id: String) -> Cmd<()> {
+    Ok(core.0.discard_run(&run_id)?)
+}
+
+/// Reveals only a path recorded in a receipt; there is no generic open-path command.
+#[tauri::command]
+fn reveal_output<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    receipt_run_id: String,
+) -> Cmd<()> {
+    let path = core.0.receipt_output_path(&receipt_run_id)?;
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|_| invalid("The file could not be shown; it may have been moved."))
+}
+
+// ---------- activity and privacy ----------
+
+#[tauri::command]
+fn list_activity(core: State<'_, Core>) -> Cmd<Vec<ActivityItem>> {
+    Ok(core.0.list_activity()?)
+}
+
+#[tauri::command]
+fn list_receipts(core: State<'_, Core>) -> Cmd<Vec<Receipt>> {
+    Ok(core.0.list_receipts()?)
+}
+
+#[tauri::command]
+async fn privacy_overview(core: State<'_, Core>) -> Cmd<PrivacyOverview> {
+    Ok(core.0.privacy_overview().await?)
+}
+
+#[tauri::command]
+fn delete_outbound_history(core: State<'_, Core>) -> Cmd<()> {
+    Ok(core.0.delete_outbound_history()?)
+}
+
+#[tauri::command]
+async fn emergency_stop(core: State<'_, Core>) -> Cmd<()> {
+    Ok(core.0.emergency_stop().await?)
+}
+
+/// Hosts whose documentation pages the UI may open. Authorization URLs from a pending
+/// connection are allowed separately by the connections service.
+fn allowed_external(url: &str) -> bool {
+    const HOSTS: &[&str] = &[
+        "dev.meta.ai",
+        "developers.google.com",
+        "console.cloud.google.com",
+        "linear.app",
+        "developers.notion.com",
+        "docs.github.com",
+        "github.com",
+        "api.slack.com",
+        "support.atlassian.com",
+        "modelcontextprotocol.io",
+    ];
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    !host.contains(['@', ':']) && HOSTS.contains(&host)
+}
+
+#[tauri::command]
+fn open_external<R: Runtime>(app: AppHandle<R>, url: String) -> Cmd<()> {
+    if !allowed_external(&url) {
+        return Err(invalid(
+            "That link is not on Macroscope's list of documentation sites.",
+        ));
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|_| invalid("The browser could not be opened."))
+}
+
+// ---------- startup ----------
+
+fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+fn vault() -> Arc<dyn macroscope_vault::SecretStore> {
+    #[cfg(target_os = "macos")]
+    {
+        Arc::new(macroscope_vault::KeychainStore)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Arc::new(macroscope_vault::MemoryStore::default())
+    }
+}
+
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open Macroscope", true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", "Stop builds and runs", true, None::<&str>)?;
+    let local = CheckMenuItem::with_id(app, "local_only", "Local only", true, false, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Macroscope", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open,
+            &stop,
+            &local,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    let local_item = local.clone();
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("Macroscope")
+        .menu(&menu)
+        .on_menu_event(move |app, event| {
+            let core = app.state::<Core>().0.clone();
+            match event.id().as_ref() {
+                "open" => {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+                "stop" => {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = core.emergency_stop().await;
+                    });
+                }
+                "local_only" => {
+                    let on = local_item.is_checked().unwrap_or(false);
+                    tauri::async_runtime::spawn(async move {
+                        let _ = core.set_local_only(on).await;
+                    });
+                }
+                "quit" => app.exit(0),
+                _ => {}
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+/// Every product command. Shared by the app and the IPC tests so the lists cannot drift.
+fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        app_info,
+        model_access,
+        enter_api_key_native,
+        save_api_key,
+        remove_api_key,
+        test_api_key,
+        refresh_muse_status,
+        open_muse_sign_in,
+        select_route,
+        set_muse_unverified_ok,
+        set_local_only,
+        pick_csv,
+        load_sample_csv,
+        draft_task,
+        answer_question,
+        update_mapping,
+        outbound_preview,
+        start_build,
+        build_state,
+        stop_build,
+        save_tool,
+        list_tools,
+        get_tool,
+        install_sample_tool,
+        delete_tool,
+        pick_output_dir,
+        stage_run,
+        commit_run,
+        discard_run,
+        reveal_output,
+        list_activity,
+        list_receipts,
+        privacy_overview,
+        delete_outbound_history,
+        emergency_stop,
+        open_external,
+    ]
+}
+
+/// The generated context (config, assets, ACL). Expanded once, shared with the IPC tests.
+fn context<R: Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
 }
 
 fn main() {
     tauri::Builder::default()
-        .manage(Mutex::new(MemoryStore::default()))
-        .invoke_handler(tauri::generate_handler![app_info, list_tools])
-        .run(tauri::generate_context!())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            let home = home_dir();
+            let core = AppCore::new(CoreConfig {
+                data_dir,
+                vault: vault(),
+                gateway_base_url: "https://api.meta.ai/v1".into(),
+                home: home.clone(),
+                muse: Arc::new(NativeMuse { home }),
+                app_version: env!("CARGO_PKG_VERSION").into(),
+                platform: std::env::consts::OS.into(),
+                now_ms: CoreConfig::system_clock(),
+            })
+            .map_err(|e| {
+                Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+            })?;
+            app.manage(Core(core));
+            build_tray(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window hides it; Quit (tray) stops the app (plan §2.3).
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .invoke_handler(handlers())
+        .run(context())
         .expect("Macroscope could not start");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{get_ipc_response, mock_builder, INVOKE_KEY};
+    use tauri::webview::InvokeRequest;
+
+    fn invoke<W: AsRef<tauri::Webview<tauri::test::MockRuntime>>>(
+        w: &W,
+        cmd: &str,
+        args: Value,
+    ) -> Result<Value, Value> {
+        get_ipc_response(
+            w,
+            InvokeRequest {
+                cmd: cmd.into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: if cfg!(windows) {
+                    "http://tauri.localhost"
+                } else {
+                    "tauri://localhost"
+                }
+                .parse()
+                .unwrap(),
+                body: InvokeBody::Json(args),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.into(),
+            },
+        )
+        .map(|body| body.deserialize::<Value>().unwrap())
+    }
+
+    /// Sends the exact argument shapes `apps/desktop/src/backend/tauri.ts` sends, through
+    /// the real command layer and ACL, so name or shape drift fails here.
     #[test]
-    fn app_metadata_matches_package_and_host() {
-        let info = app_info();
-        assert_eq!(info.version, "0.1.0");
-        assert_eq!(info.platform, std::env::consts::OS);
+    fn frontend_argument_shapes_drive_the_tell_flow_over_ipc() {
+        let tmp = tempfile::tempdir().unwrap();
+        let core = AppCore::new(CoreConfig {
+            data_dir: tmp.path().join("data"),
+            vault: Arc::new(macroscope_vault::MemoryStore::default()),
+            gateway_base_url: "http://127.0.0.1:9".into(),
+            home: tmp.path().join("home"),
+            muse: Arc::new(NativeMuse {
+                home: tmp.path().join("home"),
+            }),
+            app_version: "0.1.0".into(),
+            platform: "macos".into(),
+            now_ms: CoreConfig::system_clock(),
+        })
+        .unwrap();
+        let out_dir = tmp.path().join("Reports");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        let output = core.register_picked_dir(&out_dir).unwrap();
+        let app = mock_builder()
+            .invoke_handler(handlers())
+            .manage(Core(core))
+            // The generated context carries the real ACL manifest and capabilities.
+            .build(context())
+            .unwrap();
+        let w = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+
+        let info = invoke(&w, "app_info", json!({})).unwrap();
+        assert_eq!(info["mock"], false);
+        let access = invoke(&w, "model_access", json!({})).unwrap();
+        assert_eq!(access["effectiveRoute"], "offline_demo");
+        assert_eq!(access["muse"]["kind"], "missing");
+
+        let preview = invoke(&w, "load_sample_csv", json!({})).unwrap();
+        let draft = invoke(
+            &w,
+            "draft_task",
+            json!({"input": preview["handle"], "description": "Clean orders"}),
+        )
+        .unwrap();
+        let draft_id = draft["draftId"].clone();
+        assert_eq!(draft["readyToBuild"], true);
+        let draft = invoke(&w, "update_mapping", json!({"draftId": draft_id, "mapping": draft["mapping"], "outputName": "orders_ready.csv"})).unwrap();
+        assert_eq!(draft["revision"], 2);
+        let outbound = invoke(&w, "outbound_preview", json!({"draftId": draft_id})).unwrap();
+        assert_eq!(outbound["containsRealRows"], false);
+
+        let build = invoke(
+            &w,
+            "start_build",
+            json!({"draftId": draft_id, "consent": {"outboundReviewed": false}}),
+        )
+        .unwrap();
+        let build_id = build["buildId"].clone();
+        let mut state = Value::Null;
+        for _ in 0..200 {
+            state = invoke(&w, "build_state", json!({"buildId": build_id})).unwrap();
+            if state["phase"] == "ready" || state["phase"] == "failed" {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert_eq!(state["phase"], "ready", "{state}");
+
+        let tool = invoke(
+            &w,
+            "save_tool",
+            json!({"buildId": build_id, "name": "Clean import CSV"}),
+        )
+        .unwrap();
+        let tool_id = tool["id"].clone();
+        assert_eq!(
+            invoke(&w, "list_tools", json!({}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let input = invoke(&w, "load_sample_csv", json!({})).unwrap()["handle"].clone();
+        let staged = invoke(
+            &w,
+            "stage_run",
+            json!({"toolId": tool_id, "input": input, "outputDir": output, "outputName": "orders_ready.csv"}),
+        )
+        .unwrap();
+        assert_eq!(staged["rowsOut"], 18, "{staged}");
+        let receipt = invoke(
+            &w,
+            "commit_run",
+            json!({"runId": staged["runId"], "planHash": staged["planHash"]}),
+        )
+        .unwrap();
+        assert_eq!(receipt["status"], "committed", "{receipt}");
+        assert!(out_dir.join("orders_ready.csv").exists());
+
+        let err = invoke(&w, "get_tool", json!({"toolId": "missing"})).unwrap_err();
+        assert_eq!(err["code"], "not_found");
+        assert!(invoke(&w, "open_external", json!({"url": "https://evil.example/"})).is_err());
+        assert!(
+            invoke(&w, "list_activity", json!({}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len()
+                >= 3
+        );
+    }
+
+    #[test]
+    fn external_links_are_https_allowlisted_only() {
+        assert!(allowed_external(
+            "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
+        ));
+        assert!(allowed_external("https://dev.meta.ai/docs/muse-code"));
+        for bad in [
+            "http://developers.google.com/",
+            "https://evil.example/",
+            "https://developers.google.com.evil.example/",
+            "https://user@developers.google.com/",
+            "https://developers.google.com:8443/",
+            "javascript:alert(1)",
+            "file:///etc/hosts",
+        ] {
+            assert!(!allowed_external(bad), "{bad}");
+        }
     }
 }

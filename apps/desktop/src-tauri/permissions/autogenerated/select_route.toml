@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-select-route"
+description = "Enables the select_route command without any pre-configured scope."
+commands.allow = ["select_route"]
+
+[[permission]]
+identifier = "deny-select-route"
+description = "Denies the select_route command without any pre-configured scope."
+commands.deny = ["select_route"]

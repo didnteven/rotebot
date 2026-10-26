@@ -80,7 +80,6 @@ async fn sample_tell_flow_creates_exactly_the_expected_csv() {
         .draft_task(
             &preview.handle.handle_id,
             "Clean the orders export and email it with Gmail",
-            vec!["gmail".into()],
         )
         .unwrap();
     assert!(
@@ -191,7 +190,7 @@ async fn ambiguous_dates_block_until_answered_and_answer_changes_the_mapping() {
     )
     .unwrap();
     let handle = core.register_picked_file(&file).unwrap();
-    let draft = core.draft_task(&handle.handle_id, "", vec![]).unwrap();
+    let draft = core.draft_task(&handle.handle_id, "").unwrap();
     assert!(!draft.ready_to_build);
     assert_eq!(
         draft.questions[0].prompt,
@@ -311,9 +310,7 @@ async fn api_key_route_requires_review_and_key_is_never_stored_in_the_database()
     assert_eq!(access.effective_route, Some(ModelRoute::ApiKey));
 
     let preview = core.load_sample_csv().unwrap();
-    let draft = core
-        .draft_task(&preview.handle.handle_id, "", vec![])
-        .unwrap();
+    let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
     let outbound = core.outbound_preview(&draft.draft_id).await.unwrap();
     assert_eq!(outbound.route, ModelRoute::ApiKey);
     assert!(
@@ -362,9 +359,7 @@ async fn muse_plan_route_needs_sign_in_and_explicit_ok() {
         matches!(&access.muse, MuseState::SignedIn { plan_summary: Some(p), .. } if p == "Muse Plus")
     );
     let preview = core.load_sample_csv().unwrap();
-    let draft = core
-        .draft_task(&preview.handle.handle_id, "", vec![])
-        .unwrap();
+    let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
     let b = core.start_build(&draft.draft_id, true).await.unwrap();
     let state = wait_terminal(&core, &b.build_id).await;
     assert_eq!(state.phase, BuildPhase::Failed);
