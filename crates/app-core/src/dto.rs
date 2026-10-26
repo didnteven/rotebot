@@ -430,3 +430,49 @@ pub struct PrivacyOverview {
     pub stored: Vec<StoredData>,
     pub outbound: Vec<OutboundRecord>,
 }
+
+// ---------- connection suggestions and Show (ADR 0001 §2, plan §5) ----------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionSuggestion {
+    pub connector_id: String,
+    pub connector_name: String,
+    pub message: String,
+    /// "foreground_app" | "window_title" | "browser_host" | "task_text"
+    pub signal_kind: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ShowState {
+    Unavailable {
+        reason: String,
+    },
+    Idle {
+        /// "granted" | "denied" | "unknown"
+        accessibility: String,
+    },
+    Recording {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "startedAtMs")]
+        started_at_ms: i64,
+        #[serde(rename = "maxSeconds")]
+        max_seconds: u32,
+        paused: bool,
+        #[serde(rename = "appsSeen")]
+        apps_seen: u32,
+        matches: u32,
+    },
+    Finished {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "durationSeconds")]
+        duration_seconds: u32,
+        #[serde(rename = "appsSeen")]
+        apps_seen: Vec<String>,
+        suggestions: Vec<ConnectionSuggestion>,
+    },
+}

@@ -10,6 +10,7 @@
 pub mod checks;
 pub mod drafts;
 pub mod dto;
+pub mod show;
 
 use dto::*;
 use macroscope_builder::{

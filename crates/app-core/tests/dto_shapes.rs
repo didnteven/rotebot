@@ -157,3 +157,44 @@ fn build_state_uses_camel_case_and_snake_case_phases() {
     assert_eq!(v["comparison"]["rowsIn"], 1);
     assert!(v.get("routeLabel").is_some() && v.get("spentMicros").is_some());
 }
+
+#[test]
+fn show_state_matches_the_contract() {
+    let rec = ShowState::Recording {
+        session_id: "s".into(),
+        started_at_ms: 1,
+        max_seconds: 300,
+        paused: false,
+        apps_seen: 2,
+        matches: 1,
+    };
+    assert_eq!(
+        serde_json::to_value(&rec).unwrap(),
+        json!({"kind": "recording", "sessionId": "s", "startedAtMs": 1, "maxSeconds": 300,
+               "paused": false, "appsSeen": 2, "matches": 1})
+    );
+    let fin = ShowState::Finished {
+        session_id: "s".into(),
+        duration_seconds: 9,
+        apps_seen: vec!["Numbers".into()],
+        suggestions: vec![ConnectionSuggestion {
+            connector_id: "gmail".into(),
+            connector_name: "Gmail".into(),
+            message: "m".into(),
+            signal_kind: "window_title".into(),
+            count: 2,
+        }],
+    };
+    let v = serde_json::to_value(&fin).unwrap();
+    assert_eq!(v["kind"], "finished");
+    assert_eq!(v["durationSeconds"], 9);
+    assert_eq!(v["suggestions"][0]["connectorName"], "Gmail");
+    assert_eq!(v["suggestions"][0]["signalKind"], "window_title");
+    assert_eq!(
+        serde_json::to_value(ShowState::Idle {
+            accessibility: "denied".into()
+        })
+        .unwrap(),
+        json!({"kind": "idle", "accessibility": "denied"})
+    );
+}

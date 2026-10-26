@@ -38,6 +38,10 @@ fn main() {
         "delete_outbound_history",
         "emergency_stop",
         "open_external",
+        "show_state",
+        "start_show",
+        "pause_show",
+        "stop_show",
     ];
     tauri_build::try_build(
         tauri_build::Attributes::new()

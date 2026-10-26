@@ -41,6 +41,10 @@
     "allow-privacy-overview",
     "allow-delete-outbound-history",
     "allow-emergency-stop",
-    "allow-open-external"
+    "allow-open-external",
+    "allow-show-state",
+    "allow-start-show",
+    "allow-pause-show",
+    "allow-stop-show"
   ]
 }

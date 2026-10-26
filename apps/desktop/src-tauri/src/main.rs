@@ -3,6 +3,7 @@
 //! dialogs, event forwarding, and the tray. Product logic lives in `macroscope-app-core`.
 
 use macroscope_app_core::dto::*;
+use macroscope_app_core::show::ShowController;
 use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
 use macroscope_domain::CsvMapping;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,7 @@ fn invalid(message: impl Into<String>) -> CommandError {
 type Cmd<T> = Result<T, CommandError>;
 
 struct Core(AppCore);
+struct Show(ShowController);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -344,8 +346,52 @@ fn delete_outbound_history(core: State<'_, Core>) -> Cmd<()> {
 }
 
 #[tauri::command]
-async fn emergency_stop(core: State<'_, Core>) -> Cmd<()> {
+async fn emergency_stop(core: State<'_, Core>, show: State<'_, Show>) -> Cmd<()> {
+    show.0.stop().await;
     Ok(core.0.emergency_stop().await?)
+}
+
+// ---------- Show ----------
+
+#[tauri::command]
+fn show_state(show: State<'_, Show>) -> ShowState {
+    match show.0.state() {
+        ShowState::Idle { .. } => ShowState::Idle {
+            accessibility: show.0.accessibility(),
+        },
+        other => other,
+    }
+}
+
+#[tauri::command]
+async fn start_show(show: State<'_, Show>) -> Cmd<ShowState> {
+    Ok(show.0.start().await)
+}
+
+#[tauri::command]
+async fn pause_show(show: State<'_, Show>, paused: bool) -> Cmd<ShowState> {
+    Ok(show.0.pause(paused).await)
+}
+
+#[tauri::command]
+async fn stop_show(show: State<'_, Show>) -> Cmd<ShowState> {
+    Ok(show.0.stop().await)
+}
+
+/// The observer helper: `MACROSCOPE_OBSERVER`, a sidecar next to the executable, or the
+/// development build inside the repository.
+fn observer_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("MACROSCOPE_OBSERVER") {
+        return Some(PathBuf::from(p));
+    }
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let sidecar = exe_dir.join("macroscope-observer");
+    if sidecar.is_file() {
+        return Some(sidecar);
+    }
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../native/macos-observer/.build/release/macroscope-observer");
+    dev.is_file().then_some(dev)
 }
 
 /// Hosts whose documentation pages the UI may open. Authorization URLs from a pending
@@ -490,6 +536,10 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         delete_outbound_history,
         emergency_stop,
         open_external,
+        show_state,
+        start_show,
+        pause_show,
+        stop_show,
     ]
 }
 
@@ -518,7 +568,16 @@ fn main() {
             .map_err(|e| {
                 Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
             })?;
+            let show = ShowController::new(observer_path(), core.clone());
+            let mut updates = show.subscribe();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(state) = updates.recv().await {
+                    let _ = handle.emit("show://state", &state);
+                }
+            });
             app.manage(Core(core));
+            app.manage(Show(show));
             build_tray(app)?;
             Ok(())
         })
@@ -591,6 +650,7 @@ mod tests {
         let output = core.register_picked_dir(&out_dir).unwrap();
         let app = mock_builder()
             .invoke_handler(handlers())
+            .manage(Show(ShowController::new(None, core.clone())))
             .manage(Core(core))
             // The generated context carries the real ACL manifest and capabilities.
             .build(context())
@@ -679,6 +739,10 @@ mod tests {
                 .len()
                 >= 3
         );
+        let show = invoke(&w, "start_show", json!({})).unwrap();
+        assert_eq!(show["kind"], "unavailable", "{show}");
+        let paused = invoke(&w, "pause_show", json!({"paused": true})).unwrap();
+        assert_eq!(paused["kind"], "unavailable");
     }
 
     #[test]
