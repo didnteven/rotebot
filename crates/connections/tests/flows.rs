@@ -139,7 +139,13 @@ async fn authorize(
     assert_eq!(query["code_challenge_method"], "S256");
     assert_eq!(query["code_challenge"].len(), 43);
     assert!(query["state"].len() >= 43);
-    assert!(query["resource"].starts_with(&fake.0.origin));
+    if fake.0.expire_first {
+        assert!(!query.contains_key("resource"));
+        assert_eq!(query["access_type"], "offline");
+        assert_eq!(query["prompt"], "consent");
+    } else {
+        assert!(query["resource"].starts_with(&fake.0.origin));
+    }
     let mut data = fake.0.data.lock().unwrap();
     let code = format!("code-{}", data.codes.len());
     data.codes.insert(code.clone(), query.clone());
@@ -166,7 +172,11 @@ async fn token(State(fake): State<Fake>, Form(form): Form<HashMap<String, String
     let is_refresh = form["grant_type"] == "refresh_token";
     if is_refresh {
         assert_eq!(form["refresh_token"], REFRESH);
-        assert!(form["resource"].starts_with(&fake.0.origin));
+        if fake.0.expire_first {
+            assert!(!form.contains_key("resource"));
+        } else {
+            assert!(form["resource"].starts_with(&fake.0.origin));
+        }
         data.refreshes += 1;
     } else {
         assert_eq!(form["grant_type"], "authorization_code");
@@ -174,7 +184,7 @@ async fn token(State(fake): State<Fake>, Form(form): Form<HashMap<String, String
             return StatusCode::BAD_REQUEST.into_response();
         };
         if pkce_challenge(&form["code_verifier"]) != auth["code_challenge"]
-            || form["resource"] != auth["resource"]
+            || form.get("resource") != auth.get("resource")
             || form["redirect_uri"] != auth["redirect_uri"]
             || form["client_id"] != auth["client_id"]
         {
@@ -513,7 +523,7 @@ async fn url_validation_and_401_challenge() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error,McpError::AuthRequired {resource_metadata_url:Some(ref url)} if url == &format!("{}/.well-known/oauth-protected-resource",server.fake.0.origin))
+        matches!(error,McpError::AuthRequired {resource_metadata_url:Some(ref url), ..} if url == &format!("{}/.well-known/oauth-protected-resource",server.fake.0.origin))
     );
     let local = server.url("json").replace("127.0.0.1", "localhost");
     assert!(matches!(

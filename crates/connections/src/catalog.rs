@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
@@ -24,8 +24,22 @@ pub struct Connector {
 pub struct Auth {
     pub kind: String,
     pub registration: Registration,
+    #[serde(default)]
     pub scopes: Vec<String>,
     pub docs_url: String,
+    #[serde(default)]
+    pub authorization_server: Option<String>,
+    #[serde(default = "default_true")]
+    pub send_resource_indicator: bool,
+    #[serde(default)]
+    pub extra_authorize_params: BTreeMap<String, String>,
+    #[serde(default)]
+    pub client_setup: Option<String>,
+    #[serde(default)]
+    pub fixed_redirect_port: Option<u16>,
+}
+pub(crate) fn default_true() -> bool {
+    true
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +50,7 @@ pub enum Registration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Verification {
+    VerifiedLive,
     VerifiedDocs,
     Unverified,
 }
@@ -77,6 +92,24 @@ impl Catalog {
                     || !ids.insert(&c.id)
                     || c.auth.kind != "oauth"
                     || c.transport != "streamable-http"
+                    || c.auth.fixed_redirect_port == Some(0)
+                    || c.auth
+                        .authorization_server
+                        .as_ref()
+                        .is_some_and(|url| crate::http::validate_url(url).is_err())
+                    || c.auth.extra_authorize_params.keys().any(|key| {
+                        matches!(
+                            key.as_str(),
+                            "response_type"
+                                | "client_id"
+                                | "redirect_uri"
+                                | "state"
+                                | "code_challenge"
+                                | "code_challenge_method"
+                                | "resource"
+                                | "scope"
+                        )
+                    })
                     || (!c.mcp_url.is_empty() && crate::http::validate_url(&c.mcp_url).is_err())
             })
         {

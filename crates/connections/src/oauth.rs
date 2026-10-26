@@ -2,7 +2,7 @@
 use crate::{
     catalog::{Connector, Registration},
     http,
-    mcp::McpError,
+    mcp::{McpClient, McpError},
     now_ms,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -139,6 +139,12 @@ impl ServerMetadata {
         Ok(())
     }
 }
+/// Validated discovery data. Resource may be an origin prefix of the configured MCP URL.
+pub struct Discovery {
+    pub metadata: ServerMetadata,
+    pub resource: String,
+    pub scopes: Vec<String>,
+}
 #[derive(Debug, thiserror::Error)]
 pub enum OAuthError {
     #[error(transparent)]
@@ -151,6 +157,8 @@ pub enum OAuthError {
     ClientRequired,
     #[error("unsupported OAuth client authentication method")]
     ClientAuthentication,
+    #[error("OAuth callback port {0} is unavailable; close the application using it and retry")]
+    RedirectPortUnavailable(u16),
     #[error("OAuth callback state mismatch")]
     StateMismatch,
     #[error("invalid or denied OAuth callback")]
@@ -181,6 +189,7 @@ impl std::fmt::Debug for AuthorizationUrl {
 pub struct PendingAuthorization {
     pub(crate) connector_id: String,
     pub(crate) resource: String,
+    resource_indicator: Option<String>,
     callback: CallbackTask,
     redirect_uri: String,
     verifier: AccessToken,
@@ -204,6 +213,10 @@ struct StoredToken {
     refresh_token: Option<AccessToken>,
     expires_at_ms: Option<u64>,
     resource: String,
+    #[serde(default)]
+    oauth_resource: Option<String>,
+    #[serde(default = "crate::catalog::default_true")]
+    send_resource_indicator: bool,
     metadata: ServerMetadata,
     credentials: ClientCredentials,
 }
@@ -226,72 +239,147 @@ impl OAuthClient {
             http: http::client()?,
         })
     }
+    /// Discover using a supplied PRM hint, with the MCP origin as the final fallback.
     pub async fn discover(
         &self,
         resource: &str,
         hint: Option<&str>,
     ) -> Result<ServerMetadata, OAuthError> {
-        let resource_url = http::validate_url(resource)?;
-        let metadata_url = match hint {
-            Some(url) => http::validate_url(url)?,
-            None => resource_url
-                .join("/.well-known/oauth-protected-resource")
-                .map_err(|_| OAuthError::Discovery)?,
+        Ok(self.resolve(resource, hint, None).await?.metadata)
+    }
+    /// Unauthenticated initialize and discovery only. Does not register or authorize.
+    pub async fn discover_connector(
+        &self,
+        connector: &Connector,
+        resource: &str,
+    ) -> Result<Discovery, OAuthError> {
+        self.discover_for(connector, resource, None).await
+    }
+    async fn discover_for(
+        &self,
+        connector: &Connector,
+        resource: &str,
+        hint: Option<&str>,
+    ) -> Result<Discovery, OAuthError> {
+        let (challenge_hint, scope) = McpClient::probe_auth(resource).await?;
+        let mut discovered = self
+            .resolve(
+                resource,
+                hint.or(challenge_hint.as_deref()),
+                connector.auth.authorization_server.as_deref(),
+            )
+            .await?;
+        discovered.scopes = if !connector.auth.scopes.is_empty() {
+            connector.auth.scopes.clone()
+        } else if let Some(scope) = scope {
+            scope.split_whitespace().map(str::to_owned).collect()
+        } else {
+            discovered.scopes
         };
+        Ok(discovered)
+    }
+    async fn optional_metadata<T: serde::de::DeserializeOwned>(
+        &self,
+        url: Url,
+    ) -> Result<Option<T>, OAuthError> {
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| McpError::Transport)?;
+        // Check status before parsing: providers often return an HTML 404 page.
+        if matches!(response.status().as_u16(), 404 | 405) {
+            return Ok(None);
+        }
+        Ok(Some(http::json(response).await?))
+    }
+    async fn resolve(
+        &self,
+        resource: &str,
+        hint: Option<&str>,
+        catalog_issuer: Option<&str>,
+    ) -> Result<Discovery, OAuthError> {
+        let resource_url = http::validate_url(resource)?;
+        let origin = resource_url.origin().ascii_serialization();
+        let mut urls = Vec::new();
+        if let Some(hint) = hint {
+            urls.push(http::validate_url(hint)?);
+        }
+        for path in [
+            format!(
+                "/.well-known/oauth-protected-resource{}",
+                resource_url.path()
+            ),
+            "/.well-known/oauth-protected-resource".into(),
+        ] {
+            let url = resource_url
+                .join(&path)
+                .map_err(|_| OAuthError::Discovery)?;
+            if !urls.contains(&url) {
+                urls.push(url);
+            }
+        }
         #[derive(Deserialize)]
         struct Resource {
             authorization_servers: Vec<String>,
             resource: Option<String>,
+            #[serde(default)]
+            scopes_supported: Vec<String>,
         }
-        let protected: Resource = http::json(
-            self.http
-                .get(metadata_url)
-                .send()
-                .await
-                .map_err(|_| McpError::Transport)?,
-        )
-        .await?;
-        if protected.resource.as_ref().is_some_and(|r| r != resource) {
-            return Err(OAuthError::Discovery);
+        let mut protected = None;
+        for url in urls {
+            if let Some(metadata) = self.optional_metadata::<Resource>(url).await? {
+                protected = Some(metadata);
+                break;
+            }
         }
-        let issuer = protected
-            .authorization_servers
-            .first()
-            .ok_or(OAuthError::Discovery)?;
+        let mut oauth_resource = resource.to_owned();
+        if let Some(value) = protected.as_ref().and_then(|p| p.resource.as_ref()) {
+            let url = http::validate_url(value)?;
+            if url.origin() != resource_url.origin() || !resource.starts_with(value) {
+                return Err(OAuthError::Discovery);
+            }
+            oauth_resource = value.clone();
+        }
+        let issuer = match protected.as_ref() {
+            Some(p) => p
+                .authorization_servers
+                .first()
+                .ok_or(OAuthError::Discovery)?
+                .as_str(),
+            None => catalog_issuer.unwrap_or(&origin),
+        };
         let issuer_url = http::validate_url(issuer)?;
         if issuer_url.query().is_some() {
             return Err(OAuthError::Discovery);
         }
-        // RFC 8414 inserts the well-known component before any issuer path.
         let path = issuer_url.path().trim_end_matches('/');
         let oauth_url = issuer_url
             .join(&format!("/.well-known/oauth-authorization-server{path}"))
             .map_err(|_| OAuthError::Discovery)?;
-        let response = self
-            .http
-            .get(oauth_url)
-            .send()
-            .await
-            .map_err(|_| McpError::Transport)?;
-        let metadata: ServerMetadata = if matches!(response.status().as_u16(), 404 | 405) {
-            let mut oidc_url = issuer_url.clone();
-            oidc_url.set_path(&format!("{path}/.well-known/openid-configuration"));
-            http::json(
-                self.http
-                    .get(oidc_url)
-                    .send()
-                    .await
-                    .map_err(|_| McpError::Transport)?,
-            )
-            .await?
-        } else {
-            http::json(response).await?
+        let metadata = match self.optional_metadata::<ServerMetadata>(oauth_url).await? {
+            Some(metadata) => metadata,
+            None => {
+                let mut oidc_url = issuer_url.clone();
+                oidc_url.set_path(&format!("{path}/.well-known/openid-configuration"));
+                self.optional_metadata(oidc_url)
+                    .await?
+                    .ok_or(OAuthError::Discovery)?
+            }
         };
-        if metadata.issuer != *issuer {
+        // URL parsing normalizes the optional slash on an origin issuer. Google's
+        // path PRM advertises https://accounts.google.com/ while AS metadata omits it.
+        // Issuer paths (including their trailing slash) must still match exactly.
+        if http::validate_url(&metadata.issuer)? != issuer_url {
             return Err(OAuthError::Discovery);
         }
         metadata.validate()?;
-        Ok(metadata)
+        Ok(Discovery {
+            metadata,
+            resource: oauth_resource,
+            scopes: protected.map(|p| p.scopes_supported).unwrap_or_default(),
+        })
     }
     pub async fn begin(
         &self,
@@ -300,10 +388,22 @@ impl OAuthClient {
         hint: Option<&str>,
         supplied: Option<ClientCredentials>,
     ) -> Result<(AuthorizationUrl, PendingAuthorization), OAuthError> {
-        let metadata = self.discover(resource, hint).await?;
-        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        let discovered = self.discover_for(connector, resource, hint).await?;
+        let metadata = discovered.metadata;
+        let resource_indicator = connector
+            .auth
+            .send_resource_indicator
+            .then_some(discovered.resource);
+        let port = connector.auth.fixed_redirect_port.unwrap_or(0);
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
             .await
-            .map_err(|_| OAuthError::Callback)?;
+            .map_err(|_| {
+                if port == 0 {
+                    OAuthError::Callback
+                } else {
+                    OAuthError::RedirectPortUnavailable(port)
+                }
+            })?;
         let redirect_uri = format!(
             "http://127.0.0.1:{}/callback",
             listener
@@ -346,12 +446,16 @@ impl OAuthClient {
             .append_pair("redirect_uri", &redirect_uri)
             .append_pair("state", state.expose())
             .append_pair("code_challenge", &challenge)
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("resource", resource);
-        if !connector.auth.scopes.is_empty() {
-            url.query_pairs_mut()
-                .append_pair("scope", &connector.auth.scopes.join(" "));
+            .append_pair("code_challenge_method", "S256");
+        if let Some(resource) = &resource_indicator {
+            url.query_pairs_mut().append_pair("resource", resource);
         }
+        if !discovered.scopes.is_empty() {
+            url.query_pairs_mut()
+                .append_pair("scope", &discovered.scopes.join(" "));
+        }
+        url.query_pairs_mut()
+            .extend_pairs(&connector.auth.extra_authorize_params);
         let deadline = Instant::now() + Duration::from_secs(300);
         let callback = CallbackTask(tokio::spawn(async move {
             tokio::time::timeout_at(deadline, callback(listener, state))
@@ -363,6 +467,7 @@ impl OAuthClient {
             PendingAuthorization {
                 connector_id: connector.id.clone(),
                 resource: resource.into(),
+                resource_indicator,
                 callback,
                 redirect_uri,
                 verifier,
@@ -378,19 +483,22 @@ impl OAuthClient {
         let code = (&mut pending.callback.0)
             .await
             .map_err(|_| OAuthError::Callback)??;
-        let form = vec![
+        let mut form = vec![
             ("grant_type", "authorization_code".to_string()),
             ("code", code.0.clone()),
             ("redirect_uri", pending.redirect_uri.clone()),
             ("code_verifier", pending.verifier.0.clone()),
-            ("resource", pending.resource.clone()),
         ];
+        if let Some(resource) = &pending.resource_indicator {
+            form.push(("resource", resource.clone()));
+        }
         let response = self
             .token_request(&pending.metadata.token_endpoint, &pending.credentials, form)
             .await?;
         let token = stored(
             response,
             pending.resource,
+            pending.resource_indicator,
             pending.metadata,
             pending.credentials,
             None,
@@ -417,20 +525,26 @@ impl OAuthClient {
         }
         let refresh = token.refresh_token.clone().ok_or(OAuthError::NeedsReauth)?;
         token.metadata.validate()?;
+        let resource_indicator = token.send_resource_indicator.then(|| {
+            token
+                .oauth_resource
+                .clone()
+                .unwrap_or_else(|| resource.into())
+        });
+        let mut form = vec![
+            ("grant_type", "refresh_token".into()),
+            ("refresh_token", refresh.0.clone()),
+        ];
+        if let Some(resource) = &resource_indicator {
+            form.push(("resource", resource.clone()));
+        }
         let response = self
-            .token_request(
-                &token.metadata.token_endpoint,
-                &token.credentials,
-                vec![
-                    ("grant_type", "refresh_token".into()),
-                    ("refresh_token", refresh.0.clone()),
-                    ("resource", resource.into()),
-                ],
-            )
+            .token_request(&token.metadata.token_endpoint, &token.credentials, form)
             .await?;
         let token = stored(
             response,
             resource.into(),
+            resource_indicator,
             token.metadata,
             token.credentials,
             Some(refresh),
@@ -533,6 +647,7 @@ fn validate_client_auth(credentials: &ClientCredentials) -> Result<(), OAuthErro
 fn stored(
     response: TokenResponse,
     resource: String,
+    resource_indicator: Option<String>,
     metadata: ServerMetadata,
     credentials: ClientCredentials,
     old_refresh: Option<AccessToken>,
@@ -550,6 +665,8 @@ fn stored(
             .expires_in
             .map(|s| now_ms().saturating_add(s.saturating_mul(1000))),
         resource,
+        send_resource_indicator: resource_indicator.is_some(),
+        oauth_resource: resource_indicator,
         metadata,
         credentials,
     })

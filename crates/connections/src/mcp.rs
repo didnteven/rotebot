@@ -10,6 +10,7 @@ pub enum McpError {
     #[error("MCP authorization required")]
     AuthRequired {
         resource_metadata_url: Option<String>,
+        scope_hint: Option<String>,
     },
     #[error("URL must use HTTPS (HTTP is allowed only for localhost or 127.0.0.1)")]
     InvalidUrl,
@@ -52,6 +53,12 @@ pub struct ToolAnnotations {
     pub destructive_hint: Option<bool>,
 }
 
+/// List capabilities before connecting, if the server permits anonymous access.
+/// Server annotations are preserved as claims, never promoted to permissions.
+pub async fn preview_tools(url: &str) -> Result<Vec<Tool>, McpError> {
+    McpClient::connect(url, None).await?.list_tools().await
+}
+
 pub struct McpClient {
     http: Client,
     url: String,
@@ -68,25 +75,43 @@ impl std::fmt::Debug for McpClient {
     }
 }
 impl McpClient {
-    pub async fn connect(url: &str, auth: Option<AccessToken>) -> Result<Self, McpError> {
+    fn new(url: &str, auth: Option<AccessToken>) -> Result<Self, McpError> {
         http::validate_url(url)?;
-        let mut client = Self {
+        Ok(Self {
             http: http::client()?,
             url: url.into(),
             auth,
             session: None,
             protocol: None,
             next_id: 1,
-        };
-        let result = client
-            .request(
-                "initialize",
-                json!({
-                    "protocolVersion": "2025-06-18", "capabilities": {},
-                    "clientInfo": {"name": "macroscope", "version": env!("CARGO_PKG_VERSION")}
-                }),
-            )
-            .await?;
+        })
+    }
+    /// Probe initialize only, without credentials or any authorization request.
+    pub(crate) async fn probe_auth(
+        url: &str,
+    ) -> Result<(Option<String>, Option<String>), McpError> {
+        match Self::new(url, None)?.initialize().await {
+            Ok(_) => Ok((None, None)),
+            Err(McpError::AuthRequired {
+                resource_metadata_url,
+                scope_hint,
+            }) => Ok((resource_metadata_url, scope_hint)),
+            Err(error) => Err(error),
+        }
+    }
+    async fn initialize(&mut self) -> Result<Value, McpError> {
+        self.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": {"name": "macroscope", "version": env!("CARGO_PKG_VERSION")}
+            }),
+        )
+        .await
+    }
+    pub async fn connect(url: &str, auth: Option<AccessToken>) -> Result<Self, McpError> {
+        let mut client = Self::new(url, auth)?;
+        let result = client.initialize().await?;
         let version = result["protocolVersion"]
             .as_str()
             .ok_or(McpError::InvalidResponse)?;
@@ -97,7 +122,7 @@ impl McpClient {
         let response = client
             .send(json!({"jsonrpc":"2.0", "method":"notifications/initialized"}))
             .await?;
-        if response.status() != reqwest::StatusCode::ACCEPTED {
+        if !matches!(response.status().as_u16(), 200 | 202 | 204) {
             return Err(McpError::InvalidResponse);
         }
         Ok(client)
@@ -127,9 +152,16 @@ impl McpClient {
                 .get_all("WWW-Authenticate")
                 .iter()
                 .filter_map(|v| v.to_str().ok())
-                .find_map(resource_metadata);
+                .find_map(|h| bearer_parameter(h, "resource_metadata"));
+            let scope_hint = response
+                .headers()
+                .get_all("WWW-Authenticate")
+                .iter()
+                .filter_map(|v| v.to_str().ok())
+                .find_map(|h| bearer_parameter(h, "scope"));
             return Err(McpError::AuthRequired {
                 resource_metadata_url: metadata,
+                scope_hint,
             });
         }
         if !response.status().is_success() {
@@ -232,7 +264,7 @@ fn clean(value: &str, limit: usize) -> String {
         .take(limit)
         .collect()
 }
-fn resource_metadata(header: &str) -> Option<String> {
+fn bearer_parameter(header: &str, parameter: &str) -> Option<String> {
     let (scheme, params) = header.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer") {
         return None;
@@ -248,7 +280,7 @@ fn resource_metadata(header: &str) -> Option<String> {
         } else {
             value.split_once(',').unwrap_or((value, ""))
         };
-        if key.trim().eq_ignore_ascii_case("resource_metadata") {
+        if key.trim().eq_ignore_ascii_case(parameter) {
             return Some(value.to_owned());
         }
         rest = tail.trim_start_matches([',', ' ']);

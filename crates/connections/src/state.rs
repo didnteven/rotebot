@@ -199,13 +199,6 @@ impl ConnectionsService {
         self.statuses[index].state = ConnectionState::Connecting;
         self.persist()?;
         let result = async {
-            let hint = match McpClient::connect(&url, None).await {
-                Err(McpError::AuthRequired {
-                    resource_metadata_url,
-                }) => resource_metadata_url,
-                Ok(_) => None,
-                Err(e) => return Err(ConnectionError::Mcp(e)),
-            };
             Ok(self
                 .oauth
                 .begin(
@@ -213,7 +206,7 @@ impl ConnectionsService {
                         .get(id)
                         .ok_or(ConnectionError::UnknownConnector)?,
                     &url,
-                    hint.as_deref(),
+                    None,
                     client_credentials,
                 )
                 .await?)

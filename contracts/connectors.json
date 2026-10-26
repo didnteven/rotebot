@@ -15,11 +15,18 @@
           "https://www.googleapis.com/auth/gmail.readonly",
           "https://www.googleapis.com/auth/gmail.compose"
         ],
-        "docs_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
+        "docs_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
+        "authorization_server": "https://accounts.google.com",
+        "send_resource_indicator": false,
+        "extra_authorize_params": {
+          "access_type": "offline",
+          "prompt": "consent"
+        },
+        "client_setup": "Gmail's MCP server is in Google's Developer Preview. In Google Cloud, enable the Gmail API and Gmail MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },
-      "verification": "verified-docs",
-      "source": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
-      "notes": "Developer Preview; user supplies Google Cloud OAuth client id and secret. Loopback client compatibility requires a live provider check.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Developer Preview; initialize and tools/list accept unauthenticated requests; PRM is absent (404 HTML). Google OIDC discovery supplies authorize https://accounts.google.com/o/oauth2/v2/auth, token https://oauth2.googleapis.com/token and revoke https://oauth2.googleapis.com/revoke; no DCR. UNVERIFIED: resource indicator disabled because Google OAuth is not documented to accept RFC 8707 resource; authenticated OAuth/loopback flow has not been verified. Supplementary live discovery 2026-10-27: path-suffixed PRM at /.well-known/oauth-protected-resource/mcp/v1 responds with the MCP URL as resource and AS https://accounts.google.com/ (root-slash equivalent to the metadata issuer); the origin PRM remains absent. Google also serves RFC 8414 metadata.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [
@@ -51,12 +58,21 @@
       "auth": {
         "kind": "oauth",
         "registration": "preregistered",
-        "scopes": [],
-        "docs_url": "https://developers.google.com/workspace/calendar"
+        "scopes": [
+          "https://www.googleapis.com/auth/calendar.readonly"
+        ],
+        "docs_url": "https://developers.google.com/workspace/calendar",
+        "authorization_server": "https://accounts.google.com",
+        "send_resource_indicator": false,
+        "extra_authorize_params": {
+          "access_type": "offline",
+          "prompt": "consent"
+        },
+        "client_setup": "Google Calendar's MCP server is in Google's Developer Preview. In Google Cloud, enable the Calendar API and Calendar MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },
-      "verification": "unverified",
-      "source": "https://developers.google.com/workspace/calendar",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize accepts unauthenticated requests; PRM assumed absent as for Gmail. Google OIDC discovery supplies authorize https://accounts.google.com/o/oauth2/v2/auth, token https://oauth2.googleapis.com/token and revoke https://oauth2.googleapis.com/revoke; no DCR. UNVERIFIED: resource indicator disabled because Google OAuth is not documented to accept RFC 8707 resource; authenticated OAuth/loopback flow has not been verified. Supplementary live discovery 2026-10-27: path-suffixed PRM at /.well-known/oauth-protected-resource/mcp/v1 responds with the MCP URL as resource and AS https://accounts.google.com/ (root-slash equivalent to the metadata issuer); the origin PRM remains absent. Google also serves RFC 8414 metadata.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [
@@ -83,12 +99,21 @@
       "auth": {
         "kind": "oauth",
         "registration": "preregistered",
-        "scopes": [],
-        "docs_url": "https://developers.google.com/workspace/drive"
+        "scopes": [
+          "https://www.googleapis.com/auth/drive.readonly"
+        ],
+        "docs_url": "https://developers.google.com/workspace/drive",
+        "authorization_server": "https://accounts.google.com",
+        "send_resource_indicator": false,
+        "extra_authorize_params": {
+          "access_type": "offline",
+          "prompt": "consent"
+        },
+        "client_setup": "Google Drive's MCP server is in Google's Developer Preview. In Google Cloud, enable the Drive API and Drive MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },
-      "verification": "unverified",
-      "source": "https://developers.google.com/workspace/drive",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize accepts unauthenticated requests; PRM is absent. Google OIDC discovery supplies authorize https://accounts.google.com/o/oauth2/v2/auth, token https://oauth2.googleapis.com/token and revoke https://oauth2.googleapis.com/revoke; no DCR. UNVERIFIED: resource indicator disabled because Google OAuth is not documented to accept RFC 8707 resource; authenticated OAuth/loopback flow has not been verified. Supplementary live discovery 2026-10-27: path-suffixed PRM at /.well-known/oauth-protected-resource/mcp/v1 responds with the MCP URL as resource and AS https://accounts.google.com/ (root-slash equivalent to the metadata issuer); the origin PRM remains absent. Google also serves RFC 8414 metadata.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [
@@ -122,11 +147,13 @@
         "kind": "oauth",
         "registration": "preregistered",
         "scopes": [],
-        "docs_url": "https://docs.slack.dev/"
+        "docs_url": "https://docs.slack.dev/",
+        "fixed_redirect_port": 53682,
+        "client_setup": "Create a Slack app with user scopes, add the redirect URL shown here, and paste its client ID and secret."
       },
-      "verification": "unverified",
-      "source": "https://docs.slack.dev/",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize returns 401 with origin PRM; resource and authorization server are https://mcp.slack.com. Authorize endpoint is https://slack.com/oauth/v2_user/authorize; no DCR. Fixed callback http://127.0.0.1:53682/callback supports preregistered providers requiring an exact redirect URL; fail if this port is busy.",
       "signatures": {
         "bundle_ids": [
           "com.tinyspeck.slackmacgap"
@@ -158,9 +185,9 @@
         "scopes": [],
         "docs_url": "https://developers.notion.com/docs/mcp"
       },
-      "verification": "unverified",
-      "source": "https://developers.notion.com/docs/mcp",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize returns 401 with path-suffixed PRM and scope hint default; resource is https://mcp.notion.com/mcp; DCR available.",
       "signatures": {
         "bundle_ids": [
           "notion.id"
@@ -189,13 +216,15 @@
       "transport": "streamable-http",
       "auth": {
         "kind": "oauth",
-        "registration": "dynamic",
+        "registration": "preregistered",
         "scopes": [],
-        "docs_url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server"
+        "docs_url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server",
+        "fixed_redirect_port": 53682,
+        "client_setup": "Create a GitHub OAuth app with the redirect URL shown here, and paste its client ID and secret."
       },
-      "verification": "unverified",
-      "source": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize returns 401 with path-suffixed /mcp/ PRM; resource is https://api.githubcopilot.com/mcp/ and authorization server is https://github.com/login/oauth (OIDC-style metadata); no DCR. Fixed callback http://127.0.0.1:53682/callback supports preregistered providers requiring an exact redirect URL; fail if this port is busy.",
       "signatures": {
         "bundle_ids": [
           "com.github.GitHubClient"
@@ -227,9 +256,9 @@
         "scopes": [],
         "docs_url": "https://linear.app/docs/connect-mcp-servers"
       },
-      "verification": "verified-docs",
-      "source": "https://linear.app/docs/connect-mcp-servers",
-      "notes": "Endpoint also documented at https://linear.app/docs/mcp.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize returns 401 with path-suffixed PRM and scope hint read write; resource is the origin https://mcp.linear.app; DCR available.",
       "signatures": {
         "bundle_ids": [
           "com.linear"
@@ -261,9 +290,9 @@
         "scopes": [],
         "docs_url": "https://support.atlassian.com/atlassian-rovo-mcp-server/"
       },
-      "verification": "unverified",
-      "source": "https://support.atlassian.com/atlassian-rovo-mcp-server/",
-      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "verification": "verified-live",
+      "source": "unauthenticated probe 2026-10-27",
+      "notes": "2026-10-27: Initialize returns 401 without resource_metadata; origin and path-suffixed PRM return 404. Origin RFC 8414 discovery supplies /v1/authorize, /v1/token and /v1/register; DCR available.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [

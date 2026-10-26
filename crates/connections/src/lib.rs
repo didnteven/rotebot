@@ -6,6 +6,7 @@ pub mod mcp;
 pub mod oauth;
 pub mod state;
 
+pub use mcp::preview_tools;
 pub use state::ConnectionsService;
 
 /// Wall-clock timestamps for persisted state (callback deadlines use monotonic time).
