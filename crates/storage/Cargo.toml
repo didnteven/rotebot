@@ -6,8 +6,12 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+hex = "0.4.3"
 macroscope-domain.workspace = true
+rusqlite = { version = "0.41.0", features = ["bundled-sqlcipher-vendored-openssl"] }
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile = "3.27.0"

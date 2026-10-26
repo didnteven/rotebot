@@ -1,4 +1,7 @@
-//! Host-owned storage seam. Persistence, encryption and deletion barriers come later.
+//! Host-owned storage. `db` is the SQLCipher product database; `MemoryStore` is the
+//! in-memory seam used by early shells and tests.
+
+pub mod db;
 
 use macroscope_domain::{TaskContract, TaskId, ToolId, ToolManifest};
 use std::collections::HashMap;
