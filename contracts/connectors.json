@@ -1,0 +1,307 @@
+{
+  "schema": "macroscope.connectors/v1",
+  "version": 1,
+  "connectors": [
+    {
+      "id": "gmail",
+      "name": "Gmail",
+      "category": "communication",
+      "mcp_url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "preregistered",
+        "scopes": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose"
+        ],
+        "docs_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
+      },
+      "verification": "verified-docs",
+      "source": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
+      "notes": "Developer Preview; user supplies Google Cloud OAuth client id and secret. Loopback client compatibility requires a live provider check.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "mail.google.com"
+        ],
+        "window_titles": [
+          {
+            "id": "gmail-title-0",
+            "kind": "suffix",
+            "value": " - Gmail"
+          },
+          {
+            "id": "gmail-address-title",
+            "kind": "contains",
+            "value": "@gmail.com - Gmail"
+          }
+        ],
+        "keywords": [
+          "gmail"
+        ]
+      }
+    },
+    {
+      "id": "google-calendar",
+      "name": "Google Calendar",
+      "category": "productivity",
+      "mcp_url": "https://calendarmcp.googleapis.com/mcp/v1",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "preregistered",
+        "scopes": [],
+        "docs_url": "https://developers.google.com/workspace/calendar"
+      },
+      "verification": "unverified",
+      "source": "https://developers.google.com/workspace/calendar",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "calendar.google.com"
+        ],
+        "window_titles": [
+          {
+            "id": "google-calendar-title-0",
+            "kind": "suffix",
+            "value": " - Google Calendar"
+          }
+        ],
+        "keywords": [
+          "google calendar"
+        ]
+      }
+    },
+    {
+      "id": "google-drive",
+      "name": "Google Drive",
+      "category": "files",
+      "mcp_url": "https://drivemcp.googleapis.com/mcp/v1",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "preregistered",
+        "scopes": [],
+        "docs_url": "https://developers.google.com/workspace/drive"
+      },
+      "verification": "unverified",
+      "source": "https://developers.google.com/workspace/drive",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "drive.google.com",
+          "docs.google.com"
+        ],
+        "window_titles": [
+          {
+            "id": "google-drive-title-0",
+            "kind": "suffix",
+            "value": " - Google Drive"
+          },
+          {
+            "id": "google-drive-title-1",
+            "kind": "suffix",
+            "value": " - Google Docs"
+          }
+        ],
+        "keywords": [
+          "google drive"
+        ]
+      }
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "category": "communication",
+      "mcp_url": "https://mcp.slack.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "preregistered",
+        "scopes": [],
+        "docs_url": "https://docs.slack.dev/"
+      },
+      "verification": "unverified",
+      "source": "https://docs.slack.dev/",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [
+          "com.tinyspeck.slackmacgap"
+        ],
+        "browser_hosts": [
+          "app.slack.com"
+        ],
+        "window_titles": [
+          {
+            "id": "slack-title-0",
+            "kind": "suffix",
+            "value": " - Slack"
+          }
+        ],
+        "keywords": [
+          "slack"
+        ]
+      }
+    },
+    {
+      "id": "notion",
+      "name": "Notion",
+      "category": "productivity",
+      "mcp_url": "https://mcp.notion.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://developers.notion.com/docs/mcp"
+      },
+      "verification": "unverified",
+      "source": "https://developers.notion.com/docs/mcp",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [
+          "notion.id"
+        ],
+        "browser_hosts": [
+          "www.notion.so",
+          "notion.so"
+        ],
+        "window_titles": [
+          {
+            "id": "notion-title-0",
+            "kind": "suffix",
+            "value": " - Notion"
+          }
+        ],
+        "keywords": [
+          "notion"
+        ]
+      }
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "category": "development",
+      "mcp_url": "https://api.githubcopilot.com/mcp/",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server"
+      },
+      "verification": "unverified",
+      "source": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [
+          "com.github.GitHubClient"
+        ],
+        "browser_hosts": [
+          "github.com"
+        ],
+        "window_titles": [
+          {
+            "id": "github-title-0",
+            "kind": "suffix",
+            "value": " - GitHub"
+          }
+        ],
+        "keywords": [
+          "github"
+        ]
+      }
+    },
+    {
+      "id": "linear",
+      "name": "Linear",
+      "category": "productivity",
+      "mcp_url": "https://mcp.linear.app/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://linear.app/docs/connect-mcp-servers"
+      },
+      "verification": "verified-docs",
+      "source": "https://linear.app/docs/connect-mcp-servers",
+      "notes": "Endpoint also documented at https://linear.app/docs/mcp.",
+      "signatures": {
+        "bundle_ids": [
+          "com.linear"
+        ],
+        "browser_hosts": [
+          "linear.app"
+        ],
+        "window_titles": [
+          {
+            "id": "linear-title-0",
+            "kind": "suffix",
+            "value": "| Linear"
+          }
+        ],
+        "keywords": [
+          "linear"
+        ]
+      }
+    },
+    {
+      "id": "jira",
+      "name": "Jira (Atlassian)",
+      "category": "productivity",
+      "mcp_url": "https://mcp.atlassian.com/v1/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://support.atlassian.com/atlassian-rovo-mcp-server/"
+      },
+      "verification": "unverified",
+      "source": "https://support.atlassian.com/atlassian-rovo-mcp-server/",
+      "notes": "Endpoint and OAuth registration have not been verified with the provider.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "*.atlassian.net"
+        ],
+        "window_titles": [
+          {
+            "id": "jira-title-0",
+            "kind": "suffix",
+            "value": " - Jira"
+          }
+        ],
+        "keywords": [
+          "jira"
+        ]
+      }
+    },
+    {
+      "id": "custom",
+      "name": "Custom MCP server",
+      "category": "custom",
+      "mcp_url": "",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization"
+      },
+      "verification": "unverified",
+      "source": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "notes": "Verification not applicable to a user-supplied endpoint; supports dynamic or user-supplied preregistered credentials.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [],
+        "window_titles": [],
+        "keywords": []
+      }
+    }
+  ]
+}
