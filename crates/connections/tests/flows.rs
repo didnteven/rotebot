@@ -470,18 +470,27 @@ async fn wrong_state_and_pkce_mismatch_are_rejected_without_secret_errors() {
         let mut query: HashMap<String, String> = url.query_pairs().into_owned().collect();
         query.insert(parameter.into(), value.into());
         url.query_pairs_mut().clear().extend_pairs(query);
-        let (response, result) =
-            tokio::join!(browser(url.as_str()), service.complete_connect(handle));
-        let error = result.unwrap_err();
         if parameter == "state" {
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            assert!(matches!(
-                error,
-                ConnectionError::OAuth(OAuthError::StateMismatch)
-            ));
-        } else {
-            assert!(matches!(error, ConnectionError::OAuth(OAuthError::Token)));
+            // A redirect carrying a foreign state is ignored (404), and does not
+            // consume the callback: the genuine redirect afterwards still completes.
+            let completion = tokio::spawn(async move {
+                let result = service.complete_connect(handle).await;
+                (service, result)
+            });
+            assert_eq!(browser(url.as_str()).await.status(), StatusCode::NOT_FOUND);
+            assert!(tokens.get("mcp-token:custom").unwrap().is_none());
+            assert_eq!(
+                browser(authorization.as_str()).await.status(),
+                StatusCode::OK
+            );
+            let (_, result) = completion.await.unwrap();
+            result.unwrap();
+            assert!(tokens.get("mcp-token:custom").unwrap().is_some());
+            continue;
         }
+        let (_, result) = tokio::join!(browser(url.as_str()), service.complete_connect(handle));
+        let error = result.unwrap_err();
+        assert!(matches!(error, ConnectionError::OAuth(OAuthError::Token)));
         for secret in [ACCESS, REFRESH, CLIENT_SECRET] {
             assert!(!format!("{error:?} {error}").contains(secret));
         }
@@ -680,18 +689,18 @@ async fn failed_reconnect_preserves_existing_authorization_and_revocation_is_bes
     connect(&mut service, "custom", None).await;
     let previous = tokens.get("mcp-token:custom").unwrap().unwrap();
     let (url, handle) = service.begin_connect("custom", None).await.unwrap();
-    let mut url = Url::parse(url.as_str()).unwrap();
-    let mut query: HashMap<String, String> = url.query_pairs().into_owned().collect();
-    query.insert(
-        "state".into(),
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-    );
-    url.query_pairs_mut().clear().extend_pairs(query);
-    assert_eq!(
-        browser(url.as_str()).await.status(),
-        StatusCode::BAD_REQUEST
-    );
-    assert!(service.complete_connect(handle).await.is_err());
+    let url = Url::parse(url.as_str()).unwrap();
+    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    // The user presses "Deny": the provider redirects back with the real state and
+    // error=access_denied. The flow ends as Denied and the old tokens survive.
+    let redirect = Url::parse(&query["redirect_uri"]).unwrap();
+    let denied = format!("{}?error=access_denied&state={}", redirect, query["state"]);
+    let (response, result) = tokio::join!(reqwest::get(&denied), service.complete_connect(handle));
+    assert_eq!(response.unwrap().status(), StatusCode::OK);
+    assert!(matches!(
+        result.unwrap_err(),
+        ConnectionError::OAuth(OAuthError::Denied)
+    ));
     assert_eq!(tokens.get("mcp-token:custom").unwrap().unwrap(), previous);
     // An unreachable revocation endpoint must never prevent local deletion.
     server.task.abort();
@@ -704,4 +713,35 @@ fn pkce_s256_rfc7636_vector() {
         pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
         "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
     );
+}
+#[tokio::test]
+async fn stray_connections_do_not_consume_the_callback() {
+    let server = Server::start(false, false).await;
+    let (mut service, tokens, _) = server.service();
+    service
+        .set_url("custom", &server.url("json"))
+        .await
+        .unwrap();
+    let (authorization, handle) = service.begin_connect("custom", None).await.unwrap();
+    let query: HashMap<String, String> = Url::parse(authorization.as_str())
+        .unwrap()
+        .query_pairs()
+        .into_owned()
+        .collect();
+    let redirect = Url::parse(&query["redirect_uri"]).unwrap();
+    let completion = tokio::spawn(async move { service.complete_connect(handle).await });
+    // A preconnect that never sends a request, then a favicon fetch.
+    let addr = format!("127.0.0.1:{}", redirect.port().unwrap());
+    drop(tokio::net::TcpStream::connect(&addr).await.unwrap());
+    let favicon = format!("http://{addr}/favicon.ico");
+    assert_eq!(
+        reqwest::get(&favicon).await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        browser(authorization.as_str()).await.status(),
+        StatusCode::OK
+    );
+    completion.await.unwrap().unwrap();
+    assert!(tokens.get("mcp-token:custom").unwrap().is_some());
 }

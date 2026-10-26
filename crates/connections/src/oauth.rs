@@ -161,8 +161,10 @@ pub enum OAuthError {
     RedirectPortUnavailable(u16),
     #[error("OAuth callback state mismatch")]
     StateMismatch,
-    #[error("invalid or denied OAuth callback")]
+    #[error("invalid OAuth callback")]
     Callback,
+    #[error("sign-in was cancelled or denied in the browser")]
+    Denied,
     #[error("OAuth callback timed out")]
     Timeout,
     #[error("OAuth token response invalid or authorization expired")]
@@ -691,33 +693,49 @@ pub fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
+/// Waits for the browser redirect. Accepts connections until a request carries the
+/// expected state (the caller's deadline bounds the wait), so a stray local connection,
+/// a browser preconnect, or a favicon request cannot consume the one real callback.
 async fn callback(listener: TcpListener, state: AccessToken) -> Result<AccessToken, OAuthError> {
-    let (mut stream, _) = listener.accept().await.map_err(|_| OAuthError::Callback)?;
-    let mut request = Vec::new();
-    let mut buffer = [0u8; 1024];
-    while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-        let n = stream
-            .read(&mut buffer)
-            .await
-            .map_err(|_| OAuthError::Callback)?;
-        if n == 0 || request.len() + n > 8192 {
-            return Err(OAuthError::Callback);
+    loop {
+        let (mut stream, _) = listener.accept().await.map_err(|_| OAuthError::Callback)?;
+        let mut request = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut buffer = [0u8; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = stream.read(&mut buffer).await.ok()?;
+                if n == 0 || request.len() + n > 8192 {
+                    return None;
+                }
+                request.extend_from_slice(&buffer[..n]);
+            }
+            Some(())
+        })
+        .await;
+        if !matches!(read, Ok(Some(()))) {
+            request.zeroize();
+            continue;
         }
-        request.extend_from_slice(&buffer[..n]);
+        let result = parse_callback(&request, &state);
+        request.zeroize();
+        // Entire page is fixed: no query reflection, scripts, links, external resources, or IPC.
+        let (status, body) = match &result {
+            Ok(_) => ("200 OK", "You can close this tab."),
+            Err(OAuthError::Denied) => ("200 OK", "Sign-in was cancelled. You can close this tab."),
+            Err(_) => ("404 Not Found", "Not found."),
+        };
+        let page = format!(
+            "<!doctype html><html><head><title>Macroscope</title></head><body>{body}</body></html>"
+        );
+        let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{page}", page.len());
+        let _ = stream.write_all(response.as_bytes()).await;
+        let _ = stream.shutdown().await;
+        match result {
+            // A request without the expected state is not our callback: keep waiting.
+            Err(OAuthError::Callback | OAuthError::StateMismatch) => continue,
+            other => return other,
+        }
     }
-    let result = parse_callback(&request, &state);
-    // Entire page is fixed: no query reflection, scripts, links, external resources, or IPC.
-    let body = "<!doctype html><html><head><title>Macroscope</title></head><body>You can close this tab.</body></html>";
-    let status = if result.is_ok() {
-        "200 OK"
-    } else {
-        "400 Bad Request"
-    };
-    let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}", body.len());
-    let _ = stream.write_all(response.as_bytes()).await;
-    let _ = stream.shutdown().await;
-    request.zeroize();
-    result
 }
 fn parse_callback(request: &[u8], expected_state: &AccessToken) -> Result<AccessToken, OAuthError> {
     let request = std::str::from_utf8(request).map_err(|_| OAuthError::Callback)?;
@@ -754,7 +772,7 @@ fn parse_callback(request: &[u8], expected_state: &AccessToken) -> Result<Access
         return Err(OAuthError::StateMismatch);
     }
     if query.iter().any(|(k, _)| k == "error") {
-        return Err(OAuthError::Callback);
+        return Err(OAuthError::Denied);
     }
     let code = single("code")?;
     if code.is_empty() {
