@@ -1,5 +1,7 @@
 use crate::{diagnostic, MuseError, SAFE_PATH};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -8,17 +10,53 @@ use tokio::process::Command;
 
 pub const PINNED_FINGERPRINT: &str =
     "sha256:f282ad16e21520d0cda68cb190149b86e2b062eef1dd282749360c05aa3d1082";
+pub const CURRENT_FINGERPRINT: &str =
+    "sha256:7fddaf646dbc317e5fcac0785e135eb04df14fbb0db1863089dfd6da21730e5b";
+/// Reviewed echo conformance evidence: plan/reference/msp and fixtures/msp.
+pub const KNOWN_FINGERPRINTS: &[(&str, &str)] = &[
+    (PINNED_FINGERPRINT, "1.4.11"),
+    (CURRENT_FINGERPRINT, "1.4.13-R6996.1"),
+];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verification {
+    Known,
+    Conformance,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupState {
     Missing,
     UnsupportedVersion,
-    FingerprintMismatch,
-    Ready,
+    SchemaMajorMismatch,
+    ConformanceRequired {
+        fingerprint: String,
+        failing_step: Option<String>,
+    },
+    Ready {
+        fingerprint: String,
+        verified: Verification,
+    },
 }
 #[derive(Debug, Clone)]
 pub struct BinaryInfo {
     pub path: PathBuf,
     pub version: String,
+    pub binary_sha256: String,
+}
+/// Stream the binary rather than loading the native executable into memory.
+pub fn binary_sha256(path: &Path) -> Result<String, MuseError> {
+    let mut file = std::fs::File::open(path).map_err(|_| MuseError::BinaryChanged)?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .map_err(|_| MuseError::BinaryChanged)?;
+        if n == 0 {
+            break;
+        }
+        hash.update(&buffer[..n]);
+    }
+    Ok(format!("sha256:{:x}", hash.finalize()))
 }
 /// Inspect only installation files; never run the updating bash launcher to
 /// resolve a build executable. The launcher on this machine uses sibling
@@ -75,6 +113,7 @@ fn minimal(cmd: &mut Command, home: &Path) {
 impl BinaryInfo {
     pub async fn detect(home: &Path) -> Result<Self, MuseError> {
         let path = resolve_native(home)?;
+        let digest = binary_sha256(&path)?;
         let mut cmd = Command::new(&path);
         minimal(&mut cmd, home);
         cmd.arg("--version");
@@ -88,17 +127,53 @@ impl BinaryInfo {
         if !version_numbers(&version).starts_with(&[1, 4]) {
             return Err(MuseError::UnsupportedVersion);
         }
-        Ok(Self { path, version })
+        let binary = Self {
+            path,
+            version,
+            binary_sha256: digest,
+        };
+        binary.validate()?;
+        Ok(binary)
+    }
+    pub fn pin(path: PathBuf, version: String) -> Result<Self, MuseError> {
+        let binary_sha256 = binary_sha256(&path)?;
+        Ok(Self {
+            path,
+            version,
+            binary_sha256,
+        })
+    }
+    /// A job retains this identity across every retry and subprocess launch.
+    pub fn validate(&self) -> Result<(), MuseError> {
+        if binary_sha256(&self.path)? != self.binary_sha256 {
+            return Err(MuseError::BinaryChanged);
+        }
+        Ok(())
     }
     pub fn setup_state(&self, initialize: &Value) -> SetupState {
         if !version_numbers(&self.version).starts_with(&[1, 4]) {
-            SetupState::UnsupportedVersion
-        } else if initialize["schema"]["version"] != 1
-            || initialize["schema"]["fingerprint"] != PINNED_FINGERPRINT
+            return SetupState::UnsupportedVersion;
+        }
+        if initialize["schema"]["version"] != 1 {
+            return SetupState::SchemaMajorMismatch;
+        }
+        let fingerprint = initialize["schema"]["fingerprint"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if KNOWN_FINGERPRINTS
+            .iter()
+            .any(|(known, _)| *known == fingerprint)
         {
-            SetupState::FingerprintMismatch
+            SetupState::Ready {
+                fingerprint,
+                verified: Verification::Known,
+            }
         } else {
-            SetupState::Ready
+            SetupState::ConformanceRequired {
+                fingerprint,
+                failing_step: None,
+            }
         }
     }
 }
@@ -168,16 +243,23 @@ mod tests {
         let b = BinaryInfo {
             path: "native".into(),
             version: "muse 1.4.13".into(),
+            binary_sha256: "unused".into(),
         };
         assert_eq!(
             b.setup_state(
                 &serde_json::json!({"schema":{"version":1,"fingerprint":PINNED_FINGERPRINT}})
             ),
-            SetupState::Ready
+            SetupState::Ready {
+                fingerprint: PINNED_FINGERPRINT.into(),
+                verified: Verification::Known
+            }
         );
         assert_eq!(
             b.setup_state(&serde_json::json!({"schema":{"version":1,"fingerprint":"changed"}})),
-            SetupState::FingerprintMismatch
+            SetupState::ConformanceRequired {
+                fingerprint: "changed".into(),
+                failing_step: None
+            }
         );
     }
 }

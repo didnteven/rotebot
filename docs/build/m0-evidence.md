@@ -16,7 +16,8 @@ Tests use fake services, fabricated canaries, recorded transcripts, and the echo
 | Synthetic mapping packet and independent host validation | passed | `direct_meta_fixture_synthetic_packet_and_host_validation`; `offline_is_labelled_and_validator_can_reject`. `SyntheticSamples` accepts no caller-provided CSV rows; the executor is connected through `CandidateValidator`, without a dependency on its crate. |
 | One correction retry and budget admission | passed | `malformed_then_corrected_once_and_unknown_spend_stays_reserved`; `malformed_twice_fails_no_third_dispatch`; `budget_exhaustion_and_stale_epoch_prevent_dispatch` |
 | Credential route selection and rejected-key/no-fallback behavior | passed | `route_selection_prioritizes_key_then_plan_and_types_no_access`; `rejected_api_key_revokes_admission_and_never_falls_back_to_plan` |
-| MSP echo handshake on installed native Muse | failed | `MACROSCOPE_MUSE_IT=1 cargo test -p macroscope-muse-client -- --ignored` exited 101: `echo initialize and pinned fingerprint: FingerprintMismatch`. The process spawned successfully; this was not a sandbox spawn denial. No turn was admitted. |
+| MSP echo handshake on installed native Muse | passed (conformance) | Muse self-updated to 1.4.13-R6996.1 during the build; its fingerprint `sha256:7fddaf64…0e5b` differs from the plan pin. The fingerprint gate blocked it; the echo conformance check (initialize, model/list, session/start, turn to completed, interrupt, unknown-method error, clean shutdown) passed and admitted it as `Ready{verified: Conformance}`. `real_msp_echo_handshake_turn_and_clean_shutdown` passes. Schema vendored at `contracts/msp/1.4.13-R6996.1/`. |
+| Exec lane JSONL on installed native Muse | passed | `real_exec_echo_jsonl_reaches_terminal`: reaches `run.terminal.completed` with text `echo: hello …`. Found: 1.4.13 rejects `--output-schema` with `--provider echo`; the echo path now omits it. |
 | Fake MSP handshake, acknowledged turn correlation, shutdown | passed | `fake_msp_handshake_correlates_turn_and_reaps_without_credential_disclosure`; `process_deadline_kills_and_reaps_group`; `async_framing_rejects_oversize_and_partial_frames` |
 | Transcript replay | passed | `transcript_replay_echo_auth_profile_and_negative_framing` (01, 02, 15, 21); `transcript_replay_orphan_reconciled_and_stale_terminal_ignored` (14 before/after); `replay_exec_empty_and_badkey_terminals` (05, 07); `revisions_deltas_unknowns_and_foreground_are_not_terminal`; `quota_branches_on_typed_detail_and_preserves_reset_instant` |
 | Plan sign-in detection | passed | `plan_sign_in_detection`: captured not-signed-in stderr, exit-0 JSON allowance summary, invalid output, and scrubbed unknown diagnostics. This validates the parser; it does not claim a live sign-in check was performed. |
@@ -43,8 +44,21 @@ Verification used Node v24.10.0, npm 11.6.0, macOS arm64, and the preset
 
 | Command | Status | Exact result / output tail |
 | --- | --- | --- |
-| `cargo test -p macroscope-vault -p macroscope-policy -p macroscope-model-gateway -p macroscope-muse-client -p macroscope-builder` | passed | Exit 0; 33 tests passed, 0 failed, 1 ignored. Full output: [task03-tests.log](task03-tests.log). Final tail: `test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` (vault doc-tests). |
-| `MACROSCOPE_MUSE_IT=1 cargo test -p macroscope-muse-client -- --ignored` | failed | Exit 101; `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s`. Full output: [task03-muse-it.log](task03-muse-it.log). |
-| `cargo clippy --workspace --all-targets -- -D warnings` | passed | Exit 0; final tail: ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.08s``. Full output: [task03-clippy.log](task03-clippy.log). |
+| `cargo test -p macroscope-vault -p macroscope-policy -p macroscope-model-gateway -p macroscope-muse-client -p macroscope-builder` | passed | Exit 0; 33 tests passed, 0 failed, 1 ignored. Final tail: `test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` (vault doc-tests). |
+| `MACROSCOPE_MUSE_IT=1 cargo test -p macroscope-muse-client -- --ignored` | failed | Exit 101; `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s`. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | passed | Exit 0; final tail: ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.08s``. |
 | `cargo fmt --all --check` | passed | Exit 0; no output. |
-| `bash scripts/check.sh` | passed | Exit 0; 54 Rust tests passed, 0 failed, 1 ignored; 2 frontend test files and 7 tests passed; desktop build completed. Final tail: `✓ built in 687ms`. Full output: [task03-check.log](task03-check.log). |
+| `bash scripts/check.sh` | passed | Exit 0; 54 Rust tests passed, 0 failed, 1 ignored; 2 frontend test files and 7 tests passed; desktop build completed. Final tail: `✓ built in 687ms`. |
+
+## Task 03b follow-up (2026-10-27)
+
+Codex implemented the conformance gate, acceptance store, binary pinning between jobs, vendored
+schema, and a recorded 1.4.13 echo fixture (`fixtures/msp/echo-1.4.13.jsonl`, local paths
+scrubbed) before hitting its usage limit. Claude finished the task: fixed the exec echo flags,
+reran `MACROSCOPE_MUSE_IT=1 cargo test -p macroscope-muse-client -- --ignored` (2 passed, real
+binary, 16 s), unit tests, clippy, and fmt. The rows above for the 1.4.11 fingerprint failure are
+superseded by the two "passed" rows.
+
+Lesson recorded for the app: invoking the `~/.local/bin/muse` launcher can auto-update Muse and
+delete the previous native binary. Macroscope only ever executes the resolved native
+`muse-bin-*` and re-hashes it per job.

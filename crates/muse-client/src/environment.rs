@@ -71,6 +71,16 @@ impl ChildEnv {
             },
         })
     }
+    pub(crate) fn state_dir(&self) -> std::path::PathBuf {
+        self.values
+            .get(std::ffi::OsStr::new("XDG_STATE_HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(&self.values[std::ffi::OsStr::new("HOME")])
+                    .join(".local/state")
+            })
+            .join("macroscope/muse")
+    }
     pub(crate) fn apply(&self, cmd: &mut Command, env_key: bool) -> Result<(), MuseError> {
         cmd.env_clear().envs(&self.values);
         if env_key {

@@ -1,7 +1,7 @@
 use crate::{
-    diagnostic,
+    binary_sha256, diagnostic,
     supervisor::{read_frame, redact_value, ManagedChild},
-    ChildEnv, CredentialRoute, MuseError,
+    BinaryInfo, ChildEnv, CredentialRoute, MuseError,
 };
 use serde_json::Value;
 use std::{
@@ -21,6 +21,7 @@ use tokio::{
 pub struct ExecClient {
     binary: PathBuf,
     help: Arc<OnceCell<String>>,
+    digest: Result<String, MuseError>,
 }
 #[derive(Clone)]
 pub struct ExecOutput {
@@ -91,20 +92,39 @@ impl ExecOutput {
 }
 impl ExecClient {
     pub fn new(binary: impl Into<PathBuf>) -> Self {
-        static HELP: OnceLock<Mutex<HashMap<PathBuf, Arc<OnceCell<String>>>>> = OnceLock::new();
         let binary = binary.into();
+        let digest = binary_sha256(&binary);
+        Self::with_identity(binary, digest)
+    }
+    pub fn pinned(binary: &BinaryInfo) -> Self {
+        Self::with_identity(binary.path.clone(), Ok(binary.binary_sha256.clone()))
+    }
+    fn with_identity(binary: PathBuf, digest: Result<String, MuseError>) -> Self {
+        type HelpCache = Mutex<HashMap<(PathBuf, String), Arc<OnceCell<String>>>>;
+        static HELP: OnceLock<HelpCache> = OnceLock::new();
         let help = HELP
             .get_or_init(Mutex::default)
             .lock()
             .unwrap()
-            .entry(binary.clone())
+            .entry((binary.clone(), digest.clone().unwrap_or_default()))
             .or_default()
             .clone();
-        Self { binary, help }
+        Self {
+            binary,
+            help,
+            digest,
+        }
+    }
+    fn validate(&self) -> Result<(), MuseError> {
+        if binary_sha256(&self.binary)? != *self.digest.as_ref().map_err(Clone::clone)? {
+            return Err(MuseError::BinaryChanged);
+        }
+        Ok(())
     }
     async fn help(&self, env: &ChildEnv, workspace: &Path) -> Result<&String, MuseError> {
         self.help
             .get_or_try_init(|| async {
+                self.validate()?;
                 let mut cmd = Command::new(&self.binary);
                 env.apply(&mut cmd, false)?;
                 cmd.args(["exec", "--help"])
@@ -146,6 +166,30 @@ impl ExecClient {
         route: CredentialRoute,
         env: &ChildEnv,
     ) -> Result<ExecOutput, MuseError> {
+        self.exec_with_provider(prompt, schema_path, workspace, Some(route), env)
+            .await
+    }
+    /// Real-binary parser check; echo uses a private environment and no provider credentials.
+    pub async fn exec_echo_structured(
+        &self,
+        prompt: &str,
+        schema_path: &Path,
+        workspace: &Path,
+        env: &ChildEnv,
+    ) -> Result<ExecOutput, MuseError> {
+        self.exec_with_provider(prompt, schema_path, workspace, None, env)
+            .await
+    }
+    async fn exec_with_provider(
+        &self,
+        prompt: &str,
+        schema_path: &Path,
+        workspace: &Path,
+        credential_route: Option<CredentialRoute>,
+        env: &ChildEnv,
+    ) -> Result<ExecOutput, MuseError> {
+        self.validate()?;
+        let route = credential_route.unwrap_or(CredentialRoute::PlanSignIn);
         if env.key().is_some_and(|key| {
             !key.expose().is_empty()
                 && prompt
@@ -156,7 +200,21 @@ impl ExecClient {
             return Err(MuseError::KeyUnavailable);
         }
         let help = self.help(env, workspace).await?;
-        let args = exec_args(help, schema_path, workspace, route)?;
+        let mut args = exec_args(help, schema_path, workspace, route)?;
+        if credential_route.is_none() {
+            if !help.split_whitespace().any(|w| w == "--provider") {
+                return Err(MuseError::UnsupportedExecFlags);
+            }
+            // Muse restricts --model to Meta/local providers, and 1.4.13 rejects
+            // --output-schema with echo (echo sends no text.format block).
+            for flag in ["--model", "--output-schema"] {
+                if let Some(index) = args.iter().position(|arg| arg == flag) {
+                    args.drain(index..index + 2);
+                }
+            }
+            args.extend(["--provider".into(), "echo".into()]);
+        }
+        self.validate()?;
         let mut cmd = Command::new(&self.binary);
         env.apply(&mut cmd, false)?;
         cmd.args(args)
@@ -218,6 +276,7 @@ impl ExecClient {
                 });
             }
             result.exit_code = child.finish(Duration::from_secs(5)).await?.code();
+            self.validate()?;
             result.stderr = tokio::time::timeout(Duration::from_secs(2), stderr_task)
                 .await
                 .map_err(|_| MuseError::Timeout)?
@@ -368,6 +427,7 @@ print(key,file=sys.stderr)
         .unwrap();
         let schema = root.path().join("schema.json");
         std::fs::write(&schema, "{}").unwrap();
+        let client = ExecClient::new(&script);
         for _ in 0..2 {
             let client = ExecClient::new(&script);
             let out = client
@@ -388,6 +448,25 @@ print(key,file=sys.stderr)
                 .to_string()
                 .contains("bogus-exec-secret-canary"));
         }
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("help-count")).unwrap(),
+            "checked\n"
+        );
+        assert!(client.help.get().is_some());
+        std::fs::write(&script, "changed executable").unwrap();
+        assert_eq!(
+            client
+                .exec_structured(
+                    "synthetic prompt",
+                    &schema,
+                    root.path(),
+                    CredentialRoute::ApiKey,
+                    &env
+                )
+                .await
+                .unwrap_err(),
+            MuseError::BinaryChanged
+        );
         assert_eq!(
             std::fs::read_to_string(root.path().join("help-count")).unwrap(),
             "checked\n"

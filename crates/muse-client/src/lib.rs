@@ -1,9 +1,11 @@
 //! Bounded Muse process supervisor. No account mutation surface is exposed.
+mod conformance;
 mod environment;
 mod exec;
 mod health;
 mod reducer;
 mod supervisor;
+pub use conformance::*;
 pub use environment::*;
 pub use exec::*;
 pub use health::*;
@@ -16,8 +18,14 @@ pub enum MuseError {
     Missing,
     #[error("Muse version unsupported")]
     UnsupportedVersion,
-    #[error("MSP schema fingerprint mismatch")]
-    FingerprintMismatch,
+    #[error("MSP schema major version unsupported")]
+    SchemaMajorMismatch,
+    #[error("MSP echo conformance required for {fingerprint}: {step}")]
+    ConformanceRequired { fingerprint: String, step: String },
+    #[error("Muse binary disappeared or changed during the job")]
+    BinaryChanged,
+    #[error("Muse conformance acceptance store unavailable")]
+    AcceptanceStore,
     #[error("Muse permission profile unavailable")]
     PermissionProfileUnavailable,
     #[error("Muse sandbox unavailable")]

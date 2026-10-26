@@ -181,6 +181,74 @@ mod tests {
         }
     }
     #[test]
+    fn real_1_4_13_echo_replay_tolerates_additive_fields_and_items() {
+        let fixture = include_str!("../../../fixtures/msp/echo-1.4.13.jsonl");
+        assert!(!fixture.contains("/Users/"));
+        assert!(!fixture.contains("/private/"));
+        let frames: Vec<Value> = fixture
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let first_terminal = frames
+            .iter()
+            .position(|frame| {
+                let wire: Value = serde_json::from_str(frame["raw"].as_str().unwrap()).unwrap();
+                wire["method"] == "turn/completed" && wire["params"]["terminal"] == "completed"
+            })
+            .unwrap();
+        let encode = |frames: &[Value]| {
+            frames
+                .iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut r = TurnReducer::default();
+        let mut events = vec![];
+        replay(
+            &encode(&frames[..=first_terminal]),
+            &mut r,
+            &mut events,
+            true,
+        );
+        assert_eq!(r.text(), "echo: hello from macroscope");
+        assert_eq!(r.terminal.as_deref(), Some("completed"));
+        assert!(events.contains(&BuildEvent::Completed {
+            terminal: "completed".into()
+        }));
+        replay(
+            &encode(&frames[first_terminal + 1..]),
+            &mut r,
+            &mut events,
+            true,
+        );
+        assert_eq!(r.terminal.as_deref(), Some("cancelled"));
+        assert!(events.contains(&BuildEvent::Completed {
+            terminal: "cancelled".into()
+        }));
+
+        // Extend the real session's first turn with a future item kind and
+        // fields, while keeping all real wire frames and terminal assertions.
+        let mut extended = Vec::new();
+        for frame in &frames[..=first_terminal] {
+            let mut wire: Value = serde_json::from_str(frame["raw"].as_str().unwrap()).unwrap();
+            if wire["method"] == "turn/completed" {
+                extended.push(serde_json::json!({"dir":"s2c", "raw": serde_json::json!({"jsonrpc":"2.0","method":"item/completed","params":{"sessionId":wire["params"]["sessionId"],"item":{"itemId":"future-item","turnId":wire["params"]["turnId"],"revision":1,"kind":"futureSchemaItem","status":"completed","futureData":{"mode":"background"}}}}).to_string()}));
+            }
+            if wire["params"]["item"].is_object() {
+                wire["params"]["item"]["futureField"] = serde_json::json!({"nested":[1,2,3]});
+            }
+            extended.push(serde_json::json!({"dir":frame["dir"],"raw":wire.to_string()}));
+        }
+        let mut r = TurnReducer::default();
+        events.clear();
+        replay(&encode(&extended), &mut r, &mut events, true);
+        assert_eq!(r.text(), "echo: hello from macroscope");
+        assert_eq!(r.terminal.as_deref(), Some("completed"));
+        assert!(events.contains(&BuildEvent::GenericFallback));
+        assert_eq!(r.items["future-item"]["futureData"]["mode"], "background");
+    }
+    #[test]
     fn transcript_replay_echo_auth_profile_and_negative_framing() {
         let mut r = TurnReducer::default();
         let mut events = vec![];

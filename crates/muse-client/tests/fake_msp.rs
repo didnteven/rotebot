@@ -34,10 +34,7 @@ for line in sys.stdin:
 "#.replace("PINNED",PINNED_FINGERPRINT);
     std::fs::write(&script, source).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let binary = BinaryInfo {
-        path: script,
-        version: "1.4.11".into(),
-    };
+    let binary = BinaryInfo::pin(script, "1.4.11".into()).unwrap();
     let env = ChildEnv::for_route(
         CredentialRoute::ApiKey,
         &root.path().join("home"),

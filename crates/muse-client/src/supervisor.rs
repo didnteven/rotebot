@@ -1,5 +1,6 @@
 use crate::{
-    classify_rpc_error, BinaryInfo, BuildEvent, ChildEnv, MuseError, SetupState, TurnReducer,
+    classify_rpc_error, ensure_conformance, AcceptanceStore, BinaryInfo, BuildEvent, ChildEnv,
+    JsonAcceptanceStore, MuseError, SetupState, TurnReducer,
 };
 use macroscope_protocol::{read_message, write_message, MAX_MESSAGE_BYTES};
 use serde_json::{json, Value};
@@ -166,6 +167,10 @@ pub struct MspClient {
     pending: VecDeque<Value>,
     env: ChildEnv,
     pub reducer: TurnReducer,
+    pub setup: SetupState,
+    transcript: Option<Vec<Value>>,
+    probe_home: Option<tempfile::TempDir>,
+    binary: BinaryInfo,
 }
 impl MspClient {
     pub async fn spawn(
@@ -174,6 +179,71 @@ impl MspClient {
         env: ChildEnv,
         workspace: &Path,
     ) -> Result<Self, MuseError> {
+        let store = JsonAcceptanceStore::new(env.state_dir());
+        Self::spawn_with_store(binary, provider, env, workspace, &store).await
+    }
+    pub async fn spawn_with_store(
+        binary: &BinaryInfo,
+        provider: Provider,
+        env: ChildEnv,
+        workspace: &Path,
+        store: &dyn AcceptanceStore,
+    ) -> Result<Self, MuseError> {
+        // Resolve schema safety in an isolated echo process before starting Meta.
+        let (mut probe, init) = Self::spawn_echo_probe(binary, workspace, false).await?;
+        probe.shutdown_inner().await?;
+        let setup = ensure_conformance(binary, &init, store, workspace).await?;
+        match &setup {
+            SetupState::Ready { .. } => {}
+            SetupState::ConformanceRequired {
+                fingerprint,
+                failing_step,
+            } => {
+                return Err(MuseError::ConformanceRequired {
+                    fingerprint: fingerprint.clone(),
+                    step: failing_step.clone().unwrap_or_else(|| "unchecked".into()),
+                })
+            }
+            SetupState::SchemaMajorMismatch => return Err(MuseError::SchemaMajorMismatch),
+            _ => return Err(MuseError::UnsupportedVersion),
+        }
+        let (mut client, actual) =
+            Self::spawn_transport(binary, provider, env, workspace, false).await?;
+        if actual["schema"] != init["schema"] {
+            return Err(MuseError::BinaryChanged);
+        }
+        client.setup = setup;
+        Ok(client)
+    }
+    pub(crate) async fn spawn_echo_probe(
+        binary: &BinaryInfo,
+        scratch: &Path,
+        record: bool,
+    ) -> Result<(Self, Value), MuseError> {
+        // Lifetime of this temporary private HOME is owned by the caller of
+        // conformance; the lightweight setup probe also retains it until exit.
+        let root = tempfile::tempdir_in(scratch)?;
+        let env = ChildEnv::for_route(
+            crate::CredentialRoute::ApiKey,
+            &root.path().join("home"),
+            root.path(),
+            Some(macroscope_vault::Secret::new(
+                b"echo-only-conformance".to_vec(),
+            )),
+        )?;
+        let (mut client, init) =
+            Self::spawn_transport(binary, Provider::Echo, env, scratch, record).await?;
+        client.probe_home = Some(root);
+        Ok((client, init))
+    }
+    async fn spawn_transport(
+        binary: &BinaryInfo,
+        provider: Provider,
+        env: ChildEnv,
+        workspace: &Path,
+        record: bool,
+    ) -> Result<(Self, Value), MuseError> {
+        binary.validate()?;
         let mut command = Command::new(&binary.path);
         env.apply(&mut command, true)?;
         command
@@ -205,31 +275,51 @@ impl MspClient {
             pending: VecDeque::new(),
             env,
             reducer: TurnReducer::default(),
+            setup: SetupState::Missing,
+            transcript: record.then(Vec::new),
+            probe_home: None,
+            binary: binary.clone(),
         };
         let handshake = async {
         let init=client.request("initialize",json!({"clientInfo":{"name":"macroscope","version":env!("CARGO_PKG_VERSION")},"capabilities":{"requestedCapabilities":[]}})).await?;
         match binary.setup_state(&init) {
-            SetupState::Ready => {}
             SetupState::UnsupportedVersion => return Err(MuseError::UnsupportedVersion),
-            _ => return Err(MuseError::FingerprintMismatch),
+            SetupState::SchemaMajorMismatch => return Err(MuseError::SchemaMajorMismatch),
+            _ => {}
         }
-        if init["sandboxAvailability"] != "available" {
+        if matches!(provider, Provider::Meta) && init["sandboxAvailability"] != "available" {
             return Err(MuseError::SandboxUnavailable);
         }
         client
             .send(&json!({"jsonrpc":"2.0","method":"initialized"}))
             .await?;
-        Ok::<(), MuseError>(())
+        Ok::<Value, MuseError>(init)
         }.await;
-        if let Err(error) = handshake {
-            client.stdin.take();
-            client.process.kill_group();
-            let _ = client.process.finish(Duration::from_secs(2)).await;
-            return Err(error);
+        let init = match handshake {
+            Ok(init) => init,
+            Err(error) => {
+                client.stdin.take();
+                client.process.kill_group();
+                let _ = client.process.finish(Duration::from_secs(2)).await;
+                return Err(error);
+            }
+        };
+        Ok((client, init))
+    }
+    pub(crate) fn take_transcript(&mut self) -> Vec<Value> {
+        self.transcript.take().unwrap_or_default()
+    }
+    fn record(&mut self, dir: &str, value: &Value) -> Result<(), MuseError> {
+        if let Some(frames) = &mut self.transcript {
+            if frames.len() >= 4096 {
+                return Err(MuseError::Framing);
+            }
+            frames.push(json!({"dir": dir, "raw": serde_json::to_string(value).map_err(|_| MuseError::Framing)?}));
         }
-        Ok(client)
+        Ok(())
     }
     async fn send(&mut self, v: &Value) -> Result<(), MuseError> {
+        self.record("c2s", v)?;
         let mut bytes = Vec::new();
         write_message(&mut bytes, v).map_err(|_| MuseError::Framing)?;
         let stdin = self.stdin.as_mut().ok_or(MuseError::Transport)?;
@@ -243,11 +333,30 @@ impl MspClient {
             return Err(MuseError::Protocol);
         }
         redact_value(&mut value, self.env.key());
+        self.record("s2c", &value)?;
         Ok(value)
     }
     // The allowlist makes it impossible to reach credential/account methods via
     // a generic public JSON-RPC API. Request ids, not arrival order, match replies.
     async fn request(&mut self, method: &str, params: Value) -> Result<Value, MuseError> {
+        let value = self.request_reply(method, params).await?;
+        if value.get("error").is_some() {
+            return Err(classify_rpc_error(&value));
+        }
+        value.get("result").cloned().ok_or(MuseError::Protocol)
+    }
+    pub(crate) async fn unknown_method_probe(&mut self) -> Result<(), MuseError> {
+        let value = self
+            .request_reply("macroscope/conformanceUnknown", json!({}))
+            .await?;
+        if value["error"]["code"] != -32601 || value.get("result").is_some() {
+            return Err(MuseError::Protocol);
+        }
+        // A valid reply after the error proves the server stayed alive.
+        self.model_list().await?;
+        Ok(())
+    }
+    async fn request_reply(&mut self, method: &str, params: Value) -> Result<Value, MuseError> {
         self.next_id += 1;
         let id = self.next_id;
         tokio::time::timeout(Duration::from_secs(20), async {
@@ -256,10 +365,7 @@ impl MspClient {
             loop {
                 let value = self.receive().await?;
                 if value["id"] == id {
-                    if value.get("error").is_some() {
-                        return Err(classify_rpc_error(&value));
-                    }
-                    return value.get("result").cloned().ok_or(MuseError::Protocol);
+                    return Ok(value);
                 }
                 if self.pending.len() >= 256 {
                     return Err(MuseError::Framing);
@@ -350,12 +456,15 @@ impl MspClient {
         .map_err(|_| MuseError::Timeout)?
     }
     pub async fn shutdown(mut self) -> Result<(), MuseError> {
+        self.shutdown_inner().await
+    }
+    pub(crate) async fn shutdown_inner(&mut self) -> Result<(), MuseError> {
         // MSP v1 has no shutdown method. EOF triggers orderly host unload.
         self.stdin.take();
         let status = self.process.finish(Duration::from_secs(5)).await;
         self.stderr.abort();
         match status {
-            Ok(s) if s.success() => Ok(()),
+            Ok(s) if s.success() => self.binary.validate(),
             Ok(_) => Err(MuseError::Transport),
             Err(e) => Err(e),
         }
