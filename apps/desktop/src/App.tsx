@@ -137,7 +137,7 @@ export function App({ backend }: { backend: Backend }) {
         {show?.kind === "recording" && (
           <RecordingBar backend={backend} state={show} update={updateShow} />
         )}
-        <div className="status-strip" aria-label="App status">
+        <div className="status-strip" role="region" aria-label="App status">
           <span>
             Building with:{" "}
             {status ? routeLabel(status.effectiveRoute) : "Checking…"}

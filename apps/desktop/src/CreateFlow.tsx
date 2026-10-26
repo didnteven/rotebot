@@ -196,7 +196,7 @@ export function CreateFlow({
       </ol>
       <Notice error={error} />
       {activeBuild && step !== 3 && (
-        <aside className="notice notice-info">
+        <div role="note" className="notice notice-info">
           <p>A build is active: {build.phase}</p>
           <button onClick={() => setStep(3)}>Return to build</button>
           <button
@@ -209,7 +209,7 @@ export function CreateFlow({
           >
             Stop build
           </button>
-        </aside>
+        </div>
       )}
       {busy && <p role="status">Working…</p>}
       {step === 0 && (
@@ -497,7 +497,7 @@ export function CreateFlow({
             .map(
               (c) =>
                 c && (
-                  <aside className="suggestion notice notice-info" key={c.id}>
+                  <div role="note" className="suggestion notice notice-info" key={c.id}>
                     <p>
                       You mentioned {c.name}. Connect it in Connections so later
                       tools can use it.
@@ -505,7 +505,7 @@ export function CreateFlow({
                     <button onClick={() => connect(c.id)}>
                       Connect {c.name}
                     </button>
-                  </aside>
+                  </div>
                 ),
             )}
           <button
