@@ -1,36 +1,50 @@
-# Macroscope
+# Macroscope (working name)
 
-A desktop utility for turning a described repetitive task into a small, checked
-tool. The first task family prepares a new CSV from a selected export. This is the
-repository foundation: a Tauri 2/React shell, shared Rust contracts, bounded IPC,
-and synthetic fixtures. Generation, transformation execution and connections are
-not implemented yet.
+A macOS-first desktop utility that turns a described repetitive task into a small,
+checked tool. The first task family prepares a new CSV from a selected export: you
+describe the job, confirm the rules, review what leaves the Mac, and Macroscope builds
+a finite mapping that is checked on your own file before you save it. Every run stages
+the output, shows it to you, and only then creates the new file (never overwriting).
 
-Use stable Rust, Node 24.10.0 and npm, plus the native
-[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
+It also suggests **connections** (Gmail, Slack, Notion, …) when you mention a service in a
+task or use it during a **Show** recording, and connects them over MCP with OAuth.
+
+## Run it
+
+Prerequisites: stable Rust, Node 24 with npm, Xcode command-line tools (macOS).
 
 ```sh
 npm ci
+(cd native/macos-observer && swift build -c release)   # enables Show
 bash scripts/doctor.sh
-bash scripts/check.sh
-cd apps/desktop
-npx tauri dev
+cd apps/desktop && npx tauri dev
 ```
 
-For a browser preview, run `npm run -w apps/desktop dev` from the repository root;
-it uses the in-memory backend. Build only the frontend with
-`npm run -w apps/desktop build`. Compile the native binary with
-`cd apps/desktop && npx tauri build --debug --no-bundle`.
+Browser preview with the in-memory mock backend: `npm run -w apps/desktop dev`.
+Native binary: `cd apps/desktop && npx tauri build --debug --no-bundle`.
+All checks (fmt, Clippy, Rust tests, TypeScript, UI tests, Vite build): `bash scripts/check.sh`.
 
-`scripts/check.sh` checks formatting, Clippy, Rust tests, TypeScript, UI tests and
-the Vite build. Keep the preset `CARGO_TARGET_DIR`. Cargo/npm lockfiles pin resolved
-dependencies; key versions are recorded in [versions](docs/build/versions.md).
+### Model access (Settings → Model access)
 
-Each crate and desktop subdirectory owns its implementation so later tasks can
-work independently. Contracts are generated from `macroscope-domain` with
-`cargo run -p macroscope-domain --example export_schemas`; Rust tests reject schema
-drift. Task/mapping JSON uses snake_case; tool manifests follow the plan's camelCase.
-Ceilings and manifests describe intent; they do not grant access.
+| Route | What you need | Notes |
+|---|---|---|
+| Meta API key | A Meta developer API key | Entered in a native hidden-input dialog, stored in your Keychain, billed to the key |
+| Muse plan | `muse login` in Terminal (Macroscope never signs in for you) | Uses your Muse allowance; needs an explicit opt-in until Muse's file-access confinement is verified |
+| Offline demo | Nothing | Builds from your confirmed rules without a model; labelled as a demo |
 
-See the [master plan](plan/PLAN.md), [ADRs](docs/adr/), and
-[owner overrides](docs/adr/0001-owner-overrides-2026-10-27.md).
+## What is where
+
+| Path | Purpose |
+|---|---|
+| `crates/app-core` | The product service behind the UI contract: drafts, builds, host checks, tools, runs, Show |
+| `crates/executor`, `crates/effect-broker` | Finite CSV mapping engine; stage → approve → atomic no-overwrite commit |
+| `crates/model-gateway`, `crates/muse-client`, `crates/builder` | Meta Responses client, Muse supervisor/MSP client, mapping builder |
+| `crates/connections` | Connector catalog, MCP client, OAuth (PKCE, DCR), detection |
+| `crates/storage`, `crates/vault`, `crates/policy` | SQLCipher database, Keychain, cloud-egress epochs |
+| `apps/desktop` | Tauri shell (`src-tauri`) and React UI (`src`) with the typed `Backend` contract |
+| `native/macos-observer` | Swift metadata-only observer for Show |
+| `experiments/runtime-gate` | Deno + Seatbelt admission experiment (verdict: not admitted) |
+| `docs/build/PROGRESS.md` | What passed, failed, or is still unverified |
+
+See the [master plan](plan/PLAN.md), the [ADRs](docs/adr/) (owner overrides in
+[0001](docs/adr/0001-owner-overrides-2026-10-27.md)), and [branch map](docs/build/BRANCHES.md).
