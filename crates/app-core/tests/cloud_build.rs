@@ -91,6 +91,21 @@ async fn a_correct_model_answer_becomes_ready_with_cost_and_a_synthetic_packet()
     }
     let outbound = core.list_outbound().unwrap();
     assert_eq!(outbound.len(), 1);
+    // The logged payload is exactly what was sent: same message, same instructions.
+    let user_msg = body["input"][1]["content"].as_str().unwrap();
+    let logged = outbound[0].payload_text.as_deref().unwrap();
+    let logged_json: Value = serde_json::from_str(
+        logged
+            .split_once("Message (synthetic rows only):\n")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(
+        logged_json,
+        serde_json::from_str::<Value>(user_msg).unwrap()
+    );
+    assert!(logged.contains(body["input"][0]["content"].as_str().unwrap()));
     assert_eq!(outbound[0].cost_micros, state.spent_micros);
     assert!(outbound[0].synthetic_only);
 }

@@ -435,3 +435,32 @@ async fn local_only_choice_persists_across_restart() {
     let core = core_at(tmp.path(), vault, PlanStatus::NotSignedIn);
     assert_eq!(core.model_access().await.egress, EgressState::LocalOnly);
 }
+
+#[tokio::test]
+async fn output_names_with_folders_are_refused_before_touching_the_filesystem() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let tool = core.install_sample_tool().unwrap();
+    let input = core.load_sample_csv().unwrap().handle;
+    let output = out_dir(&core, tmp.path());
+    for name in ["../escape.csv", "sub/x.csv", "x.txt", "", ".."] {
+        let r = core
+            .stage_run(
+                &tool.summary_row.id,
+                &input.handle_id,
+                &output.handle_id,
+                name,
+            )
+            .unwrap();
+        assert!(
+            matches!(
+                r,
+                StageResult::Failed(FailureEnvelope {
+                    failure: RunFailure::InputInvalid { .. }
+                })
+            ),
+            "{name}"
+        );
+    }
+    assert!(!tmp.path().join("escape.csv").exists());
+}

@@ -846,20 +846,17 @@ impl AppCore {
         }
     }
 
+    /// The exact text a cloud build sends: fixed instructions, then the synthetic packet.
     fn packet_text(contract: &TaskContract) -> String {
         let samples = SyntheticSamples::from_contract(contract, 5);
-        // The builder sends this same template; samples are host-made, never user rows.
-        let packet = json!({
-            "template": "macroscope-csv-mapping/v1",
-            "untrusted_contract_data": {
-                "columns": contract.input_schema,
-                "output_columns": contract.output_columns,
-                "confirmed_rules": contract.mapping,
-                "error_policy": contract.error_policy,
-            },
-            "synthetic_example_rows": format!("{samples:?}"),
-        });
-        serde_json::to_string_pretty(&packet).unwrap_or_default()
+        let packet = macroscope_builder::packet_text(contract, &samples).unwrap_or_default();
+        let pretty = serde_json::from_str::<Value>(&packet)
+            .and_then(|v| serde_json::to_string_pretty(&v))
+            .unwrap_or(packet);
+        format!(
+            "System instructions:\n{}\n\nMessage (synthetic rows only):\n{pretty}",
+            macroscope_builder::SYSTEM_INSTRUCTIONS
+        )
     }
 
     pub async fn outbound_preview(&self, draft_id: &str) -> CoreResult<OutboundPreview> {
@@ -1483,6 +1480,15 @@ impl AppCore {
         let (input_path, input) = self.handle_path(input_handle, PickKind::File)?;
         let (dir_path, output_dir) = self.handle_path(dir_handle, PickKind::Dir)?;
         let output_name = output_name.trim().to_string();
+        let bad_name = output_name.is_empty()
+            || output_name.contains(['/', '\\', ':', '\0'])
+            || output_name == ".."
+            || !output_name.to_ascii_lowercase().ends_with(".csv");
+        if bad_name {
+            return Ok(StageResult::Failed(FailureEnvelope {
+                failure: map_run_failure(BrokerError::InvalidBasename),
+            }));
+        }
         if dir_path.join(&output_name).exists() {
             return Ok(StageResult::Failed(FailureEnvelope {
                 failure: map_run_failure(BrokerError::DestinationExists),
