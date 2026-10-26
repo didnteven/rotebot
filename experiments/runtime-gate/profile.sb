@@ -1,0 +1,22 @@
+;; Deny-by-default Seatbelt profile for one generated-tool run (plan §7.3).
+;; Minimal set found empirically on macOS 26.5 / Deno 2.9.8 outside any enclosing sandbox
+;; (bisected by operation class, then by path). Nothing else is required for ok.ts.
+(version 1)
+(deny default)
+(deny network*)
+(deny process-fork)
+(allow process-exec (literal (param "DENO")))
+;; Deno aborts (SIGABRT) without sysctl writes as well as reads; unprivileged sysctl
+;; writes cannot change system state, but this is recorded as a broader-than-ideal grant.
+(allow sysctl*)
+;; Metadata (stat) everywhere: needed for path resolution. Allows existence probing of
+;; arbitrary paths but not reading contents. Recorded as a limitation.
+(allow file-read-metadata)
+;; Reading the root directory entry itself is required at startup.
+(allow file-read* (literal "/"))
+(allow file-read* (literal (param "DENO")))
+(allow file-read* (subpath "/usr/lib") (subpath "/System/Library") (subpath "/private/var/db/dyld")
+                  (subpath "/System/Volumes/Preboot/Cryptexes"))
+(allow file-read* (literal "/dev/urandom") (literal "/dev/random") (literal "/dev/null"))
+(allow file-read* (subpath (param "PACKAGE")))
+(allow file-read* file-write* (subpath (param "SCRATCH")))
