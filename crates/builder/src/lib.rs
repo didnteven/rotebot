@@ -1,5 +1,7 @@
-//! Provider-neutral coding sessions (plan §4.2), separate from single-shot generation.
-//! These declarations grant no tool, model, workspace, or credential access.
+mod mapping;
+pub use mapping::*;
+// Provider-neutral coding sessions (plan §4.2), separate from single-shot generation.
+// These declarations grant no tool, model, workspace, or credential access.
 
 use futures_core::Stream;
 use macroscope_domain::{BuildId, PermissionCeiling};
@@ -66,6 +68,26 @@ pub struct ScopedDecision {
 pub enum BuildError {
     #[error("coding agent is unavailable")]
     Unavailable,
+    #[error("no model access: {0:?}")]
+    NoModelAccess(NoAccessReason),
+    #[error("build budget exhausted")]
+    BudgetExceeded,
+    #[error("egress consent revoked")]
+    EgressDenied,
+    #[error("candidate rejected by host validator")]
+    Validation,
+    #[error("synthetic samples do not match the contract")]
+    InvalidSamples,
+    #[error("credential unavailable")]
+    Credential,
+    #[error("Muse containment has not been verified")]
+    ContainmentUnverified,
+    #[error("synthetic workspace unavailable")]
+    Workspace,
+    #[error(transparent)]
+    Gateway(#[from] macroscope_model_gateway::GatewayError),
+    #[error(transparent)]
+    Muse(#[from] macroscope_muse_client::MuseError),
 }
 
 pub trait CodingAgent: Send + Sync {

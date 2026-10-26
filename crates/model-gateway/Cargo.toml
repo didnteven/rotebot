@@ -10,3 +10,11 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 macroscope-domain.workspace = true
+macroscope-vault.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+jsonschema = { version = "0.60", default-features = false }
+httpdate = "1"
+zeroize = "1"
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

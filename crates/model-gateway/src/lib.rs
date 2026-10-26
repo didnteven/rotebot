@@ -1,4 +1,6 @@
-//! Single-shot model gateway seam. No transport or model access is implemented.
+//! Single-shot, zero-tool Meta Responses gateway.
+mod responses;
+pub use responses::*;
 
 use macroscope_domain::{JobId, TaskId};
 use serde::{Deserialize, Serialize};
@@ -41,10 +43,34 @@ pub struct ValidatedOutput {
     pub schema_ref: String,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GatewayError {
     #[error("model gateway is unavailable")]
     Unavailable,
+    #[error("credential rejected")]
+    AuthRejected,
+    #[error("billing required")]
+    BillingRequired,
+    #[error("quota exhausted")]
+    Quota {
+        retry_after: Option<std::time::Duration>,
+    },
+    #[error("payload too large")]
+    PayloadTooLarge,
+    #[error("temporary transport or provider failure")]
+    Transient,
+    #[error("output truncated")]
+    Truncated,
+    #[error("model refused the request")]
+    Refused,
+    #[error("output does not match the requested schema")]
+    MalformedOutput,
+    #[error("request rejected")]
+    Rejected,
+    #[error("model has no approved price")]
+    UnsupportedModel,
+    #[error("cost exceeds representable budget")]
+    CostOverflow,
 }
 
 pub trait ModelGateway: Send + Sync {
