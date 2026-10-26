@@ -1,40 +1,151 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { invoke } from '@tauri-apps/api/core';
-import { createBackend } from './index';
-import { MockBackend } from './mock';
-import { TauriBackend } from './tauri';
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { createBackend } from "./index";
+import { MockBackend } from "./mock";
+import { TauriBackend } from "./tauri";
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-afterEach(() => { Reflect.deleteProperty(window, '__TAURI_INTERNALS__'); });
+afterEach(() => {
+  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+});
 
-describe('typed backend seam', () => {
-  it('selects the memory backend in a browser', async () => {
+describe("typed backend seam", () => {
+  it("selects the memory backend in a browser", async () => {
     const backend = createBackend();
     expect(backend).toBeInstanceOf(MockBackend);
-    expect(await backend.appInfo()).toEqual({ version: '0.1.0', platform: 'browser' });
+    expect(await backend.appInfo()).toEqual({
+      version: "0.1.0",
+      platform: "browser",
+      mock: true,
+    });
     expect(await backend.listTools()).toEqual([]);
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('selects native IPC in Tauri and maps both command names', async () => {
-    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+  it("selects native IPC in Tauri and maps both command names", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
     const backend = createBackend();
     expect(backend).toBeInstanceOf(TauriBackend);
-    vi.mocked(invoke).mockResolvedValueOnce({ version: '0.1.0', platform: 'macos' }).mockResolvedValueOnce([]);
-    expect(await backend.appInfo()).toEqual({ version: '0.1.0', platform: 'macos' });
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ version: "0.1.0", platform: "macos" })
+      .mockResolvedValueOnce([]);
+    expect(await backend.appInfo()).toEqual({
+      version: "0.1.0",
+      platform: "macos",
+    });
     expect(await backend.listTools()).toEqual([]);
-    expect(invoke).toHaveBeenNthCalledWith(1, 'app_info');
-    expect(invoke).toHaveBeenNthCalledWith(2, 'list_tools');
+    expect(invoke).toHaveBeenNthCalledWith(1, "app_info");
+    expect(invoke).toHaveBeenNthCalledWith(2, "list_tools");
   });
 
-  it('isolates memory state from constructor inputs and returned objects', async () => {
-    const tools = [{ id: 'tool-1', name: 'Orders', version: 1 }];
+  it("isolates memory state from constructor inputs and returned objects", async () => {
+    const tools = [{ id: "tool-1", name: "Orders", version: 1 }];
     const backend = new MockBackend(tools);
-    tools[0].name = 'changed';
+    tools[0].name = "changed";
     const result = await backend.listTools();
-    result[0].name = 'also changed';
-    expect((await backend.listTools())[0].name).toBe('Orders');
+    result[0].name = "also changed";
+    expect((await backend.listTools())[0].name).toBe("Orders");
     expect(await new MockBackend().listTools()).toEqual([]);
   });
+});
+
+it("forwards every command with the shared camelCase arguments and snake_case names", async () => {
+  vi.mocked(invoke).mockReset();
+  const backend = new TauriBackend();
+  const cases: [string, unknown[], Record<string, unknown> | undefined][] = [
+    ["appInfo", [], undefined],
+    ["modelAccess", [], undefined],
+    ["enterApiKeyNative", [], undefined],
+    ["saveApiKey", ["key"], { key: "key" }],
+    ["removeApiKey", [], undefined],
+    ["testApiKey", [], undefined],
+    ["refreshMuseStatus", [], undefined],
+    ["openMuseSignIn", [], undefined],
+    ["selectRoute", ["offline_demo"], { route: "offline_demo" }],
+    ["setLocalOnly", [true], { localOnly: true }],
+    ["pickCsv", [], undefined],
+    ["loadSampleCsv", [], undefined],
+    [
+      "draftTask",
+      [{ handleId: "file" }, "Clean"],
+      { input: { handleId: "file" }, description: "Clean" },
+    ],
+    [
+      "answerQuestion",
+      ["d", "q", "a"],
+      { draftId: "d", questionId: "q", answer: "a" },
+    ],
+    [
+      "updateMapping",
+      ["d", {}, "out.csv"],
+      { draftId: "d", mapping: {}, outputName: "out.csv" },
+    ],
+    ["outboundPreview", ["d"], { draftId: "d" }],
+    [
+      "startBuild",
+      ["d", { outboundReviewed: true }],
+      { draftId: "d", consent: { outboundReviewed: true } },
+    ],
+    ["buildState", ["b"], { buildId: "b" }],
+    ["stopBuild", ["b"], { buildId: "b" }],
+    ["saveTool", ["b", "Name"], { buildId: "b", name: "Name" }],
+    ["listTools", [], undefined],
+    ["getTool", ["t"], { toolId: "t" }],
+    ["installSampleTool", [], undefined],
+    ["deleteTool", ["t"], { toolId: "t" }],
+    ["pickOutputDir", [], undefined],
+    [
+      "stageRun",
+      ["t", {}, {}, "out.csv"],
+      { toolId: "t", input: {}, outputDir: {}, outputName: "out.csv" },
+    ],
+    ["commitRun", ["r", "hash"], { runId: "r", planHash: "hash" }],
+    ["discardRun", ["r"], { runId: "r" }],
+    ["revealOutput", ["r"], { receiptRunId: "r" }],
+    ["listActivity", [], undefined],
+    ["listReceipts", [], undefined],
+    ["privacyOverview", [], undefined],
+    ["deleteOutboundHistory", [], undefined],
+    ["emergencyStop", [], undefined],
+    ["listConnectors", [], undefined],
+    [
+      "setConnectorUrl",
+      ["gmail", "https://example.com/mcp"],
+      { connectorId: "gmail", url: "https://example.com/mcp" },
+    ],
+    [
+      "setClientCredentials",
+      ["gmail", "id", "secret"],
+      { connectorId: "gmail", clientId: "id", clientSecret: "secret" },
+    ],
+    ["beginConnect", ["gmail"], { connectorId: "gmail" }],
+    ["completeConnect", ["p"], { pendingId: "p" }],
+    ["testConnection", ["gmail"], { connectorId: "gmail" }],
+    ["disconnect", ["gmail"], { connectorId: "gmail" }],
+    ["connectionSuggestions", [], undefined],
+    ["dismissSuggestion", ["gmail"], { connectorId: "gmail" }],
+    ["showState", [], undefined],
+    ["startShow", [], undefined],
+    ["pauseShow", [true], { paused: true }],
+    ["stopShow", [], undefined],
+  ];
+  for (const [name, args, expected] of cases) {
+    await (
+      backend as unknown as Record<
+        string,
+        (...args: unknown[]) => Promise<unknown>
+      >
+    )[name](...args);
+    const command = name.replace(
+      /[A-Z]/g,
+      (letter) => "_" + letter.toLowerCase(),
+    );
+    if (expected) expect(invoke).toHaveBeenLastCalledWith(command, expected);
+    else expect(invoke).toHaveBeenLastCalledWith(command);
+  }
+  expect(invoke).toHaveBeenCalledTimes(cases.length);
 });
