@@ -8,7 +8,8 @@ this build could not supply). Branch order and PR plan: [BRANCHES.md](BRANCHES.m
 Who did what: Codex (`gpt-6.1-sol`) wrote the foundation, CSV engine and broker, model
 access, connections, observer, runtime experiment, and UI. Claude reviewed and tested
 every branch (including outside the agent sandbox), fixed what the reviews found, and
-wrote storage, the app core, the Tauri shell, and Show while Codex was rate-limited.
+wrote storage, the app core, the Tauri shell, Show, and connections wiring while Codex was
+rate-limited; Codex then reviewed that code independently (`m3/hardening`).
 Muse Code was never signed in during the build, so it could not help (see below).
 
 ## What works now
@@ -28,8 +29,9 @@ Muse Code was never signed in during the build, so it could not help (see below)
   observer; only connector ids and counts are kept.
 - **Connections** (owner request): catalog of 9 MCP connectors whose endpoints and OAuth
   discovery were checked live (unauthenticated) on 2026-10-27; OAuth with PKCE, dynamic
-  registration or user-supplied client; mention-based suggestions ("You mentioned Gmail").
-  Wiring into the app shell is the last open task (`m2/connections-wiring`).
+  registration or user-supplied client, tokens only in the Keychain; suggestions from
+  task text and from Show, with dismiss/snooze. Wired through the core and shell; tested
+  end to end against an in-process OAuth + MCP server.
 
 ## Gates
 

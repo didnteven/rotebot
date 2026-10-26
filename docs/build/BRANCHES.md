@@ -13,15 +13,15 @@ the build.
 | 5 | `m2/connections` | `m0/foundation` | Connector catalog, MCP client, OAuth (PKCE, DCR), detection ledger | ADR 0001 §2 |
 | 6 | `m5/observer-experiment` | `m0/foundation` | Swift metadata-only observer with on-device connector matching | M0 day 9 / M5 |
 | 7 | `m2/desktop-ui` | `m0/foundation` | React UI for every screen against the typed contract, mock backend, review fixes | M2 |
-| 8 | `m2/app-integration` | merge of 2–7 | Encrypted storage, app core, Tauri commands, Show controller, docs | M1–M2 |
-| 9 | `m2/connections-wiring` | `m2/app-integration` | Connections through the core and shell, Muse opt-in control | ADR 0001 §2 |
+| 8 | `m2/app-integration` | merge of 2–7 | Encrypted storage, app core, Tauri commands, Show controller, connections wiring, docs | M1–M2 |
+| 9 | `m3/hardening` | `m2/app-integration` | Independent Codex review of the Claude-written core with fixes; remaining UI items | M3 |
 
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m2/connections-wiring
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each
