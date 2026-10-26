@@ -60,6 +60,10 @@ export class TauriBackend implements Backend {
   deleteOutboundHistory: Backend["deleteOutboundHistory"] = () =>
     invoke("delete_outbound_history");
   emergencyStop: Backend["emergencyStop"] = () => invoke("emergency_stop");
+  openExternal: Backend["openExternal"] = (url) =>
+    invoke("open_external", { url });
+  previewConnectorTools: Backend["previewConnectorTools"] = (connectorId) =>
+    invoke("preview_connector_tools", { connectorId });
   listConnectors: Backend["listConnectors"] = () => invoke("list_connectors");
   setConnectorUrl: Backend["setConnectorUrl"] = (connectorId, url) =>
     invoke("set_connector_url", { connectorId, url });

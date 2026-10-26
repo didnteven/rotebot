@@ -6,6 +6,7 @@ import type {
   BuildState,
   ConnectionSuggestion,
   ConnectorInfo,
+  ConnectorTool,
   CsvMapping,
   CsvPreview,
   FileHandle,
@@ -236,7 +237,7 @@ export class MockBackend implements Backend {
       "Email",
       "https://gmail.mcp.google.com/mcp",
       "preregistered",
-      "verified-docs",
+      "verified-live",
     ],
     [
       "google_calendar",
@@ -244,7 +245,7 @@ export class MockBackend implements Backend {
       "Calendar",
       "https://calendar.mcp.google.com/mcp",
       "preregistered",
-      "unverified",
+      "verified-live",
     ],
     [
       "google_drive",
@@ -252,7 +253,7 @@ export class MockBackend implements Backend {
       "Files",
       "https://drive.mcp.google.com/mcp",
       "preregistered",
-      "unverified",
+      "verified-live",
     ],
     [
       "slack",
@@ -260,7 +261,7 @@ export class MockBackend implements Backend {
       "Messaging",
       "https://mcp.slack.com/mcp",
       "preregistered",
-      "unverified",
+      "verified-live",
     ],
     [
       "notion",
@@ -268,15 +269,15 @@ export class MockBackend implements Backend {
       "Documents",
       "https://mcp.notion.com/mcp",
       "dynamic",
-      "unverified",
+      "verified-live",
     ],
     [
       "github",
       "GitHub",
       "Development",
       "https://api.githubcopilot.com/mcp/",
-      "dynamic",
-      "unverified",
+      "preregistered",
+      "verified-live",
     ],
     [
       "linear",
@@ -284,7 +285,7 @@ export class MockBackend implements Backend {
       "Projects",
       "https://mcp.linear.app/mcp",
       "dynamic",
-      "unverified",
+      "verified-live",
     ],
     [
       "jira",
@@ -292,7 +293,7 @@ export class MockBackend implements Backend {
       "Projects",
       "https://mcp.atlassian.com/v1/mcp",
       "dynamic",
-      "unverified",
+      "verified-live",
     ],
     ["custom", "Custom MCP server", "Custom", "", "dynamic", "unverified"],
   ].map(([id, name, category, mcpUrl, registration, verification]) => ({
@@ -302,6 +303,16 @@ export class MockBackend implements Backend {
     mcpUrl,
     registration: registration as ConnectorInfo["registration"],
     verification: verification as ConnectorInfo["verification"],
+    clientSetup:
+      registration === "preregistered"
+        ? id.startsWith("google_") || id === "gmail"
+          ? "Create an OAuth client in your Google Cloud project and save its credentials here."
+          : `Create an OAuth app in ${name}'s developer settings and save its credentials here.`
+        : null,
+    redirectUri:
+      id === "slack" || id === "github"
+        ? "http://127.0.0.1:53682/callback"
+        : null,
     docsUrl:
       id === "gmail"
         ? "https://developers.google.com/workspace/gmail/api/guides"
@@ -621,7 +632,10 @@ export class MockBackend implements Backend {
     const draft = clone(this.draft(draftId));
     if (!this.validate(draft).readyToBuild)
       throw new Error(draft.blockers.join(" "));
-    if (!consent.outboundReviewed)
+    if (
+      this.resolveRoute().effectiveRoute !== "offline_demo" &&
+      !consent.outboundReviewed
+    )
       throw new Error("Review what will be sent before building.");
     if (
       [...this.builds.values()].some(
@@ -646,12 +660,13 @@ export class MockBackend implements Backend {
     };
     this.builds.set(build.buildId, build);
     this.buildDrafts.set(build.buildId, clone(draft));
-    if (status.blockedReason) {
+    if (status.effectiveRoute === null) {
+      const reason = status.blockedReason ?? "No build route is available.";
       build.failure = {
         kind: "no_model_access",
-        message: status.blockedReason,
+        message: reason,
       };
-      this.emitBuild(build, "failed", status.blockedReason);
+      this.emitBuild(build, "failed", reason);
       return clone(build);
     }
     if (preview.route !== "offline_demo")
@@ -1044,6 +1059,48 @@ export class MockBackend implements Backend {
     const connector = this.connectors.find((c) => c.id === id);
     if (!connector) throw new Error("Connector unavailable.");
     return connector;
+  }
+  async openExternal(url: string): Promise<void> {
+    if (new URL(url).protocol !== "https:")
+      throw new Error("Only HTTPS documentation links can be opened.");
+    const allowed =
+      this.connectors.some((connector) => connector.docsUrl === url) ||
+      ["https://dev.meta.ai/", "https://docs.muse.ai/"].includes(url) ||
+      [...this.pending].some(
+        ([pendingId, connectorId]) =>
+          url ===
+          `https://example.invalid/authorize?connector=${connectorId}&state=${pendingId}`,
+      );
+    if (!allowed)
+      throw new Error(
+        "This link is not in the documentation or authorization catalog.",
+      );
+    // Browser demo: no external calls.
+  }
+  async previewConnectorTools(connectorId: string): Promise<ConnectorTool[]> {
+    this.connector(connectorId);
+    return connectorId === "gmail"
+      ? [
+          {
+            name: "Create draft email",
+            description: "Prepare an email draft for review.",
+            readOnly: false,
+            destructive: false,
+          },
+          {
+            name: "Search threads",
+            description: "Find email threads by query.",
+            readOnly: true,
+            destructive: false,
+          },
+          {
+            name: "Read thread",
+            description: "Read messages in an email thread.",
+            readOnly: true,
+            destructive: false,
+          },
+        ]
+      : [];
   }
   async listConnectors() {
     return clone(this.connectors);

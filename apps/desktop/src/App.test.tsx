@@ -82,3 +82,55 @@ describe("desktop shell", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+it("shows a single Show action with independent plain-language status facts", async () => {
+  render(<App backend={new MockBackend()} />);
+  expect(await screen.findByText("Cloud models: On")).toBeVisible();
+  expect(screen.getByText("Show: Off")).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Show a task" })).toHaveLength(
+    1,
+  );
+});
+
+it.each([
+  ["stopping", "Stopping…"],
+  ["local_only", "Off (local only)"],
+  ["key_unavailable", "Key unavailable"],
+] as const)(
+  "labels %s cloud models and hides unavailable Show",
+  async (egress, label) => {
+    const backend = new MockBackend();
+    const status = await backend.modelAccess();
+    vi.spyOn(backend, "modelAccess").mockResolvedValue({ ...status, egress });
+    vi.spyOn(backend, "showState").mockResolvedValue({
+      kind: "unavailable",
+      reason: "Unavailable on this platform",
+    });
+    render(<App backend={backend} />);
+    expect(await screen.findByText(`Cloud models: ${label}`)).toBeVisible();
+    expect(screen.getByText("Show: Off")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Show a task" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+it.each([false, true])(
+  "shows recording time or paused status (paused: %s)",
+  async (paused) => {
+    const backend = new MockBackend();
+    vi.spyOn(backend, "showState").mockResolvedValue({
+      kind: "recording",
+      sessionId: "demo",
+      startedAtMs: Date.now() - 83000,
+      maxSeconds: 300,
+      paused,
+      appsSeen: 0,
+      matches: 0,
+    });
+    render(<App backend={backend} />);
+    expect(
+      await screen.findByText(paused ? "Show: Paused" : "Show: Recording 1:23"),
+    ).toBeVisible();
+  },
+);

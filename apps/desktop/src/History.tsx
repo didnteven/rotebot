@@ -84,7 +84,7 @@ export function Privacy({
       {error && <button onClick={() => void act(load)}>Reload privacy</button>}
       <h2>Cloud models</h2>
       <fieldset disabled={busy}>
-        <legend>Model egress</legend>
+        <legend>Cloud models</legend>
         {[false, true].map((local) => (
           <label className="choice" key={String(local)}>
             <input
@@ -115,9 +115,6 @@ export function Privacy({
         <p role="status">Stopping cloud work…</p>
       )}
       <p>
-        Local only stops cloud model work; deterministic tools can still run.
-      </p>
-      <p>
         Transmitted requests cannot be recalled and may still incur charges.
       </p>
       <button
@@ -132,20 +129,21 @@ export function Privacy({
       >
         Emergency stop
       </button>
-      <p>Emergency stop stops builds, tools, and Show.</p>
-      <div className="explanations">
-        <p>Pause recording: pauses observation only; builds continue.</p>
-        <p>
-          Stop builds: cancels active and queued builds; recording continues.
-        </p>
-        <p>
-          Local only: stops all cloud model work; deterministic tools continue.
-        </p>
-        <p>
-          Delete: removes the selected local history; provider copies cannot be
+      <dl className="explanations">
+        <dt>Pause recording</dt>
+        <dd>Pauses observation only; builds continue.</dd>
+        <dt>Stop builds</dt>
+        <dd>Cancels active and queued builds; recording continues.</dd>
+        <dt>Local only</dt>
+        <dd>Stops all cloud model work; deterministic tools continue.</dd>
+        <dt>Emergency stop</dt>
+        <dd>Stops builds, tools, and Show.</dd>
+        <dt>Delete</dt>
+        <dd>
+          Removes the selected local history; provider copies cannot be
           recalled.
-        </p>
-      </div>
+        </dd>
+      </dl>
       {overview && (
         <>
           <h2>Stored data</h2>
@@ -155,7 +153,7 @@ export function Privacy({
             rows={overview.stored.map((s) => [
               s.label,
               String(s.count),
-              `${s.bytes.toLocaleString()} bytes`,
+              s.count === 0 ? "—" : `${s.bytes.toLocaleString()} bytes`,
               s.expires,
             ])}
           />

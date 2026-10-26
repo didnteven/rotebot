@@ -31,7 +31,8 @@ export interface ModelAccessStatus {
   selectedRoute: ModelRoute | null;
   /** The route a build would use right now, after availability checks. */
   effectiveRoute: ModelRoute | null;
-  /** Why no cloud route is usable, in plain words, when effectiveRoute is offline/null. */
+  /** Why no cloud route is usable, in plain words. Informational when effectiveRoute is
+   *  "offline_demo" (building still works without a model); blocking only when effectiveRoute is null. */
   blockedReason: string | null;
   egress: EgressState;
   model: string; // "muse-spark-1.3"
@@ -264,7 +265,11 @@ export interface ConnectorInfo {
   category: string;
   mcpUrl: string;
   registration: "dynamic" | "preregistered";
-  verification: "verified-docs" | "unverified";
+  verification: "verified-docs" | "verified-live" | "unverified";
+  /** For preregistered servers: one or two sentences on creating an OAuth client. */
+  clientSetup: string | null;
+  /** Loopback redirect the user must register for preregistered clients (fixed port), if any. */
+  redirectUri: string | null;
   docsUrl: string | null;
   state: ConnectionState;
   /** For preregistered servers: whether the user has stored a client id. */
@@ -277,6 +282,13 @@ export interface ConnectionSuggestion {
   message: string; // "You used Gmail while recording. Connect Gmail so tools can work with it."
   signalKind: "foreground_app" | "window_title" | "browser_host" | "task_text";
   count: number;
+}
+
+export interface ConnectorTool {
+  name: string;
+  description: string; // untrusted server text, truncated; render as text
+  readOnly: boolean | null;
+  destructive: boolean | null;
 }
 
 export interface ConnectStart {
@@ -343,6 +355,9 @@ export interface Backend {
   privacyOverview(): Promise<PrivacyOverview>;
   deleteOutboundHistory(): Promise<void>;
   emergencyStop(): Promise<void>;
+  /** Opens a documentation or authorization URL in the system browser. The core only allows
+   *  https URLs from the connector catalog, Muse/Meta docs, or a pending authorization. */
+  openExternal(url: string): Promise<void>;
 
   // Connections
   listConnectors(): Promise<ConnectorInfo[]>;
@@ -353,6 +368,8 @@ export interface Backend {
   completeConnect(pendingId: string): Promise<ConnectorInfo>;
   testConnection(connectorId: string): Promise<ConnectorInfo>;
   disconnect(connectorId: string): Promise<ConnectorInfo>;
+  /** Tools a server lists without signing in (some servers, e.g. Gmail, allow this). Empty if it requires auth. */
+  previewConnectorTools(connectorId: string): Promise<ConnectorTool[]>;
   connectionSuggestions(): Promise<ConnectionSuggestion[]>;
   dismissSuggestion(connectorId: string): Promise<void>;
 

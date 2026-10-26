@@ -1,5 +1,10 @@
 import { useRef, useState } from "react";
-import type { Backend, ConnectStart, ConnectorInfo } from "./backend/types";
+import type {
+  Backend,
+  ConnectStart,
+  ConnectorInfo,
+  ConnectorTool,
+} from "./backend/types";
 import { Field, Notice, useAction } from "./ui";
 
 const stateName = (c: ConnectorInfo) =>
@@ -39,11 +44,13 @@ export function Connections({
             <h2>{c.name}</h2>
             <p>{c.category}</p>
             <p className="badge">{stateName(c)}</p>
-            <p className="muted">
-              {c.verification === "unverified"
-                ? "Endpoint not yet verified"
-                : "Endpoint documented; verified in docs"}
+            <p className="badge">
+              {c.verification === "verified-live" ||
+              c.verification === "verified-docs"
+                ? "Verified endpoint"
+                : "Unverified endpoint"}
             </p>
+            <ConnectorTools backend={backend} connectorId={c.id} />
             <button
               aria-expanded={selected === c.id}
               onClick={() => select(c.id)}
@@ -64,6 +71,56 @@ export function Connections({
         />
       )}
     </section>
+  );
+}
+function ConnectorTools({
+  backend,
+  connectorId,
+}: {
+  backend: Backend;
+  connectorId: string;
+}) {
+  const [tools, setTools] = useState<ConnectorTool[] | null>(null);
+  const requested = useRef(false);
+  const { act, busy, error } = useAction();
+  const load = () =>
+    act(async () => {
+      try {
+        setTools(await backend.previewConnectorTools(connectorId));
+      } catch (error) {
+        requested.current = false;
+        throw error;
+      }
+    });
+  return (
+    <details
+      onToggle={(event) => {
+        if (event.currentTarget.open && !requested.current) {
+          requested.current = true;
+          void load();
+        }
+      }}
+    >
+      <summary>What it can do</summary>
+      {busy && <p role="status">Loading tools…</p>}
+      <Notice error={error} />
+      {error && (
+        <button disabled={busy} onClick={() => void load()}>
+          Retry tools
+        </button>
+      )}
+      {tools?.length === 0 && <p>Sign in to see its tools</p>}
+      {tools && tools.length > 0 && (
+        <ul>
+          {tools.map((tool, index) => (
+            <li key={index}>
+              <strong>{tool.name}</strong>
+              <p>{tool.description}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 function ConnectionDetail({
@@ -109,7 +166,11 @@ function ConnectionDetail({
     >
       <h2>{connector.name} connection</h2>
       <Notice error={error} />
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p className="notice notice-success" role="status">
+          {notice}
+        </p>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -131,6 +192,19 @@ function ConnectionDetail({
         </Field>
         <button disabled={busy || !!pending}>Save MCP URL</button>
       </form>
+      {connector.docsUrl && (
+        <p>
+          <a
+            href={connector.docsUrl}
+            onClick={(event) => {
+              event.preventDefault();
+              void act(() => backend.openExternal(connector.docsUrl!));
+            }}
+          >
+            Documentation
+          </a>
+        </p>
+      )}
       {connector.registration === "preregistered" && (
         <form
           onSubmit={(e) => {
@@ -150,28 +224,25 @@ function ConnectionDetail({
             });
           }}
         >
-          <p>
-            {connector.id === "gmail"
-              ? "Gmail's MCP server is in Google's Developer Preview. Create an OAuth client in your Google Cloud project and paste its ID here."
-              : "Register an OAuth client with this service and save its credentials here."}
-          </p>
-          {connector.docsUrl && (
-            <p>
-              Documentation URL: <code>{connector.docsUrl}</code>{" "}
+          {connector.clientSetup && <p>{connector.clientSetup}</p>}
+          {connector.redirectUri && (
+            <div>
+              <Field label="Redirect URI">
+                <input readOnly value={connector.redirectUri} />
+              </Field>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() =>
                   void act(async () => {
-                    await navigator.clipboard.writeText(connector.docsUrl!);
-                    setNotice(
-                      "Documentation URL copied. Open it in your browser.",
-                    );
+                    await navigator.clipboard.writeText(connector.redirectUri!);
+                    setNotice("Redirect URI copied");
                   })
                 }
               >
-                Copy documentation URL
+                Copy
               </button>
-            </p>
+            </div>
           )}
           <Field label="Client ID">
             <input ref={clientId} type="password" autoComplete="off" required />

@@ -15,7 +15,7 @@ import { RunFlow } from "./RunFlow";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
 import { Activity, Privacy } from "./History";
-import { RecordingBar, ShowPanel } from "./Show";
+import { RecordingBar, ShowPanel, ShowStatus } from "./Show";
 import { Notice, Suggestions, useAction } from "./ui";
 
 const destinations = [
@@ -143,25 +143,18 @@ export function App({ backend }: { backend: Backend }) {
             {status ? routeLabel(status.effectiveRoute) : "Checking…"}
           </span>
           <span>
-            Egress:{" "}
+            Cloud models:{" "}
             {status?.egress === "stopping"
-              ? "Stopping cloud work…"
+              ? "Stopping…"
               : status?.egress === "local_only"
-                ? "Local only"
+                ? "Off (local only)"
                 : status?.egress === "key_unavailable"
                   ? "Key unavailable"
                   : status
-                    ? "Cloud allowed"
+                    ? "On"
                     : "Checking…"}
           </span>
-          <span>
-            Show:{" "}
-            {show?.kind === "recording"
-              ? show.paused
-                ? "Paused"
-                : "Recording"
-              : (show?.kind ?? "Checking…")}
-          </span>
+          <ShowStatus state={show} />
           {show && show.kind !== "unavailable" && (
             <button
               onClick={() => {
@@ -314,18 +307,6 @@ export function App({ backend }: { backend: Backend }) {
                 </>
               )}
             </div>
-            {!creating &&
-              !running &&
-              !showPanel &&
-              show &&
-              show.kind !== "unavailable" && (
-                <button
-                  aria-label="Show a task from Tools"
-                  onClick={() => setShowPanel(true)}
-                >
-                  Show a task
-                </button>
-              )}
           </div>
           {destination === "Activity" && <Activity backend={backend} />}
           {destination === "Connections" && (

@@ -13,6 +13,12 @@
   --accent: #275d46;
   --accent-text: #fff;
   --selected: #dce7dd;
+  --info-surface: #f0f2f0;
+  --info-border: #275d46;
+  --warning-surface: #fff4da;
+  --warning-border: #966300;
+  --success-surface: #e4f2e8;
+  --success-border: #34734b;
 }
 * {
   box-sizing: border-box;
@@ -231,14 +237,44 @@ fieldset {
 .connector-grid .card {
   margin: 0;
 }
-.suggestion {
-  background: var(--selected);
+.card > :first-child {
+  margin-top: 0;
 }
 .notice {
   padding: 16px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
   border-radius: 8px;
-  background: var(--selected);
+}
+.notice-info {
+  background: var(--info-surface);
+  border-left-color: var(--info-border);
+}
+.notice-warning {
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+.notice-success {
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+.notice > :first-child {
+  margin-top: 0;
+}
+.notice > :last-child {
+  margin-bottom: 0;
+}
+.explanations {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 3fr;
+  gap: 8px 16px;
+  margin: 24px 0;
+}
+.explanations dt {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--text);
 }
 .field {
   display: grid;
@@ -389,6 +425,12 @@ summary {
     --accent: #a3d9b5;
     --accent-text: #183524;
     --selected: #35483c;
+    --info-surface: #2b322e;
+    --info-border: #a3d9b5;
+    --warning-surface: #3b321f;
+    --warning-border: #e7b64f;
+    --success-surface: #253e2d;
+    --success-border: #80c795;
   }
 }
 @media (max-width: 720px) {

@@ -140,3 +140,33 @@ export function RecordingBar({
     </div>
   );
 }
+
+export function ShowStatus({ state }: { state: ShowState | null }) {
+  const [now, setNow] = useState(Date.now());
+  const recording = state?.kind === "recording";
+  useEffect(() => {
+    if (!recording) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [recording]);
+  const seconds =
+    state?.kind === "recording"
+      ? Math.min(
+          state.maxSeconds,
+          Math.max(0, Math.floor((now - state.startedAtMs) / 1000)),
+        )
+      : 0;
+  return (
+    <span>
+      Show:{" "}
+      {state === null
+        ? "Checking…"
+        : state.kind === "recording"
+          ? state.paused
+            ? "Paused"
+            : `Recording ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
+          : "Off"}
+    </span>
+  );
+}

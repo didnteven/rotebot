@@ -27,7 +27,7 @@ export function useAction() {
 }
 export function Notice({ error }: { error: string | null }) {
   return error ? (
-    <p className="notice" role="alert">
+    <p className="notice notice-warning" role="alert">
       {error}
     </p>
   ) : null;
@@ -113,7 +113,7 @@ export function Suggestions({
   return (
     <>
       {suggestions.map((s) => (
-        <section className="suggestion" key={s.connectorId}>
+        <section className="suggestion notice notice-info" key={s.connectorId}>
           <p>{s.message}</p>
           <div className="actions">
             <button onClick={() => connect(s.connectorId)}>
@@ -137,7 +137,13 @@ export function ReceiptCard({
   return (
     <article className="card">
       <h2>Run receipt</h2>
-      <p>
+      <p
+        className={
+          receipt.status === "committed" || receipt.status === "reconciled"
+            ? "notice notice-success"
+            : "notice notice-warning"
+        }
+      >
         {receipt.toolName} · {receipt.status}
       </p>
       <dl>

@@ -208,8 +208,19 @@ export function Settings({
                 type="radio"
                 name="route"
                 value={r.route}
-                checked={status.selectedRoute === r.route}
+                checked={
+                  (status.selectedRoute ?? status.effectiveRoute) === r.route
+                }
                 disabled={r.disabled}
+                onClick={() => {
+                  if (
+                    status.selectedRoute === null &&
+                    status.effectiveRoute === r.route
+                  )
+                    void act(async () =>
+                      update(await backend.selectRoute(r.route)),
+                    );
+                }}
                 onChange={() =>
                   void act(async () =>
                     update(await backend.selectRoute(r.route)),
@@ -217,13 +228,27 @@ export function Settings({
                 }
               />
               {r.label}
+              {status.selectedRoute === null &&
+              status.effectiveRoute === r.route
+                ? " (automatic)"
+                : ""}
             </label>
             {r.disabled && <p className="muted">{r.reason}</p>}
           </div>
         ))}
       </fieldset>
       <p>Effective route: {routeLabel(status.effectiveRoute)}</p>
-      {status.blockedReason && <p className="notice">{status.blockedReason}</p>}
+      {status.blockedReason && (
+        <p
+          className={
+            status.effectiveRoute === null
+              ? "notice notice-warning"
+              : "notice notice-info"
+          }
+        >
+          {status.blockedReason}
+        </p>
+      )}
       <p>
         Macroscope never signs in or out of Muse for you and never changes
         Muse's saved login.

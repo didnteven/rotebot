@@ -26,10 +26,10 @@ it("loads the complete 18-row fabricated fixture and detects connectors by word"
   expect(d.mentionedConnectors).toEqual(["gmail", "google_calendar", "notion"]);
   expect(d.questions[0].prompt).toBe("Does 03/04/26 mean March 4 or April 3?");
 });
-it("requires consent, emits all milestones, and independently checks the sample", async () => {
+it("requires cloud consent, emits all milestones, and independently checks the sample", async () => {
   vi.useFakeTimers();
   const backend = new MockBackend();
-  await backend.selectRoute("offline_demo");
+  await backend.saveApiKey("demo-key");
   const d = await draft(backend);
   await expect(
     backend.startBuild(d.draftId, { outboundReviewed: false }),
@@ -62,7 +62,8 @@ it("requires consent, emits all milestones, and independently checks the sample"
   expect(ready.comparison!.outputRows).toHaveLength(8);
   off();
 });
-it("rejects missing access and does not send real data in the outbound payload", async () => {
+it("falls back without model access and does not send real data in the outbound payload", async () => {
+  vi.useFakeTimers();
   const backend = new MockBackend(),
     d = await draft(backend);
   expect(await backend.modelAccess()).toMatchObject({
@@ -71,9 +72,20 @@ it("rejects missing access and does not send real data in the outbound payload",
     apiKey: { present: false },
     muse: { kind: "not_signed_in" },
   });
-  expect(
-    await backend.startBuild(d.draftId, { outboundReviewed: true }),
-  ).toMatchObject({ phase: "failed", failure: { kind: "no_model_access" } });
+  const build = await backend.startBuild(d.draftId, {
+    outboundReviewed: false,
+  });
+  expect(build).toMatchObject({
+    phase: "queued",
+    route: "offline_demo",
+    failure: null,
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await backend.buildState(build.buildId)).toMatchObject({
+    phase: "ready",
+    failure: null,
+  });
+  expect((await backend.privacyOverview()).outbound).toEqual([]);
   await backend.saveApiKey("secret-abcd");
   const preview = await backend.outboundPreview(d.draftId);
   expect(preview.route).toBe("api_key");

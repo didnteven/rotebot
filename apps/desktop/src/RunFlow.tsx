@@ -149,7 +149,7 @@ export function RunFlow({
                 caption="Previewed CSV · first 8 rows"
               />
               {staged.destinationExists && (
-                <p className="notice">
+                <p className="notice notice-warning">
                   This destination already exists. Choose another name before
                   creating the CSV.
                 </p>
@@ -182,7 +182,7 @@ export function RunFlow({
             </section>
           )}
           {failure && (
-            <div className="notice" role="alert">
+            <div className="notice notice-warning" role="alert">
               <p>{failure.message}</p>
               {failure.kind === "input_invalid" && (
                 <p>

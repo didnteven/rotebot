@@ -111,6 +111,8 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["privacyOverview", [], undefined],
     ["deleteOutboundHistory", [], undefined],
     ["emergencyStop", [], undefined],
+    ["openExternal", ["https://dev.meta.ai/"], { url: "https://dev.meta.ai/" }],
+    ["previewConnectorTools", ["gmail"], { connectorId: "gmail" }],
     ["listConnectors", [], undefined],
     [
       "setConnectorUrl",
@@ -148,4 +150,36 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     else expect(invoke).toHaveBeenLastCalledWith(command);
   }
   expect(invoke).toHaveBeenCalledTimes(cases.length);
+});
+
+it("provides verified catalog metadata and public Gmail tool previews", async () => {
+  const backend = new MockBackend();
+  const connectors = await backend.listConnectors();
+  for (const connector of connectors) {
+    expect(connector.verification).toBe(
+      connector.id === "custom" ? "unverified" : "verified-live",
+    );
+    const preregistered = [
+      "gmail",
+      "google_calendar",
+      "google_drive",
+      "slack",
+      "github",
+    ].includes(connector.id);
+    expect(connector.registration).toBe(
+      preregistered ? "preregistered" : "dynamic",
+    );
+    expect(connector.clientSetup).toEqual(
+      preregistered ? expect.any(String) : null,
+    );
+    expect(connector.redirectUri).toBe(
+      ["slack", "github"].includes(connector.id)
+        ? "http://127.0.0.1:53682/callback"
+        : null,
+    );
+  }
+  expect(
+    (await backend.previewConnectorTools("gmail")).map((tool) => tool.name),
+  ).toEqual(["Create draft email", "Search threads", "Read thread"]);
+  expect(await backend.previewConnectorTools("notion")).toEqual([]);
 });

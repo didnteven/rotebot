@@ -29,6 +29,22 @@ const transforms: Transform["type"][] = [
   "money",
   "constant",
 ];
+const formatLabels: Record<DateFormat, string> = {
+  mm_dd_yy: "MM/DD/YY",
+  mm_dd_yyyy: "MM/DD/YYYY",
+  dd_mm_yyyy: "DD/MM/YYYY",
+  yyyy_mm_dd: "YYYY/MM/DD",
+  iso8601: "YYYY-MM-DD (ISO)",
+};
+const transformLabels: Record<Transform["type"], string> = {
+  copy: "Copy as is",
+  trim: "Trim spaces",
+  upper: "UPPERCASE",
+  lower: "lowercase",
+  date: "Date",
+  money: "Money",
+  constant: "Fixed value",
+};
 function newTransform(type: Transform["type"]): Transform {
   return type === "date"
     ? { type, from: "mm_dd_yy", to: "iso8601" }
@@ -178,7 +194,7 @@ export function CreateFlow({
       </ol>
       <Notice error={error} />
       {activeBuild && step !== 3 && (
-        <aside className="notice">
+        <aside className="notice notice-info">
           <p>A build is active: {build.phase}</p>
           <button onClick={() => setStep(3)}>Return to build</button>
           <button
@@ -337,103 +353,119 @@ export function CreateFlow({
                         }
                       >
                         {transforms.map((t) => (
-                          <option key={t}>{t}</option>
+                          <option key={t} value={t}>
+                            {transformLabels[t]}
+                          </option>
                         ))}
                       </select>
                     </td>
                     <td>
                       {column.transform.type === "date" && (
                         <>
-                          <select
-                            aria-label={`Date input format ${i + 1}`}
-                            value={column.transform.from}
-                            onChange={(e) =>
-                              editColumn(i, {
-                                transform: {
-                                  ...(column.transform as Extract<
-                                    Transform,
-                                    { type: "date" }
-                                  >),
-                                  from: e.target.value as DateFormat,
-                                },
-                              })
-                            }
-                          >
-                            {formats.map((f) => (
-                              <option key={f}>{f}</option>
-                            ))}
-                          </select>
-                          <select
-                            aria-label={`Date output format ${i + 1}`}
-                            value={column.transform.to}
-                            onChange={(e) =>
-                              editColumn(i, {
-                                transform: {
-                                  ...(column.transform as Extract<
-                                    Transform,
-                                    { type: "date" }
-                                  >),
-                                  to: e.target.value as DateFormat,
-                                },
-                              })
-                            }
-                          >
-                            {formats.map((f) => (
-                              <option key={f}>{f}</option>
-                            ))}
-                          </select>
+                          <Field label="From format">
+                            <select
+                              aria-label={`Date input format ${i + 1}`}
+                              value={column.transform.from}
+                              onChange={(e) =>
+                                editColumn(i, {
+                                  transform: {
+                                    ...(column.transform as Extract<
+                                      Transform,
+                                      { type: "date" }
+                                    >),
+                                    from: e.target.value as DateFormat,
+                                  },
+                                })
+                              }
+                            >
+                              {formats.map((f) => (
+                                <option key={f} value={f}>
+                                  {formatLabels[f]}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field label="To format">
+                            <select
+                              aria-label={`Date output format ${i + 1}`}
+                              value={column.transform.to}
+                              onChange={(e) =>
+                                editColumn(i, {
+                                  transform: {
+                                    ...(column.transform as Extract<
+                                      Transform,
+                                      { type: "date" }
+                                    >),
+                                    to: e.target.value as DateFormat,
+                                  },
+                                })
+                              }
+                            >
+                              {formats.map((f) => (
+                                <option key={f} value={f}>
+                                  {formatLabels[f]}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
                         </>
                       )}
                       {column.transform.type === "money" && (
                         <>
-                          <input
-                            aria-label={`Currency ${i + 1}`}
-                            value={column.transform.currency}
-                            onChange={(e) =>
-                              editColumn(i, {
-                                transform: {
-                                  ...(column.transform as Extract<
-                                    Transform,
-                                    { type: "money" }
-                                  >),
-                                  currency: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                          <input
-                            aria-label={`Decimal places ${i + 1}`}
-                            type="number"
-                            min={0}
-                            max={6}
-                            value={column.transform.decimals}
-                            onChange={(e) =>
-                              editColumn(i, {
-                                transform: {
-                                  ...(column.transform as Extract<
-                                    Transform,
-                                    { type: "money" }
-                                  >),
-                                  decimals: Number(e.target.value),
-                                },
-                              })
-                            }
-                          />
+                          <Field label="Currency">
+                            <input
+                              aria-label={`Currency ${i + 1}`}
+                              value={column.transform.currency}
+                              onChange={(e) =>
+                                editColumn(i, {
+                                  transform: {
+                                    ...(column.transform as Extract<
+                                      Transform,
+                                      { type: "money" }
+                                    >),
+                                    currency: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="Decimal places">
+                            <input
+                              aria-label={`Decimal places ${i + 1}`}
+                              type="number"
+                              min={0}
+                              max={6}
+                              value={column.transform.decimals}
+                              onChange={(e) =>
+                                editColumn(i, {
+                                  transform: {
+                                    ...(column.transform as Extract<
+                                      Transform,
+                                      { type: "money" }
+                                    >),
+                                    decimals: Number(e.target.value),
+                                  },
+                                })
+                              }
+                            />
+                          </Field>
                         </>
                       )}
                       {column.transform.type === "constant" && (
-                        <input
-                          aria-label={`Constant value ${i + 1}`}
-                          value={column.transform.value}
-                          onChange={(e) =>
-                            editColumn(i, {
-                              transform: {
-                                type: "constant",
-                                value: e.target.value,
-                              },
-                            })
-                          }
-                        />
+                        <Field label="Value">
+                          <input
+                            aria-label={`Constant value ${i + 1}`}
+                            value={column.transform.value}
+                            onChange={(e) =>
+                              editColumn(i, {
+                                transform: {
+                                  type: "constant",
+                                  value: e.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </Field>
                       )}
                     </td>
                   </tr>
@@ -448,7 +480,7 @@ export function CreateFlow({
             />
           </Field>
           {draft.blockers.length > 0 && (
-            <div className="notice">
+            <div className="notice notice-warning">
               <p>Before you build</p>
               <ul>
                 {draft.blockers.map((b) => (
@@ -463,7 +495,7 @@ export function CreateFlow({
             .map(
               (c) =>
                 c && (
-                  <aside className="suggestion" key={c.id}>
+                  <aside className="suggestion notice notice-info" key={c.id}>
                     <p>
                       You mentioned {c.name}. Connect it in Connections so later
                       tools can use it.
@@ -488,64 +520,72 @@ export function CreateFlow({
       {step === 2 && (
         <>
           <h2>Review what leaves this Mac</h2>
-          {status.blockedReason && (
-            <div className="notice">
-              <p>{status.blockedReason}</p>
+          {status.effectiveRoute === null && (
+            <div className="notice notice-warning">
+              <p>{status.blockedReason ?? "No build route is available."}</p>
               <button onClick={openSettings}>Open model settings</button>
             </div>
           )}
           {preview && (
             <>
-              <dl>
-                <dt>Destination</dt>
-                <dd>{preview.destination}</dd>
-                <dt>Route</dt>
-                <dd>
-                  {preview.route === "api_key"
-                    ? "Meta API key"
-                    : preview.route === "muse_plan"
-                      ? "Muse plan"
-                      : "Offline demo"}
-                </dd>
-                <dt>Model</dt>
-                <dd>{preview.model}</dd>
-              </dl>
-              <span className="badge">Contains only synthetic rows</span>
-              {preview.route === "offline_demo" && (
-                <p>
-                  Nothing leaves this Mac. The offline demo maps columns without
-                  a model.
-                </p>
+              {preview.route === "offline_demo" ? (
+                <>
+                  <p className="notice notice-info">
+                    Nothing leaves this Mac. The offline demo maps columns
+                    without a model; results are labelled as a demo.
+                  </p>
+                  <dl>
+                    <dt>Route</dt>
+                    <dd>Offline demo</dd>
+                  </dl>
+                </>
+              ) : (
+                <>
+                  <dl>
+                    <dt>Destination</dt>
+                    <dd>{preview.destination}</dd>
+                    <dt>Route</dt>
+                    <dd>
+                      {preview.route === "api_key"
+                        ? "Meta API key"
+                        : "Muse plan"}
+                    </dd>
+                    <dt>Model</dt>
+                    <dd>{preview.model}</dd>
+                  </dl>
+                  <span className="badge">Contains only synthetic rows</span>
+                  <pre tabIndex={0} aria-label="Exact outbound payload">
+                    {preview.payloadText}
+                  </pre>
+                  <p>
+                    {preview.estimatedCostMicros === null
+                      ? "Counts against your Muse plan"
+                      : `Estimated cost: $${(preview.estimatedCostMicros / 1e6).toFixed(2)}`}{" "}
+                    · Budget: ${(preview.budgetMicros / 1e6).toFixed(2)}
+                  </p>
+                  <p className="muted">
+                    Schema and rules can still be confidential. Transmitted data
+                    cannot be recalled; a canceled request may incur charges.
+                    Muse receives the exact inputs above; its additional wire
+                    requests are unknown.
+                  </p>
+                  <label className="choice">
+                    <input
+                      type="checkbox"
+                      checked={reviewed}
+                      onChange={(e) => setReviewed(e.target.checked)}
+                    />
+                    I reviewed what will be sent
+                  </label>
+                </>
               )}
-              <pre tabIndex={0} aria-label="Exact outbound payload">
-                {preview.payloadText}
-              </pre>
-              <p>
-                {preview.estimatedCostMicros === null
-                  ? "Counts against your Muse plan"
-                  : `Estimated cost: $${(preview.estimatedCostMicros / 1e6).toFixed(2)}`}{" "}
-                · Budget: ${(preview.budgetMicros / 1e6).toFixed(2)}
-              </p>
-              {preview.route !== "offline_demo" && (
-                <p className="muted">
-                  Schema and rules can still be confidential. Transmitted data
-                  cannot be recalled; a canceled request may incur charges. Muse
-                  receives the exact inputs above; its additional wire requests
-                  are unknown.
-                </p>
-              )}
-              <label className="choice">
-                <input
-                  type="checkbox"
-                  checked={reviewed}
-                  onChange={(e) => setReviewed(e.target.checked)}
-                />
-                I reviewed what will be sent
-              </label>
               <button
                 className="primary"
                 disabled={
-                  busy || !reviewed || !!status.blockedReason || !!activeBuild
+                  busy ||
+                  (preview.route !== "offline_demo" && !reviewed) ||
+                  status.effectiveRoute === null ||
+                  !!activeBuild
                 }
                 onClick={() =>
                   void act(async () => {
@@ -610,6 +650,10 @@ export function CreateFlow({
           )}
           {build.phase === "ready" && build.comparison && (
             <>
+              <p className="notice notice-success">
+                Ready to compare
+                {build.route === "offline_demo" ? " · Offline demo" : ""}
+              </p>
               <h3>Result</h3>
               <p>
                 {build.comparison.rowsIn} rows → {build.comparison.rowsOut} rows
@@ -620,10 +664,10 @@ export function CreateFlow({
                   <li key={c.name}>
                     {c.name} ← {c.source}:{" "}
                     {c.transform.type === "date"
-                      ? `${c.transform.from} → ${c.transform.to}`
+                      ? `${formatLabels[c.transform.from]} → ${formatLabels[c.transform.to]}`
                       : c.transform.type === "money"
                         ? `${c.transform.currency}, ${c.transform.decimals} decimals`
-                        : c.transform.type}
+                        : transformLabels[c.transform.type]}
                   </li>
                 ))}
               </ul>

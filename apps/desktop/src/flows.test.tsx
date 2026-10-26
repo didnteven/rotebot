@@ -29,10 +29,8 @@ async function savedTool() {
   await backend.selectRoute("offline_demo");
   const { user } = await open(backend);
   await review(user);
-  expect(button("Build tool")).toBeDisabled();
-  await user.click(
-    screen.getByRole("checkbox", { name: "I reviewed what will be sent" }),
-  );
+  expect(button("Build tool")).toBeEnabled();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   await user.click(button("Build tool"));
   await waitFor(() => expect(button("Save tool")).toBeVisible(), {
     timeout: 4500,
@@ -101,7 +99,6 @@ describe("Tell and deterministic runs", () => {
     await backend.selectRoute("offline_demo");
     const { user } = await open(backend);
     await review(user);
-    await user.click(screen.getByRole("checkbox"));
     await user.click(button("Build tool"));
     await user.click(await screen.findByRole("button", { name: "Stop build" }));
     expect(
@@ -111,25 +108,77 @@ describe("Tell and deterministic runs", () => {
       screen.queryByRole("button", { name: "Save tool" }),
     ).not.toBeInTheDocument();
   });
-  it("explains missing model access and preserves the draft across settings navigation", async () => {
+  it("explains the automatic offline route and preserves the draft across settings navigation", async () => {
     const { user } = await open();
     await review(user);
     expect(
       screen.getByText(
-        "Add a Meta API key or sign in to Muse Code to build with a model.",
+        "Nothing leaves this Mac. The offline demo maps columns without a model; results are labelled as a demo.",
       ),
-    ).toBeVisible();
-    expect(button("Build tool")).toBeDisabled();
-    await user.click(button("Open model settings"));
+    ).toHaveClass("notice-info");
+    expect(button("Build tool")).toBeEnabled();
+    await user.click(button("Settings"));
+    const route = screen.getByRole("radio", {
+      name: "Offline demo (no model) (automatic)",
+    });
+    expect(route).toBeChecked();
     await user.click(
-      screen.getByRole("radio", { name: "Offline demo (no model)" }),
+      screen.getByRole("radio", {
+        name: "Offline demo (no model) (automatic)",
+      }),
     );
     await user.click(button("Tools"));
     expect(
       screen.getByRole("heading", { name: "Review what leaves this Mac" }),
     ).toBeVisible();
-    await user.click(screen.getByRole("checkbox"));
     expect(button("Build tool")).toBeEnabled();
+  });
+  it("builds a fresh mock with no key, no Muse sign-in and no selected route to ready", async () => {
+    const { user, backend } = await open();
+    expect(await backend.modelAccess()).toMatchObject({
+      apiKey: { present: false },
+      muse: { kind: "not_signed_in" },
+      selectedRoute: null,
+      effectiveRoute: "offline_demo",
+      blockedReason: expect.any(String),
+    });
+    await review(user);
+    expect(screen.getAllByText(/Nothing leaves this Mac/)).toHaveLength(1);
+    expect(
+      screen.queryByLabelText("Exact outbound payload"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Contains only synthetic rows"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Budget:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(button("Build tool")).toBeEnabled();
+    await user.click(button("Build tool"));
+    await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+      timeout: 4500,
+    });
+    expect(screen.getByText("Ready to compare · Offline demo")).toHaveClass(
+      "notice-success",
+    );
+    expect((await backend.privacyOverview()).outbound).toEqual([]);
+  });
+  it("requires outbound consent for cloud builds and preserves the full review", async () => {
+    const backend = new MockBackend();
+    await backend.saveApiKey("test-key");
+    const { user } = await open(backend);
+    await review(user);
+    expect(screen.getByLabelText("Exact outbound payload")).toBeVisible();
+    expect(screen.getByText("Contains only synthetic rows")).toBeVisible();
+    expect(screen.getByText(/Estimated cost:.*Budget:/)).toBeVisible();
+    expect(button("Build tool")).toBeDisabled();
+    await user.click(
+      screen.getByRole("checkbox", { name: "I reviewed what will be sent" }),
+    );
+    expect(button("Build tool")).toBeEnabled();
+    await user.click(button("Build tool"));
+    await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+      timeout: 4500,
+    });
   });
   it("shows invalid input row, column and fix action", async () => {
     const backend = new MockBackend();
@@ -211,7 +260,9 @@ describe("Settings, connections, Show and privacy", () => {
     expect(key).toHaveValue("");
     expect(await screen.findByText("Key ending …abcd")).toBeVisible();
     await user.click(
-      screen.getByRole("radio", { name: "Meta API key (billed to your key)" }),
+      screen.getByRole("radio", {
+        name: "Meta API key (billed to your key) (automatic)",
+      }),
     );
     expect((await backend.modelAccess()).selectedRoute).toBe("api_key");
     await user.click(button("Sign in with Muse…"));
@@ -388,4 +439,140 @@ describe("Settings, connections, Show and privacy", () => {
     expect(events).toHaveLength(3);
     off();
   });
+});
+
+it("shows mapping labels while sending enum values to the backend", async () => {
+  const { user, backend } = await open();
+  const update = vi.spyOn(backend, "updateMapping");
+  await summary(user);
+  expect(
+    within(screen.getByLabelText("Transform 1")).getByRole("option", {
+      name: "Copy as is",
+    }),
+  ).toHaveValue("copy");
+  expect(
+    within(screen.getByLabelText("Transform 1")).getByRole("option", {
+      name: "Trim spaces",
+    }),
+  ).toHaveValue("trim");
+  for (const label of [
+    "From format",
+    "To format",
+    "Currency",
+    "Decimal places",
+  ])
+    expect(screen.getByText(label)).toBeVisible();
+  await user.selectOptions(
+    screen.getByLabelText("Date output format 2"),
+    "yyyy_mm_dd",
+  );
+  await user.selectOptions(screen.getByLabelText("Transform 1"), "constant");
+  expect(screen.getByText("Value")).toBeVisible();
+  await user.type(screen.getByLabelText("Constant value 1"), "Fixed");
+  await user.click(button("Review what leaves this Mac"));
+  expect(update).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      output_columns: expect.arrayContaining([
+        expect.objectContaining({
+          transform: { type: "constant", value: "Fixed" },
+        }),
+        expect.objectContaining({
+          transform: { type: "date", from: "mm_dd_yy", to: "yyyy_mm_dd" },
+        }),
+      ]),
+    }),
+    "orders_ready.csv",
+  );
+});
+
+it("loads connector tools only on disclosure and renders server text safely", async () => {
+  const { user, backend } = await open();
+  const preview = vi.spyOn(backend, "previewConnectorTools");
+  await user.click(button("Connections"));
+  expect(preview).not.toHaveBeenCalled();
+  const gmail = button("Connect Gmail").closest("article")!;
+  expect(within(gmail).getByText("Verified endpoint")).toBeVisible();
+  await user.click(within(gmail).getByText("What it can do"));
+  expect(await within(gmail).findByText("Create draft email")).toBeVisible();
+  expect(preview).toHaveBeenCalledExactlyOnceWith("gmail");
+  await user.click(within(gmail).getByText("What it can do"));
+  await user.click(within(gmail).getByText("What it can do"));
+  expect(preview).toHaveBeenCalledTimes(1);
+  const notion = button("Connect Notion").closest("article")!;
+  await user.click(within(notion).getByText("What it can do"));
+  expect(
+    await within(notion).findByText("Sign in to see its tools"),
+  ).toBeVisible();
+  preview.mockResolvedValueOnce([
+    {
+      name: "<img src=x onerror=alert(1)>",
+      description: "<script>untrusted</script>",
+      readOnly: null,
+      destructive: null,
+    },
+  ]);
+  const custom = button("Connect Custom MCP server").closest("article")!;
+  expect(within(custom).getByText("Unverified endpoint")).toBeVisible();
+  await user.click(within(custom).getByText("What it can do"));
+  expect(
+    await within(custom).findByText("<img src=x onerror=alert(1)>"),
+  ).toBeVisible();
+  expect(custom.querySelector("img, script")).toBeNull();
+});
+
+it("opens connector docs through the backend and copies the registered redirect URI", async () => {
+  const { user, backend } = await open();
+  const external = vi.spyOn(backend, "openExternal").mockResolvedValue();
+  await user.click(button("Connections"));
+  await user.click(button("Connect Gmail"));
+  await user.click(screen.getByRole("link", { name: "Documentation" }));
+  expect(external).toHaveBeenCalledExactlyOnceWith(
+    "https://developers.google.com/workspace/gmail/api/guides",
+  );
+  await user.click(button("Connect Slack"));
+  const slack = (await backend.listConnectors()).find((c) => c.id === "slack")!;
+  expect(screen.getByText(slack.clientSetup!)).toBeVisible();
+  expect(screen.getByLabelText("Redirect URI")).toHaveValue(
+    "http://127.0.0.1:53682/callback",
+  );
+  await user.click(button("Copy"));
+  expect(await navigator.clipboard.readText()).toBe(
+    "http://127.0.0.1:53682/callback",
+  );
+});
+
+it("keeps the cloud route blocked when effectiveRoute is null", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const status = await backend.modelAccess();
+  vi.spyOn(backend, "modelAccess").mockResolvedValue({
+    ...status,
+    effectiveRoute: null,
+    blockedReason: "Key unavailable",
+  });
+  const { user } = await open(backend);
+  await review(user);
+  await user.click(screen.getByRole("checkbox"));
+  expect(button("Build tool")).toBeDisabled();
+  expect(screen.getByText("Key unavailable")).toHaveTextContent(
+    "Key unavailable",
+  );
+  expect(button("Open model settings").closest("div")).toHaveClass(
+    "notice-warning",
+  );
+});
+
+it("shows five privacy controls in a definition list and no size for empty data", async () => {
+  const { user } = await open();
+  await user.click(button("Privacy"));
+  const region = await screen.findByRole("region", {
+    name: "Data stored by Macroscope",
+  });
+  expect(screen.getByRole("group", { name: "Cloud models" })).toBeVisible();
+  expect(document.querySelectorAll("dl.explanations dt")).toHaveLength(5);
+  for (const row of within(region).getAllByRole("row").slice(1)) {
+    const cells = within(row).getAllByRole("cell");
+    if (cells[1].textContent === "0") expect(cells[2]).toHaveTextContent("—");
+  }
 });
