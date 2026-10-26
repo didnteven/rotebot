@@ -28,3 +28,4 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 
 [dev-dependencies]
 tempfile = "3"
+wiremock = "0.6"
