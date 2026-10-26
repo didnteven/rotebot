@@ -59,7 +59,9 @@ Muse Code was never signed in during the build, so it could not help (see below)
 ## Owner to-do (only things the build could not do)
 
 1. `muse login` in Terminal if you want the Muse plan route; then Settings → Check again.
-2. A Meta API key when it arrives: Settings → Enter key… (stored in your Keychain).
+2. A Meta API key when it arrives: Settings → Enter key… (stored in your Keychain), then
+   `cargo run -p macroscope-model-gateway --example smoke` for one capped real call
+   (catalog + ~64 output tokens) and check the charge in your Meta dashboard.
 3. Try Show with a browser on Gmail; macOS will ask to allow Accessibility for Macroscope.
 4. For Gmail's MCP server: Google Workspace Developer Preview, a Cloud project with the
    Gmail API and Gmail MCP API enabled, and a desktop OAuth client (Connections → Gmail).
