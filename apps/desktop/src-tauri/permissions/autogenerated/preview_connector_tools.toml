@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-connector-tools"
+description = "Enables the preview_connector_tools command without any pre-configured scope."
+commands.allow = ["preview_connector_tools"]
+
+[[permission]]
+identifier = "deny-preview-connector-tools"
+description = "Denies the preview_connector_tools command without any pre-configured scope."
+commands.deny = ["preview_connector_tools"]

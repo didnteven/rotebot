@@ -45,6 +45,16 @@
     "allow-show-state",
     "allow-start-show",
     "allow-pause-show",
-    "allow-stop-show"
+    "allow-stop-show",
+    "allow-list-connectors",
+    "allow-set-connector-url",
+    "allow-set-client-credentials",
+    "allow-begin-connect",
+    "allow-complete-connect",
+    "allow-test-connection",
+    "allow-disconnect",
+    "allow-preview-connector-tools",
+    "allow-connection-suggestions",
+    "allow-dismiss-suggestion"
   ]
 }

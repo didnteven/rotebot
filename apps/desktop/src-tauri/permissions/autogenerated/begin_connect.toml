@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-begin-connect"
+description = "Enables the begin_connect command without any pre-configured scope."
+commands.allow = ["begin_connect"]
+
+[[permission]]
+identifier = "deny-begin-connect"
+description = "Denies the begin_connect command without any pre-configured scope."
+commands.deny = ["begin_connect"]

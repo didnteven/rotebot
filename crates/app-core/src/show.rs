@@ -463,5 +463,19 @@ mod tests {
             &json!({"state": {"Connected": {"since_ms": 1}}})
         ));
         assert!(!is_connected(&json!({"state": {"kind": "not_connected"}})));
+        // The exact format the connections service persists.
+        let status = macroscope_connections::state::ConnectionStatus {
+            connector_id: "gmail".into(),
+            state: macroscope_connections::state::ConnectionState::Connected {
+                since_ms: 1,
+                tool_count: 2,
+            },
+            mcp_url: "https://x".into(),
+            last_checked_ms: None,
+        };
+        assert!(is_connected(&serde_json::to_value(&status).unwrap()));
+        let mut off = status;
+        off.state = macroscope_connections::state::ConnectionState::NotConnected;
+        assert!(!is_connected(&serde_json::to_value(&off).unwrap()));
     }
 }

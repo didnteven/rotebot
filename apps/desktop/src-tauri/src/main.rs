@@ -2,6 +2,7 @@
 //! Thin Tauri layer over `AppCore`: one command per `Backend` method, native pickers and
 //! dialogs, event forwarding, and the tray. Product logic lives in `macroscope-app-core`.
 
+use macroscope_app_core::connections::Connections;
 use macroscope_app_core::dto::*;
 use macroscope_app_core::show::ShowController;
 use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
@@ -42,6 +43,7 @@ type Cmd<T> = Result<T, CommandError>;
 
 struct Core(AppCore);
 struct Show(ShowController);
+struct Conns(Connections);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -351,6 +353,81 @@ async fn emergency_stop(core: State<'_, Core>, show: State<'_, Show>) -> Cmd<()>
     Ok(core.0.emergency_stop().await?)
 }
 
+// ---------- connections ----------
+
+#[tauri::command]
+fn list_connectors(conns: State<'_, Conns>) -> Vec<ConnectorInfo> {
+    conns.0.list()
+}
+
+#[tauri::command]
+async fn set_connector_url(
+    conns: State<'_, Conns>,
+    connector_id: String,
+    url: String,
+) -> Cmd<ConnectorInfo> {
+    Ok(conns.0.set_url(&connector_id, &url).await?)
+}
+
+#[tauri::command]
+fn set_client_credentials(
+    conns: State<'_, Conns>,
+    connector_id: String,
+    client_id: String,
+    client_secret: Option<String>,
+) -> Cmd<ConnectorInfo> {
+    Ok(conns
+        .0
+        .set_client_credentials(&connector_id, &client_id, client_secret.as_deref())?)
+}
+
+/// Starts sign-in and opens the provider's page in the system browser.
+#[tauri::command]
+async fn begin_connect<R: Runtime>(
+    app: AppHandle<R>,
+    conns: State<'_, Conns>,
+    connector_id: String,
+) -> Cmd<ConnectStart> {
+    let start = conns.0.begin_connect(&connector_id).await?;
+    let _ = app
+        .opener()
+        .open_url(start.authorization_url.clone(), None::<&str>);
+    Ok(start)
+}
+
+#[tauri::command]
+async fn complete_connect(conns: State<'_, Conns>, pending_id: String) -> Cmd<ConnectorInfo> {
+    Ok(conns.0.complete_connect(&pending_id).await?)
+}
+
+#[tauri::command]
+async fn test_connection(conns: State<'_, Conns>, connector_id: String) -> Cmd<ConnectorInfo> {
+    Ok(conns.0.test(&connector_id).await?)
+}
+
+#[tauri::command]
+async fn disconnect(conns: State<'_, Conns>, connector_id: String) -> Cmd<ConnectorInfo> {
+    Ok(conns.0.disconnect(&connector_id).await?)
+}
+
+#[tauri::command]
+async fn preview_connector_tools(
+    conns: State<'_, Conns>,
+    connector_id: String,
+) -> Cmd<Vec<ConnectorTool>> {
+    Ok(conns.0.preview_tools(&connector_id).await?)
+}
+
+#[tauri::command]
+fn connection_suggestions(conns: State<'_, Conns>) -> Cmd<Vec<ConnectionSuggestion>> {
+    Ok(conns.0.suggestions()?)
+}
+
+#[tauri::command]
+fn dismiss_suggestion(conns: State<'_, Conns>, connector_id: String) -> Cmd<()> {
+    Ok(conns.0.dismiss(&connector_id)?)
+}
+
 // ---------- Show ----------
 
 #[tauri::command]
@@ -417,8 +494,8 @@ fn allowed_external(url: &str) -> bool {
 }
 
 #[tauri::command]
-fn open_external<R: Runtime>(app: AppHandle<R>, url: String) -> Cmd<()> {
-    if !allowed_external(&url) {
+fn open_external<R: Runtime>(app: AppHandle<R>, conns: State<'_, Conns>, url: String) -> Cmd<()> {
+    if !allowed_external(&url) && !conns.0.allow_authorization_url(&url) {
         return Err(invalid(
             "That link is not on Macroscope's list of documentation sites.",
         ));
@@ -540,6 +617,16 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         start_show,
         pause_show,
         stop_show,
+        list_connectors,
+        set_connector_url,
+        set_client_credentials,
+        begin_connect,
+        complete_connect,
+        test_connection,
+        disconnect,
+        preview_connector_tools,
+        connection_suggestions,
+        dismiss_suggestion,
     ]
 }
 
@@ -576,8 +663,12 @@ fn main() {
                     let _ = handle.emit("show://state", &state);
                 }
             });
+            let conns = Connections::new(core.clone(), vault()).map_err(|e| {
+                Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+            })?;
             app.manage(Core(core));
             app.manage(Show(show));
+            app.manage(Conns(conns));
             build_tray(app)?;
             Ok(())
         })
@@ -651,6 +742,13 @@ mod tests {
         let app = mock_builder()
             .invoke_handler(handlers())
             .manage(Show(ShowController::new(None, core.clone())))
+            .manage(Conns(
+                Connections::new(
+                    core.clone(),
+                    Arc::new(macroscope_vault::MemoryStore::default()),
+                )
+                .unwrap(),
+            ))
             .manage(Core(core))
             // The generated context carries the real ACL manifest and capabilities.
             .build(context())
@@ -743,6 +841,39 @@ mod tests {
         assert_eq!(show["kind"], "unavailable", "{show}");
         let paused = invoke(&w, "pause_show", json!({"paused": true})).unwrap();
         assert_eq!(paused["kind"], "unavailable");
+
+        let connectors = invoke(&w, "list_connectors", json!({})).unwrap();
+        assert_eq!(connectors.as_array().unwrap().len(), 9);
+        let gmail = connectors
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "gmail")
+            .unwrap();
+        assert_eq!(gmail["registration"], "preregistered");
+        assert_eq!(gmail["state"]["kind"], "not_connected");
+        let saved = invoke(
+            &w,
+            "set_client_credentials",
+            json!({"connectorId": "gmail", "clientId": "1234.apps.googleusercontent.com", "clientSecret": null}),
+        )
+        .unwrap();
+        assert_eq!(saved["hasClientCredentials"], true);
+        // The draft above said nothing about a service; a new one mentions Slack.
+        invoke(
+            &w,
+            "draft_task",
+            json!({"input": input, "description": "Send it to Slack"}),
+        )
+        .unwrap();
+        let suggestions = invoke(&w, "connection_suggestions", json!({})).unwrap();
+        assert_eq!(suggestions[0]["connectorId"], "slack", "{suggestions}");
+        assert_eq!(suggestions[0]["signalKind"], "task_text");
+        invoke(&w, "dismiss_suggestion", json!({"connectorId": "slack"})).unwrap();
+        assert_eq!(
+            invoke(&w, "connection_suggestions", json!({})).unwrap(),
+            json!([])
+        );
     }
 
     #[test]

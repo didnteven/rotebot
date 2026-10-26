@@ -42,6 +42,16 @@ fn main() {
         "start_show",
         "pause_show",
         "stop_show",
+        "list_connectors",
+        "set_connector_url",
+        "set_client_credentials",
+        "begin_connect",
+        "complete_connect",
+        "test_connection",
+        "disconnect",
+        "preview_connector_tools",
+        "connection_suggestions",
+        "dismiss_suggestion",
     ];
     tauri_build::try_build(
         tauri_build::Attributes::new()

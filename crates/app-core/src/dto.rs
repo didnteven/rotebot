@@ -476,3 +476,57 @@ pub enum ShowState {
         suggestions: Vec<ConnectionSuggestion>,
     },
 }
+
+// ---------- connections (ADR 0001 §2) ----------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ConnectionState {
+    NotConnected,
+    Connecting,
+    Connected {
+        #[serde(rename = "sinceMs")]
+        since_ms: i64,
+        #[serde(rename = "toolCount")]
+        tool_count: u32,
+    },
+    NeedsReauth,
+    Error {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorInfo {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub mcp_url: String,
+    /// "dynamic" | "preregistered"
+    pub registration: String,
+    /// "verified-docs" | "verified-live" | "unverified"
+    pub verification: String,
+    pub docs_url: Option<String>,
+    pub state: ConnectionState,
+    pub has_client_credentials: bool,
+    pub client_setup: Option<String>,
+    pub redirect_uri: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorTool {
+    pub name: String,
+    pub description: String,
+    pub read_only: Option<bool>,
+    pub destructive: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectStart {
+    pub connector_id: String,
+    pub authorization_url: String,
+    pub pending_id: String,
+}

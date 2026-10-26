@@ -1,0 +1,478 @@
+//! Connections (ADR 0001 §2): the core's wrapper over `macroscope_connections`.
+//!
+//! Tokens and OAuth client secrets live only in the vault (`mcp-token:<id>`,
+//! `mcp-client:<id>`); the database keeps non-secret status. Completing a connection
+//! waits for the browser for up to five minutes while holding the service, so reads go
+//! to a status snapshot and each completion runs as an abortable task that `cancel` or
+//! `disconnect` can stop.
+
+use crate::dto::{
+    ConnectStart, ConnectionState, ConnectionSuggestion, ConnectorInfo, ConnectorTool,
+};
+use crate::{AppCore, CoreError, CoreResult};
+use macroscope_connections::catalog::{Catalog, Registration, Verification};
+use macroscope_connections::oauth::{ClientCredentials, StoreError, TokenStore};
+use macroscope_connections::state::{
+    ConnectionError, ConnectionState as LibState, ConnectionStatus, ConnectionsService,
+    PendingConnect, StateStore, StateStoreError,
+};
+use macroscope_vault::{Secret, SecretRef, SecretStore};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use tokio::task::AbortHandle;
+
+/// Vault-backed token store; errors are content-free by contract.
+struct VaultTokens(Arc<dyn SecretStore>);
+
+impl TokenStore for VaultTokens {
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        let r = SecretRef::new(key).map_err(|_| StoreError)?;
+        Ok(self
+            .0
+            .get(&r)
+            .map_err(|_| StoreError)?
+            .map(|s| s.expose().to_vec()))
+    }
+    fn set(&self, key: &str, bytes: &[u8]) -> Result<(), StoreError> {
+        let r = SecretRef::new(key).map_err(|_| StoreError)?;
+        self.0
+            .set(&r, Secret::new(bytes.to_vec()))
+            .map_err(|_| StoreError)
+    }
+    fn delete(&self, key: &str) -> Result<(), StoreError> {
+        let r = SecretRef::new(key).map_err(|_| StoreError)?;
+        self.0.delete(&r).map_err(|_| StoreError)
+    }
+}
+
+/// Non-secret status in the core database.
+struct DbStates(AppCore);
+
+impl StateStore for DbStates {
+    fn load(&self) -> Result<Vec<ConnectionStatus>, StateStoreError> {
+        let rows = self
+            .0
+            .database()
+            .connector_states()
+            .map_err(|_| StateStoreError)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(_, v)| serde_json::from_value(v).ok())
+            .collect())
+    }
+    fn save(&self, statuses: &[ConnectionStatus]) -> Result<(), StateStoreError> {
+        for s in statuses {
+            let v = serde_json::to_value(s).map_err(|_| StateStoreError)?;
+            self.0
+                .database()
+                .set_connector_state(&s.connector_id, &v)
+                .map_err(|_| StateStoreError)?;
+        }
+        Ok(())
+    }
+}
+
+struct Pending {
+    connector_id: String,
+    handle: Option<PendingConnect>,
+    task: Option<AbortHandle>,
+}
+
+#[derive(Clone)]
+pub struct Connections {
+    core: AppCore,
+    vault: Arc<dyn SecretStore>,
+    catalog: Arc<Catalog>,
+    service: Arc<tokio::sync::Mutex<ConnectionsService>>,
+    snapshot: Arc<Mutex<Vec<ConnectionStatus>>>,
+    pending: Arc<Mutex<HashMap<String, Pending>>>,
+    auth_urls: Arc<Mutex<HashSet<String>>>,
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+fn user_error(e: ConnectionError) -> CoreError {
+    use macroscope_connections::oauth::OAuthError as O;
+    let message = match &e {
+        ConnectionError::OAuth(O::ClientRequired) => {
+            "Add your OAuth client ID for this service first.".to_string()
+        }
+        ConnectionError::OAuth(O::Denied) => "Sign-in was cancelled in the browser.".into(),
+        ConnectionError::OAuth(O::Timeout) => {
+            "Sign-in timed out after 5 minutes. Try again.".into()
+        }
+        ConnectionError::OAuth(O::RedirectPortUnavailable(p)) => {
+            format!("Port {p} is in use, so the sign-in redirect cannot be received. Close the app using it and retry.")
+        }
+        ConnectionError::OAuth(O::Discovery) => {
+            "This server's sign-in settings could not be found.".into()
+        }
+        ConnectionError::StaleHandle => "That sign-in was replaced or cancelled.".into(),
+        ConnectionError::UnknownConnector => "Unknown connection.".into(),
+        other => format!("Connection failed: {other}"),
+    };
+    CoreError::Invalid(message)
+}
+
+fn client_key(id: &str) -> String {
+    format!("mcp-client:{id}")
+}
+
+impl Connections {
+    pub fn new(core: AppCore, vault: Arc<dyn SecretStore>) -> CoreResult<Connections> {
+        let catalog = Catalog::embedded();
+        let service = ConnectionsService::with_catalog(
+            catalog.clone(),
+            Arc::new(VaultTokens(vault.clone())),
+            Arc::new(DbStates(core.clone())),
+        )
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let snapshot = service.list();
+        Ok(Connections {
+            core,
+            vault,
+            catalog: Arc::new(catalog),
+            service: Arc::new(tokio::sync::Mutex::new(service)),
+            snapshot: Arc::new(Mutex::new(snapshot)),
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            auth_urls: Arc::new(Mutex::new(HashSet::new())),
+        })
+    }
+
+    fn client_credentials(&self, id: &str) -> Option<ClientCredentials> {
+        let r = SecretRef::new(client_key(id)).ok()?;
+        let secret = self.vault.get(&r).ok()??;
+        serde_json::from_slice(secret.expose()).ok()
+    }
+
+    fn info(&self, status: &ConnectionStatus) -> Option<ConnectorInfo> {
+        let c = self.catalog.get(&status.connector_id)?;
+        let pending = lock(&self.pending).values().any(|p| p.connector_id == c.id);
+        let state = match &status.state {
+            _ if pending => ConnectionState::Connecting,
+            LibState::NotConnected => ConnectionState::NotConnected,
+            LibState::Connecting => ConnectionState::NotConnected, // stale after restart
+            LibState::Connected {
+                since_ms,
+                tool_count,
+            } => ConnectionState::Connected {
+                since_ms: *since_ms as i64,
+                tool_count: *tool_count as u32,
+            },
+            LibState::NeedsReauth => ConnectionState::NeedsReauth,
+            LibState::Error { message, .. } => ConnectionState::Error {
+                message: message.chars().take(300).collect(),
+            },
+        };
+        Some(ConnectorInfo {
+            id: c.id.clone(),
+            name: c.name.clone(),
+            category: c.category.clone(),
+            mcp_url: status.mcp_url.clone(),
+            registration: match c.auth.registration {
+                Registration::Dynamic => "dynamic",
+                Registration::Preregistered => "preregistered",
+            }
+            .into(),
+            verification: match c.verification {
+                Verification::VerifiedLive => "verified-live",
+                Verification::VerifiedDocs => "verified-docs",
+                Verification::Unverified => "unverified",
+            }
+            .into(),
+            docs_url: (!c.auth.docs_url.is_empty()).then(|| c.auth.docs_url.clone()),
+            state,
+            has_client_credentials: self.client_credentials(&c.id).is_some(),
+            client_setup: c.auth.client_setup.clone(),
+            redirect_uri: c
+                .auth
+                .fixed_redirect_port
+                .map(|p| format!("http://127.0.0.1:{p}/callback")),
+        })
+    }
+
+    async fn refresh(&self) {
+        let list = self.service.lock().await.list();
+        *lock(&self.snapshot) = list;
+    }
+
+    fn info_for(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        let snapshot = lock(&self.snapshot).clone();
+        let status = snapshot
+            .iter()
+            .find(|s| s.connector_id == id)
+            .ok_or(CoreError::NotFound("connection"))?;
+        self.info(status).ok_or(CoreError::NotFound("connection"))
+    }
+
+    pub fn list(&self) -> Vec<ConnectorInfo> {
+        let snapshot = lock(&self.snapshot).clone();
+        snapshot.iter().filter_map(|s| self.info(s)).collect()
+    }
+
+    pub async fn set_url(&self, id: &str, url: &str) -> CoreResult<ConnectorInfo> {
+        self.cancel(id);
+        self.service
+            .lock()
+            .await
+            .set_url(id, url.trim())
+            .await
+            .map_err(user_error)?;
+        self.refresh().await;
+        self.core.log_activity(
+            "connection",
+            &format!("Changed the server address for {id}"),
+            None,
+        );
+        self.info_for(id)
+    }
+
+    pub fn set_client_credentials(
+        &self,
+        id: &str,
+        client_id: &str,
+        client_secret: Option<&str>,
+    ) -> CoreResult<ConnectorInfo> {
+        if self.catalog.get(id).is_none() {
+            return Err(CoreError::NotFound("connection"));
+        }
+        let client_id = client_id.trim();
+        if client_id.is_empty() || client_id.len() > 500 || client_id.contains(char::is_whitespace)
+        {
+            return Err(CoreError::Invalid(
+                "Enter the OAuth client ID exactly as shown by the provider.".into(),
+            ));
+        }
+        let secret = client_secret
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let creds = ClientCredentials::new(client_id, secret);
+        let bytes = serde_json::to_vec(&creds).map_err(|e| CoreError::Internal(e.to_string()))?;
+        let r = SecretRef::new(client_key(id)).map_err(|e| CoreError::Vault(e.to_string()))?;
+        self.vault
+            .set(&r, Secret::new(bytes))
+            .map_err(|e| CoreError::Vault(e.to_string()))?;
+        self.core.log_activity(
+            "connection",
+            &format!("Saved an OAuth client for {id}"),
+            None,
+        );
+        self.info_for(id)
+    }
+
+    pub async fn begin_connect(&self, id: &str) -> CoreResult<ConnectStart> {
+        let connector = self
+            .catalog
+            .get(id)
+            .ok_or(CoreError::NotFound("connection"))?;
+        let creds = self.client_credentials(id);
+        if connector.auth.registration == Registration::Preregistered && creds.is_none() {
+            return Err(CoreError::Invalid(format!(
+                "{} needs an OAuth client of your own. Add its client ID first.",
+                connector.name
+            )));
+        }
+        self.cancel(id);
+        let (url, handle) = self
+            .service
+            .lock()
+            .await
+            .begin_connect(id, creds)
+            .await
+            .map_err(user_error)?;
+        let pending_id = format!("pending_{}", uuid::Uuid::new_v4().simple());
+        let authorization_url = url.as_str().to_string();
+        lock(&self.auth_urls).insert(authorization_url.clone());
+        lock(&self.pending).insert(
+            pending_id.clone(),
+            Pending {
+                connector_id: id.into(),
+                handle: Some(handle),
+                task: None,
+            },
+        );
+        self.refresh().await;
+        Ok(ConnectStart {
+            connector_id: id.into(),
+            authorization_url,
+            pending_id,
+        })
+    }
+
+    /// Waits for the browser redirect, exchanges the code, and verifies the server lists tools.
+    pub async fn complete_connect(&self, pending_id: &str) -> CoreResult<ConnectorInfo> {
+        let (id, handle) = {
+            let mut pending = lock(&self.pending);
+            let slot = pending
+                .get_mut(pending_id)
+                .ok_or(CoreError::NotFound("pending sign-in"))?;
+            (
+                slot.connector_id.clone(),
+                slot.handle.take().ok_or(CoreError::Invalid(
+                    "This sign-in is already being completed.".into(),
+                ))?,
+            )
+        };
+        let service = self.service.clone();
+        let task = tokio::spawn(async move { service.lock().await.complete_connect(handle).await });
+        if let Some(slot) = lock(&self.pending).get_mut(pending_id) {
+            slot.task = Some(task.abort_handle());
+        }
+        let result = task.await;
+        lock(&self.pending).remove(pending_id);
+        self.refresh().await;
+        match result {
+            Ok(Ok(status)) => {
+                let tools = match status.state {
+                    LibState::Connected { tool_count, .. } => tool_count,
+                    _ => 0,
+                };
+                let name = self
+                    .catalog
+                    .get(&id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or(id.clone());
+                self.core.log_activity(
+                    "connection",
+                    &format!("Connected {name}"),
+                    Some(format!("{tools} tools available")),
+                );
+                self.info_for(&id)
+            }
+            Ok(Err(e)) => Err(user_error(e)),
+            Err(_) => Err(CoreError::Invalid("Sign-in was cancelled.".into())),
+        }
+    }
+
+    /// Cancels any sign-in in progress for a connector.
+    pub fn cancel(&self, id: &str) {
+        let mut pending = lock(&self.pending);
+        pending.retain(|_, p| {
+            if p.connector_id == id {
+                if let Some(t) = &p.task {
+                    t.abort();
+                }
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    pub async fn test(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        let result = self.service.lock().await.test(id).await;
+        self.refresh().await;
+        result.map_err(user_error)?;
+        self.info_for(id)
+    }
+
+    pub async fn disconnect(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        self.cancel(id);
+        let result = self.service.lock().await.disconnect(id).await;
+        self.refresh().await;
+        self.core
+            .log_activity("connection", &format!("Disconnected {id}"), None);
+        // Local tokens are deleted even when remote revocation fails.
+        if let Err(e) = result {
+            if !matches!(e, ConnectionError::OAuth(_)) {
+                return Err(user_error(e));
+            }
+        }
+        self.info_for(id)
+    }
+
+    /// Tools a server lists without signing in (Gmail allows this); empty otherwise.
+    pub async fn preview_tools(&self, id: &str) -> CoreResult<Vec<ConnectorTool>> {
+        let url = self.info_for(id)?.mcp_url;
+        if url.is_empty() {
+            return Ok(vec![]);
+        }
+        let tools = macroscope_connections::preview_tools(&url)
+            .await
+            .unwrap_or_default();
+        Ok(tools
+            .into_iter()
+            .take(100)
+            .map(|t| ConnectorTool {
+                name: t.name.chars().take(120).collect(),
+                description: t
+                    .description
+                    .unwrap_or_default()
+                    .chars()
+                    .take(1000)
+                    .collect(),
+                read_only: t.annotations.read_only_hint,
+                destructive: t.annotations.destructive_hint,
+            })
+            .collect())
+    }
+
+    fn connected_ids(&self) -> HashSet<String> {
+        lock(&self.snapshot)
+            .iter()
+            .filter(|s| matches!(s.state, LibState::Connected { .. }))
+            .map(|s| s.connector_id.clone())
+            .collect()
+    }
+
+    /// Detected but not connected, not dismissed connectors, most-seen first.
+    pub fn suggestions(&self) -> CoreResult<Vec<ConnectionSuggestion>> {
+        let now = self.core.now_ms();
+        let hidden: HashSet<String> = self
+            .core
+            .database()
+            .hidden_suggestions(now)?
+            .into_iter()
+            .collect();
+        let connected = self.connected_ids();
+        // connector -> (total count, strongest signal kind); recording signals win over text.
+        let mut seen: BTreeMap<String, (i64, String)> = BTreeMap::new();
+        for d in self.core.database().detections()? {
+            let entry = seen
+                .entry(d.connector_id.clone())
+                .or_insert((0, d.signal_kind.clone()));
+            entry.0 += d.count;
+            if entry.1 == "task_text" && d.signal_kind != "task_text" {
+                entry.1 = d.signal_kind.clone();
+            }
+        }
+        let mut out: Vec<ConnectionSuggestion> = seen
+            .into_iter()
+            .filter(|(id, _)| !hidden.contains(id) && !connected.contains(id))
+            .filter_map(|(id, (count, kind))| {
+                let name = self.catalog.get(&id)?.name.clone();
+                let message = if kind == "task_text" {
+                    format!("You mentioned {name} in your task. Connect {name} so tools can work with it.")
+                } else {
+                    format!("You used {name} while recording. Connect {name} so tools can work with it.")
+                };
+                Some(ConnectionSuggestion { connector_id: id, connector_name: name, message, signal_kind: kind, count })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then(a.connector_id.cmp(&b.connector_id))
+        });
+        Ok(out)
+    }
+
+    pub fn dismiss(&self, id: &str) -> CoreResult<()> {
+        self.core.database().dismiss_suggestion(id, None)?;
+        Ok(())
+    }
+
+    pub fn snooze(&self, id: &str, days: i64) -> CoreResult<()> {
+        let until = self.core.now_ms() + days * 24 * 60 * 60 * 1000;
+        self.core.database().dismiss_suggestion(id, Some(until))?;
+        Ok(())
+    }
+
+    /// The shell may open exactly the authorization URLs this service produced.
+    pub fn allow_authorization_url(&self, url: &str) -> bool {
+        lock(&self.auth_urls).contains(url)
+    }
+}

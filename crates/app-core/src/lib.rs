@@ -8,6 +8,7 @@
 //! the user approved.
 
 pub mod checks;
+pub mod connections;
 pub mod drafts;
 pub mod dto;
 pub mod show;

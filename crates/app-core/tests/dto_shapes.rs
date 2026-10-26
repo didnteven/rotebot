@@ -198,3 +198,50 @@ fn show_state_matches_the_contract() {
         json!({"kind": "idle", "accessibility": "denied"})
     );
 }
+
+#[test]
+fn connector_info_matches_the_contract() {
+    let info = ConnectorInfo {
+        id: "gmail".into(),
+        name: "Gmail".into(),
+        category: "Email".into(),
+        mcp_url: "https://gmailmcp.googleapis.com/mcp/v1".into(),
+        registration: "preregistered".into(),
+        verification: "verified-live".into(),
+        docs_url: None,
+        state: ConnectionState::Connected {
+            since_ms: 5,
+            tool_count: 12,
+        },
+        has_client_credentials: true,
+        client_setup: Some("x".into()),
+        redirect_uri: None,
+    };
+    let v = serde_json::to_value(&info).unwrap();
+    assert_eq!(
+        v["state"],
+        json!({"kind": "connected", "sinceMs": 5, "toolCount": 12})
+    );
+    for key in [
+        "mcpUrl",
+        "docsUrl",
+        "hasClientCredentials",
+        "clientSetup",
+        "redirectUri",
+    ] {
+        assert!(v.get(key).is_some(), "missing {key}");
+    }
+    assert_eq!(
+        serde_json::to_value(ConnectionState::NeedsReauth).unwrap(),
+        json!({"kind": "needs_reauth"})
+    );
+    let start = ConnectStart {
+        connector_id: "c".into(),
+        authorization_url: "u".into(),
+        pending_id: "p".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(start).unwrap(),
+        json!({"connectorId": "c", "authorizationUrl": "u", "pendingId": "p"})
+    );
+}

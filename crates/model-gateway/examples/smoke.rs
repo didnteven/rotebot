@@ -7,7 +7,9 @@
 //!
 //! The key is never taken from argv or the environment, never printed, and never written.
 
-use macroscope_model_gateway::{CostEstimator, MetaResponsesClient, StructuredRequest, DEFAULT_MODEL};
+use macroscope_model_gateway::{
+    CostEstimator, MetaResponsesClient, StructuredRequest, DEFAULT_MODEL,
+};
 use macroscope_vault::{validate_key, Secret, SecretRef, SecretStore};
 use serde_json::json;
 use std::io::Write;
@@ -31,7 +33,10 @@ fn keychain_key() -> Option<Secret> {
     #[cfg(target_os = "macos")]
     {
         let store = macroscope_vault::KeychainStore;
-        store.get(&SecretRef::new("meta-api-key").ok()?).ok().flatten()
+        store
+            .get(&SecretRef::new("meta-api-key").ok()?)
+            .ok()
+            .flatten()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -46,7 +51,11 @@ async fn main() {
         .skip_while(|a| a != "--base-url")
         .nth(1)
         .unwrap_or_else(|| "https://api.meta.ai/v1".into());
-    let key = if prompt { read_hidden() } else { keychain_key().or_else(read_hidden) };
+    let key = if prompt {
+        read_hidden()
+    } else {
+        keychain_key().or_else(read_hidden)
+    };
     let Some(key) = key else {
         eprintln!("No key. Save one in Macroscope (Settings → Enter key…) or pass --prompt.");
         std::process::exit(2);
@@ -54,8 +63,11 @@ async fn main() {
     let client = MetaResponsesClient::new(base.clone());
     println!("endpoint: {base}");
     match client.catalog_check(&key).await {
-        Ok(catalog) => println!("catalog: ok ({} models; spark listed: {})", catalog.models.len(),
-            catalog.models.iter().any(|m| m == DEFAULT_MODEL)),
+        Ok(catalog) => println!(
+            "catalog: ok ({} models; spark listed: {})",
+            catalog.models.len(),
+            catalog.models.iter().any(|m| m == DEFAULT_MODEL)
+        ),
         Err(e) => {
             println!("catalog: {e}");
             std::process::exit(1);
@@ -78,11 +90,19 @@ async fn main() {
         .await;
     match result {
         Ok(out) => {
-            let cost = CostEstimator::default().estimate(DEFAULT_MODEL, &out.usage).ok();
-            println!("structured call: ok in {} ms", started.elapsed().as_millis());
+            let cost = CostEstimator::default()
+                .estimate(DEFAULT_MODEL, &out.usage)
+                .ok();
+            println!(
+                "structured call: ok in {} ms",
+                started.elapsed().as_millis()
+            );
             println!("output: {}", out.value);
             println!("usage: {:?} (complete: {})", out.usage, out.usage_known);
-            println!("estimated cost: {} microdollars", cost.map(|c| c.to_string()).unwrap_or("unknown".into()));
+            println!(
+                "estimated cost: {} microdollars",
+                cost.map(|c| c.to_string()).unwrap_or("unknown".into())
+            );
             println!("Next: confirm the charge in your Meta developer dashboard (plan §4.5 attribution check).");
         }
         Err(e) => {

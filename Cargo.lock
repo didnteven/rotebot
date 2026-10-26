@@ -2508,6 +2508,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 name = "macroscope-app-core"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "csv",
  "hex",
  "macroscope-builder",
@@ -2521,6 +2522,7 @@ dependencies = [
  "macroscope-storage",
  "macroscope-vault",
  "rand_core 0.6.4",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
