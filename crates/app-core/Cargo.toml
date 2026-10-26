@@ -1,0 +1,30 @@
+[package]
+name = "macroscope-app-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+macroscope-domain.workspace = true
+macroscope-storage.workspace = true
+macroscope-vault.workspace = true
+macroscope-policy.workspace = true
+macroscope-model-gateway.workspace = true
+macroscope-muse-client.workspace = true
+macroscope-builder.workspace = true
+macroscope-executor.workspace = true
+macroscope-effect-broker.workspace = true
+macroscope-connections.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+sha2 = "0.10"
+hex = "0.4"
+csv = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[dev-dependencies]
+tempfile = "3"

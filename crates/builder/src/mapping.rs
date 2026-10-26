@@ -79,6 +79,7 @@ impl SyntheticSamples {
                             Some(Transform::Date { from, .. }) => match from {
                                 DateFormat::MmDdYy => format!("01/{:02}/26", i + 1),
                                 DateFormat::MmDdYyyy => format!("01/{:02}/2026", i + 1),
+                                DateFormat::DdMmYy => format!("{:02}/01/26", i + 1),
                                 DateFormat::DdMmYyyy => format!("{:02}/01/2026", i + 1),
                                 DateFormat::YyyyMmDd => format!("2026-01-{:02}", i + 1),
                                 DateFormat::Iso8601 => format!("2026-01-{:02}T00:00:00Z", i + 1),

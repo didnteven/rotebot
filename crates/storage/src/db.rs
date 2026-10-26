@@ -35,7 +35,8 @@ impl From<serde_json::Error> for DbError {
 }
 
 /// Ordered migrations; index + 1 is the schema version. Never edit a shipped entry.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE tools (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, active_version TEXT, state TEXT NOT NULL,
   sample INTEGER NOT NULL DEFAULT 0, created_ms INTEGER NOT NULL, last_run_ms INTEGER,
@@ -76,7 +77,11 @@ CREATE TABLE detections (
   connector_id TEXT NOT NULL, signal_kind TEXT NOT NULL, count INTEGER NOT NULL,
   first_ms INTEGER NOT NULL, last_ms INTEGER NOT NULL, PRIMARY KEY (connector_id, signal_kind));
 CREATE TABLE suggestion_dismissals (connector_id TEXT PRIMARY KEY, until_ms INTEGER);
-"#];
+"#,
+    r#"
+ALTER TABLE runs ADD COLUMN run_dir TEXT;
+"#,
+];
 
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 
@@ -120,6 +125,8 @@ pub struct RunRow {
     pub receipt: Option<Value>,
     pub failure: Option<Value>,
     pub created_ms: i64,
+    /// Private staging directory holding the run's journal, for crash reconciliation.
+    pub run_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -449,7 +456,8 @@ impl Db {
         self.with(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO runs (id, tool_id, version_hash, state, plan_hash,
-                   receipt_json, failure_json, created_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                   receipt_json, failure_json, created_ms, run_dir)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     r.id,
                     r.tool_id,
@@ -458,7 +466,8 @@ impl Db {
                     r.plan_hash,
                     r.receipt.as_ref().map(Value::to_string),
                     r.failure.as_ref().map(Value::to_string),
-                    r.created_ms
+                    r.created_ms,
+                    r.run_dir
                 ],
             )?;
             Ok(())
@@ -469,7 +478,7 @@ impl Db {
         self.with(|c| {
             let sql = format!(
                 "SELECT id, tool_id, version_hash, state, plan_hash, receipt_json, failure_json,
-                   created_ms FROM runs {clause} ORDER BY created_ms DESC, id"
+                   created_ms, run_dir FROM runs {clause} ORDER BY created_ms DESC, id"
             );
             let mut stmt = c.prepare(&sql)?;
             let map = |r: &rusqlite::Row<'_>| {
@@ -482,6 +491,7 @@ impl Db {
                     r.get::<_, Option<String>>(5)?,
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, i64>(7)?,
+                    r.get::<_, Option<String>>(8)?,
                 ))
             };
             let rows: Vec<_> = match arg {
@@ -499,6 +509,7 @@ impl Db {
                         receipt,
                         failure,
                         created_ms,
+                        run_dir,
                     )| {
                         Ok(RunRow {
                             id,
@@ -509,6 +520,7 @@ impl Db {
                             receipt: opt_json(receipt)?,
                             failure: opt_json(failure)?,
                             created_ms,
+                            run_dir,
                         })
                     },
                 )
@@ -525,6 +537,15 @@ impl Db {
 
     pub fn list_runs(&self) -> Result<Vec<RunRow>, DbError> {
         self.runs_where("", None)
+    }
+
+    /// Runs that recorded a staging directory but no receipt: candidates for
+    /// crash reconciliation at startup.
+    pub fn unreceipted_runs(&self) -> Result<Vec<RunRow>, DbError> {
+        Ok(self
+            .runs_where("WHERE receipt_json IS NULL AND run_dir IS NOT NULL", None)?
+            .into_iter()
+            .collect())
     }
 
     pub fn runs_for_tool(&self, tool_id: &str) -> Result<Vec<RunRow>, DbError> {

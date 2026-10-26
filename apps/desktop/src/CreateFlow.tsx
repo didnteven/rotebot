@@ -16,6 +16,7 @@ import { CsvView, DataTable, Field, Notice, useAction } from "./ui";
 const formats: DateFormat[] = [
   "mm_dd_yy",
   "mm_dd_yyyy",
+  "dd_mm_yy",
   "dd_mm_yyyy",
   "yyyy_mm_dd",
   "iso8601",
@@ -32,9 +33,10 @@ const transforms: Transform["type"][] = [
 const formatLabels: Record<DateFormat, string> = {
   mm_dd_yy: "MM/DD/YY",
   mm_dd_yyyy: "MM/DD/YYYY",
+  dd_mm_yy: "DD/MM/YY",
   dd_mm_yyyy: "DD/MM/YYYY",
-  yyyy_mm_dd: "YYYY/MM/DD",
-  iso8601: "YYYY-MM-DD (ISO)",
+  yyyy_mm_dd: "YYYY-MM-DD",
+  iso8601: "ISO 8601 (YYYY-MM-DD)",
 };
 const transformLabels: Record<Transform["type"], string> = {
   copy: "Copy as is",

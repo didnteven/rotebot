@@ -2273,6 +2273,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "macroscope-app-core"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "hex",
+ "macroscope-builder",
+ "macroscope-connections",
+ "macroscope-domain",
+ "macroscope-effect-broker",
+ "macroscope-executor",
+ "macroscope-model-gateway",
+ "macroscope-muse-client",
+ "macroscope-policy",
+ "macroscope-storage",
+ "macroscope-vault",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "macroscope-builder"
 version = "0.1.0"
 dependencies = [

@@ -62,7 +62,7 @@ export interface CsvPreview {
   byteSize: number;
 }
 
-export type DateFormat = "mm_dd_yy" | "mm_dd_yyyy" | "dd_mm_yyyy" | "yyyy_mm_dd" | "iso8601";
+export type DateFormat = "mm_dd_yy" | "mm_dd_yyyy" | "dd_mm_yy" | "dd_mm_yyyy" | "yyyy_mm_dd" | "iso8601";
 
 export type Transform =
   | { type: "copy" }

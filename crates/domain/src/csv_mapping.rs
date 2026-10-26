@@ -80,6 +80,7 @@ impl<'de> Deserialize<'de> for Transform {
 pub enum DateFormat {
     MmDdYy,
     MmDdYyyy,
+    DdMmYy,
     DdMmYyyy,
     YyyyMmDd,
     Iso8601,
@@ -138,6 +139,7 @@ mod tests {
         for format in [
             DateFormat::MmDdYy,
             DateFormat::MmDdYyyy,
+            DateFormat::DdMmYy,
             DateFormat::DdMmYyyy,
             DateFormat::YyyyMmDd,
             DateFormat::Iso8601,

@@ -128,6 +128,10 @@ fn fixed_dates_calendar_and_century_properties() {
         assert!(date(invalid, MmDdYy, YyyyMmDd).is_err());
     }
     assert!(date("02/29/00", MmDdYy, Iso8601).is_ok());
+    assert_eq!(date("03/04/26", DdMmYy, Iso8601).unwrap(), "2026-04-03");
+    assert_eq!(date("03/04/26", MmDdYy, Iso8601).unwrap(), "2026-03-04");
+    assert!(date("25/12/26", MmDdYy, Iso8601).is_err());
+    assert_eq!(date("25/12/26", DdMmYy, YyyyMmDd).unwrap(), "2026-12-25");
     assert!(date("1900-02-29", Iso8601, MmDdYyyy).is_err());
     assert!(date("2100-01-01", Iso8601, MmDdYy).is_err());
 }

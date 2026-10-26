@@ -1,0 +1,431 @@
+//! Serde mirrors of `apps/desktop/src/backend/types.ts`. Field names and tagged-union
+//! shapes must match that file exactly; `tests/dto_shapes.rs` pins the JSON.
+
+use macroscope_domain::CsvMapping;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub platform: String,
+    pub mock: bool,
+}
+
+// ---------- model access ----------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelRoute {
+    ApiKey,
+    MusePlan,
+    OfflineDemo,
+}
+
+impl ModelRoute {
+    pub fn label(self) -> &'static str {
+        match self {
+            ModelRoute::ApiKey => "Meta API key",
+            ModelRoute::MusePlan => "Muse plan",
+            ModelRoute::OfflineDemo => "Offline demo (no model)",
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelRoute::ApiKey => "api_key",
+            ModelRoute::MusePlan => "muse_plan",
+            ModelRoute::OfflineDemo => "offline_demo",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MuseState {
+    Missing,
+    UnsupportedVersion {
+        version: String,
+    },
+    NotSignedIn {
+        version: String,
+    },
+    SignedIn {
+        version: String,
+        #[serde(rename = "planSummary")]
+        plan_summary: Option<String>,
+    },
+    Unknown {
+        version: Option<String>,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressState {
+    CloudAllowed,
+    Stopping,
+    LocalOnly,
+    KeyUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum KeyTestResult {
+    Ok {
+        #[serde(rename = "checkedAtMs")]
+        checked_at_ms: i64,
+    },
+    Rejected {
+        #[serde(rename = "checkedAtMs")]
+        checked_at_ms: i64,
+    },
+    BillingRequired {
+        #[serde(rename = "checkedAtMs")]
+        checked_at_ms: i64,
+    },
+    Quota {
+        #[serde(rename = "checkedAtMs")]
+        checked_at_ms: i64,
+        #[serde(rename = "retryAtMs")]
+        retry_at_ms: Option<i64>,
+    },
+    Network {
+        #[serde(rename = "checkedAtMs")]
+        checked_at_ms: i64,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyStatus {
+    pub present: bool,
+    pub fingerprint: Option<String>,
+    pub last_test: Option<KeyTestResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelAccessStatus {
+    pub api_key: ApiKeyStatus,
+    pub muse: MuseState,
+    pub selected_route: Option<ModelRoute>,
+    pub effective_route: Option<ModelRoute>,
+    pub blocked_reason: Option<String>,
+    pub egress: EgressState,
+    pub model: String,
+}
+
+// ---------- files, drafts ----------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileHandle {
+    pub handle_id: String,
+    pub display_name: String,
+    pub display_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvPreview {
+    pub handle: FileHandle,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub row_count: u64,
+    pub byte_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionOption {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleQuestion {
+    pub id: String,
+    pub column: String,
+    pub prompt: String,
+    pub options: Vec<QuestionOption>,
+    pub answer: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDraft {
+    pub draft_id: String,
+    pub revision: u32,
+    pub goal: String,
+    pub input: CsvPreview,
+    pub summary: Vec<String>,
+    pub mapping: CsvMapping,
+    pub questions: Vec<RuleQuestion>,
+    pub mentioned_connectors: Vec<String>,
+    pub output_name: String,
+    pub ready_to_build: bool,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboundPreview {
+    pub draft_id: String,
+    pub route: ModelRoute,
+    pub model: String,
+    pub destination: String,
+    pub payload_text: String,
+    pub contains_real_rows: bool,
+    pub estimated_cost_micros: Option<i64>,
+    pub budget_micros: i64,
+}
+
+// ---------- builds ----------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildPhase {
+    Queued,
+    Writing,
+    Candidate,
+    Checking,
+    Ready,
+    Failed,
+    Stopped,
+}
+
+impl BuildPhase {
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            BuildPhase::Ready | BuildPhase::Failed | BuildPhase::Stopped
+        )
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BuildPhase::Queued => "queued",
+            BuildPhase::Writing => "writing",
+            BuildPhase::Candidate => "candidate",
+            BuildPhase::Checking => "checking",
+            BuildPhase::Ready => "ready",
+            BuildPhase::Failed => "failed",
+            BuildPhase::Stopped => "stopped",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckResult {
+    pub id: String,
+    pub label: String,
+    pub passed: bool,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildEvent {
+    pub build_id: String,
+    pub seq: u32,
+    pub phase: BuildPhase,
+    pub message: String,
+    pub at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Comparison {
+    pub input_columns: Vec<String>,
+    pub input_rows: Vec<Vec<String>>,
+    pub output_columns: Vec<String>,
+    pub output_rows: Vec<Vec<String>>,
+    pub rows_in: u64,
+    pub rows_out: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildFailureKind {
+    Auth,
+    Quota,
+    Budget,
+    Malformed,
+    Checks,
+    NoModelAccess,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BuildFailure {
+    pub kind: BuildFailureKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildState {
+    pub build_id: String,
+    pub draft_id: String,
+    pub route: ModelRoute,
+    pub phase: BuildPhase,
+    pub events: Vec<BuildEvent>,
+    pub candidate: Option<CsvMapping>,
+    pub checks: Vec<CheckResult>,
+    pub comparison: Option<Comparison>,
+    pub spent_micros: Option<i64>,
+    pub failure: Option<BuildFailure>,
+    pub route_label: String,
+}
+
+// ---------- tools and runs ----------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSummary {
+    pub id: String,
+    pub name: String,
+    pub version: u32,
+    pub engine: String,
+    pub created_at_ms: i64,
+    pub last_run_at_ms: Option<i64>,
+    pub run_count: i64,
+    pub sample: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDetail {
+    #[serde(flatten)]
+    pub summary_row: ToolSummary,
+    pub summary: Vec<String>,
+    pub mapping: CsvMapping,
+    pub input_columns: Vec<String>,
+    pub output_columns: Vec<String>,
+    pub access: Vec<String>,
+    pub version_hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedRun {
+    pub run_id: String,
+    pub tool_id: String,
+    pub input: FileHandle,
+    pub output_dir: FileHandle,
+    pub output_name: String,
+    pub plan_hash: String,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub output_columns: Vec<String>,
+    pub preview_rows: Vec<Vec<String>>,
+    pub destination_exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RunFailure {
+    InputInvalid {
+        message: String,
+        row: Option<u64>,
+        column: Option<String>,
+    },
+    InputChanged {
+        message: String,
+    },
+    DestinationExists {
+        message: String,
+    },
+    DestinationChanged {
+        message: String,
+    },
+    Revoked {
+        message: String,
+    },
+    Internal {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailureEnvelope<F> {
+    pub failure: F,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StageResult {
+    Staged(Box<StagedRun>),
+    Failed(FailureEnvelope<RunFailure>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CommitResult {
+    Committed(Receipt),
+    Failed(FailureEnvelope<RunFailure>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReceiptStatus {
+    Committed,
+    Reconciled,
+    OutcomeUnknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Receipt {
+    pub run_id: String,
+    pub tool_id: String,
+    pub tool_name: String,
+    pub version_hash: String,
+    pub plan_hash: String,
+    pub input_digest: String,
+    pub committed_digest: String,
+    pub output_path: String,
+    pub status: ReceiptStatus,
+    pub at_ms: i64,
+}
+
+// ---------- activity and privacy ----------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityItem {
+    pub id: String,
+    pub at_ms: i64,
+    pub kind: String,
+    pub title: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboundRecord {
+    pub id: String,
+    pub at_ms: i64,
+    pub purpose: String,
+    pub destination: String,
+    pub route: ModelRoute,
+    pub synthetic_only: bool,
+    pub cost_micros: Option<i64>,
+    pub payload_text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredData {
+    pub label: String,
+    pub count: i64,
+    pub bytes: i64,
+    pub expires: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrivacyOverview {
+    pub egress: EgressState,
+    pub stored: Vec<StoredData>,
+    pub outbound: Vec<OutboundRecord>,
+}

@@ -124,7 +124,8 @@ function transformCell(value: string, rule: Transform): string {
       let year: number, month: number, day: number;
       if (rule.from === "iso8601" || rule.from === "yyyy_mm_dd")
         [year, month, day] = parts;
-      else if (rule.from === "dd_mm_yyyy") [day, month, year] = parts;
+      else if (rule.from === "dd_mm_yyyy" || rule.from === "dd_mm_yy")
+        [day, month, year] = parts;
       else [month, day, year] = parts;
       if (year < 100) year += 2000;
       const date = new Date(Date.UTC(year, month - 1, day));
@@ -141,6 +142,7 @@ function transformCell(value: string, rule: Transform): string {
         d = String(day).padStart(2, "0");
       if (rule.to === "mm_dd_yy") return `${m}/${d}/${String(year).slice(-2)}`;
       if (rule.to === "mm_dd_yyyy") return `${m}/${d}/${year}`;
+      if (rule.to === "dd_mm_yy") return `${d}/${m}/${String(year).slice(-2)}`;
       if (rule.to === "dd_mm_yyyy") return `${d}/${m}/${year}`;
       return `${year}-${m}-${d}`;
     }
@@ -546,7 +548,7 @@ export class MockBackend implements Backend {
           prompt: "Does 03/04/26 mean March 4 or April 3?",
           options: [
             { value: "mm_dd_yy", label: "March 4 (MM/DD/YY)" },
-            { value: "dd_mm_yyyy", label: "April 3 (DD/MM/YY)" },
+            { value: "dd_mm_yy", label: "April 3 (DD/MM/YY)" },
           ],
           answer: null,
         },
@@ -567,7 +569,7 @@ export class MockBackend implements Backend {
     q.answer = answer;
     for (const c of draft.mapping.output_columns)
       if (c.source === q.column && c.transform.type === "date")
-        c.transform.from = answer as "mm_dd_yy" | "dd_mm_yyyy";
+        c.transform.from = answer as "mm_dd_yy" | "dd_mm_yy";
     draft.revision++;
     return this.validate(draft);
   }

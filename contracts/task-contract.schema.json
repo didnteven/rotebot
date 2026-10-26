@@ -104,6 +104,7 @@
       "enum": [
         "mm_dd_yy",
         "mm_dd_yyyy",
+        "dd_mm_yy",
         "dd_mm_yyyy",
         "yyyy_mm_dd",
         "iso8601"

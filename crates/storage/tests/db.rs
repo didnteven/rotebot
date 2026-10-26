@@ -106,6 +106,7 @@ fn tools_versions_grants_and_cascading_delete() {
         receipt: Some(json!({"committedDigest": "abc"})),
         failure: None,
         created_ms: 3,
+        run_dir: None,
     })
     .unwrap();
     assert_eq!(db.runs_for_tool("new").unwrap().len(), 1);

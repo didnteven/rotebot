@@ -468,7 +468,7 @@ fn date(value: &str, from: DateFormat, to: DateFormat) -> Result<String, String>
     use DateFormat::*;
     let invalid = || "invalid date for fixed source format".to_owned();
     let (separator, widths) = match from {
-        MmDdYy => ('/', [2, 2, 2]),
+        MmDdYy | DdMmYy => ('/', [2, 2, 2]),
         MmDdYyyy | DdMmYyyy => ('/', [2, 2, 4]),
         YyyyMmDd | Iso8601 => ('-', [4, 2, 2]),
     };
@@ -487,6 +487,7 @@ fn date(value: &str, from: DateFormat, to: DateFormat) -> Result<String, String>
         .collect::<Result<_, _>>()?;
     let (year, month, day) = match from {
         MmDdYy => (2000 + numbers[2], numbers[0], numbers[1]),
+        DdMmYy => (2000 + numbers[2], numbers[1], numbers[0]),
         MmDdYyyy => (numbers[2], numbers[0], numbers[1]),
         DdMmYyyy => (numbers[2], numbers[1], numbers[0]),
         YyyyMmDd | Iso8601 => (numbers[0], numbers[1], numbers[2]),
@@ -513,6 +514,12 @@ fn date(value: &str, from: DateFormat, to: DateFormat) -> Result<String, String>
                 return Err("two-digit output would lose century".into());
             }
             format!("{month:02}/{day:02}/{:02}", year - 2000)
+        }
+        DdMmYy => {
+            if !(2000..=2099).contains(&year) {
+                return Err("two-digit output would lose century".into());
+            }
+            format!("{day:02}/{month:02}/{:02}", year - 2000)
         }
         MmDdYyyy => format!("{month:02}/{day:02}/{year:04}"),
         DdMmYyyy => format!("{day:02}/{month:02}/{year:04}"),
