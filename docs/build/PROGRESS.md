@@ -56,7 +56,8 @@ Muse Code was never signed in during the build, so it could not help (see below)
 | Signed bundle TCC attribution, N-1 update (§5.3, P9) | unverified | No signing identity yet |
 | MCP discovery matches real servers | passed | `live_discovery_matches_catalog` (8 providers) |
 | A real OAuth sign-in to a provider | unverified | Needs the owner; Gmail/Slack/GitHub need an OAuth client of your own |
-| Windows | unverified | Compiles behind `cfg(windows)` only; plan M6 |
+| Windows code paths compile | passed (partial) | `cargo check` + `clippy -D warnings` for `x86_64-pc-windows-msvc` on broker (MoveFileExW no-replace), vault (Credential Manager), executor, domain, policy. Crates with C deps (TLS, SQLCipher) need Windows CI |
+| Windows runtime behaviour | unverified | Plan M6: packaged MSIX, interactive and physical testing |
 
 ## Owner to-do (only things the build could not do)
 
