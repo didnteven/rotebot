@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+schemars = { version = "1", features = ["uuid1"] }
+macroscope-domain = { path = "crates/domain" }
+macroscope-protocol = { path = "crates/protocol" }
+macroscope-vault = { path = "crates/vault" }
+macroscope-storage = { path = "crates/storage" }
+macroscope-policy = { path = "crates/policy" }
+macroscope-model-gateway = { path = "crates/model-gateway" }
+macroscope-muse-client = { path = "crates/muse-client" }
+macroscope-builder = { path = "crates/builder" }
+macroscope-executor = { path = "crates/executor" }
+macroscope-effect-broker = { path = "crates/effect-broker" }
+macroscope-connections = { path = "crates/connections" }
+futures-core = "0.3"
+tauri = "=2.12.5"
+tauri-build = "=2.7.4"

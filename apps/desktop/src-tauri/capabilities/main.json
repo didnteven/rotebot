@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Only the main window can read app metadata and the tool library.",
+  "windows": ["main"],
+  "permissions": ["allow-app-info", "allow-list-tools"]
+}

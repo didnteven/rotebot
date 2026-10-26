@@ -1,0 +1,12 @@
+{
+  "name": "macroscope",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/desktop", "packages/*"],
+  "engines": { "node": ">=24.10.0 <25", "npm": ">=11" },
+  "devDependencies": { "jsdom": "29.1.1" },
+  "scripts": {
+    "check": "bash scripts/check.sh",
+    "doctor": "bash scripts/doctor.sh"
+  }
+}

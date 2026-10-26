@@ -1,0 +1,41 @@
+name: Foundation checks
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.10.0
+          cache: npm
+      - run: npm ci
+      - run: bash scripts/check.sh
+      - run: npx tauri build --debug --no-bundle
+        working-directory: apps/desktop
+
+  pure-crates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --exclude macroscope-desktop --all-targets -- -D warnings
+      - run: cargo test --locked --workspace --exclude macroscope-desktop

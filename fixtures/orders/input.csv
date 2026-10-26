@@ -1,0 +1,19 @@
+order_id,created,amount,customer
+ORD-001,01/05/26,"$1,240.00",Ada Example
+ORD-002,01/16/26,$89.50,"Baker, Taylor"
+ORD-003,02/02/26,$0.99,=SUM(A1:A2)
+ORD-004,02/28/26,"$2,005.10",Cedar Sample
+ORD-005,03/01/26,$14.00,Dara Example
+ORD-006,03/19/26,$300.25,Elm Sample
+ORD-007,04/03/26,$75.00,Fern Example
+ORD-008,04/30/26,"$1,000.01",Grove Sample
+ORD-009,05/12/26,$42.42,Hazel Example
+ORD-010,06/07/26,$0.00,Ivy Sample
+ORD-011,06/21/26,$999.99,Juniper Example
+ORD-012,07/04/26,"$12,345.67",Kauri Sample
+ORD-013,08/15/26,$18.20,Linden Example
+ORD-014,09/09/26,$500.00,Maple Sample
+ORD-015,10/27/26,$63.15,Nora Example
+ORD-016,11/11/26,$7.70,Oak Sample
+ORD-017,12/01/26,"$10,000.00",Pine Example
+ORD-018,12/31/26,$123.45,Rowan Sample

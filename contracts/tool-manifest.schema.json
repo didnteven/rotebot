@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolManifest",
+  "type": "object",
+  "properties": {
+    "capabilities": {
+      "$ref": "#/$defs/Capabilities"
+    },
+    "execution": {
+      "$ref": "#/$defs/Execution"
+    },
+    "id": {
+      "type": "string"
+    },
+    "inputs": {
+      "description": "JSON Schema describing host-selected input handles, never raw paths."
+    },
+    "integrity": {
+      "$ref": "#/$defs/Integrity"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "name": {
+      "type": "string"
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Platform"
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "runtime": {
+      "$ref": "#/$defs/Runtime"
+    },
+    "schema": {
+      "$ref": "#/$defs/ToolSchema"
+    },
+    "tests": {
+      "$ref": "#/$defs/TestSuite"
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Trigger"
+      }
+    },
+    "version": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "runtime",
+    "platforms",
+    "inputs",
+    "triggers",
+    "capabilities",
+    "limits",
+    "execution",
+    "tests",
+    "provenance",
+    "integrity"
+  ],
+  "$defs": {
+    "Capabilities": {
+      "type": "object",
+      "properties": {
+        "clipboard": {
+          "$ref": "#/$defs/Clipboard"
+        },
+        "fileCreate": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileCreate"
+          }
+        },
+        "fileMove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fileRead": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileRead"
+          }
+        },
+        "fileTrash": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mcp": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/McpCapability"
+          }
+        },
+        "modelCalls": {
+          "type": "boolean"
+        },
+        "nativeApps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fileRead",
+        "fileCreate",
+        "fileMove",
+        "fileTrash",
+        "network",
+        "clipboard",
+        "nativeApps",
+        "secrets",
+        "modelCalls"
+      ]
+    },
+    "Clipboard": {
+      "type": "string",
+      "enum": [
+        "none"
+      ]
+    },
+    "Execution": {
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "initialTrust": {
+          "$ref": "#/$defs/InitialTrust"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "initialTrust",
+        "concurrency"
+      ]
+    },
+    "FileCreate": {
+      "type": "object",
+      "properties": {
+        "namePattern": {
+          "type": "string"
+        },
+        "overwrite": {
+          "type": "boolean"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "namePattern",
+        "overwrite"
+      ]
+    },
+    "FileRead": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string"
+        },
+        "maxBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "handle",
+        "maxBytes"
+      ]
+    },
+    "InitialTrust": {
+      "type": "string",
+      "enum": [
+        "supervised"
+      ]
+    },
+    "Integrity": {
+      "type": "object",
+      "properties": {
+        "approvalRef": {
+          "type": "string"
+        },
+        "treeHash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "treeHash",
+        "approvalRef"
+      ]
+    },
+    "Limits": {
+      "type": "object",
+      "properties": {
+        "effects": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "memoryMiB": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "outputBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "wallSeconds": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "wallSeconds",
+        "memoryMiB",
+        "effects",
+        "outputBytes"
+      ]
+    },
+    "McpCapability": {
+      "description": "A connection declaration is not a grant. Each call still needs broker approval.",
+      "type": "object",
+      "properties": {
+        "connectorId": {
+          "type": "string"
+        },
+        "toolNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "connectorId",
+        "toolNames"
+      ]
+    },
+    "Platform": {
+      "type": "string",
+      "enum": [
+        "macos",
+        "windows",
+        "linux"
+      ]
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "buildRef": {
+          "type": "string"
+        },
+        "contractHash": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "contractHash",
+        "buildRef",
+        "model"
+      ]
+    },
+    "Runtime": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/RuntimeEngine"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "sdk": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "pin",
+        "sdk",
+        "entry"
+      ]
+    },
+    "RuntimeEngine": {
+      "type": "string",
+      "enum": [
+        "deno",
+        "csv-mapping"
+      ]
+    },
+    "TestSuite": {
+      "type": "object",
+      "properties": {
+        "fixtureDigest": {
+          "type": "string"
+        },
+        "suiteRef": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "suiteRef",
+        "fixtureDigest"
+      ]
+    },
+    "ToolSchema": {
+      "type": "string",
+      "enum": [
+        "macroscope.tool/v1"
+      ]
+    },
+    "Trigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "manual"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    }
+  }
+}

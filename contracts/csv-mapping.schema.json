@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CsvMapping",
+  "description": "Finite host-owned operations only: no expressions, scripts, or extension payloads.",
+  "type": "object",
+  "properties": {
+    "formula_escape": {
+      "type": "boolean",
+      "default": true
+    },
+    "on_error": {
+      "$ref": "#/$defs/OnError"
+    },
+    "output_columns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/OutputColumn"
+      }
+    },
+    "skip_header_rows": {
+      "type": "integer",
+      "format": "uint32",
+      "default": 0,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "output_columns",
+    "on_error"
+  ],
+  "$defs": {
+    "DateFormat": {
+      "type": "string",
+      "enum": [
+        "mm_dd_yy",
+        "mm_dd_yyyy",
+        "dd_mm_yyyy",
+        "yyyy_mm_dd",
+        "iso8601"
+      ]
+    },
+    "OnError": {
+      "type": "string",
+      "enum": [
+        "stop_and_explain"
+      ]
+    },
+    "OutputColumn": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Input column name; ignored by the Constant operation.",
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "source",
+        "transform"
+      ]
+    },
+    "Transform": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "copy"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "trim"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "upper"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "lower"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/DateFormat"
+            },
+            "to": {
+              "$ref": "#/$defs/DateFormat"
+            },
+            "type": {
+              "type": "string",
+              "const": "date"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "from",
+            "to"
+          ]
+        },
+        {
+          "description": "Decimal strings only. Execution must never parse money through f64.",
+          "type": "object",
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "decimals": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "money"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "currency",
+            "decimals"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "constant"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "value"
+          ]
+        }
+      ]
+    }
+  }
+}

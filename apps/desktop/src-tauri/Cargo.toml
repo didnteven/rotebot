@@ -1,0 +1,17 @@
+[package]
+name = "macroscope-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+tauri.workspace = true
+serde.workspace = true
+macroscope-storage.workspace = true
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

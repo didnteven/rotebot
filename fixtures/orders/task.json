@@ -1,0 +1,63 @@
+{
+  "id": "task_orders_fabricated",
+  "revision": 1,
+  "goal": "Prepare a new import CSV from the selected fabricated orders export.",
+  "input_schema": [
+    "order_id",
+    "created",
+    "amount",
+    "customer"
+  ],
+  "output_columns": [
+    "Order",
+    "Date",
+    "Amount"
+  ],
+  "mapping": {
+    "output_columns": [
+      {
+        "name": "Order",
+        "source": "order_id",
+        "transform": {
+          "type": "copy"
+        }
+      },
+      {
+        "name": "Date",
+        "source": "created",
+        "transform": {
+          "type": "date",
+          "from": "mm_dd_yy",
+          "to": "yyyy_mm_dd"
+        }
+      },
+      {
+        "name": "Amount",
+        "source": "amount",
+        "transform": {
+          "type": "money",
+          "currency": "USD",
+          "decimals": 2
+        }
+      }
+    ],
+    "on_error": "stop_and_explain",
+    "skip_header_rows": 0,
+    "formula_escape": true
+  },
+  "error_policy": "stop_and_explain",
+  "acceptance_checks": [
+    "Preserve all 18 input rows in their original order; output exactly Order,Date,Amount.",
+    "Interpret MM/DD/YY dates as 2000 through 2099 and emit YYYY-MM-DD; invalid dates stop.",
+    "Parse USD strings as decimal money without f64 and emit exactly two decimal places.",
+    "Reject missing required columns, missing amounts, and header-only inputs; stop and explain.",
+    "Produce bytes equal to expected.csv for this fixture; never emit customer values.",
+    "Escape formula-looking values with a leading apostrophe only when they reach output.",
+    "Keep the selected source unchanged; create one output in the selected root; refuse an existing destination."
+  ],
+  "permission_ceiling": {
+    "read": "selected_input",
+    "create": "one_output_in_selected_root"
+  },
+  "required_connections": []
+}
