@@ -709,6 +709,7 @@ impl AppCore {
             blocked_reason: blocked,
             egress,
             model: DEFAULT_MODEL.into(),
+            muse_unverified_ok: self.muse_containment_accepted(),
         }
     }
 

@@ -115,6 +115,7 @@ pub struct ModelAccessStatus {
     pub blocked_reason: Option<String>,
     pub egress: EgressState,
     pub model: String,
+    pub muse_unverified_ok: bool,
 }
 
 // ---------- files, drafts ----------

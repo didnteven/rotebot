@@ -16,6 +16,8 @@ export class TauriBackend implements Backend {
   openMuseSignIn: Backend["openMuseSignIn"] = () => invoke("open_muse_sign_in");
   selectRoute: Backend["selectRoute"] = (route) =>
     invoke("select_route", { route });
+  setMuseUnverifiedOk: Backend["setMuseUnverifiedOk"] = (ok) =>
+    invoke("set_muse_unverified_ok", { ok });
   setLocalOnly: Backend["setLocalOnly"] = (localOnly) =>
     invoke("set_local_only", { localOnly });
   pickCsv: Backend["pickCsv"] = () => invoke("pick_csv");

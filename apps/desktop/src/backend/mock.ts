@@ -231,6 +231,7 @@ export class MockBackend implements Backend {
     blockedReason,
     egress: "cloud_allowed",
     model: "muse-spark-1.3",
+    museUnverifiedOk: false,
   };
   private connectors: ConnectorInfo[] = [
     [
@@ -427,6 +428,10 @@ export class MockBackend implements Backend {
     if (route === "muse_plan" && this.status.muse.kind !== "signed_in")
       throw new Error("Sign in to Muse Code first.");
     this.status.selectedRoute = route;
+    return this.resolveRoute();
+  }
+  async setMuseUnverifiedOk(ok: boolean) {
+    this.status.museUnverifiedOk = ok;
     return this.resolveRoute();
   }
   async setLocalOnly(localOnly: boolean) {

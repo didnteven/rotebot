@@ -23,6 +23,7 @@ fn model_access_and_tagged_unions_match_the_contract() {
         blocked_reason: Some("x".into()),
         egress: EgressState::CloudAllowed,
         model: "muse-spark-1.3".into(),
+        muse_unverified_ok: false,
     };
     assert_eq!(
         serde_json::to_value(&status).unwrap(),
@@ -34,7 +35,8 @@ fn model_access_and_tagged_unions_match_the_contract() {
             "effectiveRoute": "offline_demo",
             "blockedReason": "x",
             "egress": "cloud_allowed",
-            "model": "muse-spark-1.3"
+            "model": "muse-spark-1.3",
+            "museUnverifiedOk": false
         })
     );
     assert_eq!(

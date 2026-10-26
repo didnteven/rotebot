@@ -36,6 +36,9 @@ export interface ModelAccessStatus {
   blockedReason: string | null;
   egress: EgressState;
   model: string; // "muse-spark-1.3"
+  /** Owner opt-in to Muse plan builds before Muse's file-reading tools are proven confined
+   *  to the build folder (plan §4.3 containment gate). Shell and writes stay disabled. */
+  museUnverifiedOk: boolean;
 }
 
 export type KeyTestResult =
@@ -322,6 +325,7 @@ export interface Backend {
   /** Opens Terminal running `muse login` — only on an explicit user click. */
   openMuseSignIn(): Promise<void>;
   selectRoute(route: ModelRoute): Promise<ModelAccessStatus>;
+  setMuseUnverifiedOk(ok: boolean): Promise<ModelAccessStatus>;
   setLocalOnly(localOnly: boolean): Promise<ModelAccessStatus>;
 
   // Create (Tell)
