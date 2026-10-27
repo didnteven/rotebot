@@ -89,6 +89,65 @@ pub fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+/// At most this many characters of any one line appear in an example-check
+/// failure detail. Shapes (`#` for numbers) carry the wording and layout
+/// without raw fetched values or input rows.
+pub(crate) const EXAMPLE_DETAIL_MAX_CHARS: usize = 200;
+
+/// Shortens a normalized line for failure details: at most 200 characters.
+fn truncate_detail_line(line: &str) -> String {
+    line.chars().take(EXAMPLE_DETAIL_MAX_CHARS).collect()
+}
+
+/// Smallest edit distance between two normalized lines, in characters.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() {
+        return b.len();
+    }
+    if b.is_empty() {
+        return a.len();
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+    for i in 1..=a.len() {
+        curr[0] = i;
+        for j in 1..=b.len() {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
+}
+
+/// The output line closest to a missing example line (both normalized).
+/// Empty output yields an empty closest line.
+fn closest_output_line(missing_norm: &str, actual_norms: &[String]) -> String {
+    let mut best: &str = "";
+    let mut best_dist: Option<usize> = None;
+    for line in actual_norms {
+        let dist = edit_distance(missing_norm, line);
+        if best_dist.is_none_or(|best| dist < best) {
+            best_dist = Some(dist);
+            best = line;
+        }
+    }
+    best.to_string()
+}
+
+/// Failure detail for a missing example line. Both lines are normalized
+/// shapes (numbers are `#` in shape mode and normalized here as well), each
+/// truncated to 200 characters.
+fn example_failure_detail(expected_norm: &str, closest_norm: &str) -> String {
+    format!(
+        "Expected a line like \"{}\" — closest output line \"{}\".",
+        truncate_detail_line(expected_norm),
+        truncate_detail_line(closest_norm)
+    )
+}
+
 /// Normalizes one line to its shape for live-data example checks: every
 /// number (integers, decimals, optional leading sign, thousands separators,
 /// e.g. `-3`, `19.7`, `1,240.50`) becomes `#`, then whitespace runs collapse
@@ -482,17 +541,31 @@ pub fn run_program_with_sources(
                 if matches {
                     None
                 } else {
-                    Some(
-                        "The output doesn't follow the example's format (numbers may differ; the wording and layout must match)."
-                            .into(),
-                    )
+                    let missing = expected.get(need).cloned().unwrap_or_default();
+                    let closest = closest_output_line(&missing, &actual);
+                    Some(example_failure_detail(&missing, &closest))
                 },
             ));
         } else {
-            let mut lines = output.lines();
-            let matches = example
-                .lines()
-                .all(|expected| lines.by_ref().any(|line| line == expected));
+            let expected_raw: Vec<&str> = example.lines().collect();
+            let actual_raw: Vec<&str> = output.lines().collect();
+            let mut pos = 0;
+            let mut missing_idx: Option<usize> = None;
+            for (idx, expected_line) in expected_raw.iter().enumerate() {
+                let mut found = false;
+                for (j, actual_line) in actual_raw.iter().enumerate().skip(pos) {
+                    if *actual_line == *expected_line {
+                        pos = j + 1;
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    missing_idx = Some(idx);
+                    break;
+                }
+            }
+            let matches = missing_idx.is_none();
             checks.push(check(
                 "example",
                 "Every example line appears in order",
@@ -500,7 +573,17 @@ pub fn run_program_with_sources(
                 if matches {
                     None
                 } else {
-                    Some("The output does not contain every expected example line in order.".into())
+                    let missing_raw = missing_idx
+                        .and_then(|idx| expected_raw.get(idx))
+                        .copied()
+                        .unwrap_or_default();
+                    let missing_norm = normalize_shape_line(missing_raw);
+                    let actual_norms: Vec<String> = actual_raw
+                        .iter()
+                        .map(|line| normalize_shape_line(line))
+                        .collect();
+                    let closest = closest_output_line(&missing_norm, &actual_norms);
+                    Some(example_failure_detail(&missing_norm, &closest))
                 },
             ));
         }
@@ -829,10 +912,17 @@ mod tests {
             .expect("example check");
         assert!(!example.passed);
         assert_eq!(example.label, "Output follows the example's format");
-        assert_eq!(
-            example.detail.as_deref(),
-            Some("The output doesn't follow the example's format (numbers may differ; the wording and layout must match).")
+        let detail = example.detail.as_deref().expect("detail names the diff");
+        assert!(
+            detail.contains("Gisborne high : #, low : #"),
+            "missing expected shape in {detail}"
         );
+        assert!(
+            detail.contains("Gisborne low : #, high : #"),
+            "missing closest output shape in {detail}"
+        );
+        assert!(detail.starts_with("Expected a line like \""), "{detail}");
+        assert!(detail.contains("— closest output line \""), "{detail}");
     }
 
     #[cfg(feature = "generated-runtime")]
@@ -961,5 +1051,190 @@ mod tests {
             "{:#?}",
             outcome.checks
         );
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn gisborne_comma_reports_expected_and_closest_shapes() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.example_output = Some("Gisborne high : 20, low : 12".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne, high: 19.7, low: 13.5".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]),
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        let detail = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check")
+            .detail
+            .clone()
+            .expect("detail");
+        assert_eq!(
+            detail,
+            "Expected a line like \"Gisborne high : #, low : #\" — closest output line \"Gisborne, high: #, low: #\"."
+        );
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn example_failure_details_show_first_missing_and_closest_in_both_modes() {
+        use std::collections::BTreeMap;
+        // Shape mode: the first missing line is named, with the closest shape.
+        let mut draft = web_draft();
+        draft.example_output = Some("alpha 1\nbeta 2\ngamma 3".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "alpha 9\nbeta tweaked\ngamma 7".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]),
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        let detail = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check")
+            .detail
+            .clone()
+            .expect("detail");
+        assert!(detail.contains("beta #"), "first missing shape in {detail}");
+        assert!(
+            detail.contains("closest output line"),
+            "closest line in {detail}"
+        );
+        assert!(
+            !detail.contains("19.7") && !detail.contains("987"),
+            "raw numbers must not leak: {detail}"
+        );
+        // Exact (file-input) mode also reports normalized shapes.
+        let mut file_draft = web_draft();
+        file_draft.no_input = false;
+        file_draft.example_output = Some("Gisborne high : 20, low : 12".into());
+        let file_program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![],
+        };
+        let read = || Ok(b"selected input".to_vec());
+        let wrong = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne, high: 19.7, low: 13.5".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &file_draft,
+            &file_program,
+            &BTreeMap::new(),
+            None,
+            &read,
+            &wrong,
+        );
+        let detail = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check")
+            .detail
+            .clone()
+            .expect("detail");
+        assert!(
+            detail.contains("Gisborne high : #, low : #"),
+            "normalized expected in {detail}"
+        );
+        assert!(
+            detail.contains("Gisborne, high: #, low: #"),
+            "normalized closest in {detail}"
+        );
+        assert!(
+            !detail.contains("19.7") && !detail.contains(" 20"),
+            "raw numbers must not leak: {detail}"
+        );
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn example_failure_details_never_exceed_200_chars_per_line() {
+        use std::collections::BTreeMap;
+        let long_expected = format!("word {} end", "x".repeat(500));
+        let long_actual = format!("other {} end", "y".repeat(500));
+        let mut draft = web_draft();
+        draft.example_output = Some(long_expected.clone());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let execute = move |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: long_actual.clone(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]),
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        let detail = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check")
+            .detail
+            .clone()
+            .expect("detail");
+        // Extract the two quoted lines and assert the 200-char bound.
+        let parts: Vec<&str> = detail.split('"').collect();
+        assert!(parts.len() >= 5, "{detail}");
+        assert!(parts[1].chars().count() <= 200, "expected truncated");
+        assert!(parts[3].chars().count() <= 200, "closest truncated");
+        assert_eq!(parts[1].chars().count(), 200);
+        assert_eq!(parts[3].chars().count(), 200);
     }
 }

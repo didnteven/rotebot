@@ -799,6 +799,46 @@ impl AppCore {
         }
     }
 
+    /// Correction prompt for a failed program build. Contains only the
+    /// previous program code, the failed host-check shapes, and the
+    /// instruction to return a corrected program in the same schema. It never
+    /// includes host-fetched response bodies or selected input rows; failed
+    /// details are already shapes (`#` for numbers).
+    fn program_correction_packet(
+        draft: &TaskDraft,
+        previous_code: &str,
+        failed: &[CheckResult],
+    ) -> String {
+        let failed_checks: Vec<Value> = failed
+            .iter()
+            .map(|c| {
+                json!({
+                    "id": c.id,
+                    "label": c.label,
+                    "detail": c.detail.clone().unwrap_or_else(|| c.label.clone()),
+                })
+            })
+            .collect();
+        json!({
+            "template": "macroscope-program-correction/v1",
+            "confirmed_output_name": draft.output_name,
+            "task_description": draft.goal,
+            "synthetic_text_shape": draft.synthetic_shape,
+            "previous_program_code": previous_code,
+            "failed_checks": failed_checks,
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are shapes only, with numbers as #). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code and web_sources). The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+        })
+        .to_string()
+    }
+
+    fn correction_packet_text(correction: &str) -> String {
+        format!(
+            "System instructions:\n{}\n\nMessage (correction; shapes only, no fetched data or input rows):\n{correction}",
+            macroscope_builder::PROGRAM_SYSTEM,
+            correction = correction,
+        )
+    }
+
     #[cfg(feature = "generated-runtime")]
     fn runtime(&self) -> CoreResult<Arc<runner::RunnerEngine>> {
         let mut runtime = lock(&self.inner.runtime);
@@ -1730,20 +1770,27 @@ impl AppCore {
         } else {
             None
         };
+        let draft_for_check = draft.clone();
+        let candidate_for_check = candidate.clone();
+        let fetched_for_check = fetched.clone();
+        let fetch_error_for_check = fetch_error.clone();
+        let input_for_check = input.clone();
+        let contract_for_check = contract.clone();
+        let mapping_for_check = mapping.clone();
         let checked = tokio::task::spawn_blocking(move || {
-            let read = || match &input {
+            let read = || match &input_for_check {
                 Some(path) => Self::read_limited(path).map_err(|e| e.to_string()),
                 None => Err("This task has no input file.".to_string()),
             };
-            let outcome = if draft.kind == TaskKind::Program {
+            let outcome = if draft_for_check.kind == TaskKind::Program {
                 #[cfg(feature = "generated-runtime")]
                 {
                     match runtime.unwrap() {
                         Ok(engine) => checks::run_program_with_sources(
-                            &draft,
-                            candidate.program.as_ref().unwrap(),
-                            &fetched,
-                            fetch_error,
+                            &draft_for_check,
+                            candidate_for_check.program.as_ref().unwrap(),
+                            &fetched_for_check,
+                            fetch_error_for_check,
                             &read,
                             &|snapshot, sources, code| {
                                 engine
@@ -1765,33 +1812,212 @@ impl AppCore {
                     checks::program_failure("Generated runtime is disabled.".into())
                 }
             } else {
-                checks::run(&contract, &mapping, &read)
+                checks::run(&contract_for_check, &mapping_for_check, &read)
             };
             (outcome.all_passed(), outcome.checks, outcome.comparison)
         })
         .await;
         match checked {
             Ok((passed, check_list, comparison)) => {
-                let failed: Vec<String> = check_list
-                    .iter()
-                    .filter(|c| !c.passed)
-                    .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
-                    .collect();
-                self.update_build(&build_id, |s| {
-                    s.checks = check_list;
-                    s.comparison = comparison;
-                })?;
-                if passed {
-                    self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
-                } else {
+                if passed || draft.kind != TaskKind::Program {
+                    let failed: Vec<String> = check_list
+                        .iter()
+                        .filter(|c| !c.passed)
+                        .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
+                        .collect();
+                    self.update_build(&build_id, |s| {
+                        s.checks = check_list;
+                        s.comparison = comparison;
+                    })?;
+                    if passed {
+                        self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
+                    } else {
+                        self.fail_build(
+                            &build_id,
+                            BuildFailureKind::Checks,
+                            format!(
+                                "Checks failed: {}. Edit the rules and build again.",
+                                failed.join(", ")
+                            ),
+                        )?;
+                    }
+                    return Ok(());
+                }
+                let failed_checks: Vec<CheckResult> =
+                    check_list.iter().filter(|c| !c.passed).cloned().collect();
+                let _ = comparison;
+                self.push_phase(
+                    &build_id,
+                    BuildPhase::Checking,
+                    "Checks failed; asking the model to correct the program",
+                )?;
+                let previous_code = candidate
+                    .program
+                    .as_ref()
+                    .map(|p| p.code.as_str())
+                    .unwrap_or_default();
+                let correction =
+                    Self::program_correction_packet(&draft, previous_code, &failed_checks);
+                let correction_text = Self::correction_packet_text(&correction);
+                if route != ModelRoute::OfflineDemo {
+                    let now = self.now();
+                    if let Err(error) = self.db().insert_outbound(&db::OutboundRow {
+                        id: format!("out_{build_id}_correction"),
+                        at_ms: now,
+                        purpose: "Program correction packet".into(),
+                        destination: Self::route_destination(route).into(),
+                        route: route.as_str().into(),
+                        synthetic_only: true,
+                        cost_micros: None,
+                        payload_text: Some(correction_text),
+                    }) {
+                        self.fail_build(
+                            &build_id,
+                            BuildFailureKind::Internal,
+                            "The outbound intent could not be saved.",
+                        )?;
+                        return Err(error.into());
+                    }
+                }
+                if *cancelled.borrow() {
+                    self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
+                    return Ok(());
+                }
+                let remaining = BUILD_BUDGET_MICROS - spent.unwrap_or(0);
+                if remaining < 0 {
                     self.fail_build(
                         &build_id,
-                        BuildFailureKind::Checks,
-                        format!(
-                            "Checks failed: {}. Edit the rules and build again.",
-                            failed.join(", ")
-                        ),
+                        BuildFailureKind::Budget,
+                        "This build would exceed its $2.00 budget.",
                     )?;
+                    return Ok(());
+                }
+                let budget2 = BuildBudget {
+                    max_cost_microusd: remaining as u64,
+                    ..BuildBudget::default()
+                };
+                let cancel2 = async {
+                    if !*cancelled.borrow() {
+                        let _ = cancelled.changed().await;
+                    }
+                };
+                let result2 = builder
+                    .propose_program_cancellable(&contract, correction, budget2, cancel2)
+                    .await;
+                let candidate2 = match result2 {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let (kind, message) = build_error_message(&e);
+                        self.fail_build(&build_id, kind, message)?;
+                        return Ok(());
+                    }
+                };
+                let spent2 = candidate2.cost_microusd.map(|c| c as i64);
+                let total_spent = match (spent, spent2) {
+                    (Some(a), Some(b)) => Some(a + b),
+                    (Some(a), None) => Some(a),
+                    (None, Some(b)) => Some(b),
+                    (None, None) => None,
+                };
+                if let Some(cost) = spent2 {
+                    self.db()
+                        .set_outbound_cost(&format!("out_{build_id}_correction"), Some(cost))?;
+                }
+                self.update_build(&build_id, |s| {
+                    s.candidate = Some(candidate2.mapping.clone());
+                    s.program = candidate2.program.clone();
+                    s.spent_micros = total_spent;
+                })?;
+                self.push_phase(
+                    &build_id,
+                    BuildPhase::Candidate,
+                    format!("Corrected candidate received from {}", candidate2.label),
+                )?;
+                self.push_phase(
+                    &build_id,
+                    BuildPhase::Checking,
+                    "Checking the corrected program",
+                )?;
+                #[cfg(feature = "generated-runtime")]
+                let runtime2 = if draft.kind == TaskKind::Program {
+                    Some(self.runtime())
+                } else {
+                    None
+                };
+                let draft_for_check2 = draft.clone();
+                let candidate2_for_check = candidate2.clone();
+                let fetched_for_check2 = fetched.clone();
+                let fetch_error_for_check2 = fetch_error.clone();
+                let input_for_check2 = input.clone();
+                let checked2 = tokio::task::spawn_blocking(move || {
+                    let read2 = || match &input_for_check2 {
+                        Some(path) => Self::read_limited(path).map_err(|e| e.to_string()),
+                        None => Err("This task has no input file.".to_string()),
+                    };
+                    let outcome = if draft_for_check2.kind == TaskKind::Program {
+                        #[cfg(feature = "generated-runtime")]
+                        {
+                            match runtime2.unwrap() {
+                                Ok(engine) => checks::run_program_with_sources(
+                                    &draft_for_check2,
+                                    candidate2_for_check.program.as_ref().unwrap(),
+                                    &fetched_for_check2,
+                                    fetch_error_for_check2,
+                                    &read2,
+                                    &|snapshot, sources, code| {
+                                        engine
+                                            .execute_with_sources(
+                                                snapshot,
+                                                sources,
+                                                !no_input,
+                                                code,
+                                                macroscope_runner::Limits::default(),
+                                            )
+                                            .map_err(|e| e.to_string())
+                                    },
+                                ),
+                                Err(e) => checks::program_failure(e.to_string()),
+                            }
+                        }
+                        #[cfg(not(feature = "generated-runtime"))]
+                        {
+                            checks::program_failure("Generated runtime is disabled.".into())
+                        }
+                    } else {
+                        unreachable!("correction applies only to program builds")
+                    };
+                    (outcome.all_passed(), outcome.checks, outcome.comparison)
+                })
+                .await;
+                match checked2 {
+                    Ok((passed2, check_list2, comparison2)) => {
+                        let failed2: Vec<String> = check_list2
+                            .iter()
+                            .filter(|c| !c.passed)
+                            .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
+                            .collect();
+                        self.update_build(&build_id, |s| {
+                            s.checks = check_list2;
+                            s.comparison = comparison2;
+                        })?;
+                        if passed2 {
+                            self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
+                        } else {
+                            self.fail_build(
+                                &build_id,
+                                BuildFailureKind::Checks,
+                                format!(
+                                    "Checks failed: {}. Edit the rules and build again.",
+                                    failed2.join(", ")
+                                ),
+                            )?;
+                        }
+                    }
+                    Err(_) => self.fail_build(
+                        &build_id,
+                        BuildFailureKind::Internal,
+                        "The checks could not run.",
+                    )?,
                 }
             }
             Err(_) => self.fail_build(
