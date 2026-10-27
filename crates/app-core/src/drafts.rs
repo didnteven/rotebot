@@ -576,7 +576,11 @@ pub fn contract_for(draft: &TaskDraft) -> TaskContract {
             read: ReadPermission::SelectedInput,
             create: CreatePermission::OneOutputInSelectedRoot,
         },
-        required_connections: draft.mentioned_connectors.clone(),
+        required_connections: draft
+            .required_connections
+            .iter()
+            .map(|c| c.connector_id.clone())
+            .collect(),
     }
 }
 

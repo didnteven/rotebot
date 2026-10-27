@@ -216,6 +216,15 @@ fn update_mapping(
 }
 
 #[tauri::command]
+async fn select_task_connections(
+    conns: State<'_, Conns>,
+    draft_id: String,
+    connector_ids: Vec<String>,
+) -> Cmd<TaskDraft> {
+    Ok(conns.0.select_for_task(&draft_id, &connector_ids).await?)
+}
+
+#[tauri::command]
 fn update_task(
     core: State<'_, Core>,
     draft_id: String,
@@ -401,8 +410,16 @@ async fn stage_run(
 }
 
 #[tauri::command]
-fn commit_run(core: State<'_, Core>, run_id: String, plan_hash: String) -> Cmd<CommitResult> {
-    Ok(core.0.commit_run(&run_id, &plan_hash)?)
+async fn commit_run(
+    conns: State<'_, Conns>,
+    run_id: String,
+    plan_hash: String,
+    actions_reviewed: Option<bool>,
+) -> Cmd<CommitResult> {
+    Ok(conns
+        .0
+        .commit_run(&run_id, &plan_hash, actions_reviewed.unwrap_or(false))
+        .await?)
 }
 
 /// Stages a run for a tool with no input file: the host fetches the approved
@@ -885,6 +902,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         answer_question,
         update_mapping,
         update_task,
+        select_task_connections,
         outbound_preview,
         start_build,
         build_state,
@@ -1151,6 +1169,34 @@ mod tests {
         let access = invoke(&w, "model_access", json!({})).unwrap();
         assert_eq!(access["effectiveRoute"], "offline_demo");
         assert_eq!(access["muse"]["kind"], "missing");
+
+        let no_input = invoke(
+            &w,
+            "draft_task_no_input",
+            json!({"description": "Fetch the forecast and draft a message"}),
+        )
+        .unwrap();
+        let selected = invoke(
+            &w,
+            "select_task_connections",
+            json!({"draftId": no_input["draftId"], "connectorIds": []}),
+        )
+        .unwrap();
+        assert_eq!(selected["noInput"], true);
+        assert_eq!(selected["requiredConnections"], json!([]));
+        assert_eq!(selected["revision"], 2);
+        let other_window = tauri::WebviewWindowBuilder::new(&app, "untrusted", Default::default())
+            .build()
+            .unwrap();
+        assert!(
+            invoke(
+                &other_window,
+                "select_task_connections",
+                json!({"draftId": no_input["draftId"], "connectorIds": []}),
+            )
+            .is_err(),
+            "connection selection is restricted to the main window"
+        );
 
         let preview = invoke(&w, "load_sample_csv", json!({})).unwrap();
         let draft = invoke(

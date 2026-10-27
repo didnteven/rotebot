@@ -169,6 +169,9 @@ pub struct RuleQuestion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskDraft {
+    /// Explicit user selection, never inferred authority from a description.
+    #[serde(default)]
+    pub required_connections: Vec<SelectedConnection>,
     #[serde(default)]
     pub kind: TaskKind,
     #[serde(default)]
@@ -352,6 +355,9 @@ pub struct ToolDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedRun {
+    pub creates_output: bool,
+    #[serde(default)]
+    pub planned_calls: Vec<macroscope_effect_broker::PlannedAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview_text: Option<String>,
     pub run_id: String,
@@ -417,11 +423,14 @@ pub enum ReceiptStatus {
     Committed,
     Reconciled,
     OutcomeUnknown,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Receipt {
+    #[serde(default)]
+    pub actions: Vec<macroscope_effect_broker::ActionResult>,
     pub run_id: String,
     pub tool_id: String,
     pub tool_name: String,
@@ -560,10 +569,21 @@ pub struct ConnectorInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorTool {
+    #[serde(default)]
+    pub input_schema: serde_json::Value,
     pub name: String,
     pub description: String,
     pub read_only: Option<bool>,
     pub destructive: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedConnection {
+    pub connector_id: String,
+    pub name: String,
+    pub resource: String,
+    pub tools: Vec<ConnectorTool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

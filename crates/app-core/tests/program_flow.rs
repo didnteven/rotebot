@@ -415,7 +415,7 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
     .unwrap();
     let execute = |input: &[u8], code: &str| {
         engine
-            .execute(
+            .execute_plan(
                 input,
                 code,
                 Limits {
@@ -485,10 +485,13 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
     let ticks = std::cell::Cell::new(0);
     let nondeterministic = |_: &[u8], _: &str| {
         ticks.set(ticks.get() + 1);
-        Ok(vec![macroscope_runner::Output {
-            name: "errors.txt".into(),
-            text: ticks.get().to_string(),
-        }])
+        Ok((
+            vec![macroscope_runner::Output {
+                name: "errors.txt".into(),
+                text: ticks.get().to_string(),
+            }],
+            vec![],
+        ))
     };
     let outcome =
         macroscope_app_core::checks::run_program(&draft, &candidate, &read, &nondeterministic);

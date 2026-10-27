@@ -30,3 +30,5 @@ JSON.parse/stringify and ordinary pure array/string/object operations are
 available. SDK objects are frozen. Each run has a fresh 64 MiB JS heap,
 512 KiB stack, 10 second CPU and 12 second wall ceiling. Produce deterministic
 bytes and never change the input. The host checks output syntax and any example.
+
+macroscope.connection.request(connectorId, toolName, args) records a planned call and returns undefined. It never contacts a server or returns network data. Args must be a plain JSON object, at most 64 KiB. At most five requests per run. Only explicitly selected, declared connector/tool names are allowed by the host. Requests are reviewed with the output before the trusted host executes them.

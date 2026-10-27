@@ -64,6 +64,8 @@ export class TauriBackend implements Backend {
     invoke("answer_question", { draftId, questionId, answer });
   updateMapping: Backend["updateMapping"] = (draftId, mapping, outputName) =>
     invoke("update_mapping", { draftId, mapping, outputName });
+  selectTaskConnections: Backend["selectTaskConnections"] = (draftId, connectorIds) =>
+    invoke("select_task_connections", { draftId, connectorIds });
   updateTask: Backend["updateTask"] = (draftId, kind, outputName, exampleOutput) =>
     invoke("update_task", { draftId, kind, outputName, exampleOutput });
   outboundPreview: Backend["outboundPreview"] = (draftId) =>
@@ -97,8 +99,8 @@ export class TauriBackend implements Backend {
     invoke("stage_run", { toolId, input, outputDir, outputName });
   stageRunNoInput: Backend["stageRunNoInput"] = (toolId, outputDir, outputName) =>
     invoke("stage_run_no_input", { toolId, outputDir, outputName });
-  commitRun: Backend["commitRun"] = (runId, planHash) =>
-    invoke("commit_run", { runId, planHash });
+  commitRun: Backend["commitRun"] = (runId, planHash, actionsReviewed = false) =>
+    invoke("commit_run", { runId, planHash, actionsReviewed });
   discardRun: Backend["discardRun"] = (runId) =>
     invoke("discard_run", { runId });
   revealOutput: Backend["revealOutput"] = (receiptRunId) =>

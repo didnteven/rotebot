@@ -24,6 +24,7 @@
     "allow-answer-question",
     "allow-update-mapping",
     "allow-update-task",
+    "allow-select-task-connections",
     "allow-outbound-preview",
     "allow-start-build",
     "allow-build-state",

@@ -392,8 +392,16 @@ pub fn program_failure(message: String) -> CheckOutcome {
 /// Host-owned program checks against the same bounded source snapshot, in two
 /// separate fresh worker processes. No candidate-authored tests certify a tool.
 #[cfg(feature = "generated-runtime")]
-pub type ProgramExecutor<'a> =
-    dyn Fn(&[u8], &str) -> Result<Vec<macroscope_runner::Output>, String> + 'a;
+pub type ProgramExecutor<'a> = dyn Fn(
+        &[u8],
+        &str,
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        String,
+    > + 'a;
 
 /// Executor variant that also passes host-fetched web source bodies as data.
 /// The same fetched map is used for both runs, proving determinism on the
@@ -403,8 +411,13 @@ pub type ProgramExecutorWithSources<'a> = dyn Fn(
         &[u8],
         &std::collections::BTreeMap<String, String>,
         &str,
-    ) -> Result<Vec<macroscope_runner::Output>, String>
-    + 'a;
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        String,
+    > + 'a;
 
 #[cfg(feature = "generated-runtime")]
 pub fn run_program(
@@ -471,11 +484,11 @@ pub fn run_program_with_sources(
             };
         }
     }
-    let first = match execute(&before, sources, &program.code) {
+    let (first, first_calls) = match execute(&before, sources, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
-    let second = match execute(&before, sources, &program.code) {
+    let (second, second_calls) = match execute(&before, sources, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
@@ -485,14 +498,28 @@ pub fn run_program_with_sources(
         true,
         None,
     ));
+    let calls_valid = crate::connections::validate_calls(&first_calls, &draft.required_connections);
+    checks.push(check(
+        "mcp_capabilities",
+        "Every planned connection call is declared and validates against its input schema",
+        calls_valid.is_ok(),
+        calls_valid.err(),
+    ));
+    checks.push(check(
+        "mcp_deterministic",
+        "Two fresh runs plan exactly the same connection calls",
+        first_calls == second_calls,
+        None,
+    ));
     let named = program.output_name == draft.output_name
-        && first.len() == 1
-        && second.len() == 1
-        && first[0].name == draft.output_name
-        && second[0].name == draft.output_name;
+        && first.len() <= 1
+        && first.len() == second.len()
+        && first.first().is_none_or(|o| o.name == draft.output_name)
+        && second.first().is_none_or(|o| o.name == draft.output_name)
+        && (!first.is_empty() || !first_calls.is_empty());
     checks.push(check(
         "one_output",
-        "Creates exactly one output with the confirmed name",
+        "Plans connection actions or creates one output with the confirmed name",
         named,
         None,
     ));
@@ -502,19 +529,22 @@ pub fn run_program_with_sources(
             comparison: None,
         };
     }
-    let output = &first[0].text;
-    let deterministic = output.as_bytes() == second[0].text.as_bytes();
+    let output = first.first().map_or("", |o| o.text.as_str());
+    let deterministic = output == second.first().map_or("", |o| o.text.as_str());
     checks.push(check(
         "deterministic",
         "Two fresh runs produce identical bytes",
         deterministic,
         None,
     ));
-    let valid =
-        macroscope_effect_broker::validate_text_output(&draft.output_name, output.as_bytes());
+    let valid = if first.is_empty() && !first_calls.is_empty() {
+        Ok(())
+    } else {
+        macroscope_effect_broker::validate_text_output(&draft.output_name, output.as_bytes())
+    };
     checks.push(check(
         "output_format",
-        "Output is nonempty UTF-8 and parses in its selected format",
+        "Any file output is nonempty UTF-8 and parses in its selected format",
         valid.is_ok(),
         valid.err().map(|e| e.to_string()),
     ));
@@ -764,6 +794,7 @@ mod tests {
             mapping: contract().mapping,
             questions: vec![],
             mentioned_connectors: vec![],
+            required_connections: vec![],
             output_name: "weather.txt".into(),
             ready_to_build: true,
             blockers: vec![],
@@ -790,10 +821,13 @@ mod tests {
         // program ran on the fetched data; both runs see the same map.
         let execute = |_: &[u8], sources: &BTreeMap<String, String>, _: &str| {
             let body = sources.get("forecast").cloned().unwrap_or_default();
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: format!("got {} bytes", body.len()),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: format!("got {} bytes", body.len()),
+                }],
+                vec![],
+            ))
         };
         let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
         let outcome = super::run_program_with_sources(
@@ -812,10 +846,13 @@ mod tests {
         let calls = std::cell::Cell::new(0);
         let counting = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
             calls.set(calls.get() + 1);
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "x".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "x".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -852,10 +889,13 @@ mod tests {
             }],
         };
         let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne   high : 19.7,  low : 8\nRain 987.25 mm, wind +4 m/s".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne   high : 19.7,  low : 8\nRain 987.25 mm, wind +4 m/s".into(),
+                }],
+                vec![],
+            ))
         };
         let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
         let outcome = super::run_program_with_sources(
@@ -891,10 +931,13 @@ mod tests {
             }],
         };
         let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne low : 20, high : 12".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne low : 20, high : 12".into(),
+                }],
+                vec![],
+            ))
         };
         let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
         let outcome = super::run_program_with_sources(
@@ -942,10 +985,13 @@ mod tests {
         };
         let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
         let swapped = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "beta 9\nalpha 8".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "beta 9\nalpha 8".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -964,10 +1010,13 @@ mod tests {
                 .passed
         );
         let ordered = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "header\nbeta 9\nalpha 8\nbeta 7".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "header\nbeta 9\nalpha 8\nbeta 7".into(),
+                }],
+                vec![],
+            ))
         };
         draft.example_output = Some("beta 2\nalpha 3".into());
         let outcome = super::run_program_with_sources(
@@ -1007,10 +1056,13 @@ mod tests {
         };
         let read = || Ok(b"selected input".to_vec());
         let different = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne high : 21, low : 12".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne high : 21, low : 12".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -1028,10 +1080,13 @@ mod tests {
         assert!(!example.passed);
         assert_eq!(example.label, "Every example line appears in order");
         let exact = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne high : 20, low : 12".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne high : 20, low : 12".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -1069,10 +1124,13 @@ mod tests {
             }],
         };
         let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne, high: 19.7, low: 13.5".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne, high: 19.7, low: 13.5".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -1113,10 +1171,13 @@ mod tests {
             }],
         };
         let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "alpha 9\nbeta tweaked\ngamma 7".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "alpha 9\nbeta tweaked\ngamma 7".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,
@@ -1155,10 +1216,13 @@ mod tests {
         };
         let read = || Ok(b"selected input".to_vec());
         let wrong = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: "Gisborne, high: 19.7, low: 13.5".into(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: "Gisborne, high: 19.7, low: 13.5".into(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &file_draft,
@@ -1208,10 +1272,13 @@ mod tests {
             }],
         };
         let execute = move |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
-            Ok(vec![macroscope_runner::Output {
-                name: "weather.txt".into(),
-                text: long_actual.clone(),
-            }])
+            Ok((
+                vec![macroscope_runner::Output {
+                    name: "weather.txt".into(),
+                    text: long_actual.clone(),
+                }],
+                vec![],
+            ))
         };
         let outcome = super::run_program_with_sources(
             &draft,

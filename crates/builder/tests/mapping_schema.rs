@@ -17,27 +17,32 @@ fn walk(v: &Value, f: &mut dyn FnMut(&serde_json::Map<String, Value>)) {
 #[test]
 fn model_schema_uses_the_strict_dialect_meta_accepts() {
     let schema = model_schema();
-    walk(&schema, &mut |m| {
-        assert!(!m.contains_key("oneOf"), "oneOf is not permitted");
-        assert!(!m.contains_key("default"), "default dropped");
-        if let Some(f) = m.get("format").and_then(Value::as_str) {
-            assert!(
-                !f.starts_with("uint") && !f.starts_with("int"),
-                "numeric format {f}"
-            );
-        }
-        if let Some(Value::Object(props)) = m.get("properties") {
-            let required: Vec<&str> = m["required"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_str().unwrap())
-                .collect();
-            for k in props.keys() {
-                assert!(required.contains(&k.as_str()), "{k} must be required");
+    for schema in [&schema, &macroscope_builder::program_schema()] {
+        walk(schema, &mut |m| {
+            assert!(!m.contains_key("oneOf"), "oneOf is not permitted");
+            assert!(!m.contains_key("default"), "default dropped");
+            if let Some(f) = m.get("format").and_then(Value::as_str) {
+                assert!(
+                    !f.starts_with("uint")
+                        && !f.starts_with("int")
+                        && f != "float"
+                        && f != "double",
+                    "numeric format {f}"
+                );
             }
-        }
-    });
+            if let Some(Value::Object(props)) = m.get("properties") {
+                let required: Vec<&str> = m["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect();
+                for k in props.keys() {
+                    assert!(required.contains(&k.as_str()), "{k} must be required");
+                }
+            }
+        });
+    }
     let text = schema.to_string();
     assert!(text.contains("\"anyOf\"") && text.contains("\"maximum\":255"));
     assert!(text.contains("formula_escape") && text.contains("stop_and_explain"));

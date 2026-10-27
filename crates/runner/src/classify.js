@@ -6,6 +6,9 @@
   const syntax = SyntaxError.prototype;
   const includes = String.prototype.includes;
   return e => {
+    // QuickJS throws null when even allocating the out-of-memory Error fails
+    // (JS_ThrowError2). Classify that sentinel without allocating a descriptor.
+    if (e === null) return "memory";
     const object = e && typeof e === "object";
     const descriptor = object ? own(e, "message") : null;
     const message = descriptor && typeof descriptor.value === "string" ? descriptor.value : "";

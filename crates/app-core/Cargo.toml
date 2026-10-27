@@ -22,6 +22,7 @@ macroscope-builder.workspace = true
 macroscope-executor.workspace = true
 macroscope-effect-broker.workspace = true
 macroscope-connections.workspace = true
+jsonschema = { version = "0.60", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

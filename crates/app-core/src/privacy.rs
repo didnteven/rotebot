@@ -277,7 +277,7 @@ impl AppCore {
                 let engine = self.runtime()?;
                 checks::run_program(&draft, program, &read, &|input, code| {
                     engine
-                        .execute(input, code, macroscope_runner::Limits::default())
+                        .execute_plan(input, code, macroscope_runner::Limits::default())
                         .map_err(|e| e.to_string())
                 })
             }

@@ -278,6 +278,7 @@ struct NewTool<'a> {
     sample: bool,
     program: Option<&'a macroscope_builder::Program>,
     no_input: bool,
+    connections: &'a [SelectedConnection],
 }
 
 struct HostValidator;
@@ -411,13 +412,40 @@ impl AppCore {
                     self.activity(
                         "run",
                         "A run was interrupted and its result is unknown",
-                        Some("Check the output folder before running it again; nothing will be overwritten.".into()),
+                        Some("Check the external service and output folder. Macroscope never resends interrupted actions.".into()),
                     );
                 }
                 Ok(broker::ReconcileOutcome::NotPublished) => {
                     std::fs::remove_dir_all(&dir).ok();
                     run.state = "discarded".into();
                     run.run_dir = None;
+                }
+            }
+            if run.state == "outcome_unknown" || run.state == "reconciled" {
+                if let Ok(actions) = broker::recover_action_results(
+                    &dir,
+                    &self.inner.staging_key,
+                    run.plan_hash.as_deref().unwrap_or_default(),
+                ) {
+                    if !actions.is_empty() {
+                        let receipt = Receipt {
+                            run_id: run.id.clone(),
+                            tool_id: run.tool_id.clone(),
+                            tool_name: self
+                                .db()
+                                .tool(&run.tool_id)?
+                                .map_or_else(|| "Connection actions".into(), |t| t.name),
+                            version_hash: run.version_hash.clone(),
+                            plan_hash: run.plan_hash.clone().unwrap_or_default(),
+                            input_digest: String::new(),
+                            committed_digest: String::new(),
+                            output_path: String::new(),
+                            status: ReceiptStatus::OutcomeUnknown,
+                            at_ms: now,
+                            actions,
+                        };
+                        run.receipt = Some(json!(receipt));
+                    }
                 }
             }
             self.db().put_run(&run)?;
@@ -598,6 +626,7 @@ impl AppCore {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "output".into());
         let mut draft = TaskDraft {
+            required_connections: vec![],
             kind,
             example_output: None,
             synthetic_shape: macroscope_builder::synthesize_text_sample(text),
@@ -665,6 +694,7 @@ impl AppCore {
             },
             questions: vec![],
             mentioned_connectors: self.mentioned_connectors(description),
+            required_connections: vec![],
             output_name: "output.txt".into(),
             ready_to_build: false,
             blockers: vec![],
@@ -783,12 +813,15 @@ impl AppCore {
     }
 
     fn program_packet(draft: &TaskDraft) -> String {
-        macroscope_builder::program_packet(
+        let packet = macroscope_builder::program_packet(
             &draft.goal,
             &draft.synthetic_shape,
             &draft.output_name,
             draft.example_output.as_deref(),
-        )
+        );
+        let mut packet: Value = serde_json::from_str(&packet).expect("host packet");
+        packet["untrusted_task_data"]["selected_connections"] = json!(draft.required_connections);
+        packet.to_string()
     }
 
     fn draft_packet(draft: &TaskDraft) -> String {
@@ -2118,6 +2151,7 @@ impl AppCore {
             sample,
             program,
             no_input,
+            connections,
         } = new;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 {
@@ -2167,8 +2201,13 @@ impl AppCore {
             manifest["limits"] =
                 json!({"wallSeconds":12,"memoryMiB":64,"effects":1,"outputBytes":20_000_000});
         }
+        if !connections.is_empty() {
+            manifest["limits"]["effects"] = json!(6);
+        }
+        let mcp: Vec<_> = connections.iter().map(|c| json!({"connectorId":c.connector_id,"toolNames":c.tools.iter().map(|t| &t.name).collect::<Vec<_>>()})).collect();
+        manifest["capabilities"]["mcp"] = json!(mcp);
         let tree = broker::canonical_json(
-            &json!({"manifest": manifest, "mapping": mapping, "program":program}),
+            &json!({"manifest": manifest, "mapping": mapping, "program":program, "connections":connections}),
         )
         .map_err(|e| CoreError::Internal(e.to_string()))?;
         let version_hash = hash_hex(&tree);
@@ -2223,6 +2262,17 @@ impl AppCore {
         for host in &web_hosts {
             access.push(format!("Fetches from {host}"));
         }
+        for c in connections {
+            access.push(format!(
+                "Use {} tools after staged action approval: {}",
+                c.name,
+                c.tools
+                    .iter()
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
         let row = db::ToolRow {
             id: tool_id.0.clone(),
             name: name.into(),
@@ -2241,6 +2291,7 @@ impl AppCore {
                 "access": access,
                 "contract": contract,
                 "noInput": no_input,
+                "connections": connections,
             }),
         };
         self.db().put_tool(&row)?;
@@ -2249,7 +2300,7 @@ impl AppCore {
             hash: version_hash.clone(),
             manifest,
             mapping: if let Some(program) = program {
-                json!({"mapping":mapping,"program":program})
+                json!({"mapping":mapping,"program":program,"connections":connections})
             } else {
                 json!(mapping)
             },
@@ -2260,7 +2311,7 @@ impl AppCore {
             &tool_id.0,
             &version_hash,
             1,
-            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts}),
+            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts, "mcp": mcp}),
         )?;
         self.activity("build", format!("Saved tool “{name}”"), None);
         self.tool_detail(&row)
@@ -2314,6 +2365,7 @@ impl AppCore {
             sample: false,
             program: state.program.as_ref(),
             no_input: draft.no_input,
+            connections: &draft.required_connections,
         })
     }
 
@@ -2339,6 +2391,7 @@ impl AppCore {
             sample: true,
             program: None,
             no_input: false,
+            connections: &[],
         })
     }
 
@@ -2562,6 +2615,17 @@ impl AppCore {
             // consent epochs do not revoke them; tool grant revisions do.
             policy_epoch: LOCAL_RUN_POLICY_EPOCH,
         };
+        let selected: Vec<SelectedConnection> = serde_json::from_value(
+            self.db()
+                .version(tool_id, &detail.version_hash)?
+                .ok_or(CoreError::NotFound("version"))?
+                .mapping
+                .get("connections")
+                .cloned()
+                .unwrap_or(json!([])),
+        )
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
+        self.validate_connection_authority(tool_id, &detail.version_hash, &selected)?;
         let request = (|| -> Result<StageRequest, BrokerError> {
             Ok(StageRequest {
                 tool_id: ToolId(tool_id.into()),
@@ -2606,40 +2670,28 @@ impl AppCore {
                             }))
                         }
                     };
-                    if program.web_sources.is_empty() {
-                        engine.stage(request, &program.code, macroscope_runner::Limits::default())
-                    } else {
-                        // Host-fetched above with no locks held; the run plan
-                        // hash binds the exact fetched bytes, so changed data
-                        // stages a new plan.
-                        let Some(fetched) = fetched.as_ref() else {
-                            return Ok(StageResult::Failed(FailureEnvelope {
-                                failure: map_run_failure(BrokerError::Runner(
-                                    "Web sources were not fetched.".into(),
-                                )),
-                            }));
-                        };
-                        let today = web::today_local();
-                        let urls: BTreeMap<String, String> = program
-                            .web_sources
-                            .iter()
-                            .map(|s| (s.name.clone(), web::substitute_today(&s.url, &today)))
-                            .collect();
-                        let digests = web::digests(fetched);
-                        let stage_sources = runner::SourceStage {
-                            sources: fetched,
-                            has_input_file: !detail.no_input,
-                            extra_binding: Some(
-                                serde_json::json!({"source_urls": urls, "source_digests": digests}),
-                            ),
-                        };
-                        engine.stage_with_sources(
-                            request,
-                            &stage_sources,
-                            &program.code,
-                            macroscope_runner::Limits::default(),
-                        )
-                    }
+                    let empty_sources = BTreeMap::new();
+                    let source_data = fetched.as_ref().unwrap_or(&empty_sources);
+                    let today = web::today_local();
+                    let urls: BTreeMap<String, String> = program
+                        .web_sources
+                        .iter()
+                        .map(|s| (s.name.clone(), web::substitute_today(&s.url, &today)))
+                        .collect();
+                    let stage_sources = runner::SourceStage {
+                        sources: source_data,
+                        has_input_file: !detail.no_input,
+                        extra_binding: Some(
+                            json!({"source_urls": urls, "source_digests": web::digests(source_data)}),
+                        ),
+                    };
+                    engine.stage_with_sources_and_connections(
+                        request,
+                        &stage_sources,
+                        &program.code,
+                        macroscope_runner::Limits::default(),
+                        &selected,
+                    )
                 }
             }
         } else {
@@ -2674,6 +2726,8 @@ impl AppCore {
         };
         let run_id = staged.plan().run_id.0.clone();
         let dto = StagedRun {
+            creates_output: !staged.plan().effects.is_empty(),
+            planned_calls: staged.plan().planned_calls.clone(),
             preview_text,
             run_id: run_id.clone(),
             tool_id: tool_id.into(),
@@ -2717,9 +2771,35 @@ impl AppCore {
     }
 
     pub fn commit_run(&self, run_id: &str, plan_hash: &str) -> CoreResult<CommitResult> {
+        if !self.planned_actions(run_id)?.is_empty() {
+            return Err(CoreError::Invalid(
+                "Review and approve connection actions through Connections.".into(),
+            ));
+        }
+        self.commit_run_actions(run_id, plan_hash, false, |_| unreachable!())
+    }
+
+    pub(crate) fn commit_run_actions(
+        &self,
+        run_id: &str,
+        plan_hash: &str,
+        reviewed: bool,
+        execute: impl FnMut(&broker::PlannedAction) -> (broker::ActionStatus, String),
+    ) -> CoreResult<CommitResult> {
         let _admission = self.admit_local()?;
         // Keep run admission closed through publication, not just while staging.
         let mut staged_runs = lock(&self.inner.staged);
+        if staged_runs.get(run_id).is_some_and(|s| {
+            s.dto
+                .planned_calls
+                .iter()
+                .any(|a| a.read_only_hint != Some(true) || a.destructive_hint == Some(true))
+        }) && !reviewed
+        {
+            return Err(CoreError::Invalid(
+                "Tick ‘I reviewed these actions’ before approval.".into(),
+            ));
+        }
         let slot = staged_runs
             .remove(run_id)
             .ok_or(CoreError::NotFound("staged run"))?;
@@ -2761,11 +2841,12 @@ impl AppCore {
         };
         let run_dir = staged.run_dir().to_path_buf();
         let result = broker::approve(&mut staged, plan_hash, approval.clone())
-            .and_then(|_| broker::commit(staged, approval, epochs));
+            .and_then(|_| broker::commit_with_actions(staged, approval, epochs, execute));
         let mut run = self.db().run(run_id)?.ok_or(CoreError::NotFound("run"))?;
         match result {
             Ok(receipt) => {
                 let out = Receipt {
+                    actions: receipt.actions,
                     run_id: run_id.into(),
                     tool_id: dto.tool_id.clone(),
                     tool_name: tool_name.clone(),
@@ -2774,10 +2855,18 @@ impl AppCore {
                     input_digest: receipt.input_digest,
                     committed_digest: receipt.committed_digest,
                     output_path: receipt.output_path.to_string_lossy().into_owned(),
-                    status: ReceiptStatus::Committed,
+                    status: match receipt.status {
+                        broker::ReceiptStatus::Committed => ReceiptStatus::Committed,
+                        broker::ReceiptStatus::Failed => ReceiptStatus::Failed,
+                        broker::ReceiptStatus::OutcomeUnknown => ReceiptStatus::OutcomeUnknown,
+                    },
                     at_ms: receipt.timestamps.committed_at_ms as i64,
                 };
-                run.state = "committed".into();
+                run.state = serde_json::to_value(out.status)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .into();
                 run.receipt = Some(json!(out));
                 self.db().put_run(&run)?;
                 if let Some(mut tool) = self.db().tool(&dto.tool_id)? {
@@ -2789,12 +2878,48 @@ impl AppCore {
                 self.activity(
                     "run",
                     format!("Ran “{tool_name}”"),
-                    Some(format!("Created {}", dto.output_name)),
+                    Some(if out.output_path.is_empty() {
+                        format!("{} connection actions: {:?}", out.actions.len(), out.status)
+                    } else {
+                        format!(
+                            "Created {}; {} connection actions",
+                            dto.output_name,
+                            out.actions.len()
+                        )
+                    }),
                 );
                 Ok(CommitResult::Committed(out))
             }
             Err(e) => {
                 let failure = map_run_failure(e);
+                // A later file/journal failure must not hide external effects that
+                // already ran. Keep an inspectable receipt without sending again.
+                let actions =
+                    broker::recover_action_results(&run_dir, &self.inner.staging_key, plan_hash)
+                        .unwrap_or_default();
+                if actions
+                    .iter()
+                    .any(|a| a.status != broker::ActionStatus::NotRun)
+                {
+                    let receipt = Receipt {
+                        run_id: run_id.into(),
+                        tool_id: dto.tool_id.clone(),
+                        tool_name,
+                        version_hash: run.version_hash.clone(),
+                        plan_hash: plan_hash.into(),
+                        input_digest: String::new(),
+                        committed_digest: String::new(),
+                        output_path: String::new(),
+                        status: ReceiptStatus::OutcomeUnknown,
+                        at_ms: self.now(),
+                        actions,
+                    };
+                    run.state = "outcome_unknown".into();
+                    run.receipt = Some(json!(receipt));
+                    run.failure = Some(json!(failure));
+                    self.db().put_run(&run)?;
+                    return Ok(CommitResult::Committed(receipt));
+                }
                 run.state = "failed".into();
                 run.failure = Some(json!(failure));
                 self.db().put_run(&run)?;

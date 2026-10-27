@@ -10,6 +10,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use macroscope_domain::PlannedCall;
+
 pub const REQUEST_CAP: usize = 20_000_000;
 pub const OUTPUT_CAP: usize = 20_000_000;
 pub const MEMORY_CAP: usize = 64 * 1024 * 1024;
@@ -99,6 +101,7 @@ impl Failure {
 pub enum Response {
     Success {
         outputs: Vec<Output>,
+        planned_calls: Vec<PlannedCall>,
         log: Vec<String>,
     },
     Error {
@@ -109,10 +112,15 @@ impl Serialize for Response {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         match self {
-            Self::Success { outputs, log } => {
-                let mut wire = serializer.serialize_struct("Response", 3)?;
+            Self::Success {
+                outputs,
+                planned_calls,
+                log,
+            } => {
+                let mut wire = serializer.serialize_struct("Response", 4)?;
                 wire.serialize_field("ok", &true)?;
                 wire.serialize_field("outputs", outputs)?;
+                wire.serialize_field("planned_calls", planned_calls)?;
                 wire.serialize_field("log", log)?;
                 wire.end()
             }
@@ -163,12 +171,17 @@ impl Response {
             ok: bool,
             outputs: Option<Vec<Output>>,
             log: Option<Vec<String>>,
+            planned_calls: Option<Vec<PlannedCall>>,
             error: Option<Failure>,
         }
         let v: Wire = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-        match (v.ok, v.outputs, v.log, v.error) {
-            (true, Some(outputs), Some(log), None) => Ok(Self::Success { outputs, log }),
-            (false, None, None, Some(error)) => Ok(Self::Error { error }),
+        match (v.ok, v.outputs, v.log, v.planned_calls, v.error) {
+            (true, Some(outputs), Some(log), Some(planned_calls), None) => Ok(Self::Success {
+                outputs,
+                planned_calls,
+                log,
+            }),
+            (false, None, None, None, Some(error)) => Ok(Self::Error { error }),
             _ => Err("invalid runner response".into()),
         }
     }
@@ -177,6 +190,7 @@ impl Response {
 #[derive(Default)]
 struct State {
     outputs: Vec<Output>,
+    planned_calls: Vec<PlannedCall>,
     log: Vec<String>,
     log_bytes: usize,
     failure: Option<Failure>,
@@ -314,6 +328,7 @@ pub fn execute(request: Request) -> Response {
     }
     Response::Success {
         outputs: std::mem::take(&mut state.outputs),
+        planned_calls: std::mem::take(&mut state.planned_calls),
         log: std::mem::take(&mut state.log),
     }
 }

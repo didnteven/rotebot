@@ -74,6 +74,50 @@ fn output(ctx: Ctx<'_>, name: String, text: String) -> Result<()> {
     state.outputs.push(Output { name, text });
     Ok(())
 }
+fn connection_request(
+    ctx: Ctx<'_>,
+    connector_id: String,
+    tool_name: String,
+    json: String,
+) -> Result<()> {
+    if connector_id.is_empty()
+        || connector_id.len() > 256
+        || tool_name.is_empty()
+        || tool_name.len() > 256
+        || json.len() > 65_536
+    {
+        return Err(fail(
+            &ctx,
+            "forbidden",
+            "invalid connection request or args exceed 64 KiB",
+        ));
+    }
+    let args: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|_| fail(&ctx, "forbidden", "connection args must be JSON"))?;
+    if !args.is_object() {
+        return Err(fail(
+            &ctx,
+            "forbidden",
+            "connection args must be a JSON object",
+        ));
+    }
+    let data = ctx.userdata::<Data>().unwrap();
+    let mut state = data.state.lock().unwrap();
+    if state.planned_calls.len() >= 5 {
+        drop(state);
+        return Err(fail(
+            &ctx,
+            "forbidden",
+            "at most 5 connection calls per run",
+        ));
+    }
+    state.planned_calls.push(crate::PlannedCall {
+        connector_id,
+        tool_name,
+        args,
+    });
+    Ok(())
+}
 fn log(ctx: Ctx<'_>, text: String) -> Result<()> {
     let data = ctx.userdata::<Data>().unwrap();
     let mut state = data.state.lock().unwrap();
@@ -238,6 +282,12 @@ pub(crate) fn install(
     .map_err(|_| rquickjs::Error::Unknown)?;
     let sdk = Object::new(ctx.clone())?;
     sdk.set_prototype(None)?;
+    let connection = Object::new(ctx.clone())?;
+    connection.set_prototype(None)?;
+    let wrap: Function = ctx.eval(include_str!("connection.js"))?;
+    let request: Function = wrap.call((Function::new(ctx.clone(), connection_request)?,))?;
+    connection.set("request", request)?;
+    sdk.set("connection", connection)?;
     sdk.set("input", Function::new(ctx.clone(), input)?)?;
     sdk.set("source", Function::new(ctx.clone(), source)?)?;
     sdk.set("output", Function::new(ctx.clone(), output)?)?;

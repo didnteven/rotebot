@@ -537,3 +537,122 @@ fn devices_and_fifo_are_rejected_without_blocking() {
     assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0);
     assert!(SelectedFile::from_picker(fifo).is_err());
 }
+
+fn action(body: &str) -> PlannedAction {
+    PlannedAction {
+        call: macroscope_domain::PlannedCall {
+            connector_id: "gmail".into(),
+            tool_name: "create_draft".into(),
+            args: serde_json::json!({"body":body}),
+        },
+        service: "Gmail".into(),
+        resource: "https://example.invalid/mcp".into(),
+        read_only_hint: Some(false),
+        destructive_hint: None,
+    }
+}
+#[test]
+fn action_arguments_and_order_are_bound_to_hash_and_default_commit_cannot_send() {
+    let f = Fixture::new();
+    let make = |calls| {
+        stage_generated_actions(f.request(), "source-hash".into(), |_| {
+            Ok((
+                include_bytes!("../../../fixtures/orders/expected.csv").to_vec(),
+                calls,
+            ))
+        })
+        .unwrap()
+    };
+    let mut one = make(vec![action("private body")]);
+    let mut changed = one.plan().clone();
+    changed.planned_calls[0].call.args["body"] = serde_json::json!("changed");
+    assert_ne!(digest(&canonical_json(&changed).unwrap()), one.plan_hash());
+    changed = one.plan().clone();
+    changed.planned_calls.push(action("second"));
+    changed.planned_calls.reverse();
+    assert_ne!(digest(&canonical_json(&changed).unwrap()), one.plan_hash());
+    let two = make(vec![action("different body")]);
+    assert_ne!(one.plan_hash(), two.plan_hash());
+    let wrong = Approval {
+        plan_hash: two.plan_hash().into(),
+        approved_at_ms: 1,
+    };
+    assert!(approve(&mut one, two.plan_hash(), wrong).is_err());
+    let approval = approved(&mut one);
+    assert!(commit(one, approval, epochs()).is_err());
+    assert!(!f.root.join("orders_ready.csv").exists());
+}
+#[test]
+fn crash_after_send_is_unknown_never_replayed_and_private_args_are_encrypted() {
+    let f = Fixture::new();
+    let mut staged = stage_generated_actions(f.request(), "source-hash".into(), |_| {
+        Ok((
+            include_bytes!("../../../fixtures/orders/expected.csv").to_vec(),
+            vec![action("private-secret-body"), action("later")],
+        ))
+    })
+    .unwrap();
+    let dir = staged.run_dir().to_path_buf();
+    let hash = staged.plan_hash().to_string();
+    let approval = approved(&mut staged);
+    let sent = std::cell::Cell::new(0);
+    let crash = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = commit_with_actions(staged, approval, epochs(), |_| {
+            sent.set(sent.get() + 1);
+            panic!("simulated crash after send, before response/receipt")
+        });
+    }));
+    assert!(crash.is_err());
+    assert_eq!(sent.get(), 1);
+    for _ in 0..2 {
+        assert_eq!(reconcile(&dir).unwrap(), ReconcileOutcome::OutcomeUnknown);
+        let results = recover_action_results(&dir, &[42; 32], &hash).unwrap();
+        assert_eq!(results[0].status, ActionStatus::OutcomeUnknown);
+        assert_eq!(results[1].status, ActionStatus::NotRun);
+    }
+    assert_eq!(sent.get(), 1);
+    assert!(!f.root.join("orders_ready.csv").exists());
+    for path in [dir.join("journal.jsonl"), dir.join("actions.xchacha20")] {
+        assert!(!String::from_utf8_lossy(&fs::read(path).unwrap()).contains("private-secret-body"));
+    }
+}
+
+#[test]
+fn crash_after_action_results_before_file_publication_keeps_the_action_receipt() {
+    let f = Fixture::new();
+    let mut staged = stage_generated_actions(f.request(), "source-hash".into(), |_| {
+        Ok((
+            include_bytes!("../../../fixtures/orders/expected.csv").to_vec(),
+            vec![action("sent")],
+        ))
+    })
+    .unwrap();
+    let dir = staged.run_dir().to_path_buf();
+    let hash = staged.plan_hash().to_string();
+    approved(&mut staged);
+    append_journal(
+        &dir,
+        &JournalEvent::ActionIntent {
+            index: 0,
+            plan_hash: hash.clone(),
+        },
+    )
+    .unwrap();
+    append_journal(
+        &dir,
+        &JournalEvent::ActionResult {
+            index: 0,
+            status: ActionStatus::Succeeded,
+        },
+    )
+    .unwrap();
+    intent(&staged);
+    // The external effect finished; no output was published before the crash.
+    for _ in 0..2 {
+        assert_eq!(reconcile(&dir).unwrap(), ReconcileOutcome::OutcomeUnknown);
+        let results = recover_action_results(&dir, &[42; 32], &hash).unwrap();
+        assert_eq!(results[0].status, ActionStatus::Succeeded);
+        assert_eq!(results[0].action.call.args["body"], "sent");
+    }
+    assert!(!f.output().exists());
+}

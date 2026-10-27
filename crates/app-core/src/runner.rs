@@ -85,7 +85,8 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
-        self.execute_inner(input, &BTreeMap::new(), true, code, limits, self.synthetic)
+        self.execute_plan(input, code, limits)
+            .map(|(outputs, _)| outputs)
     }
 
     /// Executes with host-fetched web source bodies available as data through
@@ -99,8 +100,29 @@ impl RunnerEngine {
         has_input_file: bool,
         code: &str,
         limits: Limits,
-    ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        BrokerError,
+    > {
         self.execute_inner(input, sources, has_input_file, code, limits, self.synthetic)
+    }
+
+    pub fn execute_plan(
+        &self,
+        input: &[u8],
+        code: &str,
+        limits: Limits,
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        BrokerError,
+    > {
+        self.execute_with_sources(input, &BTreeMap::new(), true, code, limits)
     }
 
     fn execute_inner(
@@ -111,7 +133,13 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         synthetic: bool,
-    ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        BrokerError,
+    > {
         if hash_file(&self.runner)? != self.runner_hash
             || hash_file(&self.profile)? != self.profile_hash
         {
@@ -142,7 +170,11 @@ impl RunnerEngine {
             launch::sandbox_command(&self.runner, &self.profile)?
         };
         match launch::invoke(command, &request)? {
-            Response::Success { outputs, .. } => Ok(outputs),
+            Response::Success {
+                outputs,
+                planned_calls,
+                ..
+            } => Ok((outputs, planned_calls)),
             Response::Error { error } => Err(BrokerError::Runner(format!(
                 "{}: {}",
                 error.kind, error.message
@@ -156,7 +188,14 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, &SourceStage::default(), code, limits, self.synthetic)
+        self.stage_inner(
+            run,
+            &SourceStage::default(),
+            code,
+            limits,
+            self.synthetic,
+            &[],
+        )
     }
 
     /// Stages a program run with host-fetched web sources. The stage binding
@@ -169,7 +208,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, stage_sources, code, limits, self.synthetic)
+        self.stage_inner(run, stage_sources, code, limits, self.synthetic, &[])
     }
     /// Explicit synthetic developer experiment, never an OS-denial fallback.
     #[cfg(feature = "synthetic-runtime-tests")]
@@ -179,7 +218,32 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, &SourceStage::default(), code, limits, true)
+        self.stage_inner(run, &SourceStage::default(), code, limits, true, &[])
+    }
+    pub fn stage_connections(
+        &self,
+        run: StageRequest,
+        code: &str,
+        limits: Limits,
+        selected: &[crate::dto::SelectedConnection],
+    ) -> Result<StagedPlan, BrokerError> {
+        self.stage_with_sources_and_connections(
+            run,
+            &SourceStage::default(),
+            code,
+            limits,
+            selected,
+        )
+    }
+    pub fn stage_with_sources_and_connections(
+        &self,
+        run: StageRequest,
+        stage_sources: &SourceStage<'_>,
+        code: &str,
+        limits: Limits,
+        selected: &[crate::dto::SelectedConnection],
+    ) -> Result<StagedPlan, BrokerError> {
+        self.stage_inner(run, stage_sources, code, limits, self.synthetic, selected)
     }
     fn stage_inner(
         &self,
@@ -188,6 +252,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         synthetic: bool,
+        selected: &[crate::dto::SelectedConnection],
     ) -> Result<StagedPlan, BrokerError> {
         limits
             .validate()
@@ -204,15 +269,26 @@ impl RunnerEngine {
         let basename = run.basename.clone();
         let sources = stage_sources.sources.clone();
         let has_input_file = stage_sources.has_input_file;
-        broker::stage_generated(run, execution_hash, |snapshot| {
-            let mut outputs =
+        broker::stage_generated_actions(run, execution_hash, |snapshot| {
+            let (mut outputs, calls) =
                 self.execute_inner(snapshot, &sources, has_input_file, code, limits, synthetic)?;
-            if outputs.len() != 1 || outputs[0].name != basename {
+            if outputs.len() > 1
+                || outputs.first().is_some_and(|o| o.name != basename)
+                || (outputs.is_empty() && calls.is_empty())
+            {
                 return Err(BrokerError::Runner(
                     "expected one output with the approved basename".into(),
                 ));
             }
-            Ok(outputs.remove(0).text.into_bytes())
+            Ok((
+                if outputs.is_empty() {
+                    vec![]
+                } else {
+                    outputs.remove(0).text.into_bytes()
+                },
+                crate::connections::validate_calls(&calls, selected)
+                    .map_err(BrokerError::Runner)?,
+            ))
         })
     }
 }
