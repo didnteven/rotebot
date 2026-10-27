@@ -1,0 +1,11 @@
+id,name,flag
+Y-001,Ada Example,1
+Y-002,"Baker, Taylor",0
+Y-003,Zoë Müller,1
+Y-004,,0
+Y-005,José García,1
+Y-006,  padded  ,0
+Y-007,北京测试,1
+Y-008,François,0
+Y-009,Søren,1
+Y-010,Cedar,0

@@ -1,0 +1,1 @@
+Trim leading and trailing spaces from first_name and last_name, then join them with one space to make full_name (if one part is blank use the other alone; if both are blank use empty). Output columns id, full_name in the original row order.

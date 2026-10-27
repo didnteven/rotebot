@@ -1,0 +1,10 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "amount"
+  ],
+  "must_not_contain": [
+    "NoSuchAmtZZZ"
+  ]
+}

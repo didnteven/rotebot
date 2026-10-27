@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "user",
+    "domain"
+  ],
+  "must_not_contain": [
+    "NoSuchSplitZZZ"
+  ]
+}

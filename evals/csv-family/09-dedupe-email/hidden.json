@@ -1,0 +1,12 @@
+{
+  "row_count": 8,
+  "columns": [
+    "id",
+    "name",
+    "email"
+  ],
+  "must_not_contain": [
+    "E-004",
+    "E-009"
+  ]
+}

@@ -1,0 +1,11 @@
+id,name,subscribed
+B-001,Ada Example,yes
+B-002,"Baker, Taylor",no
+B-003,Zoë Müller,yes
+B-004,,no
+B-005,José García,yes
+B-006,  padded  ,no
+B-007,北京测试,yes
+B-008,François,no
+B-009,Søren,yes
+B-010,Cedar Sample,no

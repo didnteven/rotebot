@@ -1,0 +1,1 @@
+Convert weight_kg to pounds by multiplying by 2.20462, rounded half up to exactly 2 decimals (weights are plain non-negative decimals). Output columns id, weight_lb in the original row order. Trim spaces around weights before parsing.

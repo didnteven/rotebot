@@ -1,0 +1,12 @@
+{
+  "row_count": 5,
+  "columns": [
+    "id",
+    "name",
+    "score"
+  ],
+  "must_not_contain": [
+    "H-004",
+    "H-010"
+  ]
+}

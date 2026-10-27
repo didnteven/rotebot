@@ -26,13 +26,14 @@ the build.
 | 18 | `m4/schedules` | `m4/web-sources` | Approved schedules, encrypted Today digest, held connection actions, macOS notifications and opt-in launch at login | M4 / ADR 0004 §4–5 |
 | 19 | `m4/model-step` | `m4/schedules` | Approved connection reads, bounded model replay, monthly caps, outbound review and scheduled calendar/bills summaries | ADR 0004 §1, §3 |
 | 20 | `m4/muse-findings-2` | `m4/model-step` | Fixes for Muse Code's second review (sources, redirects, model step, schedules) | ADR 0004 |
+| 21 | `m4/eval-suite` | `m4/muse-findings-2` | 30-task CSV eval corpus, frozen manifest and runner for the plan §9.3 generated-execution gate | M3 / §9.3 |
 
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks m4/connection-actions m4/web-sources m4/schedules m4/model-step m4/muse-findings-2
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks m4/connection-actions m4/web-sources m4/schedules m4/model-step m4/muse-findings-2 m4/eval-suite
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each

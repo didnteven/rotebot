@@ -1,0 +1,10 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "status"
+  ],
+  "must_not_contain": [
+    "NoSuchFlagZZZ"
+  ]
+}

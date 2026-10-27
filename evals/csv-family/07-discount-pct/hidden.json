@@ -1,0 +1,10 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "discount_pct"
+  ],
+  "must_not_contain": [
+    "NoSuchPctZZZ"
+  ]
+}

@@ -11,6 +11,7 @@ pub mod checks;
 pub mod connections;
 pub mod drafts;
 pub mod dto;
+pub mod eval;
 #[cfg(feature = "generated-runtime")]
 mod model_step;
 mod privacy;

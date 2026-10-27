@@ -1,0 +1,11 @@
+order_id,customer,created,amount
+ORD-001,Ada Example,2026-01-05,1240.00
+ORD-002,"Baker, Taylor",2026-01-16,89.50
+ORD-003,Zoë Müller,2026-02-02,0.99
+ORD-004,Cedar Sample  ,2026-02-28,2005.10
+ORD-005,,2026-03-01,15.00
+ORD-006,José García,2026-03-02,42.75
+ORD-007,  padded name  ,2026-03-03,7.25
+ORD-008,北京测试,2026-03-04,300.00
+ORD-009,François Ångström,2026-03-05,19.99
+ORD-010,Søren Example,2026-03-06,55.55

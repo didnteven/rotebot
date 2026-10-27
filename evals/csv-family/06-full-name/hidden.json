@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "full_name"
+  ],
+  "must_not_contain": [
+    "first_name",
+    "  padded"
+  ]
+}

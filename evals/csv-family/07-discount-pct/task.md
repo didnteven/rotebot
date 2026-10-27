@@ -1,0 +1,1 @@
+Compute discount_pct as 100 times discount divided by list_price, rounded half up to 1 decimal with a % sign appended (for example 12.5%). Output columns id, discount_pct in the original row order. Trim spaces around numeric fields before parsing.

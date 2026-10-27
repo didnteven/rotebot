@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "email"
+  ],
+  "must_not_contain": [
+    "ADA@EXAMPLE.INVALID",
+    "Baker@Example.Invalid"
+  ]
+}

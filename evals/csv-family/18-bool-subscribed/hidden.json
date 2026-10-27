@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "subscribed"
+  ],
+  "must_not_contain": [
+    "yes",
+    "no-no-no-ZZZ"
+  ]
+}

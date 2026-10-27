@@ -1,0 +1,12 @@
+{
+  "row_count": 5,
+  "columns": [
+    "id",
+    "name",
+    "amount"
+  ],
+  "must_not_contain": [
+    "A-002",
+    "A-010"
+  ]
+}

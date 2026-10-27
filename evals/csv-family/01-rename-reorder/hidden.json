@@ -1,0 +1,13 @@
+{
+  "row_count": 10,
+  "columns": [
+    "Order",
+    "Date",
+    "Amount",
+    "Customer"
+  ],
+  "must_not_contain": [
+    "OrderX",
+    "NoSuchCustomerZZZ"
+  ]
+}

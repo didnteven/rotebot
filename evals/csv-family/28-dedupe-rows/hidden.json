@@ -1,0 +1,11 @@
+{
+  "row_count": 7,
+  "columns": [
+    "id",
+    "name",
+    "score"
+  ],
+  "must_not_contain": [
+    "NoSuchDedupeZZZ"
+  ]
+}

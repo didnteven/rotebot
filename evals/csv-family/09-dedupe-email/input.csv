@@ -1,0 +1,11 @@
+id,name,email
+E-001,Ada Example,ada@example.invalid
+E-002,"Baker, Taylor",baker@example.invalid
+E-003,Zoë Müller,zoe@example.invalid
+E-004,Second Ada,ada@example.invalid
+E-005,,blank@example.invalid
+E-006,José García,jose@example.invalid
+E-007,  padded  ,padded@example.invalid
+E-008,北京测试,beijing@example.invalid
+E-009,Again Baker,baker@example.invalid
+E-010,Søren,soren@example.invalid

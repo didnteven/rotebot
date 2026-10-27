@@ -1,0 +1,11 @@
+id,item,status
+S-001,Widget,shipped
+S-002,Gadget,pending
+S-003,"Thing, Large",shipped
+S-004,Zoë Part,Shipped
+S-005,,shipped
+S-006,José Item,cancelled
+S-007,  padded item  ,shipped
+S-008,北京部件,pending
+S-009,François Bit,SHIPPED
+S-010,Søren Piece,shipped

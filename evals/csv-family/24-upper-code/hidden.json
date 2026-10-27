@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "code"
+  ],
+  "must_not_contain": [
+    "abc123",
+    "  padded"
+  ]
+}

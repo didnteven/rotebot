@@ -1,0 +1,5 @@
+{
+  "task": "01-rename-reorder",
+  "output_csv": "Order,Date,Amount,Customer\nORD-001,2026-01-05,1240.00,Ada Example\nORD-002,2026-01-16,89.50,\"Baker, Taylor\"\nORD-003,2026-02-02,0.99,Zoë Müller\nORD-004,2026-02-28,2005.10,Cedar Sample  \nORD-005,2026-03-01,15.00,\nORD-006,2026-03-02,42.75,José García\nORD-007,2026-03-03,7.25,  padded name  \nORD-008,2026-03-04,300.00,北京测试\nORD-009,2026-03-05,19.99,François Ångström\nORD-010,2026-03-06,55.55,Søren Example\n",
+  "note": "Recorded correct answer for scoring tests; generation quality is not measured."
+}

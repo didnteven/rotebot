@@ -1,0 +1,5 @@
+{
+  "task": "02-filter-amount",
+  "output_csv": "id,name,amount\nA-001,Ada Example,1240.00\nA-005,Cedar Sample,100.01\nA-006,José García  ,250.75\nA-008,北京测试,500.00\n",
+  "note": "Recorded wrong answer for scoring tests; must fail with wrong_output."
+}

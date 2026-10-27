@@ -1,0 +1,10 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "weight_lb"
+  ],
+  "must_not_contain": [
+    "NoSuchLbZZZ"
+  ]
+}

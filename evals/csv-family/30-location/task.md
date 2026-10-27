@@ -1,0 +1,1 @@
+Trim leading and trailing spaces from city and country, then join them with a comma and a space to make location (if one part is blank use the other alone; if both are blank use empty). Output columns id, location in the original row order.

@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "location"
+  ],
+  "must_not_contain": [
+    "  padded",
+    "NoSuchLocZZZ"
+  ]
+}

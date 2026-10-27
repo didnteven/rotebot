@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "date",
+    "amount"
+  ],
+  "must_not_contain": [
+    "NoSuchSortZZZ"
+  ]
+}

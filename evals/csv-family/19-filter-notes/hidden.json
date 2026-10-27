@@ -1,0 +1,12 @@
+{
+  "row_count": 5,
+  "columns": [
+    "id",
+    "notes",
+    "priority"
+  ],
+  "must_not_contain": [
+    "R-002",
+    "R-009"
+  ]
+}

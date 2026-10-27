@@ -1,0 +1,1 @@
+Round amount half up to 2 decimals and format as a dollar amount with a leading $ and no thousands separators (for example $12.50). Output columns id, formatted in the original row order. Trim spaces around amounts before parsing.

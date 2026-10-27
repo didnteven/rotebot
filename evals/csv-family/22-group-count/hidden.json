@@ -1,0 +1,11 @@
+{
+  "row_count": 3,
+  "columns": [
+    "status",
+    "count"
+  ],
+  "must_not_contain": [
+    "Q-001",
+    "NoSuchStatusZZZ"
+  ]
+}

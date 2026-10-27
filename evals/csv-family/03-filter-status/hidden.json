@@ -1,0 +1,12 @@
+{
+  "row_count": 5,
+  "columns": [
+    "id",
+    "item",
+    "status"
+  ],
+  "must_not_contain": [
+    "pending",
+    "cancelled"
+  ]
+}

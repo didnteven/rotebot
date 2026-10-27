@@ -1,0 +1,1 @@
+Trim full_name, collapse every run of multiple spaces to one space, then split on the first space into first_name and last_name (if there is no space last_name is empty). Output columns id, first_name, last_name in the original row order.

@@ -1,0 +1,1 @@
+Rename columns order_id to Order, created to Date, amount to Amount and customer to Customer, and reorder to Order, Date, Amount, Customer. Keep every row in its original order and copy every value exactly with no trimming or reformatting.

@@ -1,0 +1,10 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "length_in"
+  ],
+  "must_not_contain": [
+    "NoSuchInZZZ"
+  ]
+}

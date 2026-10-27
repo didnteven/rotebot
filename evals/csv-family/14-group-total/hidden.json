@@ -1,0 +1,11 @@
+{
+  "row_count": 3,
+  "columns": [
+    "category",
+    "total"
+  ],
+  "must_not_contain": [
+    "G-001",
+    "NoSuchGroupZZZ"
+  ]
+}

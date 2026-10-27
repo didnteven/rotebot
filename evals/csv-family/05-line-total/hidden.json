@@ -1,0 +1,12 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "quantity",
+    "unit_price",
+    "line_total"
+  ],
+  "must_not_contain": [
+    "NoSuchTotalZZZ"
+  ]
+}

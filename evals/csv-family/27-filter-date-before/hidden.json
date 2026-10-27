@@ -1,0 +1,12 @@
+{
+  "row_count": 5,
+  "columns": [
+    "id",
+    "event",
+    "date"
+  ],
+  "must_not_contain": [
+    "Z-002",
+    "Z-003"
+  ]
+}

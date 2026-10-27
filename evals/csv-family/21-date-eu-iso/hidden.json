@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "due_iso"
+  ],
+  "must_not_contain": [
+    "05/01/2026",
+    "31/12/2026"
+  ]
+}

@@ -1,0 +1,1 @@
+Compute line_total as quantity times unit_price, rounded half up to exactly 2 decimals (quantities are non-negative integers, prices are plain decimals). Output columns id, quantity, unit_price, line_total in the original row order. Trim spaces around numeric fields before parsing.

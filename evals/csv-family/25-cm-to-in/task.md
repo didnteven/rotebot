@@ -1,0 +1,1 @@
+Convert length_cm to inches by multiplying by 0.393701, rounded half up to exactly 2 decimals (lengths are plain non-negative decimals). Output columns id, length_in in the original row order. Trim spaces around lengths before parsing.

@@ -505,3 +505,53 @@ Manual N-1 upgrade (plan M3), 2026-10-28: `crates/app-core/examples/n1_upgrade.r
   setting. The schedules and Today tables start empty.
 - The migration list is append-only between the two builds.
 - A signed install and update are still pending a Developer ID.
+
+## Task 19: private generated-execution eval suite (`m4/eval-suite`, plan §9.3)
+
+`evals/csv-family/` holds 30 distinct local CSV tasks (`01-rename-reorder`
+through `30-location`: rename/reorder, number/text/date filters, derived
+sum/concat/percentage, US and EU date reformats, dedupes, sorts with stated
+tie-breaks, splits, trim/case normalization, currency formatting, group
+totals/counts, top-5, blank defaults, kg→lb and cm→in conversions, boolean
+mappings, and location joins). Each folder has `task.md`, `input.csv` (10
+fabricated rows, `example.invalid` emails, one awkward case per task),
+`expected.csv` (exact bytes, authored by reasoning about the request), and
+`hidden.json` (row_count, columns, must_not_contain). `manifest.json`
+freezes the 120 corpus sha256 hashes, route `muse_plan`, model
+`muse-spark-1.3`, Muse binary `muse-bin-1.4.13-R6996.1` (version read from
+the file name only), runner 0.1.0 / QuickJS 0.14.0, the §9.3 price constants
+($1.20 + $0.016 = $1.216/attempt; $109.44 planned maximum), repetitions 3,
+threshold 0.75, and permissions (input read, one output create, no network,
+no connections).
+
+`crates/app-core/examples/eval_suite.rs` runs `--route
+<muse_plan|api_key|replay> --tasks <all|ids> --reps N --out <dir>` with a
+fresh temp data folder and `AppCore` per attempt (MemoryStore vault; real
+home for `muse_plan` exactly as `muse_plan_build.rs`; key only from the
+vault flow or `META_API_KEY`, planned spend printed, `--confirm-spend`
+required; usage-limit stops the run INCOMPLETE). Scoring lives in
+`crates/app-core/src/eval.rs` (exact bytes, hidden checks, ≤200-char first-
+line diffs, failure classes, verdicts); `replay` scores
+`replay/<id>.json` only (`"generation_quality": "not measured"`).
+`crates/app-core/tests/eval_suite.rs` pins corpus integrity plus replay
+scoring (correct pass, wrong `wrong_output`, missing INCOMPLETE).
+
+Not run here, per instructions: the suite against Muse or Meta; only the
+replay route ran (smoke: 01 PASS, 02 FAIL `wrong_output`). Paid generation
+(§9.3: $109.44 + reserve) awaits owner funding; the §9.3 gate is therefore
+still open. No skips, ignores, or weakened tests; no new crates or packages.
+
+Final verification: **PASS**, exit **0** for `cargo build -p
+macroscope-runner --bins` and `bash scripts/check.sh`. Workspace: **320
+passed, 0 failed, 4 pre-existing ignores**; synthetic runtime:
+**141 passed, 0 failed, 1 pre-existing ignore**; UI: **126 passed across 17
+files**; formatting, Clippy with warnings denied, typecheck, and the
+production desktop build all green. The 2 new corpus/scoring tests and 2 new
+scoring unit tests account for the +4 over the previous 316 + 137.
+
+Claude's review of task 19: checked expected outputs by hand for 07-discount-pct (every row,
+including the 10.0% and 33.5% halfway cases), 15-top-scores (score ties broken by id) and
+24-upper-code (Unicode uppercasing). The only change to existing code is the `eval` module
+line in lib.rs. The runner refuses `api_key` without `META_API_KEY` in the environment plus
+`--confirm-spend`. Rerun by Claude: both `check.sh` runs passed with **461 Rust + 126 UI tests**
+each, and OS canaries **PASS**.

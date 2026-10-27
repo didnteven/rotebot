@@ -1,0 +1,11 @@
+{
+  "row_count": 10,
+  "columns": [
+    "id",
+    "first_name",
+    "nickname"
+  ],
+  "must_not_contain": [
+    "NoSuchNickZZZ"
+  ]
+}
