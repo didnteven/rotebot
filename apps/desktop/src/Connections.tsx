@@ -42,7 +42,7 @@ export function Connections({
         {connectors.map((c) => (
           <article className="card" key={c.id}>
             <h2>{c.name}</h2>
-            <p>{c.category}</p>
+            <p>{c.category.charAt(0).toUpperCase() + c.category.slice(1)}</p>
             <p className="badge">{stateName(c)}</p>
             <p className="badge">
               {c.verification === "verified-live" ||
