@@ -72,6 +72,7 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Meta structured-output schema dialect | **passed (real service)** | Real 400s found and fixed: no numeric `format`, no `oneOf` (use `anyOf`), no `default`, `required` lists every property (`model_schema_uses_the_strict_dialect_meta_accepts`). Applies to the direct API route too |
 | Muse native-tool containment (P7) | unverified | Needs a signed-in Muse to exercise tools; plan route requires an explicit owner opt-in meanwhile |
 | Generated TypeScript runtime admission (§7.3, P8) | **failed** | Seatbelt denied all effect canaries, but `data:` imports run and RSS polling overshoots 256 MiB; finite CSV mapping ships (ADR 0002) |
+| Generated JavaScript runtime v2 (QuickJS + Seatbelt) | **passed (developer boundary)** | `docs/build/runtime-lock-v2.md`: 57 canaries under the real sandbox, 55 denied/killed, 2 benign tools exact; memory canary peak 69.7 MB vs 64 MiB cap. Release admission pending a signed bundle |
 | Show observer: no titles/pixels leave the process (P1) | passed | observer tests; core ignores forged-session events; real observer start/stop test |
 | Show with Accessibility granted on a real Gmail tab | unverified | Mac was locked during the build; grant Accessibility to Macroscope and try Show |
 | Signed bundle TCC attribution, N-1 update (§5.3, P9) | unverified | No signing identity yet |

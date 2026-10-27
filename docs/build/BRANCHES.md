@@ -18,13 +18,14 @@ the build.
 | 10 | `m3/privacy-controls` | `m3/hardening` | Privacy center data deletion, tool export/pause, Try another sample, tray tool rows | M2–M3 |
 | 11 | `m3/renderer-safety` | `m3/privacy-controls` | P11: hostile text on every surface renders as text, pinned CSP; startup failure dialog; Muse plan route made to work for real | M3 |
 | 12 | `m3/muse-findings` | `m3/renderer-safety` | Fixes for the 8 defects Muse Code found in its review | M3 |
+| 13 | `m4/runtime-v2` | `m3/muse-findings` | QuickJS runner in a Seatbelt-confined child: generated-code boundary passes developer admission | M4 |
 
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each
