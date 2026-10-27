@@ -666,3 +666,21 @@ Claude's review of task 20:
 
 Rerun by Claude: both `check.sh` runs passed with **472 Rust + 127 UI tests** each.
 `run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer boundary).
+
+Task 22 rerun after the runtime-error fix (Muse plan, 3 reps): **2/3 passed**, where both
+attempts before the fix had failed. The failing attempt now reports the real cause:
+`SyntaxError at line 26, column 33: RegExp are not supported`. RegExp is deliberately left
+out of the runtime-v2 intrinsics (crates/runner/src/lib.rs). SDK.md, which the builder
+packet includes, says so, but the model still sometimes writes a regex. The one correction
+round did not recover in that attempt.
+
+Recommendation for the owner, not implemented because it changes the admitted boundary:
+admit `RegExp` through QuickJS-NG's interruptible regex engine. That needs new canaries
+(catastrophic-backtracking patterns stopped by the CPU and wall budget, a size-capped
+pattern source, no `RegExp.prototype.compile`) and an ADR. Alternatives: give the correction
+round two attempts, or reject regex literals at the host check with a "use string methods"
+hint.
+
+§9.3 gate note: repetitions 1–2 ran on the `m4/eval-suite` build (56/60). This runner
+changed the runtime, so a gate claim needs all three repetitions on one frozen build. The
+gate is **INCOMPLETE**.
