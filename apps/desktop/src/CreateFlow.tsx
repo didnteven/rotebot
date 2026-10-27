@@ -81,7 +81,7 @@ export function CreateFlow({
   const [step, setStep] = useState(0),
     [input, setInput] = useState(initialInput),
     [description, setDescription] = useState(
-      initialInput
+      initialInput && initialInput.text === undefined
         ? "Clean this orders CSV for import: Order, Date, Amount."
         : "",
     );
@@ -92,6 +92,7 @@ export function CreateFlow({
     [reviewed, setReviewed] = useState(false),
     [build, setBuild] = useState<BuildState | null>(null),
     [name, setName] = useState("Clean import CSV");
+  const [example, setExample] = useState("");
   const { act, busy, error } = useAction();
   const buildId = build?.buildId;
   useEffect(() => {
@@ -160,7 +161,9 @@ export function CreateFlow({
     });
   }
   async function review() {
-    const next = await backend.updateMapping(draft!.draftId, map!, outputName);
+    const next = draft!.kind === "program"
+      ? await backend.updateTask(draft!.draftId, "program", outputName, example || null)
+      : await backend.updateMapping(draft!.draftId, map!, outputName);
     acceptDraft(next);
     if (next.readyToBuild) {
       setPreview(await backend.outboundPreview(next.draftId));
@@ -214,8 +217,8 @@ export function CreateFlow({
       {busy && <p role="status">Working…</p>}
       {step === 0 && (
         <>
-          <h2>Describe</h2>
-          <Field label="What do you do with this CSV?">
+          <h2>Describe a task</h2>
+          <Field label="What do you want to do with this file?">
             <textarea
               rows={4}
               value={description}
@@ -232,7 +235,7 @@ export function CreateFlow({
                 })
               }
             >
-              Choose CSV…
+              Choose text file…
             </button>
             <button
               disabled={busy}
@@ -263,6 +266,19 @@ export function CreateFlow({
       {step === 1 && draft && map && (
         <>
           <h2>Task summary</h2>
+          <Field label="Task kind">
+            <select value={draft.kind ?? "csv-mapping"} disabled={busy} onChange={(e) => void act(async () => {
+              const kind = e.target.value as "csv-mapping" | "program";
+              acceptDraft(await backend.updateTask(draft.draftId, kind, outputName.replace(/\.[^.]+$/, kind === "program" ? ".txt" : ".csv"), example || null));
+            })}>
+              <option value="csv-mapping">CSV mapping</option>
+              <option value="program">Program (sandboxed)</option>
+            </select>
+          </Field>
+          {draft.kind === "program" && <Field label="Example of the expected result (optional)">
+            <textarea aria-label="Example of the expected result (optional)" rows={4} maxLength={16000} value={example} onChange={(e) => setExample(e.target.value)} />
+            <span>This is your real text. It will be included in the outbound review.</span>
+          </Field>}
           <ul>
             {draft.summary.map((line) => (
               <li key={line}>{line}</li>
@@ -300,7 +316,7 @@ export function CreateFlow({
               ))}
             </fieldset>
           ))}
-          <div
+          {draft.kind !== "program" && <div
             className="table-scroll"
             role="region"
             aria-label="Column mapping"
@@ -474,7 +490,7 @@ export function CreateFlow({
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
           <Field label="Output file name">
             <FileNameInput
               label="Output file name"
@@ -538,8 +554,7 @@ export function CreateFlow({
               {preview.route === "offline_demo" ? (
                 <>
                   <p className="notice notice-info">
-                    Nothing leaves this Mac. The offline demo maps columns
-                    without a model; results are labelled as a demo.
+                    {draft?.kind === "program" ? "Writing a program needs a model: sign in to Muse or add a key" : "Nothing leaves this Mac. The offline demo maps columns without a model; results are labelled as a demo."}
                   </p>
                   <dl>
                     <dt>Route</dt>
@@ -560,7 +575,7 @@ export function CreateFlow({
                     <dt>Model</dt>
                     <dd>{preview.model}</dd>
                   </dl>
-                  <span className="badge">Contains only synthetic rows</span>
+                  <span className="badge">{preview.containsRealRows ? "Contains your real example text — review before sending" : "Contains only synthetic rows"}</span>
                   <pre tabIndex={0} aria-label="Exact outbound payload">
                     {preview.payloadText}
                   </pre>
@@ -592,7 +607,7 @@ export function CreateFlow({
                   busy ||
                   (preview.route !== "offline_demo" && !reviewed) ||
                   status.effectiveRoute === null ||
-                  !!activeBuild
+                  !!activeBuild || (draft?.kind === "program" && preview.route === "offline_demo")
                 }
                 onClick={() =>
                   void act(async () => {
@@ -678,7 +693,7 @@ export function CreateFlow({
                   </li>
                 ))}
               </ul>
-              <p>Malformed values stop the run.</p>
+              <p>{build.program ? "Program (sandboxed)" : "Malformed values stop the run."}</p>
               <h3>Examples checked</h3>
               <ul>
                 {build.checks.map((c) => (
@@ -690,15 +705,13 @@ export function CreateFlow({
               </ul>
               <h3>Needs your check</h3>
               <p>
-                Are these the right columns and date meaning? Compare the first
-                8 rows.
+                {build.program ? "Does this result match your task? Compare the first lines." : "Are these the right columns and date meaning? Compare the first 8 rows."}
               </p>
               <h3>Access</h3>
               <p>
-                Read the selected CSV; create one new CSV in the folder you
-                choose. Source unchanged; existing files are never replaced.
+                Read the selected file; create one new output in the folder you choose. Source unchanged; existing files are never replaced.
               </p>
-              <DataTable
+              {build.comparison.inputText !== undefined ? <><h3>Input · first lines</h3><pre>{build.comparison.inputText}</pre><h3>Output · first lines</h3><pre>{build.comparison.outputText}</pre></> : <><DataTable
                 columns={build.comparison.inputColumns}
                 rows={build.comparison.inputRows}
                 caption="Input · first 8 rows"
@@ -707,7 +720,7 @@ export function CreateFlow({
                 columns={build.comparison.outputColumns}
                 rows={build.comparison.outputRows}
                 caption="Staged output · first 8 rows"
-              />
+              /></>}
               <Field label="Tool name">
                 <input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
@@ -747,7 +760,7 @@ export function CreateFlow({
           )}
           <details>
             <summary>Advanced details</summary>
-            <pre tabIndex={0}>{JSON.stringify(build.candidate, null, 2)}</pre>
+            <pre tabIndex={0}>{build.program ? build.program.code : JSON.stringify(build.candidate, null, 2)}</pre>
             <ol>
               {build.events.map((e) => (
                 <li key={e.seq}>

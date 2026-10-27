@@ -120,6 +120,14 @@ pub struct ModelAccessStatus {
 
 // ---------- files, drafts ----------
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskKind {
+    #[default]
+    CsvMapping,
+    Program,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileHandle {
@@ -131,6 +139,8 @@ pub struct FileHandle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CsvPreview {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     pub handle: FileHandle,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
@@ -157,6 +167,12 @@ pub struct RuleQuestion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskDraft {
+    #[serde(default)]
+    pub kind: TaskKind,
+    #[serde(default)]
+    pub example_output: Option<String>,
+    #[serde(default)]
+    pub synthetic_shape: String,
     pub draft_id: String,
     pub revision: u32,
     pub goal: String,
@@ -238,6 +254,10 @@ pub struct BuildEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Comparison {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_text: Option<String>,
     pub input_columns: Vec<String>,
     pub input_rows: Vec<Vec<String>>,
     pub output_columns: Vec<String>,
@@ -267,6 +287,8 @@ pub struct BuildFailure {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildState {
+    #[serde(default)]
+    pub program: Option<macroscope_builder::Program>,
     pub build_id: String,
     pub draft_id: String,
     pub route: ModelRoute,
@@ -299,6 +321,8 @@ pub struct ToolSummary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDetail {
+    #[serde(default)]
+    pub program: Option<macroscope_builder::Program>,
     #[serde(flatten)]
     pub summary_row: ToolSummary,
     pub summary: Vec<String>,
@@ -312,6 +336,8 @@ pub struct ToolDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedRun {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_text: Option<String>,
     pub run_id: String,
     pub tool_id: String,
     pub input: FileHandle,

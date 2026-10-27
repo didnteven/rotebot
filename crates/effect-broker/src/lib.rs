@@ -38,7 +38,7 @@ pub enum BrokerError {
     InvalidMapping(Vec<String>),
     #[error("selected path must be an absolute regular file/directory, without symlinks")]
     InvalidSelection,
-    #[error("destination must be a single CSV basename")]
+    #[error("destination must be a single .csv, .tsv, .txt, .md or .json basename")]
     InvalidBasename,
     #[error("staging authentication, length, or digest mismatch")]
     StagingTampered,
@@ -300,7 +300,10 @@ pub fn validate_basename(name: &str) -> Result<(), BrokerError> {
         || name.contains(['/', '\\', '\0', ':'])
         || name == "."
         || name == ".."
-        || !name.to_ascii_lowercase().ends_with(".csv")
+        || name.len() > 255
+        || ![".csv", ".tsv", ".txt", ".md", ".json"]
+            .iter()
+            .any(|ext| name.to_ascii_lowercase().ends_with(ext))
         || name.chars().any(char::is_control)
     {
         return Err(BrokerError::InvalidBasename);
@@ -368,6 +371,9 @@ fn read_snapshot(
 }
 
 pub fn stage(run: StageRequest) -> Result<StagedPlan, BrokerError> {
+    if !run.basename.to_ascii_lowercase().ends_with(".csv") {
+        return Err(BrokerError::InvalidBasename);
+    }
     validate_mapping(&run.mapping, &run.contract).map_err(BrokerError::InvalidMapping)?;
     validate_basename(&run.basename)?;
     validate_selected_path(&run.destination.path)?;
@@ -406,7 +412,9 @@ pub fn stage_generated(
         return Err(BrokerError::DestinationExists);
     }
     let (input, snapshot) = read_snapshot(&run.input, run.limits.max_input_bytes)?;
-    require_columns(&input, 0, &run.contract.input_schema)?;
+    if !run.contract.input_schema.is_empty() {
+        require_columns(&input, 0, &run.contract.input_schema)?;
+    }
     let bytes = execute(&input)?;
     if bytes.len() as u64 > run.limits.max_output_bytes {
         return Err(MappingError::Limit {
@@ -415,27 +423,50 @@ pub fn stage_generated(
         }
         .into());
     }
-    require_columns(&bytes, 0, &run.contract.output_columns)?;
-    let mut reader = csv::Reader::from_reader(bytes.as_slice());
-    let mut rows = 0;
-    for record in reader.records() {
-        record.map_err(|e| MappingError::Csv(e.to_string()))?;
-        rows += 1;
-        if rows > run.limits.max_rows {
-            return Err(MappingError::Limit {
-                kind: "rows",
-                limit: run.limits.max_rows,
-            }
-            .into());
-        }
+    validate_text_output(&run.basename, &bytes)?;
+    if !run.contract.output_columns.is_empty() {
+        require_columns(&bytes, 0, &run.contract.output_columns)?;
     }
+    let rows_in = std::str::from_utf8(&input)
+        .map_err(|_| BrokerError::Runner("input must be UTF-8".into()))?
+        .lines()
+        .count() as u64;
+    let rows_out = std::str::from_utf8(&bytes).unwrap().lines().count() as u64;
     let output = macroscope_executor::MappingOutput {
         sha256: digest(&bytes),
         bytes,
-        rows_in: rows,
-        rows_out: rows,
+        rows_in,
+        rows_out,
     };
     freeze_output(run, snapshot, output, "js-quickjs", Some(execution_hash))
+}
+
+/// Shared host validation for checked and staged program output.
+pub fn validate_text_output(name: &str, bytes: &[u8]) -> Result<(), BrokerError> {
+    validate_basename(name)?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| BrokerError::Runner("output must be valid UTF-8".into()))?;
+    if text.is_empty() {
+        return Err(BrokerError::Runner("output must not be empty".into()));
+    }
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".json") {
+        serde_json::from_str::<serde_json::Value>(text)
+            .map_err(|_| BrokerError::Runner("output is not valid JSON".into()))?;
+    } else if lower.ends_with(".csv") || lower.ends_with(".tsv") {
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(if lower.ends_with(".tsv") { b'\t' } else { b',' })
+            .from_reader(bytes);
+        reader
+            .headers()
+            .map_err(|_| BrokerError::Runner("invalid delimited output header".into()))?;
+        for record in reader.records() {
+            record.map_err(|_| {
+                BrokerError::Runner("output has inconsistent CSV/TSV records".into())
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn freeze_output(

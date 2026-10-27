@@ -14,6 +14,67 @@ Muse Code (`muse-spark-1.3`, contributor mode) helped once the owner signed in a
 reviewed the code read-only and found 8 defects, which Codex then fixed (`m3/muse-findings`,
 report in `muse-review.md`). Muse's plan route also produced the first real model-built tool.
 
+## Task 11: text programs through runtime v2 (`m4/general-tasks`)
+
+Generated execution is enabled by default in app-core and desktop at the accepted
+**developer boundary** ([ADR 0003](../adr/0003-programs-through-runtime-v2.md)).
+Release admission still requires a signed immutable bundle and fresh release receipts.
+The macOS bundle script includes the runner, launcher and Seatbelt profile next to
+the app executable; Tauri development/build hooks build the runner binaries in the
+inherited target directory. Production uses mandatory Seatbelt with no synthetic fallback.
+
+The create flow now says “Describe a task”, accepts selected UTF-8 text up to 10 MB,
+proposes CSV mapping only for parsed CSV and finite mapping descriptions, and lets
+the user switch to a sandboxed program. Programs create one confirmed .csv, .tsv,
+.txt, .md or .json output. Their strict model schema requires summary/output_name/code,
+with no extra properties or unsupported dialect keywords. The host replaces every
+input value token with invented shape samples, including headers, JSON keys and XML
+tags. An optional user example is identified as real data in the outbound review and
+requires the checkbox. Muse plan and direct Meta key routes share the builder;
+offline programs explain that a model is required.
+
+Host checks run two fresh bounded children, require identical bytes, the confirmed
+single output name, nonempty UTF-8 and CSV/TSV/JSON syntax where selected, ordered
+example lines, and unchanged source. Date is absent and Math.random is removed and
+frozen. Imports, eval, Worker, oversized output and infinite loops fail checks with
+safe diagnostics. Saved source is part of the immutable version record/tree hash.
+Saved programs stage through RunnerEngine and the existing broker approval,
+create-only commit and receipt path. Text comparisons and Advanced code details are
+inert renderer text. Program export includes its versioned source.
+
+Validation on 2026-10-27:
+
+| Command | Exact result | Output tail / evidence |
+|---|---|---|
+| `cargo test --workspace` | **PASS**, exit 0; 215 passed, 0 failed, 4 existing opt-in tests ignored | Final doc-test tail: `test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`; full log `.dev/task11/cargo-test-workspace.log` |
+| `bash scripts/check.sh` (first) | **PASS**, exit 0; formatting, Clippy with warnings denied, Rust tests, TypeScript, 106 UI tests, production UI build | `✓ built in 92ms`; `.dev/task11/check-1.log` |
+| `bash scripts/check.sh` (second) | **PASS**, exit 0; same checks, 106 UI tests | `✓ built in 99ms`; `.dev/task11/check-2.log` |
+| `bash experiments/runtime-gate-v2/run-canaries.sh` | **FAIL / admission UNKNOWN**, exit 1; all 57 synthetic expectations matched (55 DENIED, 2 PASS); 57 OS rows UNKNOWN because this was the requested synthetic-only run | `orders: synthetic=PASS, OS=UNKNOWN` / `stdin-flood: synthetic=DENIED, OS=UNKNOWN` / `Verdict: UNKNOWN; evidence: docs/build/runtime-lock-v2.md`; archived [synthetic report](task11-runtime-canaries.md), [raw receipts](../../experiments/runtime-gate-v2/task11-synthetic-results.json), `.dev/task11/runtime-canaries.log` |
+| `cd apps/desktop && npx tauri build --debug --no-bundle` | **PASS**, exit 0 | ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 45.09s``; `Built application at: /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/11-general-tasks/debug/macroscope-desktop`; `.dev/task11/tauri-build.log` |
+
+The canary harness returns a nonzero exit for UNKNOWN; its admission rule was not
+weakened. Its synthetic report was archived separately so the original runtime-v2
+OS admission evidence and hashes remain intact in `runtime-lock-v2.md` and the
+original `results.json`. This run does not claim fresh OS or signed-release admission.
+
+A routing regression also covers duplicate removal, row removal, arithmetic and search requests that include CSV cleaning words. Developer discovery handles both test and example executable directories.
+
+New tests cover the fake Responses log extractor through ready → save → stage →
+approve → exact commit, private-token exclusion and exact reviewed packet equality,
+malicious/limit/clock/random programs, determinism, examples, format parsing and
+source changes. UI coverage includes program creation, real-example consent,
+offline explanation and inert source/output rendering; test worker concurrency is
+bounded to four. Existing assertions were retained, with create-flow label updates.
+
+The real-Muse owner example is `crates/app-core/examples/muse_program_build.rs`:
+`cargo build -p macroscope-runner --bins`, then
+`cargo run -p macroscope-app-core --example muse_program_build`. It was **not run**
+in this task. No account/authentication changes were performed.
+
+The backend contract is updated in `apps/desktop/src/backend/types.ts`. The explicit
+worktree-only constraint prevents updating the external shared copy, so an identical
+fallback is at `.dev/task11/backend-types.ts` (verified with `cmp`).
+
 ## What works now
 
 - **Tell flow, end to end, in the real app process**: choose or sample a CSV → task

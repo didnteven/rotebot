@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.macroscope.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "cargo build --manifest-path ../../Cargo.toml -p macroscope-runner --bins && npm run dev",
+    "beforeBuildCommand": "cargo build --manifest-path ../../Cargo.toml -p macroscope-runner --bins && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },

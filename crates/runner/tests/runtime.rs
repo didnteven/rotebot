@@ -230,3 +230,13 @@ fn protocol_limits_syntax_and_hostile_exception_values() {
         matches!(Response::from_wire(&result.stdout).unwrap(),Response::Error {error} if error.kind=="syntax")
     );
 }
+
+#[test]
+fn clock_and_randomness_are_unavailable_and_text_output_formats_work() {
+    success("function run(){ if(typeof Date !== 'undefined' || typeof Math.random !== 'undefined') throw 1; }");
+    for ext in ["csv", "tsv", "txt", "md", "json"] {
+        success(&format!(
+            "function run(){{macroscope.output('result.{ext}','synthetic')}}"
+        ));
+    }
+}

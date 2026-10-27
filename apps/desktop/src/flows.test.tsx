@@ -8,7 +8,7 @@ const button = (name: string | RegExp) => screen.getByRole("button", { name });
 async function open(backend = new MockBackend()) {
   const user = userEvent.setup();
   render(<App backend={backend} />);
-  await waitFor(() => expect(button("Describe a CSV task")).toBeEnabled());
+  await waitFor(() => expect(button("Describe a task")).toBeEnabled());
   return { user, backend };
 }
 async function summary(user: ReturnType<typeof userEvent.setup>) {
@@ -191,7 +191,7 @@ describe("Tell and deterministic runs", () => {
     );
     const { user } = await open(backend);
     await user.click(button("Run Clean import CSV…"));
-    await user.click(button("Choose input CSV…"));
+    await user.click(button("Choose input file…"));
     await user.click(button("Choose output folder…"));
     await user.click(button("Stage and compare"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -209,8 +209,8 @@ describe("Tell and deterministic runs", () => {
       ),
     );
     const { user } = await open(backend);
-    await user.click(button("Describe a CSV task"));
-    await user.click(button("Choose CSV…"));
+    await user.click(button("Describe a task"));
+    await user.click(button("Choose text file…"));
     expect(
       await screen.findByText("<img src=x onerror=alert(1)>"),
     ).toBeVisible();
@@ -220,7 +220,7 @@ describe("Tell and deterministic runs", () => {
   it("detects mentioned services and keeps mapping edits across navigation", async () => {
     const { user } = await open();
     await user.click(button("Try a sample"));
-    const text = screen.getByLabelText("What do you do with this CSV?");
+    const text = screen.getByLabelText("What do you want to do with this file?");
     await user.clear(text);
     await user.type(text, "Clean Gmail orders, then Slack and notion.");
     await user.click(button("Review task summary"));
@@ -239,13 +239,13 @@ describe("Tell and deterministic runs", () => {
 it("preserves a Tell draft when Show is opened and closed", async () => {
   const { user } = await open();
   await user.click(button("Try a sample"));
-  const description = screen.getByLabelText("What do you do with this CSV?");
+  const description = screen.getByLabelText("What do you want to do with this file?");
   await user.clear(description);
   await user.type(description, "Keep this draft for later");
   await user.click(button("Show a task"));
   expect(screen.getByRole("heading", { name: "Show a task" })).toBeVisible();
   await user.click(button("Back"));
-  expect(screen.getByLabelText("What do you do with this CSV?")).toHaveValue(
+  expect(screen.getByLabelText("What do you want to do with this file?")).toHaveValue(
     "Keep this draft for later",
   );
 });

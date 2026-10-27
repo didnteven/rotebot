@@ -19,6 +19,7 @@ import type {
   ShowState,
   StagedRun,
   TaskDraft,
+  TaskKind,
   ToolDetail,
   ToolSummary,
   Transform,
@@ -405,6 +406,13 @@ export class MockBackend implements Backend {
     this.files.set(handle.handleId, { preview, rows });
     return clone(preview);
   }
+  importText(name: string, text: string): CsvPreview {
+    if (new TextEncoder().encode(text).length > 10_000_000) throw new Error("Input exceeds 10 MB.");
+    const handle = {handleId: this.id("file"), displayName: name, displayPath: name};
+    const preview = {handle, columns: [], rows: [], rowCount: text.split("\n").length, byteSize: new TextEncoder().encode(text).length, text: text.split("\n").slice(0, 8).join("\n")};
+    this.files.set(handle.handleId, {preview, rows: text.split("\n").map(line => [line])});
+    return clone(preview);
+  }
   async loadSampleCsv() {
     const preview = this.importCsv("orders.csv", sampleCsv);
     this.sampleInputs.add(preview.handle.handleId);
@@ -414,7 +422,7 @@ export class MockBackend implements Backend {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = ".csv,text/csv";
+      input.accept = ".csv,.tsv,.txt,.md,.json,.log,.xml,.html";
       input.onchange = () => {
         const file = input.files?.[0];
         if (!file) {
@@ -423,7 +431,7 @@ export class MockBackend implements Backend {
         }
         void file.text().then((text) => {
           try {
-            resolve(this.importCsv(file.name, text));
+            resolve(file.name.toLowerCase().endsWith(".csv") ? this.importCsv(file.name, text) : this.importText(file.name, text));
           } catch (error) {
             reject(error);
           }
@@ -441,6 +449,11 @@ export class MockBackend implements Backend {
   }
   private validate(draft: TaskDraft) {
     draft.blockers = [];
+    if (draft.kind === "program") {
+      if (!/^[^/\\:]+\.(csv|tsv|txt|md|json)$/i.test(draft.outputName)) draft.blockers.push("Choose a .csv, .tsv, .txt, .md or .json output name.");
+      draft.readyToBuild = !draft.blockers.length;
+      return clone(draft);
+    }
     if (draft.questions.some((q) => !q.answer))
       draft.blockers.push("Choose the date meaning to continue.");
     if (!/^[^/\\]+\.csv$/i.test(draft.outputName))
@@ -471,7 +484,9 @@ export class MockBackend implements Backend {
           new RegExp(`\\b${c.name}\\b`, "i").test(description),
       )
       .map((c) => c.id);
+    const kind = file.preview.text !== undefined || /extract|filter|containing|sort|group|json|dedup|duplicat|blank rows|empty rows|calculat|multiply|divide|subtract|percent|tax|replace|regex|search|find|pivot|split/i.test(description) ? "program" : "csv-mapping";
     const draft: TaskDraft = {
+      kind, exampleOutput: null,
       draftId: this.id("draft"),
       revision: 1,
       goal: description,
@@ -500,6 +515,11 @@ export class MockBackend implements Backend {
       readyToBuild: false,
       blockers: [],
     };
+    if (kind === "program") {
+      draft.questions = [];
+      draft.outputName = "errors.txt";
+      draft.summary = [description, "Program (sandboxed): create one output; source unchanged."];
+    }
     this.drafts.set(draft.draftId, draft);
     return this.validate(draft);
   }
@@ -522,6 +542,13 @@ export class MockBackend implements Backend {
     draft.revision++;
     return this.validate(draft);
   }
+  async updateTask(draftId: string, kind: TaskKind, outputName: string, exampleOutput: string | null) {
+    const draft = this.draft(draftId);
+    draft.kind = kind; draft.outputName = outputName; draft.exampleOutput = exampleOutput;
+    if (kind === "program") draft.questions = [];
+    draft.revision++;
+    return this.validate(draft);
+  }
   async outboundPreview(draftId: string) {
     const draft = this.draft(draftId),
       status = this.resolveRoute(),
@@ -539,7 +566,7 @@ export class MockBackend implements Backend {
       payloadText:
         route === "offline_demo"
           ? "Nothing leaves this Mac. The offline demo maps columns without a model."
-          : JSON.stringify(
+          : draft.kind === "program" ? JSON.stringify({description: draft.goal, syntheticTextShape: "2123-45-67 HJKLM inventedvalue", exampleRealData: draft.exampleOutput, outputName: draft.outputName}) : JSON.stringify(
               {
                 task: "Create a CSV mapping using these confirmed rules.",
                 mapping: draft.mapping,
@@ -555,7 +582,7 @@ export class MockBackend implements Backend {
               null,
               2,
             ),
-      containsRealRows: false as const,
+      containsRealRows: !!draft.exampleOutput,
       estimatedCostMicros:
         route === "muse_plan" ? null : route === "offline_demo" ? 0 : 20000,
       budgetMicros: 2000000,
@@ -574,6 +601,7 @@ export class MockBackend implements Backend {
   }
   async startBuild(draftId: string, consent: { outboundReviewed: boolean }) {
     const draft = clone(this.draft(draftId));
+    if (draft.kind === "program" && (this.resolveRoute().effectiveRoute ?? "offline_demo") === "offline_demo") throw new Error("Writing a program needs a model: sign in to Muse or add a key");
     if (!this.validate(draft).readyToBuild)
       throw new Error(draft.blockers.join(" "));
     if (
@@ -620,7 +648,7 @@ export class MockBackend implements Backend {
         purpose: "Build CSV tool",
         destination: preview.destination,
         route: preview.route,
-        syntheticOnly: true,
+        syntheticOnly: !draft.exampleOutput,
         costMicros: preview.estimatedCostMicros,
         payloadText: preview.payloadText,
       });
@@ -637,6 +665,20 @@ export class MockBackend implements Backend {
         if (phase === "candidate") build.candidate = clone(draft.mapping);
         if (phase === "ready") {
           const file = this.files.get(draft.input.handle.handleId)!;
+          if (draft.kind === "program") {
+            // Fixed mock fixture; generated code is never evaluated in the renderer.
+            const output = file.rows.map(row => row.join(",")).filter(line => line.includes("ERROR")).join("\n") + "\n";
+            build.program = {summary: "Extract ERROR lines", output_name: draft.outputName, code: 'function run() { const text = macroscope.input("input_csv"); macroscope.output(' + JSON.stringify(draft.outputName) + ', text.split("\\n").filter(line => line.includes("ERROR")).join("\\n") + "\\n"); }'};
+            let cursor = 0;
+            const lines = output.split("\n");
+            const matches = !draft.exampleOutput || draft.exampleOutput.split("\n").every(line => { const i = lines.indexOf(line, cursor); cursor = i + 1; return i >= 0; });
+            build.checks = [{id:"example", label:"Every example line appears in order", passed:matches, detail:null}, {id:"deterministic",label:"Two fresh runs produce identical bytes",passed:true,detail:null}];
+            build.comparison = {inputColumns:[],inputRows:[],outputColumns:[],outputRows:[],inputText:file.preview.text ?? file.rows.map(row => row.join(",")).join("\n"),outputText:output,rowsIn:file.rows.length,rowsOut:output.trimEnd().split("\n").length};
+            if (!matches) { build.failure = {kind:"checks",message:"Example lines did not appear in order."}; this.emitBuild(build,"failed",build.failure.message); return; }
+            this.emitBuild(build, "ready", "Ready to compare");
+            this.log("build", "Program checks passed");
+            return;
+          }
           const beforeDigest = digest(file.rows);
           const output = apply(file.preview, file.rows, draft.mapping);
           if (!Array.isArray(output)) {
@@ -813,7 +855,8 @@ export class MockBackend implements Backend {
       id: this.id("tool"),
       name: name.trim(),
       version: 1,
-      engine: "csv-mapping",
+      engine: build.program ? "js-quickjs" : "csv-mapping",
+      program: build.program,
       createdAtMs: Date.now(),
       lastRunAtMs: null,
       runCount: 0,
@@ -824,7 +867,7 @@ export class MockBackend implements Backend {
       inputColumns: draft.input.columns,
       outputColumns: build.candidate.output_columns.map((c) => c.name),
       access: clone(access),
-      versionHash: digest(build.candidate),
+      versionHash: digest({mapping:build.candidate, program:build.program}),
     };
     this.tools.set(tool.id, tool);
     this.log("build", `Saved ${tool.name}`);
@@ -926,7 +969,7 @@ export class MockBackend implements Backend {
           message: "Choose an input CSV.",
         } as RunFailure,
       };
-    if (!/^[^/\\]+\.csv$/i.test(outputName))
+    if (!(tool.program ? /^[^/\\:]+\.(csv|tsv|txt|md|json)$/i : /^[^/\\]+\.csv$/i).test(outputName))
       return {
         failure: {
           kind: "input_invalid",
@@ -935,9 +978,11 @@ export class MockBackend implements Backend {
           message: "Choose a CSV file name without folder separators.",
         } as RunFailure,
       };
-    const output = apply(file.preview, file.rows, tool.mapping);
+    const programText = tool.program ? file.rows.map(row => row.join(",")).filter(line => line.includes("ERROR")).join("\n") + "\n" : undefined;
+    const output = programText !== undefined ? programText.split("\n").map(line => [line]) : apply(file.preview, file.rows, tool.mapping);
     if (!Array.isArray(output)) return { failure: output };
     const run: StagedRun = {
+      previewText: programText,
       runId: this.id("run"),
       toolId,
       input: clone(input),

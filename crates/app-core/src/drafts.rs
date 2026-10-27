@@ -67,8 +67,28 @@ pub fn parse(bytes: &[u8], sample: usize) -> Result<ParsedCsv, String> {
 }
 
 pub fn preview(handle: FileHandle, bytes: &[u8]) -> Result<CsvPreview, String> {
-    let parsed = parse(bytes, PREVIEW_ROWS)?;
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| "Choose a valid UTF-8 text file.".to_string())?;
+    let parsed = match parse(bytes, PREVIEW_ROWS) {
+        Ok(parsed)
+            if parsed.columns.len() > 1
+                || handle.display_name.to_ascii_lowercase().ends_with(".csv") =>
+        {
+            parsed
+        }
+        _ => {
+            return Ok(CsvPreview {
+                handle,
+                columns: vec![],
+                rows: vec![],
+                row_count: text.lines().count() as u64,
+                byte_size: bytes.len() as u64,
+                text: Some(text_preview(text)),
+            })
+        }
+    };
     Ok(CsvPreview {
+        text: None,
         handle,
         columns: parsed.columns.clone(),
         rows: parsed
@@ -362,7 +382,85 @@ pub fn parse_date_answer(answer: &str) -> Option<DateFormat> {
 }
 
 /// Plain-language task summary lines (plan §2.1 wording).
+pub fn text_preview(text: &str) -> String {
+    text.lines()
+        .take(PREVIEW_ROWS)
+        .map(|l| l.chars().take(500).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Conservative local routing: only the finite operations may choose mapping.
+/// Unknown requests go to programs; the user can always switch explicitly.
+pub fn fits_mapping(description: &str) -> bool {
+    let text = description.to_ascii_lowercase();
+    if [
+        "extract",
+        "filter",
+        "containing",
+        "group",
+        "sum",
+        "sort",
+        "dedup",
+        "duplicat",
+        "blank rows",
+        "empty rows",
+        "blank lines",
+        "empty lines",
+        "remove rows",
+        "delete rows",
+        "calculat",
+        "multiply",
+        "divide",
+        "subtract",
+        "percent",
+        "tax",
+        "replace",
+        "regex",
+        "search",
+        "find",
+        "pivot",
+        "split",
+        "join",
+        "merge",
+        "count",
+        "json",
+        "markdown",
+        "every line",
+    ]
+    .iter()
+    .any(|w| text.contains(w))
+    {
+        return false;
+    }
+    text.trim().is_empty()
+        || [
+            "clean",
+            "copy",
+            "import",
+            "map",
+            "column",
+            "date",
+            "currency",
+            "amount",
+            "trim",
+            "uppercase",
+            "lowercase",
+            "prepare",
+            "rename",
+        ]
+        .iter()
+        .any(|w| text.contains(w))
+}
+
 pub fn summary(draft: &TaskDraft) -> Vec<String> {
+    if draft.kind == crate::dto::TaskKind::Program {
+        return vec![
+            draft.goal.clone(),
+            "Program (sandboxed): read the selected text file and create one output.".into(),
+            format!("Create {}; leave the source unchanged.", draft.output_name),
+        ];
+    }
     let mut lines = vec!["You described this task; recurrence unmeasured.".to_string()];
     let names: Vec<&str> = draft
         .mapping
@@ -424,13 +522,21 @@ pub fn contract_for(draft: &TaskDraft) -> TaskContract {
         } else {
             draft.goal.clone()
         },
-        input_schema: draft.input.columns.clone(),
-        output_columns: draft
-            .mapping
-            .output_columns
-            .iter()
-            .map(|c| c.name.clone())
-            .collect(),
+        input_schema: if draft.kind == crate::dto::TaskKind::Program {
+            vec![]
+        } else {
+            draft.input.columns.clone()
+        },
+        output_columns: if draft.kind == crate::dto::TaskKind::Program {
+            vec![]
+        } else {
+            draft
+                .mapping
+                .output_columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect()
+        },
         mapping: draft.mapping.clone(),
         error_policy: OnError::StopAndExplain,
         acceptance_checks: vec![
@@ -451,6 +557,16 @@ pub fn contract_for(draft: &TaskDraft) -> TaskContract {
 /// Recomputes readiness after any change.
 pub fn refresh(draft: &mut TaskDraft) {
     let mut blockers = Vec::new();
+    if draft.kind == crate::dto::TaskKind::Program {
+        if macroscope_effect_broker::validate_basename(&draft.output_name).is_err() {
+            blockers
+                .push("Use a .csv, .tsv, .txt, .md or .json output name, without folders.".into());
+        }
+        draft.summary = summary(draft);
+        draft.ready_to_build = blockers.is_empty();
+        draft.blockers = blockers;
+        return;
+    }
     for q in &draft.questions {
         if q.answer.is_none() {
             blockers.push(format!("Answer: {}", q.prompt));
@@ -482,6 +598,28 @@ mod tests {
 
     fn parsed(text: &str) -> ParsedCsv {
         parse(text.as_bytes(), 50).unwrap()
+    }
+
+    #[test]
+    fn finite_routing_refuses_row_changes_arithmetic_and_search_even_with_cleaning_words() {
+        for description in [
+            "Clean CSV and remove duplicate rows",
+            "Prepare the import file with blank rows removed",
+            "Clean amounts and calculate tax",
+            "Rename columns and sort by date",
+            "Clean CSV and extract lines containing ERROR",
+            "Copy columns and replace ID prefixes",
+        ] {
+            assert!(!fits_mapping(description), "{description}");
+        }
+        for description in [
+            "Clean this orders CSV for import: Order, Date, Amount.",
+            "Copy columns",
+            "Trim spaces and uppercase codes",
+            "Rename columns and convert dates",
+        ] {
+            assert!(fits_mapping(description), "{description}");
+        }
     }
 
     #[test]

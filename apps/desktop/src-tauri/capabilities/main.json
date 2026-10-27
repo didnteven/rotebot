@@ -22,6 +22,7 @@
     "allow-draft-task",
     "allow-answer-question",
     "allow-update-mapping",
+    "allow-update-task",
     "allow-outbound-preview",
     "allow-start-build",
     "allow-build-state",

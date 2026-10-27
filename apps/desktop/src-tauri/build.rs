@@ -24,6 +24,7 @@ fn main() {
         "draft_task",
         "answer_question",
         "update_mapping",
+        "update_task",
         "outbound_preview",
         "start_build",
         "build_state",

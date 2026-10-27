@@ -63,6 +63,7 @@ export interface FileHandle {
 }
 
 export interface CsvPreview {
+  text?: string;
   handle: FileHandle;
   columns: string[];
   rows: string[][]; // first rows only (≤ 8), cells truncated to 200 chars
@@ -109,7 +110,12 @@ export interface RuleQuestion {
   answer: string | null;
 }
 
+export type TaskKind = "csv-mapping" | "program";
+export interface Program { summary: string; output_name: string; code: string; }
 export interface TaskDraft {
+  kind?: TaskKind;
+  exampleOutput?: string | null;
+  syntheticShape?: string;
   draftId: string;
   revision: number;
   goal: string;
@@ -131,9 +137,9 @@ export interface OutboundPreview {
   route: ModelRoute;
   model: string;
   destination: string; // "Meta API (api.meta.ai)" | "Muse Code with your Muse plan" | "Nothing leaves this Mac"
-  /** Exact text that will be sent (direct route) or supplied to Muse (muse route). Synthetic rows only. */
+  /** Exact text that will be sent (direct route) or supplied to Muse (muse route). Synthetic shape and explicitly reviewed user example only. */
   payloadText: string;
-  containsRealRows: false;
+  containsRealRows: boolean;
   estimatedCostMicros: number | null; // null for plan route (counts against the plan allowance)
   budgetMicros: number;
 }
@@ -165,6 +171,7 @@ export interface BuildEvent {
 }
 
 export interface BuildState {
+  program?: Program | null;
   buildId: string;
   draftId: string;
   route: ModelRoute;
@@ -174,6 +181,8 @@ export interface BuildState {
   checks: CheckResult[];
   /** Host-rendered comparison of the staged sample output (never HTML). */
   comparison: {
+    inputText?: string;
+    outputText?: string;
     inputColumns: string[];
     inputRows: string[][];
     outputColumns: string[];
@@ -203,7 +212,7 @@ export interface ToolSummary {
   id: string;
   name: string;
   version: number;
-  engine: "csv-mapping";
+  engine: "csv-mapping" | "js-quickjs";
   createdAtMs: number;
   lastRunAtMs: number | null;
   runCount: number;
@@ -212,6 +221,7 @@ export interface ToolSummary {
 }
 
 export interface ToolDetail extends ToolSummary {
+  program?: Program | null;
   summary: string[];
   mapping: CsvMapping;
   inputColumns: string[];
@@ -221,6 +231,7 @@ export interface ToolDetail extends ToolSummary {
 }
 
 export interface StagedRun {
+  previewText?: string;
   runId: string;
   toolId: string;
   input: FileHandle;
@@ -390,6 +401,7 @@ export interface Backend {
     questionId: string,
     answer: string,
   ): Promise<TaskDraft>;
+  updateTask(draftId: string, kind: TaskKind, outputName: string, exampleOutput: string | null): Promise<TaskDraft>;
   updateMapping(
     draftId: string,
     mapping: CsvMapping,

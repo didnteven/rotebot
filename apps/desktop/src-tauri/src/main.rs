@@ -159,8 +159,11 @@ async fn pick_csv<R: Runtime>(app: AppHandle<R>, core: State<'_, Core>) -> Cmd<O
     let picked = app
         .dialog()
         .file()
-        .set_title("Choose a CSV")
-        .add_filter("CSV", &["csv"])
+        .set_title("Choose a UTF-8 text file (up to 10 MB)")
+        .add_filter(
+            "Text",
+            &["csv", "tsv", "txt", "md", "json", "log", "xml", "html"],
+        )
         .blocking_pick_file();
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
@@ -197,6 +200,19 @@ fn update_mapping(
     output_name: String,
 ) -> Cmd<TaskDraft> {
     Ok(core.0.update_mapping(&draft_id, mapping, &output_name)?)
+}
+
+#[tauri::command]
+fn update_task(
+    core: State<'_, Core>,
+    draft_id: String,
+    kind: TaskKind,
+    output_name: String,
+    example_output: Option<String>,
+) -> Cmd<TaskDraft> {
+    Ok(core
+        .0
+        .update_task(&draft_id, kind, &output_name, example_output)?)
 }
 
 #[tauri::command]
@@ -782,6 +798,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         draft_task,
         answer_question,
         update_mapping,
+        update_task,
         outbound_preview,
         start_build,
         build_state,

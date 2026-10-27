@@ -7,6 +7,7 @@ export default defineConfig({
   server: { port: 1420, strictPort: true },
   test: {
     environment: 'jsdom',
+    maxWorkers: 4,
     setupFiles: ['./src/test/setup.ts'],
     restoreMocks: true,
     clearMocks: true,

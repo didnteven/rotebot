@@ -62,6 +62,8 @@ export class TauriBackend implements Backend {
     invoke("answer_question", { draftId, questionId, answer });
   updateMapping: Backend["updateMapping"] = (draftId, mapping, outputName) =>
     invoke("update_mapping", { draftId, mapping, outputName });
+  updateTask: Backend["updateTask"] = (draftId, kind, outputName, exampleOutput) =>
+    invoke("update_task", { draftId, kind, outputName, exampleOutput });
   outboundPreview: Backend["outboundPreview"] = (draftId) =>
     invoke("outbound_preview", { draftId });
   startBuild: Backend["startBuild"] = (draftId, consent) =>

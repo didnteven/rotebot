@@ -273,7 +273,7 @@ export function App({ backend }: { backend: Backend }) {
                             setCreating(true);
                           }}
                         >
-                          Describe a CSV task
+                          Describe a task
                         </button>
                         <button
                           disabled={busy || !status}
@@ -310,7 +310,7 @@ export function App({ backend }: { backend: Backend }) {
                             setCreating(true);
                           }}
                         >
-                          Describe a CSV task
+                          Describe a task
                         </button>
                       </div>
                       <ul className="plain-list">
@@ -324,7 +324,7 @@ export function App({ backend }: { backend: Backend }) {
                                 )}
                               </h2>
                               <p>
-                                Version {tool.version} · Last run:{" "}
+                                {tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version} · Last run:{" "}
                                 {tool.lastRunAtMs
                                   ? new Date(tool.lastRunAtMs).toLocaleString()
                                   : "Never"}

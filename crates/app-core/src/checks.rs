@@ -149,6 +149,8 @@ pub fn run(
             let (input_columns, input_rows) = rows_of(&before, drafts::PREVIEW_ROWS);
             let (output_columns, output_rows) = rows_of(&out.bytes, drafts::PREVIEW_ROWS);
             comparison = Some(Comparison {
+                input_text: None,
+                output_text: None,
                 input_columns,
                 input_rows,
                 output_columns,
@@ -262,6 +264,120 @@ pub fn run(
         Some("Selected input is read only".into()),
     ));
     CheckOutcome { checks, comparison }
+}
+
+pub fn program_failure(message: String) -> CheckOutcome {
+    CheckOutcome {
+        checks: vec![check(
+            "sandbox",
+            "Runs inside sandbox limits without error",
+            false,
+            message,
+        )],
+        comparison: None,
+    }
+}
+
+/// Host-owned program checks against the same bounded source snapshot, in two
+/// separate fresh worker processes. No candidate-authored tests certify a tool.
+#[cfg(feature = "generated-runtime")]
+pub type ProgramExecutor<'a> =
+    dyn Fn(&[u8], &str) -> Result<Vec<macroscope_runner::Output>, String> + 'a;
+
+#[cfg(feature = "generated-runtime")]
+pub fn run_program(
+    draft: &crate::dto::TaskDraft,
+    program: &macroscope_builder::Program,
+    read_input: &dyn Fn() -> Result<Vec<u8>, String>,
+    execute: &ProgramExecutor<'_>,
+) -> CheckOutcome {
+    let before = match read_input() {
+        Ok(b) => b,
+        Err(e) => return program_failure(e),
+    };
+    let first = match execute(&before, &program.code) {
+        Ok(out) => out,
+        Err(e) => return program_failure(e),
+    };
+    let second = match execute(&before, &program.code) {
+        Ok(out) => out,
+        Err(e) => return program_failure(e),
+    };
+    let mut checks = vec![check(
+        "sandbox",
+        "Runs inside sandbox limits without error",
+        true,
+        None,
+    )];
+    let named = program.output_name == draft.output_name
+        && first.len() == 1
+        && second.len() == 1
+        && first[0].name == draft.output_name
+        && second[0].name == draft.output_name;
+    checks.push(check(
+        "one_output",
+        "Creates exactly one output with the confirmed name",
+        named,
+        None,
+    ));
+    if !named {
+        return CheckOutcome {
+            checks,
+            comparison: None,
+        };
+    }
+    let output = &first[0].text;
+    let deterministic = output.as_bytes() == second[0].text.as_bytes();
+    checks.push(check(
+        "deterministic",
+        "Two fresh runs produce identical bytes",
+        deterministic,
+        None,
+    ));
+    let valid =
+        macroscope_effect_broker::validate_text_output(&draft.output_name, output.as_bytes());
+    checks.push(check(
+        "output_format",
+        "Output is nonempty UTF-8 and parses in its selected format",
+        valid.is_ok(),
+        valid.err().map(|e| e.to_string()),
+    ));
+    if let Some(example) = &draft.example_output {
+        let mut lines = output.lines();
+        let matches = example
+            .lines()
+            .all(|expected| lines.by_ref().any(|line| line == expected));
+        checks.push(check(
+            "example",
+            "Every example line appears in order",
+            matches,
+            if matches {
+                None
+            } else {
+                Some("The output does not contain every expected example line in order.".into())
+            },
+        ));
+    }
+    checks.push(check(
+        "source_unchanged",
+        "Source unchanged",
+        read_input().is_ok_and(|b| digest(&b) == digest(&before)),
+        None,
+    ));
+    let input = std::str::from_utf8(&before).unwrap_or_default();
+    CheckOutcome {
+        checks,
+        comparison: Some(Comparison {
+            input_text: Some(drafts::text_preview(input)),
+            output_text: Some(drafts::text_preview(output)),
+            input_columns: vec![],
+            input_rows: vec![],
+            output_columns: vec![],
+            output_rows: vec![],
+            rows_in: input.lines().count() as u64,
+            rows_out: output.lines().count() as u64,
+        }),
+    }
 }
 
 #[cfg(test)]

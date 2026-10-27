@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   Backend,
   CsvPreview,
@@ -7,6 +7,7 @@ import type {
   RunFailure,
   StagedRun,
   ToolSummary,
+  ToolDetail,
 } from "./backend/types";
 import {
   CsvView,
@@ -30,6 +31,8 @@ export function RunFlow({
   close: () => void;
   changed: () => Promise<void>;
 }) {
+  const [detail, setDetail] = useState<ToolDetail | null>(null);
+  useEffect(() => { void backend.getTool(tool.id).then(next => { setDetail(next); if (next.program) setName(next.program.output_name); }); }, [backend, tool.id]);
   const [input, setInput] = useState<CsvPreview | null>(null),
     [folder, setFolder] = useState<FileHandle | null>(null),
     [name, setName] = useState("orders_ready.csv");
@@ -55,6 +58,7 @@ export function RunFlow({
       >
         Back to tools
       </button>
+      {detail?.program && <><p>Program (sandboxed)</p><details><summary>Advanced details</summary><pre>{detail?.program.code}</pre></details></>}
       <h2>Run {tool.name}</h2>
       <p>
         Version {tool.version} · Every new input needs a fresh staged output and
@@ -78,7 +82,7 @@ export function RunFlow({
                   })
                 }
               >
-                Choose input CSV…
+                Choose input file…
               </button>
               <button
                 onClick={() =>
@@ -146,15 +150,15 @@ export function RunFlow({
                 Plan hash: <code>{staged.planHash.slice(0, 12)}</code>
               </p>
               <p>Source unchanged; existing files are never replaced</p>
-              <DataTable
+              {staged.previewText !== undefined ? <pre aria-label="Staged output first lines">{staged.previewText}</pre> : <DataTable
                 columns={staged.outputColumns}
                 rows={staged.previewRows}
                 caption="Previewed CSV · first 8 rows"
-              />
+              />}
               {staged.destinationExists && (
                 <p className="notice notice-warning">
                   This destination already exists. Choose another name before
-                  creating the CSV.
+                  creating the output.
                 </p>
               )}
               <div className="actions">
@@ -179,7 +183,7 @@ export function RunFlow({
                     })
                   }
                 >
-                  Create previewed CSV
+                  {tool.engine === "js-quickjs" ? "Create previewed output" : "Create previewed CSV"}
                 </button>
               </div>
             </section>

@@ -148,9 +148,9 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const { backend, v } = fixture(payload);
     const update = vi.spyOn(backend, "updateMapping");
     const { user, root, inert } = await open(backend);
-    await user.click(button("Describe a CSV task"));
-    fireEvent.change(screen.getByLabelText("What do you do with this CSV?"), { target: { value: "Map this CSV" } });
-    await user.click(button("Choose CSV…"));
+    await user.click(button("Describe a task"));
+    fireEvent.change(screen.getByLabelText("What do you want to do with this file?"), { target: { value: "Map this CSV" } });
+    await user.click(button("Choose text file…"));
     literal(root, v("file name"), true);
     literal(root, v("input path"), true);
     literal(screen.getByRole("region", { name: "Selected CSV · first 8 rows" }), v("CSV header"));
@@ -266,7 +266,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const stage = vi.spyOn(backend, "stageRun");
     const { user, root, inert } = await open(backend);
     await user.click(button(`Run ${v("saved tool")}…`));
-    await user.click(button("Choose input CSV…"));
+    await user.click(button("Choose input file…"));
     literal(root, v("file name"), true);
     await user.click(button("Choose output folder…"));
     literal(root, v("folder path"), true);
@@ -319,7 +319,7 @@ async function open(backend: Backend) {
   const dispatch = commands.map((name) => ({ name, spy: vi.spyOn(backend, name) }));
   const initialUrl = window.location.href;
   const { container: root } = render(<App backend={backend} />);
-  await waitFor(() => expect(button("Describe a CSV task")).toBeEnabled());
+  await waitFor(() => expect(button("Describe a task")).toBeEnabled());
   const inert = (allowed: Partial<Record<typeof commands[number], number>> = {}) => {
     expect(root.querySelector("script, img, svg, iframe, object, embed, style, link, base, meta")).toBeNull();
     expect(root.querySelector("[style], [src], [srcset], [background], [formaction]")).toBeNull();

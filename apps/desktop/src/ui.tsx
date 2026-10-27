@@ -129,11 +129,11 @@ export function CsvView({ preview }: { preview: CsvPreview }) {
       {preview.handle.displayPath !== preview.handle.displayName && (
         <p className="muted"><FileText text={preview.handle.displayPath} /></p>
       )}
-      <DataTable
+      {preview.text !== undefined ? <pre aria-label="Input first lines">{preview.text}</pre> : <DataTable
         columns={preview.columns}
         rows={preview.rows}
         caption="Selected CSV · first 8 rows"
-      />
+      />}
     </section>
   );
 }

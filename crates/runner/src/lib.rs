@@ -278,7 +278,7 @@ pub fn execute(request: Request) -> Response {
             } else {
                 &kind
             };
-            return Ok(Some(Failure::new(kind, "JavaScript execution failed")));
+            return Ok(Some(Failure::new(kind, "JavaScript execution failed: use synchronous SDK code only; eval, Function, Worker, Date, Math.random and OS APIs are unavailable")));
         }
         Ok::<_, rquickjs::Error>(None)
     });

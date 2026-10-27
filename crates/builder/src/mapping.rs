@@ -163,6 +163,7 @@ pub struct ValidationError;
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub mapping: CsvMapping,
+    pub program: Option<crate::Program>,
     pub route: BuildRoute,
     pub label: String,
     pub usage: Option<Usage>,
@@ -224,13 +225,54 @@ impl MappingBuilder<'_> {
         validator: &dyn CandidateValidator,
         cancelled: impl std::future::Future<Output = ()>,
     ) -> Result<Candidate, BuildError> {
+        self.propose_packet(contract, samples, budget, validator, None, cancelled)
+            .await
+    }
+
+    pub async fn propose_program_cancellable(
+        &self,
+        contract: &TaskContract,
+        packet: String,
+        budget: BuildBudget,
+        cancelled: impl std::future::Future<Output = ()>,
+    ) -> Result<Candidate, BuildError> {
+        struct Unused;
+        impl CandidateValidator for Unused {
+            fn validate(&self, _: &TaskContract, _: &CsvMapping) -> Result<(), ValidationError> {
+                Ok(())
+            }
+        }
+        self.propose_packet(
+            contract,
+            SyntheticSamples::from_contract(contract, 0),
+            budget,
+            &Unused,
+            Some(packet),
+            cancelled,
+        )
+        .await
+    }
+
+    async fn propose_packet(
+        &self,
+        contract: &TaskContract,
+        samples: SyntheticSamples,
+        budget: BuildBudget,
+        validator: &dyn CandidateValidator,
+        program_packet: Option<String>,
+        cancelled: impl std::future::Future<Output = ()>,
+    ) -> Result<Candidate, BuildError> {
         if matches!(self.route, BuildRoute::Offline) {
+            if program_packet.is_some() {
+                return Err(BuildError::Unavailable);
+            }
             let mapping = offline_mapping(contract)?;
             validator
                 .validate(contract, &mapping)
                 .map_err(|_| BuildError::Validation)?;
             return Ok(Candidate {
                 mapping,
+                program: None,
                 route: self.route.clone(),
                 label: "Offline deterministic heuristic".into(),
                 usage: None,
@@ -252,7 +294,7 @@ impl MappingBuilder<'_> {
             tokio::select! {
                 biased;
                 _ = cancelled => Err(BuildError::EgressDenied),
-                result = self.propose_cloud(contract, samples, budget, validator, &admission.guard) => result,
+                result = self.propose_cloud(contract, samples, budget, validator, &admission.guard, program_packet) => result,
             }
         }).await;
         // All awaited single-shot transports have ended; Muse paths explicitly
@@ -282,9 +324,23 @@ impl MappingBuilder<'_> {
         budget: BuildBudget,
         validator: &dyn CandidateValidator,
         guard: &macroscope_policy::EpochGuard,
+        program_packet: Option<String>,
     ) -> Result<Candidate, BuildError> {
-        let schema = model_schema();
-        let mut prompt = packet_text(contract, &samples)?;
+        let is_program = program_packet.is_some();
+        let schema = if is_program {
+            crate::program_schema()
+        } else {
+            model_schema()
+        };
+        let system = if is_program {
+            crate::PROGRAM_SYSTEM
+        } else {
+            SYSTEM_INSTRUCTIONS
+        };
+        let mut prompt = match program_packet {
+            Some(packet) => packet,
+            None => packet_text(contract, &samples)?,
+        };
         if prompt.len() > 512 * 1024 || budget.max_output_tokens == 0 {
             return Err(BuildError::BudgetExceeded);
         }
@@ -375,11 +431,11 @@ impl MappingBuilder<'_> {
                         .generate_structured(StructuredRequest {
                             key: &key,
                             model: None,
-                            system: SYSTEM_INSTRUCTIONS,
+                            system,
                             user: &prompt,
                             max_output_tokens: budget.max_output_tokens,
                             reasoning_effort: "low",
-                            schema_name: "csv_mapping",
+                            schema_name: if is_program { "program" } else { "csv_mapping" },
                             schema: &schema,
                         })
                         .await
@@ -412,16 +468,30 @@ impl MappingBuilder<'_> {
                     } else {
                         known = false;
                     }
-                    let mapping = serde_json::from_value::<CsvMapping>(output.value)
-                        .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?;
-                    validator
-                        .validate(contract, &mapping)
-                        .map_err(|_| BuildError::Validation)?;
+                    let program = if is_program {
+                        Some(
+                            serde_json::from_value::<crate::Program>(output.value.clone())
+                                .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?,
+                        )
+                    } else {
+                        None
+                    };
+                    let mapping = if is_program {
+                        contract.mapping.clone()
+                    } else {
+                        let mapping = serde_json::from_value::<CsvMapping>(output.value)
+                            .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?;
+                        validator
+                            .validate(contract, &mapping)
+                            .map_err(|_| BuildError::Validation)?;
+                        mapping
+                    };
                     if let Some(binary) = &binary {
                         binary.validate()?;
                     }
                     return Ok(Candidate {
                         mapping,
+                        program,
                         route: self.route.clone(),
                         label: match self.route {
                             BuildRoute::DirectMeta { .. } => "Meta API key (direct)",
@@ -442,7 +512,7 @@ impl MappingBuilder<'_> {
                 }
                 Err(GatewayError::MalformedOutput) if attempt == 0 => {
                     known = false;
-                    prompt.push_str("\nSchema correction: return exactly one JSON object conforming to csv_mapping_json_schema. No prose, extra properties or unsupported operations.");
+                    prompt.push_str("\nSchema correction: return exactly one JSON object conforming to the supplied schema. No prose or extra properties.");
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -479,8 +549,7 @@ impl MappingBuilder<'_> {
         let text = match self.route {
             BuildRoute::MuseExec { .. } => {
                 let path = ws.path().join("mapping.schema.json");
-                std::fs::write(&path, model_schema().to_string())
-                    .map_err(|_| BuildError::Workspace)?;
+                std::fs::write(&path, schema.to_string()).map_err(|_| BuildError::Workspace)?;
                 let output = ExecClient::pinned(binary)
                     .exec_structured(prompt, &path, ws.path(), route, &env)
                     .await?;

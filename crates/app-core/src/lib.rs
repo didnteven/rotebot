@@ -3,8 +3,8 @@
 //! same state machine directly.
 //!
 //! Authority rules this module keeps: the UI never supplies paths (only handle ids
-//! from native pickers), model output is a finite `CsvMapping` validated by host
-//! checks, outbound packets are synthetic, and runs commit the exact staged bytes
+//! from native pickers), model output is a finite mapping or sandboxed program validated by host
+//! checks, outbound input samples are synthetic, and runs commit the exact staged bytes
 //! the user approved.
 
 pub mod checks;
@@ -171,6 +171,8 @@ struct Inner {
     last_key_test: Mutex<Option<KeyTestResult>>,
     cloud_controls: tokio::sync::Mutex<()>,
     lifecycle: Mutex<()>,
+    #[cfg(feature = "generated-runtime")]
+    runtime: Mutex<Option<Arc<runner::RunnerEngine>>>,
     deleting: std::sync::atomic::AtomicBool,
 }
 
@@ -254,7 +256,7 @@ fn map_run_failure(e: BrokerError) -> RunFailure {
             column: None,
         },
         BrokerError::InvalidBasename => RunFailure::InputInvalid {
-            message: "Use an output name ending in .csv, without folders.".into(),
+            message: "Use a .csv, .tsv, .txt, .md or .json output name, without folders.".into(),
             row: None,
             column: None,
         },
@@ -270,6 +272,7 @@ struct NewTool<'a> {
     build_ref: &'a str,
     model: &'a str,
     sample: bool,
+    program: Option<&'a macroscope_builder::Program>,
 }
 
 struct HostValidator;
@@ -310,6 +313,8 @@ impl AppCore {
                 last_key_test: Mutex::new(None),
                 cloud_controls: tokio::sync::Mutex::new(()),
                 lifecycle: Mutex::new(()),
+                #[cfg(feature = "generated-runtime")]
+                runtime: Mutex::new(None),
                 deleting: std::sync::atomic::AtomicBool::new(false),
             }),
         };
@@ -485,7 +490,7 @@ impl AppCore {
     fn read_limited(path: &Path) -> CoreResult<Vec<u8>> {
         SelectedFile::from_picker(path)
             .and_then(|selection| selection.read_bounded(drafts::MAX_INPUT_BYTES))
-            .map_err(|_| CoreError::Invalid("The selected CSV changed, is not a regular file, or exceeds 10 MB. Choose it again.".into()))
+            .map_err(|_| CoreError::Invalid("The selected text file changed, is not a regular file, or exceeds 10 MB. Choose it again.".into()))
     }
 
     pub fn preview_handle(&self, handle_id: &str) -> CoreResult<CsvPreview> {
@@ -556,23 +561,58 @@ impl AppCore {
         let _admission = self.admit_local()?;
         let (path, handle) = self.handle_path(input_handle, PickKind::File)?;
         let bytes = Self::read_limited(&path)?;
-        let parsed = drafts::parse(&bytes, 200).map_err(CoreError::Invalid)?;
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| CoreError::Invalid("Choose a valid UTF-8 text file.".into()))?;
+        let parsed = drafts::parse(&bytes, 200).ok();
+        let kind = if parsed.as_ref().is_some_and(|p| {
+            p.columns.len() > 1 || handle.display_name.to_ascii_lowercase().ends_with(".csv")
+        }) && drafts::fits_mapping(description)
+        {
+            TaskKind::CsvMapping
+        } else {
+            TaskKind::Program
+        };
         let preview = drafts::preview(handle.clone(), &bytes).map_err(CoreError::Invalid)?;
-        let proposal = drafts::propose(&parsed);
+        let proposal = parsed
+            .as_ref()
+            .map(drafts::propose)
+            .unwrap_or_else(|| drafts::Proposal {
+                mapping: CsvMapping {
+                    output_columns: vec![],
+                    on_error: macroscope_domain::OnError::StopAndExplain,
+                    skip_header_rows: 0,
+                    formula_escape: true,
+                },
+                questions: vec![],
+            });
         let stem = Path::new(&handle.display_name)
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "output".into());
         let mut draft = TaskDraft {
+            kind,
+            example_output: None,
+            synthetic_shape: macroscope_builder::synthesize_text_sample(text),
             draft_id: new_id("draft"),
             revision: 1,
             goal: description.trim().chars().take(2000).collect(),
             input: preview,
             summary: vec![],
             mapping: proposal.mapping,
-            questions: proposal.questions,
+            questions: if kind == TaskKind::CsvMapping {
+                proposal.questions
+            } else {
+                vec![]
+            },
             mentioned_connectors: self.mentioned_connectors(description),
-            output_name: format!("{stem}_ready.csv"),
+            output_name: format!(
+                "{stem}_ready.{}",
+                if kind == TaskKind::Program {
+                    "txt"
+                } else {
+                    "csv"
+                }
+            ),
             ready_to_build: false,
             blockers: vec![],
         };
@@ -637,6 +677,80 @@ impl AppCore {
         drafts::refresh(&mut draft);
         self.save_draft(&draft)?;
         Ok(draft)
+    }
+
+    pub fn update_task(
+        &self,
+        draft_id: &str,
+        kind: TaskKind,
+        output_name: &str,
+        example_output: Option<String>,
+    ) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
+        let mut draft = self.load_draft(draft_id)?;
+        if example_output.as_ref().is_some_and(|s| s.len() > 16_000) {
+            return Err(CoreError::Invalid("Keep the example under 16 KB.".into()));
+        }
+        if kind != draft.kind {
+            let (path, _) = self.handle_path(&draft.input.handle.handle_id, PickKind::File)?;
+            let bytes = Self::read_limited(&path)?;
+            draft.questions = if kind == TaskKind::CsvMapping {
+                let parsed = drafts::parse(&bytes, 200).map_err(CoreError::Invalid)?;
+                let proposal = drafts::propose(&parsed);
+                draft.mapping = proposal.mapping;
+                draft.input = drafts::preview(draft.input.handle.clone(), &bytes)
+                    .map_err(CoreError::Invalid)?;
+                draft.input.columns = parsed.columns;
+                proposal.questions
+            } else {
+                vec![]
+            };
+        }
+        draft.kind = kind;
+        draft.output_name = output_name.trim().into();
+        draft.example_output = example_output.filter(|s| !s.trim().is_empty());
+        draft.revision += 1;
+        drafts::refresh(&mut draft);
+        self.save_draft(&draft)?;
+        Ok(draft)
+    }
+
+    fn program_packet(draft: &TaskDraft) -> String {
+        macroscope_builder::program_packet(
+            &draft.goal,
+            &draft.synthetic_shape,
+            &draft.output_name,
+            draft.example_output.as_deref(),
+        )
+    }
+
+    fn draft_packet(draft: &TaskDraft) -> String {
+        if draft.kind == TaskKind::Program {
+            format!("System instructions:\n{}\n\nMessage (synthetic shape; example is real user data):\n{}", macroscope_builder::PROGRAM_SYSTEM, Self::program_packet(draft))
+        } else {
+            Self::packet_text(&drafts::contract_for(draft))
+        }
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    fn runtime(&self) -> CoreResult<Arc<runner::RunnerEngine>> {
+        let mut runtime = lock(&self.inner.runtime);
+        if let Some(runtime) = runtime.as_ref() {
+            return Ok(runtime.clone());
+        }
+        let engine = Arc::new(
+            runner::RunnerEngine::discover()
+                .map_err(|e| CoreError::Invalid(format!("Sandbox runtime unavailable: {e}")))?,
+        );
+        *runtime = Some(engine.clone());
+        Ok(engine)
+    }
+
+    #[cfg(feature = "synthetic-runtime-tests")]
+    pub fn use_synthetic_runtime_for_tests(&self, runner_path: &Path, profile: &Path) {
+        *lock(&self.inner.runtime) = Some(Arc::new(
+            runner::RunnerEngine::new_synthetic(runner_path, profile).unwrap(),
+        ));
     }
 
     // ---------- model access ----------
@@ -950,15 +1064,17 @@ impl AppCore {
         let _admission = self.admit_local()?;
         let draft = self.load_draft(draft_id)?;
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
-        let contract = drafts::contract_for(&draft);
         let (payload_text, estimate) = match route {
             ModelRoute::OfflineDemo => (
-                "Nothing leaves this Mac. The offline demo maps columns without a model."
-                    .to_string(),
+                if draft.kind == TaskKind::Program {
+                    "Writing a program needs a model: sign in to Muse or add a key".into()
+                } else {
+                    "Nothing leaves this Mac. The offline demo maps columns without a model.".into()
+                },
                 Some(0),
             ),
-            ModelRoute::ApiKey => (Self::packet_text(&contract), Some(20_000)),
-            ModelRoute::MusePlan => (Self::packet_text(&contract), None),
+            ModelRoute::ApiKey => (Self::draft_packet(&draft), Some(20_000)),
+            ModelRoute::MusePlan => (Self::draft_packet(&draft), None),
         };
         Ok(OutboundPreview {
             draft_id: draft_id.into(),
@@ -970,7 +1086,7 @@ impl AppCore {
             },
             destination: Self::route_destination(route).into(),
             payload_text,
-            contains_real_rows: false,
+            contains_real_rows: draft.example_output.is_some(),
             estimated_cost_micros: estimate,
             budget_micros: BUILD_BUDGET_MICROS,
         })
@@ -1120,6 +1236,11 @@ impl AppCore {
             )));
         }
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
+        if draft.kind == TaskKind::Program && route == ModelRoute::OfflineDemo {
+            return Err(CoreError::Invalid(
+                "Writing a program needs a model: sign in to Muse or add a key".into(),
+            ));
+        }
         if route != ModelRoute::OfflineDemo {
             self.inner
                 .policy
@@ -1158,7 +1279,6 @@ impl AppCore {
             }
         }
         let build_id = new_id("build");
-        let contract = drafts::contract_for(&draft);
         let (input_path, _) = self.handle_path(&draft.input.handle.handle_id, PickKind::File)?;
         let route_label = match route {
             ModelRoute::OfflineDemo => "Offline demo (no model)".to_string(),
@@ -1172,6 +1292,7 @@ impl AppCore {
             phase: BuildPhase::Queued,
             events: vec![],
             candidate: None,
+            program: None,
             checks: vec![],
             comparison: None,
             spent_micros: None,
@@ -1197,12 +1318,12 @@ impl AppCore {
             let outbound = self.db().insert_outbound(&db::OutboundRow {
                 id: format!("out_{build_id}"),
                 at_ms: now,
-                purpose: "Build packet for a CSV tool".into(),
+                purpose: "Build packet for a file task".into(),
                 destination: Self::route_destination(route).into(),
                 route: route.as_str().into(),
-                synthetic_only: true,
+                synthetic_only: draft.example_output.is_none(),
                 cost_micros: None,
-                payload_text: Some(Self::packet_text(&contract)),
+                payload_text: Some(Self::draft_packet(&draft)),
             });
             if let Err(error) = outbound {
                 self.fail_build(
@@ -1226,7 +1347,7 @@ impl AppCore {
                 .run_build(
                     id.clone(),
                     route,
-                    contract,
+                    draft,
                     input_path,
                     consent_epoch,
                     &mut cancelled,
@@ -1258,7 +1379,7 @@ impl AppCore {
         &self,
         build_id: String,
         route: ModelRoute,
-        contract: TaskContract,
+        draft: TaskDraft,
         input: PathBuf,
         consent_epoch: u64,
         cancelled: &mut tokio::sync::watch::Receiver<bool>,
@@ -1266,6 +1387,7 @@ impl AppCore {
         if *cancelled.borrow() {
             return Ok(());
         }
+        let contract = drafts::contract_for(&draft);
         self.push_phase(&build_id, BuildPhase::Writing, "Writing a candidate")?;
         let builder_route = match route {
             ModelRoute::OfflineDemo => BuildRoute::Offline,
@@ -1311,14 +1433,26 @@ impl AppCore {
             max_cost_microusd: BUILD_BUDGET_MICROS as u64,
             ..BuildBudget::default()
         };
-        let candidate = match builder
-            .propose_cancellable(&contract, samples, budget, &HostValidator, async {
-                if !*cancelled.borrow() {
-                    let _ = cancelled.changed().await;
-                }
-            })
-            .await
-        {
+        let cancel = async {
+            if !*cancelled.borrow() {
+                let _ = cancelled.changed().await;
+            }
+        };
+        let result = if draft.kind == TaskKind::Program {
+            builder
+                .propose_program_cancellable(
+                    &contract,
+                    Self::program_packet(&draft),
+                    budget,
+                    cancel,
+                )
+                .await
+        } else {
+            builder
+                .propose_cancellable(&contract, samples, budget, &HostValidator, cancel)
+                .await
+        };
+        let candidate = match result {
             Ok(c) => c,
             Err(e) => {
                 let (kind, message) = build_error_message(&e);
@@ -1334,6 +1468,7 @@ impl AppCore {
         let mapping = candidate.mapping.clone();
         self.update_build(&build_id, |s| {
             s.candidate = Some(mapping.clone());
+            s.program = candidate.program.clone();
             s.spent_micros = spent;
         })?;
         self.push_phase(
@@ -1344,11 +1479,40 @@ impl AppCore {
         self.push_phase(
             &build_id,
             BuildPhase::Checking,
-            "Checking the candidate on your CSV and on cases that must stop",
+            "Checking the candidate on your selected file",
         )?;
+        #[cfg(feature = "generated-runtime")]
+        let runtime = if draft.kind == TaskKind::Program {
+            Some(self.runtime())
+        } else {
+            None
+        };
         let checked = tokio::task::spawn_blocking(move || {
             let read = || Self::read_limited(&input).map_err(|e| e.to_string());
-            let outcome = checks::run(&contract, &mapping, &read);
+            let outcome = if draft.kind == TaskKind::Program {
+                #[cfg(feature = "generated-runtime")]
+                {
+                    match runtime.unwrap() {
+                        Ok(engine) => checks::run_program(
+                            &draft,
+                            candidate.program.as_ref().unwrap(),
+                            &read,
+                            &|input, code| {
+                                engine
+                                    .execute(input, code, macroscope_runner::Limits::default())
+                                    .map_err(|e| e.to_string())
+                            },
+                        ),
+                        Err(e) => checks::program_failure(e.to_string()),
+                    }
+                }
+                #[cfg(not(feature = "generated-runtime"))]
+                {
+                    checks::program_failure("Generated runtime is disabled.".into())
+                }
+            } else {
+                checks::run(&contract, &mapping, &read)
+            };
             (outcome.all_passed(), outcome.checks, outcome.comparison)
         })
         .await;
@@ -1357,7 +1521,7 @@ impl AppCore {
                 let failed: Vec<String> = check_list
                     .iter()
                     .filter(|c| !c.passed)
-                    .map(|c| c.label.clone())
+                    .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
                     .collect();
                 self.update_build(&build_id, |s| {
                     s.checks = check_list;
@@ -1407,8 +1571,20 @@ impl AppCore {
             .db()
             .version(&row.id, &hash)?
             .ok_or(CoreError::NotFound("tool version"))?;
-        let mapping: CsvMapping = serde_json::from_value(version.mapping)
+        let program = version
+            .mapping
+            .get("program")
+            .map(|v| serde_json::from_value::<macroscope_builder::Program>(v.clone()))
+            .transpose()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let mapping: CsvMapping = serde_json::from_value(
+            version
+                .mapping
+                .get("mapping")
+                .cloned()
+                .unwrap_or(version.mapping),
+        )
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
         let d = &row.detail;
         let strings = |k: &str| -> Vec<String> {
             d.get(k)
@@ -1419,6 +1595,7 @@ impl AppCore {
             summary_row: self.tool_summary(row),
             summary: strings("summary"),
             mapping,
+            program,
             input_columns: strings("inputColumns"),
             output_columns: strings("outputColumns"),
             access: strings("access"),
@@ -1435,7 +1612,12 @@ impl AppCore {
                 .get("version")
                 .and_then(Value::as_u64)
                 .unwrap_or(1) as u32,
-            engine: "csv-mapping".into(),
+            engine: row
+                .detail
+                .get("engine")
+                .and_then(Value::as_str)
+                .unwrap_or("csv-mapping")
+                .into(),
             created_at_ms: row.created_ms,
             last_run_at_ms: row.last_run_ms,
             run_count: row.run_count,
@@ -1453,6 +1635,7 @@ impl AppCore {
             build_ref,
             model,
             sample,
+            program,
         } = new;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 {
@@ -1496,8 +1679,16 @@ impl AppCore {
             "provenance": {"contractHash": contract_hash, "buildRef": build_ref, "model": model},
             "integrity": {"treeHash": "", "approvalRef": ""}
         });
-        let tree = broker::canonical_json(&json!({"manifest": manifest, "mapping": mapping}))
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        if let Some(program) = program {
+            manifest["runtime"] = json!({"engine":"js-quickjs","pin":"rquickjs-0.14.0/runtime-v2","sdk":"1.0","entry":"program.json"});
+            manifest["capabilities"]["fileCreate"][0]["namePattern"] = json!(program.output_name);
+            manifest["limits"] =
+                json!({"wallSeconds":12,"memoryMiB":64,"effects":1,"outputBytes":20_000_000});
+        }
+        let tree = broker::canonical_json(
+            &json!({"manifest": manifest, "mapping": mapping, "program":program}),
+        )
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
         let version_hash = hash_hex(&tree);
         manifest["integrity"] = json!({"treeHash": format!("sha256:{version_hash}"), "approvalRef": format!("save-{}", self.now())});
         // Deserializing proves the manifest matches the domain schema (deny_unknown_fields).
@@ -1516,6 +1707,7 @@ impl AppCore {
             ("manifest.json", &manifest),
             ("mapping.json", &json!(mapping)),
             ("contract.json", &json!(contract)),
+            ("program.json", &json!(program)),
         ] {
             let path = dir.join(file);
             std::fs::write(&path, serde_json::to_vec_pretty(value).unwrap_or_default())
@@ -1528,8 +1720,8 @@ impl AppCore {
         }
         let now = self.now();
         let access = vec![
-            "Read the CSV you choose".to_string(),
-            "Create one new CSV in the folder you choose".into(),
+            "Read the text file you choose".to_string(),
+            "Create one new output in the folder you choose".into(),
             "Never overwrites a file; the source stays unchanged".into(),
         ];
         let row = db::ToolRow {
@@ -1543,6 +1735,7 @@ impl AppCore {
             run_count: 0,
             detail: json!({
                 "version": 1,
+                "engine": if program.is_some() { "js-quickjs" } else { "csv-mapping" },
                 "summary": summary,
                 "inputColumns": contract.input_schema,
                 "outputColumns": contract.output_columns,
@@ -1555,7 +1748,11 @@ impl AppCore {
             tool_id: tool_id.0.clone(),
             hash: version_hash.clone(),
             manifest,
-            mapping: json!(mapping),
+            mapping: if let Some(program) = program {
+                json!({"mapping":mapping,"program":program})
+            } else {
+                json!(mapping)
+            },
             created_ms: now,
         })?;
         self.db().put_grant(
@@ -1613,6 +1810,7 @@ impl AppCore {
             build_ref: build_id,
             model: &model,
             sample: false,
+            program: state.program.as_ref(),
         })
     }
 
@@ -1636,6 +1834,7 @@ impl AppCore {
             build_ref: "sample",
             model: "prebuilt-sample",
             sample: true,
+            program: None,
         })
     }
 
@@ -1706,7 +1905,9 @@ impl AppCore {
         let (input_path, input) = self.handle_path(input_handle, PickKind::File)?;
         let (dir_path, output_dir) = self.handle_path(dir_handle, PickKind::Dir)?;
         let output_name = output_name.trim().to_string();
-        if broker::validate_basename(&output_name).is_err() {
+        if broker::validate_basename(&output_name).is_err()
+            || (detail.program.is_none() && !output_name.to_ascii_lowercase().ends_with(".csv"))
+        {
             return Ok(StageResult::Failed(FailureEnvelope {
                 failure: map_run_failure(BrokerError::InvalidBasename),
             }));
@@ -1743,7 +1944,27 @@ impl AppCore {
                 key: self.inner.staging_key,
             })
         })();
-        let staged = match request.and_then(broker::stage) {
+        let staged = match request.and_then(|request| {
+            if let Some(program) = &detail.program {
+                if output_name != program.output_name {
+                    return Err(BrokerError::Runner(
+                        "Use the confirmed output name for this program.".into(),
+                    ));
+                }
+                #[cfg(feature = "generated-runtime")]
+                {
+                    self.runtime()
+                        .map_err(|e| BrokerError::Runner(e.to_string()))?
+                        .stage(request, &program.code, macroscope_runner::Limits::default())
+                }
+                #[cfg(not(feature = "generated-runtime"))]
+                {
+                    Err(BrokerError::Runner("Generated runtime is disabled.".into()))
+                }
+            } else {
+                broker::stage(request)
+            }
+        }) {
             Ok(s) => s,
             Err(e) => {
                 return Ok(StageResult::Failed(FailureEnvelope {
@@ -1754,9 +1975,25 @@ impl AppCore {
         let bytes = staged
             .preview()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
-        let parsed = drafts::parse(&bytes, drafts::PREVIEW_ROWS).map_err(CoreError::Internal)?;
+        let preview_text = detail
+            .program
+            .as_ref()
+            .map(|_| drafts::text_preview(std::str::from_utf8(&bytes).unwrap_or_default()));
+        let parsed = if detail.program.is_some() {
+            drafts::ParsedCsv {
+                columns: vec![],
+                rows: vec![],
+                row_count: std::str::from_utf8(&bytes)
+                    .unwrap_or_default()
+                    .lines()
+                    .count() as u64,
+            }
+        } else {
+            drafts::parse(&bytes, drafts::PREVIEW_ROWS).map_err(CoreError::Internal)?
+        };
         let run_id = staged.plan().run_id.0.clone();
         let dto = StagedRun {
+            preview_text,
             run_id: run_id.clone(),
             tool_id: tool_id.into(),
             input,

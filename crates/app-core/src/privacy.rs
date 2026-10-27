@@ -52,13 +52,17 @@ impl AppCore {
             .map(|c| format!("{} → {}", c.source, c.name))
             .collect::<Vec<_>>()
             .join("\n");
-        let readme = format!("{}\n\nWhat it does:\n{}\n\nChecked by Macroscope's host checks: confirmed mapping rules, selected CSV, row counts, source integrity and malformed-input stop cases.\nRuns in Macroscope with the csv-mapping engine; this folder is not a standalone application.\nNo user data or sample rows are included. contract.json contains column names only.\n", row.name, rules);
+        let readme = if tool.program.is_some() {
+            format!("{}\n\nProgram (sandboxed). Runs through Macroscope runtime v2. Host checks cover selected input, deterministic bytes, output format, example lines and source integrity. The host previews and commits one create-only output after approval.\n", row.name)
+        } else {
+            format!("{}\n\nWhat it does:\n{}\n\nChecked by Macroscope's host checks: confirmed mapping rules, selected CSV, row counts, source integrity and malformed-input stop cases.\nRuns in Macroscope with the csv-mapping engine; this folder is not a standalone application.\nNo user data or sample rows are included. contract.json contains column names only.\n", row.name, rules)
+        };
         let files = vec![
             (
                 "manifest.json",
                 serde_json::to_vec_pretty(&version.manifest),
             ),
-            ("mapping.json", serde_json::to_vec_pretty(&version.mapping)),
+            ("mapping.json", serde_json::to_vec_pretty(&tool.mapping)),
             ("contract.json", serde_json::to_vec_pretty(&contract)),
         ]
         .into_iter()
@@ -66,6 +70,13 @@ impl AppCore {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut files = files;
+        if let Some(program) = &tool.program {
+            files.push((
+                "program.json",
+                serde_json::to_vec_pretty(program)
+                    .map_err(|e| CoreError::Internal(e.to_string()))?,
+            ));
+        }
         files.push(("README.txt", readme.into_bytes()));
         #[cfg(unix)]
         let path = broker::export_bundle(&root, &name, &files).map_err(|_| CoreError::Invalid("Export refused: choose a folder without links and a destination that does not already exist.".into()))?;
@@ -248,9 +259,25 @@ impl AppCore {
             .as_ref()
             .ok_or(CoreError::NotFound("candidate"))?;
         let (path, _) = self.handle_path(input, PickKind::File)?;
-        let outcome = checks::run(&contract, mapping, &|| {
-            Self::read_limited(&path).map_err(|e| e.to_string())
-        });
+        let read = || Self::read_limited(&path).map_err(|e| e.to_string());
+        let outcome = if let Some(program) = &state.program {
+            #[cfg(feature = "generated-runtime")]
+            {
+                let engine = self.runtime()?;
+                checks::run_program(&draft, program, &read, &|input, code| {
+                    engine
+                        .execute(input, code, macroscope_runner::Limits::default())
+                        .map_err(|e| e.to_string())
+                })
+            }
+            #[cfg(not(feature = "generated-runtime"))]
+            {
+                let _ = program;
+                checks::program_failure("Generated runtime is disabled.".into())
+            }
+        } else {
+            checks::run(&contract, mapping, &read)
+        };
         let passed = outcome.all_passed();
         state.phase = if passed {
             BuildPhase::Ready

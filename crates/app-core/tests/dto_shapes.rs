@@ -86,6 +86,7 @@ fn run_results_are_untagged_with_a_failure_envelope() {
 #[test]
 fn tool_detail_flattens_the_summary_fields() {
     let detail = ToolDetail {
+        program: None,
         summary_row: ToolSummary {
             id: "t".into(),
             name: "n".into(),
@@ -130,6 +131,7 @@ fn tool_detail_flattens_the_summary_fields() {
 #[test]
 fn build_state_uses_camel_case_and_snake_case_phases() {
     let mut state = BuildState {
+        program: None,
         build_id: "b".into(),
         draft_id: "d".into(),
         route: ModelRoute::MusePlan,
@@ -138,6 +140,8 @@ fn build_state_uses_camel_case_and_snake_case_phases() {
         candidate: None,
         checks: vec![],
         comparison: Some(Comparison {
+            input_text: None,
+            output_text: None,
             input_columns: vec![],
             input_rows: vec![],
             output_columns: vec![],

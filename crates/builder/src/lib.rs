@@ -1,3 +1,5 @@
+mod program;
+pub use program::*;
 mod mapping;
 pub use mapping::*;
 // Provider-neutral coding sessions (plan §4.2), separate from single-shot generation.

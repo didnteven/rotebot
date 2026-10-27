@@ -37,9 +37,15 @@ fn output(ctx: Ctx<'_>, name: String, text: String) -> Result<()> {
         || name.is_empty()
         || name.contains(['/', '\\', '\0', ':'])
         || name.chars().any(char::is_control)
-        || !name.to_ascii_lowercase().ends_with(".csv")
+        || ![".csv", ".tsv", ".txt", ".md", ".json"]
+            .iter()
+            .any(|ext| name.to_ascii_lowercase().ends_with(ext))
     {
-        return Err(fail(&ctx, "forbidden", "output requires a CSV basename"));
+        return Err(fail(
+            &ctx,
+            "forbidden",
+            "output requires a .csv, .tsv, .txt, .md or .json basename",
+        ));
     }
     let data = ctx.userdata::<Data>().unwrap();
     if text.len() > data.limits.output_bytes {

@@ -11,6 +11,8 @@
       "AsyncGeneratorFunction", "Worker", "SharedArrayBuffer", "Atomics", "Promise"]) {
     Object.defineProperty(globalThis, name, {value: undefined, writable: false, configurable: false});
   }
+  Object.defineProperty(Math, "random", {value: undefined, writable: false, configurable: false});
+  Object.freeze(Math);
   const freeze = value => {
     for (const key of Object.getOwnPropertyNames(value)) {
       const d = Object.getOwnPropertyDescriptor(value, key);

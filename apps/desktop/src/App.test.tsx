@@ -14,7 +14,7 @@ describe("desktop shell", () => {
       await screen.findByRole("button", { name: "Try a sample" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Describe a CSV task" }),
+      screen.getByRole("button", { name: "Describe a task" }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Tools" })).toHaveAttribute(
       "aria-current",
