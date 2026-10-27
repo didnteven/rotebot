@@ -497,3 +497,11 @@ Windows recheck at 59a788d (2026-10-28):
   build scripts (ring, aws-lc-sys, rquickjs-sys, openssl-sys, sha2-asm), which need the MSVC
   toolchain. They are covered by the `windows-latest` CI job once a hosted repository exists.
 - Windows runtime behaviour is still unverified (plan M6).
+
+Manual N-1 upgrade (plan M3), 2026-10-28: `crates/app-core/examples/n1_upgrade.rs`.
+- The previous build `m4/web-sources` (ccca2ea) created a data folder with a debug file
+  store, a saved tool and Local only on.
+- This build opened it, migrated schema 3 → 4 (schedules, Today), and kept the tool and the
+  setting. The schedules and Today tables start empty.
+- The migration list is append-only between the two builds.
+- A signed install and update are still pending a Developer ID.
