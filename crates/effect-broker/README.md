@@ -89,3 +89,25 @@ ceiling admits pure transforms only; it has no per-transform allowlist.
   does not establish who created an identical-content file: reconciliation proves
   matching bytes and parent identity, not authorship. Uncertain or conflicting
   outcomes require user review. There is no overwrite, rollback or general undo.
+
+## Approved connection actions (runtime v2)
+
+`stage_generated_actions` freezes up to five data-only calls alongside at most one
+file create. Each call binds the connector, exact tool name and JSON arguments,
+server URL and labelled annotation claims into the canonical plan hash. The
+sandbox has no token or server transport. App-core validates calls against the
+explicitly selected tool schemas and the version's manifest and grant.
+
+`Connections` preflights every connector with stored authorization before any
+call. `commit_with_actions` accepts only a trusted host executor, checks the
+frozen digest and current file/grant preconditions, syncs an indexed intent,
+executes each call once in order, and syncs its status. It stops at the first
+failure or uncertain result. Generated code has exited before review and is
+never called during commit. Action-only runs publish no file.
+
+Private call arguments are stored in authenticated encrypted staging; journal
+entries contain only indices, hashes and statuses. Server result summaries in
+SQLCipher receipts are capped at 2,000 characters and must render as inert text.
+An intent without a result reconciles to `OutcomeUnknown`; recovery reads the
+encrypted call list to create a receipt, marks later unsent calls `NotRun`, and
+never sends requests. Uncertain effects have no automatic retry or undo.

@@ -65,6 +65,22 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
+        self.execute_plan(input, code, limits)
+            .map(|(outputs, _)| outputs)
+    }
+
+    pub fn execute_plan(
+        &self,
+        input: &[u8],
+        code: &str,
+        limits: Limits,
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        BrokerError,
+    > {
         self.execute_inner(input, code, limits, self.synthetic)
     }
 
@@ -74,7 +90,13 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         synthetic: bool,
-    ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        BrokerError,
+    > {
         if hash_file(&self.runner)? != self.runner_hash
             || hash_file(&self.profile)? != self.profile_hash
         {
@@ -100,7 +122,11 @@ impl RunnerEngine {
             launch::sandbox_command(&self.runner, &self.profile)?
         };
         match launch::invoke(command, &request)? {
-            Response::Success { outputs, .. } => Ok(outputs),
+            Response::Success {
+                outputs,
+                planned_calls,
+                ..
+            } => Ok((outputs, planned_calls)),
             Response::Error { error } => Err(BrokerError::Runner(format!(
                 "{}: {}",
                 error.kind, error.message
@@ -114,7 +140,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, code, limits, self.synthetic)
+        self.stage_inner(run, code, limits, self.synthetic, &[])
     }
     /// Explicit synthetic developer experiment, never an OS-denial fallback.
     #[cfg(feature = "synthetic-runtime-tests")]
@@ -124,7 +150,16 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, code, limits, true)
+        self.stage_inner(run, code, limits, true, &[])
+    }
+    pub fn stage_connections(
+        &self,
+        run: StageRequest,
+        code: &str,
+        limits: Limits,
+        selected: &[crate::dto::SelectedConnection],
+    ) -> Result<StagedPlan, BrokerError> {
+        self.stage_inner(run, code, limits, self.synthetic, selected)
     }
     fn stage_inner(
         &self,
@@ -132,6 +167,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         synthetic: bool,
+        selected: &[crate::dto::SelectedConnection],
     ) -> Result<StagedPlan, BrokerError> {
         limits
             .validate()
@@ -145,14 +181,25 @@ impl RunnerEngine {
             "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic});
         let execution_hash = format!("{:x}", Sha256::digest(broker::canonical_json(&binding)?));
         let basename = run.basename.clone();
-        broker::stage_generated(run, execution_hash, |snapshot| {
-            let mut outputs = self.execute_inner(snapshot, code, limits, synthetic)?;
-            if outputs.len() != 1 || outputs[0].name != basename {
+        broker::stage_generated_actions(run, execution_hash, |snapshot| {
+            let (mut outputs, calls) = self.execute_inner(snapshot, code, limits, synthetic)?;
+            if outputs.len() > 1
+                || outputs.first().is_some_and(|o| o.name != basename)
+                || (outputs.is_empty() && calls.is_empty())
+            {
                 return Err(BrokerError::Runner(
                     "expected one output with the approved basename".into(),
                 ));
             }
-            Ok(outputs.remove(0).text.into_bytes())
+            Ok((
+                if outputs.is_empty() {
+                    vec![]
+                } else {
+                    outputs.remove(0).text.into_bytes()
+                },
+                crate::connections::validate_calls(&calls, selected)
+                    .map_err(BrokerError::Runner)?,
+            ))
         })
     }
 }

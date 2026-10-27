@@ -281,8 +281,16 @@ pub fn program_failure(message: String) -> CheckOutcome {
 /// Host-owned program checks against the same bounded source snapshot, in two
 /// separate fresh worker processes. No candidate-authored tests certify a tool.
 #[cfg(feature = "generated-runtime")]
-pub type ProgramExecutor<'a> =
-    dyn Fn(&[u8], &str) -> Result<Vec<macroscope_runner::Output>, String> + 'a;
+pub type ProgramExecutor<'a> = dyn Fn(
+        &[u8],
+        &str,
+    ) -> Result<
+        (
+            Vec<macroscope_runner::Output>,
+            Vec<macroscope_domain::PlannedCall>,
+        ),
+        String,
+    > + 'a;
 
 #[cfg(feature = "generated-runtime")]
 pub fn run_program(
@@ -295,11 +303,11 @@ pub fn run_program(
         Ok(b) => b,
         Err(e) => return program_failure(e),
     };
-    let first = match execute(&before, &program.code) {
+    let (first, first_calls) = match execute(&before, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
-    let second = match execute(&before, &program.code) {
+    let (second, second_calls) = match execute(&before, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
@@ -309,14 +317,28 @@ pub fn run_program(
         true,
         None,
     )];
+    let calls_valid = crate::connections::validate_calls(&first_calls, &draft.required_connections);
+    checks.push(check(
+        "mcp_capabilities",
+        "Every planned connection call is declared and validates against its input schema",
+        calls_valid.is_ok(),
+        calls_valid.err(),
+    ));
+    checks.push(check(
+        "mcp_deterministic",
+        "Two fresh runs plan exactly the same connection calls",
+        first_calls == second_calls,
+        None,
+    ));
     let named = program.output_name == draft.output_name
-        && first.len() == 1
-        && second.len() == 1
-        && first[0].name == draft.output_name
-        && second[0].name == draft.output_name;
+        && first.len() <= 1
+        && first.len() == second.len()
+        && first.first().is_none_or(|o| o.name == draft.output_name)
+        && second.first().is_none_or(|o| o.name == draft.output_name)
+        && (!first.is_empty() || !first_calls.is_empty());
     checks.push(check(
         "one_output",
-        "Creates exactly one output with the confirmed name",
+        "Plans connection actions or creates one output with the confirmed name",
         named,
         None,
     ));
@@ -326,19 +348,22 @@ pub fn run_program(
             comparison: None,
         };
     }
-    let output = &first[0].text;
-    let deterministic = output.as_bytes() == second[0].text.as_bytes();
+    let output = first.first().map_or("", |o| o.text.as_str());
+    let deterministic = output == second.first().map_or("", |o| o.text.as_str());
     checks.push(check(
         "deterministic",
         "Two fresh runs produce identical bytes",
         deterministic,
         None,
     ));
-    let valid =
-        macroscope_effect_broker::validate_text_output(&draft.output_name, output.as_bytes());
+    let valid = if first.is_empty() && !first_calls.is_empty() {
+        Ok(())
+    } else {
+        macroscope_effect_broker::validate_text_output(&draft.output_name, output.as_bytes())
+    };
     checks.push(check(
         "output_format",
-        "Output is nonempty UTF-8 and parses in its selected format",
+        "Any file output is nonempty UTF-8 and parses in its selected format",
         valid.is_ok(),
         valid.err().map(|e| e.to_string()),
     ));

@@ -39,10 +39,12 @@ export function RunFlow({
   const [staged, setStaged] = useState<StagedRun | null>(null),
     [receipt, setReceipt] = useState<Receipt | null>(null),
     [failure, setFailure] = useState<RunFailure | null>(null);
+  const [actionsReviewed, setActionsReviewed] = useState(false);
   const { act, busy, error } = useAction();
   async function clearStage() {
     if (staged) await backend.discardRun(staged.runId);
     setStaged(null);
+    setActionsReviewed(false);
     setFailure(null);
   }
   return (
@@ -132,7 +134,7 @@ export function RunFlow({
                     name,
                   );
                   if ("failure" in result) setFailure(result.failure);
-                  else setStaged(result);
+                  else { setStaged(result); setActionsReviewed(false); }
                 })
               }
             >
@@ -142,19 +144,27 @@ export function RunFlow({
           {staged && (
             <section className="card">
               <h3>Staged preview</h3>
-              <p>
+              {staged.createsOutput === false ? <p>Connection actions only</p> : <p>
                 {staged.rowsIn} rows → {staged.rowsOut} rows ·{" "}
                 {staged.outputColumns.length} columns
-              </p>
+              </p>}
               <p>
                 Plan hash: <code>{staged.planHash.slice(0, 12)}</code>
               </p>
               <p>Source unchanged; existing files are never replaced</p>
-              {staged.previewText !== undefined ? <pre aria-label="Staged output first lines">{staged.previewText}</pre> : <DataTable
+              {staged.createsOutput === false ? null : staged.previewText !== undefined ? <pre aria-label="Staged output first lines">{staged.previewText}</pre> : <DataTable
                 columns={staged.outputColumns}
                 rows={staged.previewRows}
                 caption="Previewed CSV · first 8 rows"
               />}
+              {(staged.plannedCalls ?? []).map((a, i) => <article key={i} aria-label={`Planned action ${i + 1}`}>
+                <h4>{a.service} · {a.call.toolName}</h4>
+                <pre>{JSON.stringify(a.call.args, null, 2)}</pre>
+                <p>Server’s claims: readOnlyHint = {String(a.readOnlyHint)}; destructiveHint = {String(a.destructiveHint)}</p>
+              </article>)}
+              {staged.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true) && <label>
+                <input type="checkbox" checked={actionsReviewed} onChange={e => setActionsReviewed(e.target.checked)} />I reviewed these actions
+              </label>}
               {staged.destinationExists && (
                 <p className="notice notice-warning">
                   This destination already exists. Choose another name before
@@ -167,23 +177,25 @@ export function RunFlow({
                 </button>
                 <button
                   className="primary"
-                  disabled={busy}
+                  disabled={busy || (!!staged.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true) && !actionsReviewed)}
                   onClick={() =>
                     void act(async () => {
                       const result = await backend.commitRun(
                         staged.runId,
                         staged.planHash,
+                        actionsReviewed,
                       );
                       if ("failure" in result) setFailure(result.failure);
                       else {
                         setReceipt(result);
                         setStaged(null);
+                        setActionsReviewed(false);
                         await changed();
                       }
                     })
                   }
                 >
-                  {tool.engine === "js-quickjs" ? "Create previewed output" : "Create previewed CSV"}
+                  {staged.plannedCalls?.length ? (staged.createsOutput === false ? "Approve actions" : "Approve actions and create output") : tool.engine === "js-quickjs" ? "Create previewed output" : "Create previewed CSV"}
                 </button>
               </div>
             </section>

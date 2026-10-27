@@ -32,7 +32,7 @@ fn sdk_orders_matches_independent_fixture() {
         limits: Limits::default(),
     };
     match macroscope_runner::execute(request) {
-        Response::Success { outputs, log } => {
+        Response::Success { outputs, log, .. } => {
             assert_eq!(outputs.len(), 1);
             assert_eq!(
                 outputs[0].text.as_bytes(),
@@ -206,6 +206,7 @@ fn protocol_limits_syntax_and_hostile_exception_values() {
     );
     success("function run(){const rows=macroscope.csv.parse('__proto__,constructor\\nx,y\\n'); if(rows[0].__proto__!=='x'||rows[0].constructor!=='y'||Object.getPrototypeOf(rows[0])!==null)throw 1;}");
     let response = Response::Success {
+        planned_calls: vec![],
         outputs: vec![macroscope_runner::Output {
             name: "x.csv".into(),
             text: "\0".repeat(4_000_000),
@@ -239,4 +240,50 @@ fn clock_and_randomness_are_unavailable_and_text_output_formats_work() {
             "function run(){{macroscope.output('result.{ext}','synthetic')}}"
         ));
     }
+}
+
+#[test]
+fn connection_requests_are_bounded_json_snapshots_and_return_no_network_data() {
+    let result = run(
+        r#"function run(){
+        const args = {to:'a@example.invalid', nested:{text:'<script>hello</script>'}};
+        if(macroscope.connection.request('gmail','create_draft',args) !== undefined) throw 'network result';
+        args.nested.text = 'changed';
+    }"#,
+        Limits::default(),
+    );
+    let Response::Success { planned_calls, .. } = result else {
+        panic!("{result:?}")
+    };
+    assert_eq!(planned_calls.len(), 1);
+    assert_eq!(
+        planned_calls[0].args["nested"]["text"],
+        "<script>hello</script>"
+    );
+    for args in [
+        "undefined",
+        "{x:undefined}",
+        "{x:()=>1}",
+        "{x:NaN}",
+        "{x:Infinity}",
+        "{x:1n}",
+        "{get x(){return 1}}",
+        "{x:[,1]}",
+        "{toJSON(){return {}}}",
+    ] {
+        let code = format!(
+            "function run(){{macroscope.connection.request('gmail','create_draft',{args})}}"
+        );
+        assert!(
+            matches!(run(&code, Limits::default()), Response::Error { .. }),
+            "{args}"
+        );
+    }
+    kind("function run(){macroscope.connection.request('gmail','create_draft',{body:'x'.repeat(65536)})}", Limits::default(), "forbidden");
+    kind("function run(){for(let i=0;i<6;i++)try{macroscope.connection.request('gmail','create_draft',{})}catch(e){}}", Limits::default(), "forbidden");
+    let result = run("function run(){for(let i=0;i<5;i++)macroscope.connection.request('gmail','create_draft',{})}", Limits::default());
+    let bytes = macroscope_runner::encode_response(&result);
+    assert!(
+        matches!(Response::from_wire(&bytes).unwrap(), Response::Success {planned_calls,..} if planned_calls.len()==5)
+    );
 }

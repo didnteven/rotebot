@@ -508,6 +508,18 @@ export function CreateFlow({
               </ul>
             </div>
           )}
+          <fieldset disabled={busy || !!activeBuild}>
+            <legend>Connections this tool may use</legend>
+            {connectors.filter(c => c.state.kind === "connected").map(c => <div key={c.id}>
+              <label><input type="checkbox" checked={draft.requiredConnections?.some(s => s.connectorId === c.id) ?? false}
+                onChange={event => { const checked = event.target.checked; void act(async () => {
+                  const ids = (draft.requiredConnections ?? []).map(s => s.connectorId).filter(id => id !== c.id);
+                  if (checked) ids.push(c.id);
+                  acceptDraft(await backend.selectTaskConnections(draft.draftId, ids));
+                }); }} />Let this tool use {c.name}</label>
+              {draft.requiredConnections?.filter(s => s.connectorId === c.id).map(s => <ul key={s.connectorId}>{s.tools.map(t => <li key={t.name}><code>{t.name}</code>: {t.description}</li>)}</ul>)}
+            </div>)}
+          </fieldset>
           {draft.mentionedConnectors
             .map((id) => connectors.find((c) => c.id === id))
             .filter((c) => c && c.state.kind !== "connected")
@@ -520,8 +532,8 @@ export function CreateFlow({
                     key={c.id}
                   >
                     <p>
-                      You mentioned {c.name}. Connect it in Connections so later
-                      tools can use it.
+                      You mentioned {c.name}. Connect it in Connections so this
+                      tool can use it.
                     </p>
                     <button onClick={() => connect(c.id)}>
                       Connect {c.name}

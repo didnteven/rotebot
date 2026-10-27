@@ -209,3 +209,51 @@ formatting, clippy, typechecking, and the production build. Earlier intermittent
 Show startup and SQLCipher initialization failures, which were not reproduced in
 these three final runs, are recorded with the verification evidence in the report.
 No test was weakened or deleted.
+
+## Task 13: approved connection actions
+
+Runtime v2's synchronous `macroscope.connection.request` records plain JSON
+arguments (64 KiB per call; five calls per run), returns `undefined`, and has no
+network/token access. The runner protocol includes `planned_calls`. Explicit
+connected-service selections carry bounded descriptions and input schemas as
+untrusted build data. Host checks run in two fresh workers, compare planned
+calls, and validate every call against the selected schemas. Tool manifests and
+version grants bind the selected connector/tool names.
+
+Staging freezes calls, server URLs and labelled annotation claims into the plan
+hash with the output. Action-only programs need no file output. Create offers
+“Let this tool use …” with the service's tools; Run renders full JSON arguments
+as inert text and requires a new “I reviewed these actions” tick for each plan
+with destructive or non-read-only claims. Trusted commit preflights all stored
+connections before sending anything, journals intent/result in order, stops on
+the first failure, and never retries uncertain requests. Receipts render bounded
+untrusted server summaries as text. Call arguments are encrypted in staging;
+crash recovery reconstructs unknown/not-run action receipts without resending.
+
+Tests cover the fake OAuth/MCP server plus a fake program-model endpoint, exact
+approved arguments and exactly one send, action-only receipts, undeclared tools,
+input schemas, call/argument limits, hash tampering, re-authentication, partial
+failure, response loss, inert HTML/script rendering, per-plan checkbox reset,
+and crash reconciliation after a send. The desktop backend types are mirrored
+in `.dev/task13/backend-types.ts` (the requested in-worktree fallback).
+
+### Task 13b completion — 2026-10-28
+
+Merged `m4/general-tasks` (including `7f17bf1`'s startup backup dialog and
+`6b1b15b`'s ADR 0004) before final verification. The merge and all connection-action
+changes remain uncommitted. Resumed work fixes recovery after completed actions but
+before file publication, preserves an immediate action receipt if file publication
+fails, and invalidates outbound review when connection selection changes. Added
+regressions verify both interruption windows and that neither path resends.
+
+Final verification: **PASS**, exit **0** for `cargo test --workspace`, both runs of
+`bash scripts/check.sh`, the synthetic `bash experiments/runtime-gate-v2/run-canaries.sh`,
+and `cd apps/desktop && npx tauri build --debug --no-bundle`. Each workspace run had
+**242 passed, 0 failed, 4 pre-existing opt-in tests ignored**; each check run had
+**14 UI files / 114 tests passed**. All **60 synthetic canaries** matched their
+expected outcomes. Synthetic success is reported separately from OS admission
+(**UNKNOWN** in this rerun); existing admission evidence is preserved. No tests
+were weakened or deleted. The backend types fallback is byte-identical.
+
+Exact command output tails: [Task 13b verification](task13-verification.md).
+Synthetic runtime evidence: [Task 13 canaries](task13-runtime-canaries.md).

@@ -240,6 +240,15 @@ impl McpClient {
         }
         Err(McpError::ResponseTooLarge)
     }
+    /// Trusted host only, after the broker has durably journaled an approved call.
+    pub(crate) async fn call_approved_tool(
+        &mut self,
+        name: &str,
+        args: Value,
+    ) -> Result<Value, McpError> {
+        self.request("tools/call", json!({"name": name, "arguments": args}))
+            .await
+    }
     /// Host diagnostics only. Hints are untrusted claims, not a broker permission.
     /// The ConnectionsService verifies using initialize/list only; no generated-code API.
     #[allow(dead_code)]

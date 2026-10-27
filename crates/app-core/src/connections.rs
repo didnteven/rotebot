@@ -99,6 +99,9 @@ fn user_error(e: ConnectionError) -> CoreError {
         ConnectionError::OAuth(O::ClientRequired) => {
             "Add your OAuth client ID for this service first.".to_string()
         }
+        ConnectionError::OAuth(O::NeedsReauth | O::Token) => {
+            "This connection needs re-authentication. Nothing ran.".into()
+        }
         ConnectionError::OAuth(O::Denied) => "Sign-in was cancelled in the browser.".into(),
         ConnectionError::OAuth(O::Timeout) => {
             "Sign-in timed out after 5 minutes. Try again.".into()
@@ -449,14 +452,22 @@ impl Connections {
         if url.is_empty() {
             return Ok(vec![]);
         }
-        let tools = macroscope_connections::preview_tools(&url)
-            .await
-            .unwrap_or_default();
+        let tools = if self.connected_ids().contains(id) {
+            let mut service = self.service.lock().await;
+            let result = service.prepare(id, &url).await;
+            *lock(&self.snapshot) = service.list();
+            result.map_err(user_error)?.tools
+        } else {
+            macroscope_connections::preview_tools(&url)
+                .await
+                .unwrap_or_default()
+        };
         Ok(tools
             .into_iter()
             .take(100)
             .map(|t| ConnectorTool {
-                name: t.name.chars().take(120).collect(),
+                input_schema: t.input_schema,
+                name: t.name,
                 description: t
                     .description
                     .unwrap_or_default()
@@ -467,6 +478,118 @@ impl Connections {
                 destructive: t.annotations.destructive_hint,
             })
             .collect())
+    }
+
+    /// Selection is explicit user intent. Tool metadata remains untrusted data.
+    pub async fn select_for_task(
+        &self,
+        draft_id: &str,
+        ids: &[String],
+    ) -> CoreResult<crate::dto::TaskDraft> {
+        if ids.len() > 5 {
+            return Err(CoreError::Invalid(
+                "Choose at most five connections.".into(),
+            ));
+        }
+        let mut selected = Vec::new();
+        for id in ids {
+            if selected
+                .iter()
+                .any(|c: &crate::dto::SelectedConnection| &c.connector_id == id)
+            {
+                return Err(CoreError::Invalid("Duplicate connection.".into()));
+            }
+            let info = self.info_for(id)?;
+            if !matches!(info.state, ConnectionState::Connected { .. }) {
+                return Err(CoreError::Invalid(
+                    "Connect this service before using it.".into(),
+                ));
+            }
+            let tools = self.preview_tools(id).await?;
+            for tool in &tools {
+                jsonschema::validator_for(&tool.input_schema).map_err(|_| {
+                    CoreError::Invalid("Server supplied an invalid input schema.".into())
+                })?;
+            }
+            selected.push(crate::dto::SelectedConnection {
+                connector_id: id.clone(),
+                name: info.name,
+                resource: info.mcp_url,
+                tools,
+            });
+        }
+        let _admission = self.core.admit_local()?;
+        let mut draft = self.core.load_draft(draft_id)?;
+        draft.required_connections = selected;
+        if !draft.required_connections.is_empty() {
+            draft.kind = crate::dto::TaskKind::Program;
+            draft.questions.clear();
+        }
+        draft.revision += 1;
+        crate::drafts::refresh(&mut draft);
+        self.core.save_draft(&draft)?;
+        Ok(draft)
+    }
+
+    pub async fn commit_run(
+        &self,
+        run_id: &str,
+        plan_hash: &str,
+        reviewed: bool,
+    ) -> CoreResult<crate::dto::CommitResult> {
+        let actions = self.core.planned_actions(run_id)?;
+        if actions.is_empty() {
+            return self.core.commit_run(run_id, plan_hash);
+        }
+        // Keep the service lock through sends so URL changes/disconnect cannot race approval.
+        let mut service = self.service.clone().lock_owned().await;
+        let mut prepared = HashMap::new();
+        for action in &actions {
+            if !prepared.contains_key(&action.call.connector_id) {
+                let result = service
+                    .prepare(&action.call.connector_id, &action.resource)
+                    .await;
+                *lock(&self.snapshot) = service.list();
+                prepared.insert(
+                    action.call.connector_id.clone(),
+                    result.map_err(user_error)?,
+                );
+            }
+            let client = &prepared[&action.call.connector_id];
+            let mut tools = client
+                .tools
+                .iter()
+                .filter(|t| t.name == action.call.tool_name);
+            let tool = tools.next().ok_or_else(|| {
+                CoreError::Invalid("The server no longer offers this tool. Stage again.".into())
+            })?;
+            if tools.next().is_some()
+                || tool.annotations.read_only_hint != action.read_only_hint
+                || tool.annotations.destructive_hint != action.destructive_hint
+                || !jsonschema::validator_for(&tool.input_schema)
+                    .is_ok_and(|v| v.is_valid(&action.call.args))
+            {
+                return Err(CoreError::Invalid(
+                    "The server tool changed. Review a fresh plan.".into(),
+                ));
+            }
+        }
+        let core = self.core.clone();
+        let run_id = run_id.to_string();
+        let plan_hash = plan_hash.to_string();
+        let runtime = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let _service_guard = service;
+            core.commit_run_actions(&run_id, &plan_hash, reviewed, |action| {
+                let result = runtime.block_on(prepared.get_mut(&action.call.connector_id).expect("preflighted").call(&action.call.tool_name, action.call.args.clone()));
+                use macroscope_effect_broker::ActionStatus as S;
+                match result {
+                    Ok(value) => (if value["isError"] == true { S::Failed } else { S::Succeeded }, value.to_string()),
+                    Err(macroscope_connections::mcp::McpError::AuthRequired { .. } | macroscope_connections::mcp::McpError::Rpc) => (S::Failed, "Server rejected the action. No retry was attempted.".into()),
+                    Err(_) => (S::OutcomeUnknown, "The request may have been sent but its response was lost. Check the service; Macroscope will never retry this call.".into()),
+                }
+            })
+        }).await.map_err(|_| CoreError::Internal("Connection commit interrupted; check activity before running again.".into()))?
     }
 
     fn connected_ids(&self) -> HashSet<String> {
@@ -535,5 +658,150 @@ impl Connections {
         lock(&self.pending)
             .values()
             .any(|p| p.authorization_url.as_deref() == Some(url))
+    }
+}
+
+/// Fake connection layer: checks and staging only record and validate, never call a server.
+pub(crate) fn validate_calls(
+    calls: &[macroscope_domain::PlannedCall],
+    selected: &[crate::dto::SelectedConnection],
+) -> Result<Vec<macroscope_effect_broker::PlannedAction>, String> {
+    if calls.len() > 5 {
+        return Err("At most 5 connection calls per run.".into());
+    }
+    calls
+        .iter()
+        .map(|call| {
+            if !call.args.is_object()
+                || serde_json::to_vec(&call.args).map_or(true, |b| b.len() > 65_536)
+            {
+                return Err("Connection arguments must be a JSON object at most 64 KiB.".into());
+            }
+            let connector = selected
+                .iter()
+                .find(|c| c.connector_id == call.connector_id)
+                .ok_or("Undeclared connector")?;
+            let mut tools = connector.tools.iter().filter(|t| t.name == call.tool_name);
+            let tool = tools.next().ok_or("Undeclared tool")?;
+            if tools.next().is_some() {
+                return Err("Ambiguous server tool".into());
+            }
+            let validator = jsonschema::validator_for(&tool.input_schema)
+                .map_err(|_| "Invalid server input schema")?;
+            if !validator.is_valid(&call.args) {
+                return Err("Connection arguments do not match the tool input schema".into());
+            }
+            Ok(macroscope_effect_broker::PlannedAction {
+                call: call.clone(),
+                service: connector.name.clone(),
+                resource: connector.resource.clone(),
+                read_only_hint: tool.read_only,
+                destructive_hint: tool.destructive,
+            })
+        })
+        .collect()
+}
+
+impl AppCore {
+    pub(crate) fn planned_actions(
+        &self,
+        run_id: &str,
+    ) -> CoreResult<Vec<macroscope_effect_broker::PlannedAction>> {
+        Ok(lock(&self.inner.staged)
+            .get(run_id)
+            .ok_or(CoreError::NotFound("staged run"))?
+            .staged
+            .plan()
+            .planned_calls
+            .clone())
+    }
+    pub(crate) fn validate_connection_authority(
+        &self,
+        tool_id: &str,
+        version: &str,
+        selected: &[crate::dto::SelectedConnection],
+    ) -> CoreResult<()> {
+        let version = self
+            .db()
+            .version(tool_id, version)?
+            .ok_or(CoreError::NotFound("version"))?;
+        let grant = self
+            .db()
+            .active_grant(tool_id, &version.hash)?
+            .ok_or_else(|| CoreError::Invalid("Tool permissions revoked.".into()))?;
+        let expected: Vec<_> = selected.iter().map(|c| serde_json::json!({"connectorId":c.connector_id,"toolNames":c.tools.iter().map(|t| &t.name).collect::<Vec<_>>()})).collect();
+        if !selected.is_empty()
+            && (version.manifest["capabilities"]["mcp"] != serde_json::json!(expected)
+                || grant.2["mcp"] != serde_json::json!(expected))
+        {
+            return Err(CoreError::Invalid(
+                "Undeclared connection or missing mcp.call grant.".into(),
+            ));
+        }
+        for c in selected {
+            let state = self
+                .db()
+                .connector_states()?
+                .into_iter()
+                .find(|(id, _)| id == &c.connector_id)
+                .and_then(|(_, v)| serde_json::from_value::<ConnectionStatus>(v).ok());
+            if state.is_none_or(|s| {
+                s.mcp_url != c.resource || !matches!(s.state, LibState::Connected { .. })
+            }) {
+                return Err(CoreError::Invalid(format!(
+                    "{} needs re-authentication. Nothing ran.",
+                    c.name
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn undeclared_connectors_tools_invalid_schemas_and_excess_calls_fail_closed() {
+        let selected = vec![crate::dto::SelectedConnection {
+            connector_id: "gmail".into(),
+            name: "Gmail".into(),
+            resource: "https://example.invalid/mcp".into(),
+            tools: vec![ConnectorTool {
+                name: "create_draft".into(),
+                description: "untrusted instructions".into(),
+                input_schema: json!({"type":"object","additionalProperties":false,"properties":{"to":{"type":"string"}},"required":["to"]}),
+                read_only: Some(false),
+                destructive: None,
+            }],
+        }];
+        let good = macroscope_domain::PlannedCall {
+            connector_id: "gmail".into(),
+            tool_name: "create_draft".into(),
+            args: json!({"to":"user@example.invalid"}),
+        };
+        assert!(validate_calls(std::slice::from_ref(&good), &selected).is_ok());
+        for bad in [
+            macroscope_domain::PlannedCall {
+                connector_id: "slack".into(),
+                ..good.clone()
+            },
+            macroscope_domain::PlannedCall {
+                tool_name: "send_email".into(),
+                ..good.clone()
+            },
+            macroscope_domain::PlannedCall {
+                args: json!({"to":3}),
+                ..good.clone()
+            },
+            macroscope_domain::PlannedCall {
+                args: json!({"to":"x","extra":true}),
+                ..good.clone()
+            },
+        ] {
+            assert!(validate_calls(&[bad], &selected).is_err());
+        }
+        assert!(validate_calls(&vec![good; 6], &selected).is_err());
     }
 }

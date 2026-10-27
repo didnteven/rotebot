@@ -182,6 +182,11 @@ export function ReceiptCard({
       >
         {receipt.toolName} · {receipt.status}
       </p>
+      {receipt.actions?.map((a, i) => <article key={i}>
+        <h3>{a.action.service} · {a.action.call.toolName} · {a.status}</h3>
+        <pre>{JSON.stringify(a.action.call.args, null, 2)}</pre>
+        <p>Untrusted server result:</p><pre>{a.summary}</pre>
+      </article>)}
       <dl>
         <dt>Version</dt>
         <dd>{receipt.versionHash.slice(0, 12)}</dd>
@@ -193,7 +198,7 @@ export function ReceiptCard({
         <dd><FileText text={receipt.outputPath} /></dd>
       </dl>
       <button
-        disabled={busy}
+        disabled={busy || !receipt.outputPath}
         onClick={() => void act(() => backend.revealOutput(receipt.runId))}
       >
         Show in Finder

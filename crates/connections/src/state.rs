@@ -132,6 +132,20 @@ pub struct ConnectionsService {
     generation: u64,
     active: HashMap<String, u64>,
 }
+/// Contains host credentials; never serialize or pass to the runner.
+pub struct PreparedConnection {
+    client: McpClient,
+    pub tools: Vec<crate::mcp::Tool>,
+}
+impl PreparedConnection {
+    pub async fn call(
+        &mut self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, McpError> {
+        self.client.call_approved_tool(name, args).await
+    }
+}
 impl ConnectionsService {
     pub fn new(
         tokens: Arc<dyn TokenStore>,
@@ -251,6 +265,33 @@ impl ConnectionsService {
         }
         .await;
         self.finish(index, result)
+    }
+    /// Preflight all connectors before executing ANY call. Never falls back to anonymous.
+    pub async fn prepare(
+        &mut self,
+        id: &str,
+        resource: &str,
+    ) -> Result<PreparedConnection, ConnectionError> {
+        let index = self.index(id)?;
+        if self.statuses[index].mcp_url != resource
+            || !matches!(
+                self.statuses[index].state,
+                ConnectionState::Connected { .. }
+            )
+        {
+            return Err(OAuthError::NeedsReauth.into());
+        }
+        let result = async {
+            let token = self.oauth.access_token(id, resource).await?;
+            let mut client = McpClient::connect(resource, Some(token)).await?;
+            let tools = client.list_tools().await?;
+            Ok::<_, ConnectionError>(PreparedConnection { client, tools })
+        }
+        .await;
+        if let Err(error) = &result {
+            self.failed(index, error)?;
+        }
+        result
     }
     pub async fn test(&mut self, id: &str) -> Result<ConnectionStatus, ConnectionError> {
         let index = self.index(id)?;

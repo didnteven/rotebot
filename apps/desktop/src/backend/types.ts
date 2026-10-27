@@ -115,6 +115,7 @@ export interface RuleQuestion {
 export type TaskKind = "csv-mapping" | "program";
 export interface Program { summary: string; output_name: string; code: string; }
 export interface TaskDraft {
+  requiredConnections?: SelectedConnection[];
   kind?: TaskKind;
   exampleOutput?: string | null;
   syntheticShape?: string;
@@ -232,7 +233,12 @@ export interface ToolDetail extends ToolSummary {
   versionHash: string;
 }
 
+export interface PlannedCall { connectorId: string; toolName: string; args: Record<string, unknown>; }
+export interface PlannedAction { call: PlannedCall; service: string; resource: string; readOnlyHint: boolean | null; destructiveHint: boolean | null; }
+export interface ActionResult { action: PlannedAction; status: "succeeded" | "failed" | "outcome_unknown" | "not_run"; summary: string; }
 export interface StagedRun {
+  createsOutput?: boolean;
+  plannedCalls?: PlannedAction[];
   previewText?: string;
   runId: string;
   toolId: string;
@@ -261,6 +267,7 @@ export type RunFailure =
   | { kind: "internal"; message: string };
 
 export interface Receipt {
+  actions?: ActionResult[];
   runId: string;
   toolId: string;
   toolName: string;
@@ -269,7 +276,7 @@ export interface Receipt {
   inputDigest: string;
   committedDigest: string;
   outputPath: string;
-  status: "committed" | "reconciled" | "outcome_unknown";
+  status: "committed" | "reconciled" | "outcome_unknown" | "failed";
   atMs: number;
 }
 
@@ -339,7 +346,9 @@ export interface ConnectionSuggestion {
   count: number;
 }
 
+export interface SelectedConnection { connectorId: string; name: string; resource: string; tools: ConnectorTool[]; }
 export interface ConnectorTool {
+  inputSchema?: unknown;
   name: string;
   description: string; // untrusted server text, truncated; render as text
   readOnly: boolean | null;
@@ -403,6 +412,7 @@ export interface Backend {
     questionId: string,
     answer: string,
   ): Promise<TaskDraft>;
+  selectTaskConnections(draftId: string, connectorIds: string[]): Promise<TaskDraft>;
   updateTask(draftId: string, kind: TaskKind, outputName: string, exampleOutput: string | null): Promise<TaskDraft>;
   updateMapping(
     draftId: string,
@@ -442,6 +452,7 @@ export interface Backend {
   commitRun(
     runId: string,
     planHash: string,
+    actionsReviewed?: boolean,
   ): Promise<Receipt | { failure: RunFailure }>;
   discardRun(runId: string): Promise<void>;
   revealOutput(receiptRunId: string): Promise<void>;

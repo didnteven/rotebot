@@ -548,6 +548,18 @@ export class MockBackend implements Backend {
     draft.revision++;
     return this.validate(draft);
   }
+  async selectTaskConnections(draftId: string, connectorIds: string[]) {
+    const draft = this.draft(draftId);
+    draft.requiredConnections = [];
+    for (const id of connectorIds) {
+      const connector = (await this.listConnectors()).find(c => c.id === id && c.state.kind === "connected");
+      if (!connector) throw new Error("Connect this service before using it.");
+      draft.requiredConnections.push({connectorId:id, name:connector.name, resource:connector.mcpUrl, tools:await this.previewConnectorTools(id)});
+    }
+    if (connectorIds.length) { draft.kind = "program"; draft.questions = []; }
+    draft.revision++;
+    return this.validate(draft);
+  }
   async updateTask(draftId: string, kind: TaskKind, outputName: string, exampleOutput: string | null) {
     const draft = this.draft(draftId);
     draft.kind = kind; draft.outputName = outputName; draft.exampleOutput = exampleOutput;

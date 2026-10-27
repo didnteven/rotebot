@@ -91,20 +91,22 @@ def main():
             response = None
         # Small excerpt; never persist flood payloads.
         receipt["response"] = (response if response and not response.get("ok") else
-                               {"ok": response.get("ok"), "log": response.get("log"), "outputs": [{"name": o["name"], "bytes": len(o["text"].encode())} for o in response.get("outputs", [])]} if response else None)
+                               {"ok": response.get("ok"), "log": response.get("log"), "planned_calls": response.get("planned_calls"), "outputs": [{"name": o["name"], "bytes": len(o["text"].encode())} for o in response.get("outputs", [])]} if response else None)
         expected = expectation(name)
         passed = proc.returncode == 0 and response is not None
         if name == "orders":
-            passed = passed and response == {"ok": True, "log": ["rows: 18"], "outputs": [{"name": "orders_ready.csv", "text": (ROOT / "fixtures/orders/expected.csv").read_text()}]}
+            passed = passed and response == {"ok": True, "log": ["rows: 18"], "planned_calls": [], "outputs": [{"name": "orders_ready.csv", "text": (ROOT / "fixtures/orders/expected.csv").read_text()}]}
         elif name == "ok":
-            passed = passed and response == {"ok": True, "log": [], "outputs": [{"name": "ok.csv", "text": "value\n42\n"}]}
+            passed = passed and response == {"ok": True, "log": [], "planned_calls": [], "outputs": [{"name": "ok.csv", "text": "value\n42\n"}]}
+        elif name == "connection-planned":
+            passed = passed and response == {"ok": True, "log": [], "outputs": [], "planned_calls": [{"connectorId":"gmail", "toolName":"create_draft", "args":{"body":"review me"}}]}
         elif expected.startswith("error:"):
             passed = passed and response.get("ok") is False and response.get("error", {}).get("kind") == expected.split(":")[1]
         else:
-            passed = passed and response.get("ok") is True and not response.get("outputs") and len(response.get("log", [])) == 1 and response["log"][0].startswith("DENIED: ")
+            passed = passed and response.get("ok") is True and response.get("planned_calls") == [] and not response.get("outputs") and len(response.get("log", [])) == 1 and response["log"][0].startswith("DENIED: ")
         if name.startswith("memory"):
             passed = passed and stats is not None and stats["peak_rss_bytes"] <= CAP + SLACK
-        receipt["observed"] = ("PASS" if name in ("orders", "ok") else "DENIED") if passed else "FAIL"
+        receipt["observed"] = ("PASS" if name in ("orders", "ok", "connection-planned") else "DENIED") if passed else "FAIL"
         receipt["evidence"] = json.dumps(receipt["response"], ensure_ascii=True)[:220] + ("; peak RSS=" + str(stats["peak_rss_bytes"]) if stats else "")
         return receipt
 
@@ -147,14 +149,19 @@ def main():
               "synthetic_omits": ["Seatbelt", "RLIMIT_AS"], "os_probe": os_probe, "rows": rows,
               "sources": {str(p.relative_to(ROOT)): sha(p) for p in sorted((ROOT / "crates/runner/src").rglob("*")) if p.is_file()},
               "canaries": {str(p.relative_to(ROOT)): sha(p) for p in sorted((EXP / "canaries").glob("*.js"))}}
-    (EXP / "results.json").write_text(json.dumps(report, indent=2) + "\n")
-    write_markdown(report)
-    print("Verdict: " + verdict + "; evidence: docs/build/runtime-lock-v2.md", flush=True)
-    return 1 if verdict != "PASS" else 0
+    report["synthetic_suite"] = "FAIL" if any(row["synthetic"]["observed"] == "FAIL" for row in rows) else "PASS"
+    # Synthetic reruns preserve the separately admitted OS-boundary evidence.
+    results_name = "results.json" if args.os else "task13-synthetic-results.json"
+    evidence_name = "runtime-lock-v2.md" if args.os else "task13-runtime-canaries.md"
+    (EXP / results_name).write_text(json.dumps(report, indent=2) + "\n")
+    write_markdown(report, evidence_name, results_name)
+    print("Synthetic suite: " + report["synthetic_suite"] + "; admission verdict: " + verdict + "; evidence: docs/build/" + evidence_name, flush=True)
+    # UNKNOWN OS evidence does not fail a synthetic-only test run or admit a runtime.
+    return 1 if failures or (args.os and not verdict.startswith("PASS")) else 0
 
 
 def expectation(name):
-    if name in ("ok", "orders"):
+    if name in ("ok", "orders", "connection-planned"):
         return "exact fixture"
     if name.startswith("memory"):
         return "error:memory"
@@ -162,6 +169,8 @@ def expectation(name):
         return "error:" + name
     if name in ("stdout", "output-flood", "output-repeat"):
         return "error:output_limit"
+    if name in ("connection-args-limit", "connection-call-limit"):
+        return "error:forbidden"
     if name.startswith("output-") or name.startswith("host-") or name == "stdin-flood":
         return "error:forbidden"
     if name == "hostile-exception":
@@ -171,16 +180,16 @@ def expectation(name):
     return "explicit denial marker"
 
 
-def write_markdown(report):
-    lines = ["# QuickJS runtime admission v2", "", "**Verdict: " + report["verdict"] + ". Generated execution remains disabled in the product.**", "",
+def write_markdown(report, evidence_name, results_name):
+    lines = ["# QuickJS runtime admission v2", "", "**Admission verdict: " + report["verdict"] + ". Synthetic suite: " + report["synthetic_suite"] + ".**", "",
              "Measured " + report["measured_at"] + ". Synthetic developer evidence; OS rows are UNKNOWN until an outside rerun with `bash experiments/runtime-gate-v2/run-canaries.sh --os`.", "",
              "The production launcher fails closed if any setrlimit or sandbox setup fails. Finite RLIMIT_AS availability on this host: **" + str(report["finite_rlimit_as_available"]) + "**. The explicit synthetic path omits Seatbelt and RLIMIT_AS; it is never an automatic fallback.", "",
              "## Versions and hashes", "", "Runner 0.1.0; rquickjs **0.14.0**, embedding QuickJS-NG **0.16.2**. Cargo.lock pins all crate archives by checksum. [rquickjs source/API](https://docs.rs/rquickjs/0.14.0/rquickjs/).", "", "```json", json.dumps({k: report[k] for k in ("pins", "runner_sha256", "launcher_sha256", "profile_sha256", "cargo_lock_sha256", "quickjs_header_sha256", "harness_sha256")}, indent=2), "```", "", "## Launch", "",
              "Exact host OS: `" + report["os"] + "`. OS version:\n```text\n" + report["sw_vers"]["stdout"].strip() + "\n```", "",
-             "All concrete argv, empty env, source hashes, statuses and kernel usage are in `experiments/runtime-gate-v2/results.json`. OS argv:", "", "```json", json.dumps(["/usr/bin/sandbox-exec", "-D", "RUNNER=" + str(Path(report["signatures"][0]["argv"][-1])), "-f", str(EXP / "profile.sb"), report["signatures"][0]["argv"][-1]], indent=2), "```", "",
+             "All concrete argv, empty env, source hashes, statuses and kernel usage are in `experiments/runtime-gate-v2/" + results_name + "`. OS argv:", "", "```json", json.dumps(["/usr/bin/sandbox-exec", "-D", "RUNNER=" + str(Path(report["signatures"][0]["argv"][-1])), "-f", str(EXP / "profile.sb"), report["signatures"][0]["argv"][-1]], indent=2), "```", "",
              "Environment: `{}`. Cwd: `/`. Inherited descriptors: stdin/stdout/stderr pipes only (CLOEXEC on other host descriptors). Dedicated process group; parent bounds stdout to 20,000,000 bytes and stderr to 65,536 bytes, kills/reaps at wall budget + 1 s. No descendants, module graph, cache or writable scratch are admitted.", "",
              "pre_exec soft=hard limits (all errors abort launch):", "", "```json", json.dumps(report["rlimits"], indent=2), "```", "",
-             "QuickJS limits: 64 MiB allocator, 512 KiB stack, 10 s process CPU, 12 s wall; requests can only lower ceilings. Interrupt checks wall and process CPU; parent deadline also covers parser/native code. Stdin is capped at 20,000,000 bytes. Exactly one output, raw text ≤20,000,000 bytes; serialized response including escaping/logs ≤20,000,000 bytes; logs ≤1 MiB including per-entry overhead. SDK CSV host buffers and conversions are bounded by input/output/shape ceilings; the QuickJS heap ceiling alone is not a claim that all host allocations count as JS heap.", "",
+             "QuickJS limits: 64 MiB allocator, 512 KiB stack, 10 s process CPU, 12 s wall; requests can only lower ceilings. Interrupt checks wall and process CPU; parent deadline also covers parser/native code. Stdin is capped at 20,000,000 bytes. At most one output plus five planned connection calls (JSON arguments ≤64 KiB each), raw output text ≤20,000,000 bytes; serialized response including escaping/logs ≤20,000,000 bytes; logs ≤1 MiB including per-entry overhead. SDK CSV host buffers and conversions are bounded by input/output/shape ceilings; the QuickJS heap ceiling alone is not a claim that all host allocations count as JS heap.", "",
              "## Seatbelt profile", "", "Candidate, not empirically minimized or compatibility-verified here; mach-lookup allowlist is empty. No user-data path, general metadata grant, write, network or process-fork grant.", "", "```scheme", (EXP / "profile.sb").read_text().strip(), "```", "", "## Canaries", "",
              "A generic crash/error never counts as a denial. API rows require an explicit absent-API marker; limit/import rows require the exact error kind. Benign rows require exact bytes. Symlink imports/output traversal are rejected as source/data without opening the target; no user home, credentials or real symlink targets are read. Config discovery is inapplicable: only source bytes from stdin execute, with no filesystem loader. Worker effect/CPU/memory probes all stop at the absent Worker API.", "",
              "| Canary | Expected | Synthetic worker | OS boundary | Evidence |", "|---|---|---|---|---|"]
@@ -196,9 +205,9 @@ def write_markdown(report):
                     peak = usage["peak_rss_bytes"]
                     lines.append(f'| {row["canary"]} / {layer} | {peak} | {max(0, peak-CAP)} | {SLACK} |')
     lines += ["", "## Signatures, remaining gate requirements and verdict", "", "```json", json.dumps(report["signatures"], indent=2), "```", "",
-              "PASS requires every benign fixture and canary under a working OS boundary, all resource ceilings supported, and plan §7.3/P8 signed immutable launcher/app-bundle evidence. This developer spike has no trusted release signature or signed-bundle test. Even a successful `--os` canary run cannot assert full release admission without those receipts. UNKNOWN is a failed admission, not permission to enable generated execution. Windows is unverified. The default product stays csv-mapping, with no UI or model-generated-code path enabled.", "",
+              "PASS requires every benign fixture and canary under a working OS boundary, all resource ceilings supported, and plan §7.3/P8 signed immutable launcher/app-bundle evidence. This developer spike has no trusted release signature or signed-bundle test. Even a successful `--os` canary run cannot assert full release admission without those receipts. UNKNOWN supplies no new OS admission evidence. ADR 0003 records the existing developer-boundary admission; synthetic reruns do not replace it. Windows is unverified.", "",
               "Source admission conservatively rejects the byte sequence `import` (including comments/strings); no module loader is installed. eval/Function globals and function/async/generator constructor links are removed. Promise intrinsics are required for safe async teardown, but the Promise global is absent, returned promises are refused, and no job queue is drained. SDK objects are recursively frozen and have null prototypes. Rust date/money/formula handling is shared with the finite executor.", ""]
-    (ROOT / "docs/build/runtime-lock-v2.md").write_text("\n".join(lines))
+    (ROOT / "docs/build" / evidence_name).write_text("\n".join(lines))
 
 
 if __name__ == "__main__":

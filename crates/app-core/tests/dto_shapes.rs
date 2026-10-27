@@ -84,6 +84,7 @@ fn run_results_are_untagged_with_a_failure_envelope() {
         json!({"failure": {"kind": "input_invalid", "message": "m", "row": 3, "column": "created"}})
     );
     let receipt = Receipt {
+        actions: vec![],
         run_id: "r".into(),
         tool_id: "t".into(),
         tool_name: "n".into(),

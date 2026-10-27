@@ -147,17 +147,45 @@ pub struct Epochs {
     pub policy_epoch: u64,
 }
 
+/// Server metadata is untrusted data and is bound to the reviewed digest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlannedAction {
+    pub call: macroscope_domain::PlannedCall,
+    pub service: String,
+    pub resource: String,
+    pub read_only_hint: Option<bool>,
+    pub destructive_hint: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionStatus {
+    Succeeded,
+    Failed,
+    OutcomeUnknown,
+    NotRun,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionResult {
+    pub action: PlannedAction,
+    pub status: ActionStatus,
+    /// Bounded untrusted server data. Render as text only.
+    pub summary: String,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plan {
     pub run_id: RunId,
     pub tool_id: ToolId,
     pub version_hash: String,
     pub engine: String,
+    #[serde(default)]
+    pub planned_calls: Vec<PlannedAction>,
     pub mapping_hash: String,
     pub input: InputSnapshot,
     pub destination: Destination,
-    /// Exactly one ordered create effect, structurally enforced.
-    pub effects: [CreateEffect; 1],
+    /// At most one create effect, alongside the ordered connection calls.
+    pub effects: Vec<CreateEffect>,
     pub limits: Limits,
     pub grant_revision: u64,
     pub policy_epoch: u64,
@@ -206,6 +234,8 @@ impl StagedPlan {
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptStatus {
     Committed,
+    Failed,
+    OutcomeUnknown,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timestamps {
@@ -222,6 +252,8 @@ pub struct Receipt {
     pub input_digest: String,
     pub committed_digest: String,
     pub output_path: PathBuf,
+    #[serde(default)]
+    pub actions: Vec<ActionResult>,
     pub status: ReceiptStatus,
     pub timestamps: Timestamps,
 }
@@ -391,7 +423,7 @@ pub fn stage(run: StageRequest) -> Result<StagedPlan, BrokerError> {
         &run.contract.input_schema,
     )?;
     let output = apply_mapping(&run.mapping, &input, &run.limits)?;
-    freeze_output(run, snapshot, output, "csv-mapping", None)
+    freeze_output(run, snapshot, output, "csv-mapping", None, vec![])
 }
 
 /// Host-only seam: execute against the broker's exact bounded snapshot and reap
@@ -401,6 +433,14 @@ pub fn stage_generated(
     run: StageRequest,
     execution_hash: String,
     execute: impl FnOnce(&[u8]) -> Result<Vec<u8>, BrokerError>,
+) -> Result<StagedPlan, BrokerError> {
+    stage_generated_actions(run, execution_hash, |input| Ok((execute(input)?, vec![])))
+}
+
+pub fn stage_generated_actions(
+    run: StageRequest,
+    execution_hash: String,
+    execute: impl FnOnce(&[u8]) -> Result<(Vec<u8>, Vec<PlannedAction>), BrokerError>,
 ) -> Result<StagedPlan, BrokerError> {
     validate_basename(&run.basename)?;
     validate_selected_path(&run.destination.path)?;
@@ -415,7 +455,15 @@ pub fn stage_generated(
     if run.contract.input_kind == macroscope_domain::InputKind::Csv {
         require_columns(&input, 0, &run.contract.input_schema)?;
     }
-    let bytes = execute(&input)?;
+    let (bytes, planned_calls) = execute(&input)?;
+    if planned_calls.len() > 5
+        || planned_calls.iter().any(|a| {
+            !a.call.args.is_object()
+                || serde_json::to_vec(&a.call.args).map_or(true, |b| b.len() > 65_536)
+        })
+    {
+        return Err(BrokerError::Runner("invalid planned calls".into()));
+    }
     if bytes.len() as u64 > run.limits.max_output_bytes {
         return Err(MappingError::Limit {
             kind: "output bytes",
@@ -423,7 +471,9 @@ pub fn stage_generated(
         }
         .into());
     }
-    validate_text_output(&run.basename, &bytes)?;
+    if !bytes.is_empty() || planned_calls.is_empty() {
+        validate_text_output(&run.basename, &bytes)?;
+    }
     if !run.contract.output_columns.is_empty() {
         require_columns(&bytes, 0, &run.contract.output_columns)?;
     }
@@ -438,7 +488,14 @@ pub fn stage_generated(
         rows_in,
         rows_out,
     };
-    freeze_output(run, snapshot, output, "js-quickjs", Some(execution_hash))
+    freeze_output(
+        run,
+        snapshot,
+        output,
+        "js-quickjs",
+        Some(execution_hash),
+        planned_calls,
+    )
 }
 
 /// Shared host validation for checked and staged program output.
@@ -475,6 +532,7 @@ fn freeze_output(
     output: macroscope_executor::MappingOutput,
     engine: &str,
     execution_hash: Option<String>,
+    planned_calls: Vec<PlannedAction>,
 ) -> Result<StagedPlan, BrokerError> {
     let key = Zeroizing::new(run.key);
     let plan = Plan {
@@ -482,17 +540,22 @@ fn freeze_output(
         tool_id: run.tool_id,
         version_hash: run.version_hash,
         engine: engine.into(),
+        planned_calls,
         mapping_hash: execution_hash.unwrap_or(digest(&canonical_json(&run.mapping)?)),
         input: snapshot,
         destination: Destination {
             parent: run.destination.identity.clone(),
             basename: run.basename,
         },
-        effects: [CreateEffect {
-            kind: "create".into(),
-            staged_length: output.bytes.len() as u64,
-            sha256: output.sha256,
-        }],
+        effects: if output.bytes.is_empty() {
+            vec![]
+        } else {
+            vec![CreateEffect {
+                kind: "create".into(),
+                staged_length: output.bytes.len() as u64,
+                sha256: output.sha256,
+            }]
+        },
         limits: run.limits,
         grant_revision: run.epochs.grant_revision,
         policy_epoch: run.epochs.policy_epoch,
@@ -532,6 +595,28 @@ fn freeze_output(
     let mut permissions = file.metadata()?.permissions();
     permissions.set_readonly(true);
     file.set_permissions(permissions)?;
+    if !plan.planned_calls.is_empty() {
+        let mut actions_nonce = [0; 24];
+        OsRng
+            .try_fill_bytes(&mut actions_nonce)
+            .map_err(|_| io::Error::other("OS randomness unavailable"))?;
+        let encrypted_actions = cipher
+            .encrypt(
+                XNonce::from_slice(&actions_nonce),
+                Payload {
+                    msg: &canonical_json(&plan.planned_calls)?,
+                    aad: plan_hash.as_bytes(),
+                },
+            )
+            .map_err(|_| BrokerError::StagingTampered)?;
+        let mut actions_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dir.path().join("actions.xchacha20"))?;
+        actions_file.write_all(&actions_nonce)?;
+        actions_file.write_all(&encrypted_actions)?;
+        actions_file.sync_all()?;
+    }
     file.sync_all()?;
     append_journal(
         dir.path(),
@@ -580,9 +665,9 @@ pub fn approve(
 }
 
 fn staged_bytes(staged: &StagedPlan) -> Result<Vec<u8>, BrokerError> {
-    let effect = &staged.plan.effects[0];
-    let expected = effect
-        .staged_length
+    let effect = staged.plan.effects.first();
+    let length = effect.map_or(0, |e| e.staged_length);
+    let expected = length
         .checked_add(24 + 16)
         .ok_or(BrokerError::StagingTampered)?;
     let mut file = platform::open(&staged.run_dir.join(CIPHERTEXT_FILE), false)
@@ -613,7 +698,7 @@ fn staged_bytes(staged: &StagedPlan) -> Result<Vec<u8>, BrokerError> {
             },
         )
         .map_err(|_| BrokerError::StagingTampered)?;
-    if bytes.len() as u64 != effect.staged_length || digest(&bytes) != effect.sha256 {
+    if bytes.len() as u64 != length || effect.is_some_and(|e| digest(&bytes) != e.sha256) {
         return Err(BrokerError::StagingTampered);
     }
     Ok(bytes)
@@ -625,6 +710,22 @@ pub fn commit(
     staged: StagedPlan,
     approval: Approval,
     current_epochs: Epochs,
+) -> Result<Receipt, BrokerError> {
+    if !staged.plan.planned_calls.is_empty() {
+        return Err(BrokerError::Runner(
+            "connection actions require the trusted connection executor".into(),
+        ));
+    }
+    commit_with_actions(staged, approval, current_epochs, |_| unreachable!())
+}
+
+/// The callback is trusted host code only; no generated callback is retained.
+/// An intent is synced before each send. Never retries, including on transport loss.
+pub fn commit_with_actions(
+    staged: StagedPlan,
+    approval: Approval,
+    current_epochs: Epochs,
+    mut execute: impl FnMut(&PlannedAction) -> (ActionStatus, String),
 ) -> Result<Receipt, BrokerError> {
     if staged.approval.as_ref() != Some(&approval)
         || approval.plan_hash != staged.plan_hash
@@ -656,6 +757,70 @@ pub fn commit(
     let name = &staged.plan.destination.basename;
     if platform::destination_exists(&root, name)? {
         return Err(BrokerError::DestinationExists);
+    }
+    let mut actions = Vec::new();
+    let mut stopped = false;
+    for (index, action) in staged.plan.planned_calls.iter().enumerate() {
+        let (status, summary) = if stopped {
+            (
+                ActionStatus::NotRun,
+                "Stopped after the previous failure".into(),
+            )
+        } else {
+            append_journal(
+                &staged.run_dir,
+                &JournalEvent::ActionIntent {
+                    index,
+                    plan_hash: staged.plan_hash.clone(),
+                },
+            )?;
+            let (status, summary) = execute(action);
+            append_journal(
+                &staged.run_dir,
+                &JournalEvent::ActionResult {
+                    index,
+                    status: status.clone(),
+                },
+            )
+            .map_err(|_| BrokerError::OutcomeUnknown)?;
+            (status, summary.chars().take(2000).collect())
+        };
+        stopped |= status != ActionStatus::Succeeded;
+        actions.push(ActionResult {
+            action: action.clone(),
+            status,
+            summary,
+        });
+    }
+    if stopped || staged.plan.effects.is_empty() {
+        let status = if actions
+            .iter()
+            .any(|a| a.status == ActionStatus::OutcomeUnknown)
+        {
+            ReceiptStatus::OutcomeUnknown
+        } else if stopped {
+            ReceiptStatus::Failed
+        } else {
+            ReceiptStatus::Committed
+        };
+        let receipt = Receipt {
+            run_id: staged.plan.run_id.clone(),
+            tool_id: staged.plan.tool_id.clone(),
+            version_hash: staged.plan.version_hash.clone(),
+            plan_hash: staged.plan_hash.clone(),
+            input_digest: staged.plan.input.digest.clone(),
+            committed_digest: String::new(),
+            output_path: PathBuf::new(),
+            actions,
+            status,
+            timestamps: Timestamps {
+                staged_at_ms: staged.staged_at_ms,
+                approved_at_ms: approval.approved_at_ms,
+                committed_at_ms: now_ms(),
+            },
+        };
+        append_journal(&staged.run_dir, &JournalEvent::ActionsFinished)?;
+        return Ok(receipt);
     }
     let output_path = staged.destination.path.join(name);
     let temporary = format!(".macroscope-{}.tmp", RunId::new());
@@ -706,6 +871,7 @@ pub fn commit(
                 input_digest: staged.plan.input.digest.clone(),
                 committed_digest: staged.plan.effects[0].sha256.clone(),
                 output_path,
+                actions,
                 status: ReceiptStatus::Committed,
                 timestamps: Timestamps {
                     staged_at_ms: staged.staged_at_ms,
@@ -713,10 +879,13 @@ pub fn commit(
                     committed_at_ms: now_ms(),
                 },
             };
+            let mut journal_receipt = receipt.clone();
+            // Private args/server content stay in encrypted staging/database, never the journal.
+            journal_receipt.actions.clear();
             append_journal(
                 &staged.run_dir,
                 &JournalEvent::Receipt {
-                    receipt: receipt.clone(),
+                    receipt: journal_receipt,
                 },
             )?;
             Ok(receipt)
@@ -761,6 +930,15 @@ fn verify_published(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum JournalEvent {
+    ActionIntent {
+        index: usize,
+        plan_hash: String,
+    },
+    ActionResult {
+        index: usize,
+        status: ActionStatus,
+    },
+    ActionsFinished,
     Staged {
         plan_hash: String,
     },
@@ -834,8 +1012,26 @@ pub fn reconcile(run_dir: &Path) -> Result<ReconcileOutcome, BrokerError> {
     let mut approved = None;
     let mut intent = None;
     let mut published = false;
+    let mut action_pending = None;
+    let mut action_count = 0;
+    let mut had_actions = false;
     for event in events {
         match event {
+            JournalEvent::ActionIntent {
+                index,
+                plan_hash: hash,
+            } if approved.as_ref() == Some(&hash)
+                && action_pending.is_none()
+                && index == action_count =>
+            {
+                had_actions = true;
+                action_pending = Some(index);
+            }
+            JournalEvent::ActionResult { index, .. } if action_pending == Some(index) => {
+                action_pending = None;
+                action_count += 1;
+            }
+            JournalEvent::ActionsFinished if action_pending.is_none() && had_actions => {}
             JournalEvent::Staged { plan_hash: hash } if plan_hash.is_none() => {
                 plan_hash = Some(hash)
             }
@@ -863,8 +1059,15 @@ pub fn reconcile(run_dir: &Path) -> Result<ReconcileOutcome, BrokerError> {
             _ => return Err(BrokerError::InvalidJournal),
         }
     }
+    if action_pending.is_some() {
+        return Ok(ReconcileOutcome::OutcomeUnknown);
+    }
     let Some((hash, destination, parent, length, digest)) = intent else {
-        return Ok(ReconcileOutcome::NotPublished);
+        return Ok(if had_actions {
+            ReconcileOutcome::OutcomeUnknown
+        } else {
+            ReconcileOutcome::NotPublished
+        });
     };
     let Some(root_path) = destination.parent() else {
         return Err(BrokerError::InvalidJournal);
@@ -884,7 +1087,7 @@ pub fn reconcile(run_dir: &Path) -> Result<ReconcileOutcome, BrokerError> {
         return Ok(ReconcileOutcome::OutcomeUnknown);
     }
     if !platform::destination_exists(&root, name)? {
-        return Ok(if published {
+        return Ok(if published || had_actions {
             ReconcileOutcome::OutcomeUnknown
         } else {
             ReconcileOutcome::NotPublished
@@ -929,4 +1132,74 @@ pub fn export_bundle(
     platform::sync_directory(&dir)?;
     platform::sync_directory(&root_fd)?;
     Ok(root.join(name))
+}
+
+/// Read encrypted staged calls and recover statuses only. Never sends requests.
+pub fn recover_action_results(
+    run_dir: &Path,
+    key: &[u8; 32],
+    plan_hash: &str,
+) -> Result<Vec<ActionResult>, BrokerError> {
+    let path = run_dir.join("actions.xchacha20");
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let mut file = platform::open(&path, false)?;
+    if file.metadata()?.len() > JOURNAL_LIMIT {
+        return Err(BrokerError::StagingTampered);
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(JOURNAL_LIMIT + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() < 40 || bytes.len() as u64 > JOURNAL_LIMIT {
+        return Err(BrokerError::StagingTampered);
+    }
+    let cipher = XChaCha20Poly1305::new(key.into());
+    let plain = cipher
+        .decrypt(
+            XNonce::from_slice(&bytes[..24]),
+            Payload {
+                msg: &bytes[24..],
+                aad: plan_hash.as_bytes(),
+            },
+        )
+        .map_err(|_| BrokerError::StagingTampered)?;
+    let actions: Vec<PlannedAction> = serde_json::from_slice(&plain)?;
+    let mut results: Vec<_> = actions
+        .into_iter()
+        .map(|action| ActionResult {
+            action,
+            status: ActionStatus::NotRun,
+            summary: "Not sent".into(),
+        })
+        .collect();
+    let mut journal = platform::open(&run_dir.join(JOURNAL_FILE), false)?;
+    let mut bytes = Vec::new();
+    (&mut journal)
+        .take(JOURNAL_LIMIT + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > JOURNAL_LIMIT {
+        return Err(BrokerError::InvalidJournal);
+    }
+    let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    for line in bytes[..complete]
+        .split(|b| *b == b'\n')
+        .filter(|b| !b.is_empty())
+    {
+        match serde_json::from_slice::<JournalEvent>(line)? {
+            JournalEvent::ActionIntent { index, .. } => {
+                let result = results.get_mut(index).ok_or(BrokerError::InvalidJournal)?;
+                result.status = ActionStatus::OutcomeUnknown;
+                result.summary = "Interrupted after intent: outcome unknown. Never retried.".into();
+            }
+            JournalEvent::ActionResult { index, status } => {
+                let result = results.get_mut(index).ok_or(BrokerError::InvalidJournal)?;
+                result.status = status;
+                result.summary = "Recovered journal status; server response unavailable.".into();
+            }
+            _ => {}
+        }
+    }
+    Ok(results)
 }
