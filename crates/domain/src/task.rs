@@ -8,7 +8,10 @@ pub struct TaskContract {
     pub id: TaskId,
     pub revision: u32,
     pub goal: String,
-    /// Required input column names, independent of their order in a CSV.
+    /// Older contracts describe CSV mappings and default to CSV.
+    #[serde(default)]
+    pub input_kind: InputKind,
+    /// Required CSV header names, independent of order. Empty for text inputs.
     pub input_schema: Vec<String>,
     pub output_columns: Vec<String>,
     pub mapping: CsvMapping,
@@ -17,6 +20,14 @@ pub struct TaskContract {
     pub permission_ceiling: PermissionCeiling,
     #[serde(default)]
     pub required_connections: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InputKind {
+    Text,
+    #[default]
+    Csv,
 }
 
 /// Symbolic ceilings. Actual selected handles and grants belong to the host.
@@ -48,6 +59,7 @@ mod tests {
         let contract: TaskContract =
             serde_json::from_str(include_str!("../../../fixtures/orders/task.json")).unwrap();
         assert_eq!(contract.revision, 1);
+        assert_eq!(contract.input_kind, InputKind::Csv);
         assert_eq!(
             contract.input_schema,
             ["order_id", "created", "amount", "customer"]

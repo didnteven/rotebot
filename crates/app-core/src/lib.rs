@@ -1792,11 +1792,13 @@ impl AppCore {
         }
         let mut contract = drafts::contract_for(&draft);
         contract.mapping = mapping.clone();
-        contract.output_columns = mapping
-            .output_columns
-            .iter()
-            .map(|c| c.name.clone())
-            .collect();
+        if draft.kind == TaskKind::CsvMapping {
+            contract.output_columns = mapping
+                .output_columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+        }
         let model = if state.route == ModelRoute::OfflineDemo {
             "offline-demo".to_string()
         } else {

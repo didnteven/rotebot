@@ -4,7 +4,7 @@
 
 use crate::dto::{CsvPreview, FileHandle, QuestionOption, RuleQuestion, TaskDraft};
 use macroscope_domain::{
-    CreatePermission, CsvMapping, DateFormat, OnError, OutputColumn, PermissionCeiling,
+    CreatePermission, CsvMapping, DateFormat, InputKind, OnError, OutputColumn, PermissionCeiling,
     ReadPermission, TaskContract, TaskId, Transform,
 };
 
@@ -514,6 +514,21 @@ pub fn format_label(f: DateFormat) -> &'static str {
 }
 
 pub fn contract_for(draft: &TaskDraft) -> TaskContract {
+    // Programs treat non-.csv files as text, even when commas let the preview
+    // parser infer a table. CSV mappings and programs taught with a .csv input
+    // retain the complete confirmed header; do not infer dependencies from JS.
+    let input_kind = if draft.kind == crate::dto::TaskKind::Program
+        && !draft
+            .input
+            .handle
+            .display_name
+            .to_ascii_lowercase()
+            .ends_with(".csv")
+    {
+        InputKind::Text
+    } else {
+        InputKind::Csv
+    };
     TaskContract {
         id: TaskId(draft.draft_id.clone()),
         revision: draft.revision,
@@ -522,10 +537,11 @@ pub fn contract_for(draft: &TaskDraft) -> TaskContract {
         } else {
             draft.goal.clone()
         },
-        input_schema: if draft.kind == crate::dto::TaskKind::Program {
-            vec![]
-        } else {
+        input_kind,
+        input_schema: if input_kind == InputKind::Csv {
             draft.input.columns.clone()
+        } else {
+            vec![]
         },
         output_columns: if draft.kind == crate::dto::TaskKind::Program {
             vec![]

@@ -412,7 +412,7 @@ pub fn stage_generated(
         return Err(BrokerError::DestinationExists);
     }
     let (input, snapshot) = read_snapshot(&run.input, run.limits.max_input_bytes)?;
-    if !run.contract.input_schema.is_empty() {
+    if run.contract.input_kind == macroscope_domain::InputKind::Csv {
         require_columns(&input, 0, &run.contract.input_schema)?;
     }
     let bytes = execute(&input)?;

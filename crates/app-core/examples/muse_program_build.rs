@@ -104,12 +104,17 @@ async fn main() {
     let macroscope_app_core::dto::StageResult::Staged(stage) = stage else {
         panic!("{stage:?}")
     };
-    assert!(matches!(
-        core.commit_run(&stage.run_id, &stage.plan_hash).unwrap(),
-        macroscope_app_core::dto::CommitResult::Committed(_)
-    ));
+    let receipt = core.commit_run(&stage.run_id, &stage.plan_hash).unwrap();
+    let macroscope_app_core::dto::CommitResult::Committed(receipt) = receipt else {
+        panic!("{receipt:?}")
+    };
+    assert_eq!(receipt.plan_hash, stage.plan_hash);
     assert_eq!(
         std::fs::read_to_string(tmp.path().join("errors.txt")).unwrap(),
         "ERROR synthetic failed\n"
+    );
+    println!(
+        "committed: {} (plan {})",
+        receipt.output_path, receipt.plan_hash
     );
 }

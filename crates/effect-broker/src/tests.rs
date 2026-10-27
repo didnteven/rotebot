@@ -140,6 +140,43 @@ fn full_run_preserves_source_and_commits_reviewed_bytes_without_executor() {
 }
 
 #[test]
+fn generated_text_input_skips_csv_requirements_but_csv_input_enforces_them() {
+    let f = Fixture::new();
+    let input = b"INFO synthetic start\nERROR failed,with,commas\n";
+    fs::write(&f.input, input).unwrap();
+    let mut request = f.request();
+    request.basename = "errors.txt".into();
+    request.contract.input_kind = macroscope_domain::InputKind::Text;
+    // Even a stale schema cannot turn a text input into CSV at this boundary.
+    request.contract.input_schema = vec!["INFO synthetic start".into(), "missing".into()];
+    request.contract.output_columns.clear();
+    let expected = b"ERROR failed,with,commas\n";
+    let mut staged = stage_generated(request, "execution-pin".into(), |snapshot| {
+        assert_eq!(snapshot, input);
+        Ok(expected.to_vec())
+    })
+    .unwrap();
+    assert_eq!(staged.preview().unwrap(), expected);
+    assert_eq!(staged.plan().engine, "js-quickjs");
+    let approval = approved(&mut staged);
+    let receipt = commit(staged, approval, epochs()).unwrap();
+    assert_eq!(receipt.input_digest, digest(input));
+    assert_eq!(receipt.committed_digest, digest(expected));
+    assert_eq!(fs::read(f.root.join("errors.txt")).unwrap(), expected);
+
+    let mut request = f.request();
+    request.basename = "other.txt".into();
+    request.contract.input_kind = macroscope_domain::InputKind::Csv;
+    assert!(matches!(
+        stage_generated(request, "execution-pin".into(), |_| {
+            panic!("missing CSV headers must fail before execution")
+        }),
+        Err(BrokerError::Mapping(MappingError::MissingColumns(_)))
+    ));
+    assert!(!f.root.join("other.txt").exists());
+}
+
+#[test]
 fn staging_ciphertext_nonce_tag_and_truncation_tamper_are_rejected() {
     for tamper in [0, 24, 40, 100, usize::MAX] {
         let f = Fixture::new();

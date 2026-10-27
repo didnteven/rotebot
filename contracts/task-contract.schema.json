@@ -18,8 +18,13 @@
     "id": {
       "type": "string"
     },
+    "input_kind": {
+      "description": "Older contracts describe CSV mappings and default to CSV.",
+      "$ref": "#/$defs/InputKind",
+      "default": "csv"
+    },
     "input_schema": {
-      "description": "Required input column names, independent of their order in a CSV.",
+      "description": "Required CSV header names, independent of order. Empty for text inputs.",
       "type": "array",
       "items": {
         "type": "string"
@@ -108,6 +113,13 @@
         "dd_mm_yyyy",
         "yyyy_mm_dd",
         "iso8601"
+      ]
+    },
+    "InputKind": {
+      "type": "string",
+      "enum": [
+        "text",
+        "csv"
       ]
     },
     "OnError": {

@@ -3,9 +3,11 @@
 #![cfg(feature = "synthetic-runtime-tests")]
 use macroscope_app_core::{dto::*, AppCore, CoreConfig, NativeMuse};
 use macroscope_builder::Program;
+use macroscope_domain::{InputKind, TaskContract};
 use macroscope_runner::Limits;
 use macroscope_vault::MemoryStore;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Arc};
 use wiremock::{
     matchers::{method, path},
@@ -53,6 +55,78 @@ async fn wait(core: &AppCore, id: &str) -> BuildState {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     panic!("program build timed out");
+}
+async fn endpoint(code: &str) -> MockServer {
+    let server = MockServer::start().await;
+    let program = Program {
+        summary: "Extract ERROR lines".into(),
+        output_name: "errors.txt".into(),
+        code: code.into(),
+    };
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status":"completed", "output":[{"type":"message","content":[{
+                "type":"output_text", "text":serde_json::to_string(&program).unwrap()
+            }]}], "usage":{"input_tokens":3000,"output_tokens":400}
+        })))
+        .mount(&server)
+        .await;
+    server
+}
+async fn build_program(core: &AppCore, file: &FileHandle, description: &str) -> ToolDetail {
+    core.save_api_key("mk-program-test-canary-1234567890")
+        .await
+        .unwrap();
+    let draft = core.draft_task(&file.handle_id, description).unwrap();
+    let draft = core
+        .update_task(&draft.draft_id, TaskKind::Program, "errors.txt", None)
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let state = wait(core, &started.build_id).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert!(state.checks.iter().all(|c| c.passed));
+    core.save_tool(&state.build_id, "Extract errors")
+        .await
+        .unwrap()
+}
+fn saved_contract(core: &AppCore, tool: &ToolDetail) -> TaskContract {
+    let row = core.database().tool(&tool.summary_row.id).unwrap().unwrap();
+    serde_json::from_value(row.detail["contract"].clone()).unwrap()
+}
+fn stage(
+    core: &AppCore,
+    tool: &ToolDetail,
+    input: &FileHandle,
+    folder: &FileHandle,
+) -> Box<StagedRun> {
+    match core
+        .stage_run(
+            &tool.summary_row.id,
+            &input.handle_id,
+            &folder.handle_id,
+            "errors.txt",
+        )
+        .unwrap()
+    {
+        StageResult::Staged(staged) => staged,
+        result => panic!("{result:?}"),
+    }
+}
+fn commit(core: &AppCore, staged: &StagedRun, input: &[u8], expected: &[u8]) -> Receipt {
+    let result = core.commit_run(&staged.run_id, &staged.plan_hash).unwrap();
+    let CommitResult::Committed(receipt) = result else {
+        panic!("{result:?}")
+    };
+    assert_eq!(receipt.plan_hash, staged.plan_hash);
+    assert_eq!(receipt.input_digest, format!("{:x}", Sha256::digest(input)));
+    assert_eq!(
+        receipt.committed_digest,
+        format!("{:x}", Sha256::digest(expected))
+    );
+    assert_eq!(receipt.status, ReceiptStatus::Committed);
+    assert_eq!(std::fs::read(&receipt.output_path).unwrap(), expected);
+    receipt
 }
 #[tokio::test]
 async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_private_packet_tokens() {
@@ -129,6 +203,25 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
         .unwrap();
     assert_eq!(tool.summary_row.engine, "js-quickjs");
     assert_eq!(tool.program.as_ref(), Some(&program));
+    let contract = saved_contract(&core, &tool);
+    assert_eq!(contract.input_kind, InputKind::Text);
+    assert!(contract.input_schema.is_empty());
+    assert!(contract.output_columns.is_empty());
+    assert!(tool.input_columns.is_empty());
+    assert!(tool.output_columns.is_empty());
+    let disk_contract: TaskContract = serde_json::from_slice(
+        &std::fs::read(
+            temp.path()
+                .join("data/tools")
+                .join(&tool.summary_row.id)
+                .join("versions")
+                .join(&tool.version_hash)
+                .join("contract.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(disk_contract, contract);
     let version = core
         .database()
         .version(&tool.summary_row.id, &tool.version_hash)
@@ -153,8 +246,8 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
     };
     assert!(!temp.path().join("errors.txt").exists());
     assert_eq!(staged.preview_text.as_deref(), Some(EXPECTED.trim_end()));
-    let receipt = core.commit_run(&staged.run_id, &staged.plan_hash).unwrap();
-    assert!(matches!(receipt, CommitResult::Committed(_)), "{receipt:?}");
+    let receipt = commit(&core, &staged, INPUT.as_bytes(), EXPECTED.as_bytes());
+    assert_eq!(receipt.version_hash, tool.version_hash);
     assert_eq!(
         std::fs::read(temp.path().join("errors.txt")).unwrap(),
         EXPECTED.as_bytes()
@@ -171,6 +264,123 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
         StageResult::Failed(_)
     ));
     assert_eq!(core.list_receipts().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn saved_text_program_runs_on_a_different_log_without_first_line_or_csv_requirements() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = endpoint(CODE).await;
+    let core = core(temp.path(), server.uri());
+    let source = temp.path().join("teaching.log");
+    // A log is arbitrary text even when every line has the same comma count.
+    let teaching_input = b"INFO teaching start,context\nERROR teaching failure,context\n";
+    std::fs::write(&source, teaching_input).unwrap();
+    let first = core.register_picked_file(&source).unwrap();
+    let tool = build_program(&core, &first, "extract every ERROR line into errors.txt").await;
+    let contract = saved_contract(&core, &tool);
+    assert_eq!(contract.input_kind, InputKind::Text);
+    assert!(contract.input_schema.is_empty());
+    let first_output = temp.path().join("first-run");
+    std::fs::create_dir(&first_output).unwrap();
+    let first_folder = core.register_picked_dir(&first_output).unwrap();
+    let first_staged = stage(&core, &tool, &first, &first_folder);
+    commit(
+        &core,
+        &first_staged,
+        teaching_input,
+        b"ERROR teaching failure,context\n",
+    );
+    let second_input =
+        b"DEBUG another start,with commas\nERROR completely different,one,two\nINFO done\n";
+    let expected = b"ERROR completely different,one,two\n";
+    let second_path = temp.path().join("another.log");
+    std::fs::write(&second_path, second_input).unwrap();
+    let second = core.register_picked_file(&second_path).unwrap();
+    let folder = core.register_picked_dir(temp.path()).unwrap();
+    let staged = stage(&core, &tool, &second, &folder);
+    assert_eq!(staged.input.handle_id, second.handle_id);
+    assert!(!temp.path().join("errors.txt").exists());
+    // An approval for other bytes must still fail, even for arbitrary text.
+    assert!(core.commit_run(&staged.run_id, "wrong-plan-hash").is_err());
+    assert!(!temp.path().join("errors.txt").exists());
+    let staged = stage(&core, &tool, &second, &folder);
+    // Replacing the selected input with identical bytes must still invalidate
+    // the snapshot's file identity at commit.
+    std::fs::rename(&second_path, second_path.with_extension("old")).unwrap();
+    std::fs::write(&second_path, second_input).unwrap();
+    assert!(matches!(
+        core.commit_run(&staged.run_id, &staged.plan_hash).unwrap(),
+        CommitResult::Failed(FailureEnvelope {
+            failure: RunFailure::InputChanged { .. }
+        })
+    ));
+    assert!(!temp.path().join("errors.txt").exists());
+    let staged = stage(&core, &tool, &second, &folder);
+    commit(&core, &staged, second_input, expected);
+    assert_eq!(std::fs::read(&second_path).unwrap(), second_input);
+    assert_eq!(std::fs::read(&source).unwrap(), teaching_input);
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        1,
+        "rerun is local"
+    );
+    assert_eq!(core.list_receipts().unwrap().len(), 2);
+    assert_eq!(core.list_tools().unwrap()[0].run_count, 2);
+}
+
+#[tokio::test]
+async fn csv_input_program_requires_confirmed_headers_and_allows_reordered_columns() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = endpoint(r#"function run() {
+        const rows = macroscope.csv.parse(macroscope.input("input_csv"), {required: ["level", "message"]});
+        macroscope.output("errors.txt", rows.filter(row => row.level === "ERROR")
+            .map(row => row.message).join("\n") + "\n");
+    }"#).await;
+    let core = core(temp.path(), server.uri());
+    let source = temp.path().join("events.csv");
+    std::fs::write(&source, "level,message\nINFO,start\nERROR,failed\n").unwrap();
+    let file = core.register_picked_file(&source).unwrap();
+    let tool = build_program(&core, &file, "extract ERROR messages into errors.txt").await;
+    let contract = saved_contract(&core, &tool);
+    assert_eq!(contract.input_kind, InputKind::Csv);
+    assert_eq!(contract.input_schema, ["level", "message"]);
+    assert!(contract.output_columns.is_empty());
+    let folder = core.register_picked_dir(temp.path()).unwrap();
+    let staged = stage(&core, &tool, &file, &folder);
+    assert_eq!(staged.preview_text.as_deref(), Some("failed"));
+    core.discard_run(&staged.run_id).unwrap();
+    for (name, input) in [
+        ("missing.csv", "level,other\nERROR,failed\n"),
+        ("headerless.csv", "ERROR,failed\n"),
+    ] {
+        let path = temp.path().join(name);
+        std::fs::write(&path, input).unwrap();
+        let file = core.register_picked_file(&path).unwrap();
+        let result = core
+            .stage_run(
+                &tool.summary_row.id,
+                &file.handle_id,
+                &folder.handle_id,
+                "errors.txt",
+            )
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                StageResult::Failed(FailureEnvelope {
+                    failure: RunFailure::InputInvalid { .. }
+                })
+            ),
+            "{result:?}"
+        );
+        assert!(!temp.path().join("errors.txt").exists());
+    }
+    let reordered = b"message,level,extra\nsecond failure,ERROR,unused\n";
+    let path = temp.path().join("reordered.csv");
+    std::fs::write(&path, reordered).unwrap();
+    let file = core.register_picked_file(&path).unwrap();
+    let staged = stage(&core, &tool, &file, &folder);
+    commit(&core, &staged, reordered, b"second failure\n");
 }
 
 #[tokio::test]
