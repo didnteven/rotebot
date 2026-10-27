@@ -684,3 +684,8 @@ hint.
 §9.3 gate note: repetitions 1–2 ran on the `m4/eval-suite` build (56/60). This runner
 changed the runtime, so a gate claim needs all three repetitions on one frozen build. The
 gate is **INCOMPLETE**.
+
+§9.3 eval on the frozen `m4/runtime-errors` build, repetition 1: **28/30 (93.3%)**. Task 07
+was a Muse timeout. Task 22 differed only by a missing final newline. The weekly allowance
+guard (60%) stopped further runs. Repetitions 2 and 3 are pending (weekly reset 2026-11-02).
+Details are in `evals/csv-family/results/2026-10-28-muse-plan-frozen-rep1.md`.
