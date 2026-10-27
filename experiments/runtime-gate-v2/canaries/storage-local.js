@@ -1,0 +1,1 @@
+function run() { if (typeof localStorage === "undefined") { macroscope.log("DENIED: localStorage absent"); return; } localStorage.setItem("x","x".repeat(1000000)); macroscope.output("escaped.csv", "ESCAPED"); }

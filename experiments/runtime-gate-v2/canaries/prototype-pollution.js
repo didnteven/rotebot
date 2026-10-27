@@ -1,0 +1,1 @@
+function run(){try{macroscope.__proto__={escaped:true}}catch(e){};try{Object.setPrototypeOf(macroscope.csv,{escaped:true})}catch(e){};try{macroscope.csv.parse=()=>[{escaped:true}]}catch(e){};if(Object.getPrototypeOf(macroscope)!==null || Object.getPrototypeOf(macroscope.csv)!==null || !Object.isFrozen(macroscope.csv.parse))throw 1;macroscope.log("DENIED: frozen SDK");}

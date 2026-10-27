@@ -1,0 +1,1 @@
+function run() { if (typeof Deno === "undefined") { macroscope.log("DENIED: Deno absent"); return; } new Deno.Command("/bin/sh",{args:["-c","echo escaped"]}).outputSync(); macroscope.output("escaped.csv", "ESCAPED"); }

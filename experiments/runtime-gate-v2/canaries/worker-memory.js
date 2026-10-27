@@ -1,0 +1,1 @@
+function run(){if(typeof Worker === "undefined"){macroscope.log("DENIED: Worker absent");return;}new Worker("data:text/javascript,const a=[];for(;;)a.push(new Uint8Array(1048576).fill(1))");macroscope.output("escaped.csv","ESCAPED");}

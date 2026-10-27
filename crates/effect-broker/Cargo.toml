@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+csv = "1"
 macroscope-domain.workspace = true
 macroscope-executor.workspace = true
 serde.workspace = true

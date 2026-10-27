@@ -1,0 +1,1 @@
+function run() { if (typeof Deno === "undefined") { macroscope.log("DENIED: Deno absent"); return; } Deno.readTextFileSync("/synthetic-home/.ssh/known_hosts"); macroscope.output("escaped.csv", "ESCAPED"); }

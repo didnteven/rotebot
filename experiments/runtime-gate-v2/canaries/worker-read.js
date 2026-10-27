@@ -1,0 +1,1 @@
+function run(){if(typeof Worker === "undefined"){macroscope.log("DENIED: Worker absent");return;}new Worker("data:text/javascript,Deno.readTextFileSync(\"/etc/hosts\")");macroscope.output("escaped.csv","ESCAPED");}

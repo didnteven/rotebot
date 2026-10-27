@@ -1,0 +1,16 @@
+;; Deny-by-default Seatbelt profile for macroscope-runner (QuickJS, no module loader).
+;; Minimal set found empirically on macOS 26.5 outside any enclosing sandbox (bisected):
+;; the runner aborts without sysctl reads and without reading the root directory entry.
+;; Nothing else: no network, no mach-lookup, no writes, no user-data reads, no metadata.
+(version 1)
+(deny default)
+(deny network*)
+(deny process-fork)
+(allow process-exec (literal (param "RUNNER")))
+(allow file-read* (literal (param "RUNNER")))
+(allow file-read* (subpath "/usr/lib")
+                  (subpath "/System/Library")
+                  (subpath "/private/var/db/dyld")
+                  (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library"))
+(allow sysctl-read)
+(allow file-read* (literal "/"))

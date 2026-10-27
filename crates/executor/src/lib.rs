@@ -363,7 +363,8 @@ fn decimal_number(value: &str) -> bool {
         && parts.next().is_none()
 }
 
-fn escape_formula(value: &str, enabled: bool) -> String {
+/// Escape spreadsheet formulas while preserving decimal numeric strings.
+pub fn escape_formula(value: &str, enabled: bool) -> String {
     if enabled && value.starts_with(['=', '+', '-', '@', '\t', '\r']) && !decimal_number(value) {
         format!("'{value}")
     } else {
@@ -383,7 +384,8 @@ fn transform(operation: &Transform, value: &str) -> Result<String, String> {
     })
 }
 
-fn money(value: &str, currency: &str, decimals: u8) -> Result<String, String> {
+/// Parse and round decimal currency using string arithmetic only.
+pub fn money(value: &str, currency: &str, decimals: u8) -> Result<String, String> {
     let invalid = || "invalid or blank decimal money".to_owned();
     let symbol = match currency {
         "USD" => '$',
@@ -464,7 +466,8 @@ fn money(value: &str, currency: &str, decimals: u8) -> Result<String, String> {
     Ok(output)
 }
 
-fn date(value: &str, from: DateFormat, to: DateFormat) -> Result<String, String> {
+/// Convert a strict calendar date using the finite executor formats.
+pub fn date(value: &str, from: DateFormat, to: DateFormat) -> Result<String, String> {
     use DateFormat::*;
     let invalid = || "invalid date for fixed source format".to_owned();
     let (separator, widths) = match from {

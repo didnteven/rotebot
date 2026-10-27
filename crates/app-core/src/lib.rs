@@ -12,6 +12,8 @@ pub mod connections;
 pub mod drafts;
 pub mod dto;
 mod privacy;
+#[cfg(feature = "generated-runtime")]
+pub mod runner;
 mod samples;
 pub mod show;
 

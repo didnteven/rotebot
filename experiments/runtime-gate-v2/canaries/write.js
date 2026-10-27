@@ -1,0 +1,1 @@
+function run() { if (typeof Deno === "undefined") { macroscope.log("DENIED: Deno absent"); return; } Deno.writeTextFileSync("/tmp/runner-escape","escape"); macroscope.output("escaped.csv", "ESCAPED"); }

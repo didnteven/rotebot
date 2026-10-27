@@ -336,7 +336,8 @@
       "type": "string",
       "enum": [
         "deno",
-        "csv-mapping"
+        "csv-mapping",
+        "js-quickjs"
       ]
     },
     "TestSuite": {

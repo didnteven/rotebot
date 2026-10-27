@@ -26,6 +26,8 @@ const JOURNAL_FILE: &str = "journal.jsonl";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BrokerError {
+    #[error("generated runner failed: {0}")]
+    Runner(String),
     #[error("filesystem operation failed: {0}")]
     Io(#[from] io::Error),
     #[error("serialization failed: {0}")]
@@ -366,7 +368,6 @@ fn read_snapshot(
 }
 
 pub fn stage(run: StageRequest) -> Result<StagedPlan, BrokerError> {
-    let key = Zeroizing::new(run.key);
     validate_mapping(&run.mapping, &run.contract).map_err(BrokerError::InvalidMapping)?;
     validate_basename(&run.basename)?;
     validate_selected_path(&run.destination.path)?;
@@ -384,12 +385,73 @@ pub fn stage(run: StageRequest) -> Result<StagedPlan, BrokerError> {
         &run.contract.input_schema,
     )?;
     let output = apply_mapping(&run.mapping, &input, &run.limits)?;
+    freeze_output(run, snapshot, output, "csv-mapping", None)
+}
+
+/// Host-only seam: execute against the broker's exact bounded snapshot and reap
+/// the worker before freezing bytes. Commit retains no callback and cannot rerun.
+/// `execution_hash` must bind source, runner/profile/SDK pins and runtime limits.
+pub fn stage_generated(
+    run: StageRequest,
+    execution_hash: String,
+    execute: impl FnOnce(&[u8]) -> Result<Vec<u8>, BrokerError>,
+) -> Result<StagedPlan, BrokerError> {
+    validate_basename(&run.basename)?;
+    validate_selected_path(&run.destination.path)?;
+    let root = platform::open(&run.destination.path, true)?;
+    if platform::identity(&root)? != run.destination.identity {
+        return Err(BrokerError::DestinationChanged);
+    }
+    if platform::destination_exists(&root, &run.basename)? {
+        return Err(BrokerError::DestinationExists);
+    }
+    let (input, snapshot) = read_snapshot(&run.input, run.limits.max_input_bytes)?;
+    require_columns(&input, 0, &run.contract.input_schema)?;
+    let bytes = execute(&input)?;
+    if bytes.len() as u64 > run.limits.max_output_bytes {
+        return Err(MappingError::Limit {
+            kind: "output bytes",
+            limit: run.limits.max_output_bytes,
+        }
+        .into());
+    }
+    require_columns(&bytes, 0, &run.contract.output_columns)?;
+    let mut reader = csv::Reader::from_reader(bytes.as_slice());
+    let mut rows = 0;
+    for record in reader.records() {
+        record.map_err(|e| MappingError::Csv(e.to_string()))?;
+        rows += 1;
+        if rows > run.limits.max_rows {
+            return Err(MappingError::Limit {
+                kind: "rows",
+                limit: run.limits.max_rows,
+            }
+            .into());
+        }
+    }
+    let output = macroscope_executor::MappingOutput {
+        sha256: digest(&bytes),
+        bytes,
+        rows_in: rows,
+        rows_out: rows,
+    };
+    freeze_output(run, snapshot, output, "js-quickjs", Some(execution_hash))
+}
+
+fn freeze_output(
+    run: StageRequest,
+    snapshot: InputSnapshot,
+    output: macroscope_executor::MappingOutput,
+    engine: &str,
+    execution_hash: Option<String>,
+) -> Result<StagedPlan, BrokerError> {
+    let key = Zeroizing::new(run.key);
     let plan = Plan {
         run_id: RunId::new(),
         tool_id: run.tool_id,
         version_hash: run.version_hash,
-        engine: "csv-mapping".into(),
-        mapping_hash: digest(&canonical_json(&run.mapping)?),
+        engine: engine.into(),
+        mapping_hash: execution_hash.unwrap_or(digest(&canonical_json(&run.mapping)?)),
         input: snapshot,
         destination: Destination {
             parent: run.destination.identity.clone(),

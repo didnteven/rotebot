@@ -42,6 +42,7 @@ pub struct Runtime {
 pub enum RuntimeEngine {
     Deno,
     CsvMapping,
+    JsQuickjs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
