@@ -489,3 +489,11 @@ approved instruction before any model call, in addition to the runner's check.
 
 Rerun by Claude: both `check.sh` runs passed with **453 Rust + 126 UI tests** each.
 `run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer boundary).
+
+Windows recheck at 59a788d (2026-10-28):
+- `cargo clippy --target x86_64-pc-windows-msvc -- -D warnings` passes for effect-broker,
+  vault, executor, domain and policy.
+- builder, connections, runner, model-gateway, muse-client, storage and app-core stop in C
+  build scripts (ring, aws-lc-sys, rquickjs-sys, openssl-sys, sha2-asm), which need the MSVC
+  toolchain. They are covered by the `windows-latest` CI job once a hosted repository exists.
+- Windows runtime behaviour is still unverified (plan M6).
