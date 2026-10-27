@@ -130,6 +130,7 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Muse MSP transport against the installed binary (§4.3) | passed | echo conformance on Muse 1.4.13 (fingerprint changed from the plan's 1.4.11 pin; additive) |
 | Muse self-update hazard | found and handled | Launcher auto-updated 1.4.11 → 1.4.13 and deleted 1.4.11; app runs only native binaries (ADR 0002) |
 | Muse plan-route build with a real sign-in | **passed** | 2026-10-27 18:5x: `cargo run -p macroscope-app-core --example muse_plan_build` → Ready in 39 s via `muse-spark-1.3` on the owner's plan; all 7 host checks pass on the sample; mapping equals the confirmed rules |
+| Tasks beyond CSV with a real model (owner request) | **passed** | 2026-10-27 20:2x: `examples/muse_program_build` — Muse plan wrote an ERROR-line log filter in 57 s, all 5 program checks passed, staged, approved, committed `errors.txt` |
 | Meta structured-output schema dialect | **passed (real service)** | Real 400s found and fixed: no numeric `format`, no `oneOf` (use `anyOf`), no `default`, `required` lists every property (`model_schema_uses_the_strict_dialect_meta_accepts`). Applies to the direct API route too |
 | Muse native-tool containment (P7) | unverified | Needs a signed-in Muse to exercise tools; plan route requires an explicit owner opt-in meanwhile |
 | Generated TypeScript runtime admission (§7.3, P8) | **failed** | Seatbelt denied all effect canaries, but `data:` imports run and RSS polling overshoots 256 MiB; finite CSV mapping ships (ADR 0002) |
