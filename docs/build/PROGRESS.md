@@ -575,3 +575,94 @@ timeouts (infrastructure, still counted), and task 22 failed again. Running tota
 `classify_build_failure`. Found a product issue: the runner hides the real JavaScript
 exception behind a generic message, so the automatic correction round cannot fix a runtime
 error.
+
+
+## Task 20: real, data-safe runtime error detail (`m4/runtime-errors`)
+
+Runner failures retain their classified kind and now include the native Error
+name, a bounded sanitized message, and the first user-script line/column when
+QuickJS supplies them. Only numeric positions leave the runner; stack frames,
+function names, and host filenames are discarded. The synchronous/disabled-API
+hint appears only for a missing restricted global or a returned promise.
+
+Exception inspection captures trusted intrinsics before user code, bypasses
+user getters and coercion, and reads native QuickJS stacks through the captured
+intrinsic getter. Global scripts compile separately before executing, so parser
+SyntaxErrors can retain program-text diagnostics without trusting a top-level
+throw or JSON.parse on fetched data. ReferenceErrors retain source identifiers.
+Other messages replace quoted strings and numbers with `…`, cap message text at
+200 characters, and retain only literal program text or fixed diagnostic
+patterns. Arbitrary payloads such as `new Error(row.email)` become `…`; non-Error
+throws report only “a non-Error value was thrown”. This additional provenance
+check covers unquoted data and mutable Error messages too.
+
+Existing host checks, stored build failures/events, and correction packets carry
+the improved message; correction instructions now explain sanitized diagnostics.
+Regression tests exercise input and fetched-data errors through both correction
+attempts and read back persisted build state/outbound packets to prove fixture
+values stay absent. A program-flow UI test verifies the failure detail is shown.
+
+The first full check exposed a pre-existing Today regression: newly visible
+program messages containing “Reconnect” or “Skipped” changed the run status.
+Runtime failures now have a distinct core error variant (with the same UI error
+code/message), and manual/scheduled runs classify typed runner failures as
+failed. Host admission errors still retain their existing status behavior. The
+original diagnostic-words test is unchanged; additional coverage verifies model
+replay, scheduled failures, and generic failure notification text.
+
+The builder packet's shared SDK reference lists the actual built-ins. Tests
+confirm `Object.groupBy` and `Map.groupBy` exist in this QuickJS-NG, while a
+standalone `groupBy` does not. RegExp remains unavailable. The intrinsic
+`queueMicrotask` is explicitly removed along with Promise, matching the
+synchronous-only contract. All documented available and unavailable names are
+checked against the runner; the grouping methods are exercised with real groups.
+
+Final verification: **PASS**, all four requested command runs exited **0**:
+
+- `cargo build -p macroscope-runner --bins`: passed.
+- `bash scripts/check.sh`, final run 1: **328 workspace Rust tests + 144
+  synthetic core tests = 472 passed, 0 failed**, and **127 UI tests across 17
+  files**. Formatting, clippy with warnings denied, typechecking, and desktop
+  production build passed. **4 workspace + 1 synthetic pre-existing ignores**.
+- `bash scripts/check.sh`, final run 2: the same **472 Rust + 127 UI passed,
+  0 failed**, with the same **5 pre-existing ignores**; all other gates passed.
+- `bash experiments/runtime-gate-v2/run-canaries.sh`: **62/62 synthetic
+  canaries passed** (**59 DENIED, 3 exact PASS**); expectations unchanged.
+  Admission is **UNKNOWN** for this synthetic-only run. Evidence:
+  [task20-runtime-canaries.md](task20-runtime-canaries.md) and
+  `experiments/runtime-gate-v2/task20-synthetic-results.json`. The harness's
+  default task17 output names were copied into these task20 records, then the
+  prior task17 evidence was restored.
+
+Exact output tails:
+
+```text
+cargo build -p macroscope-runner --bins
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s
+
+bash scripts/check.sh (final run 1)
+✓ built in 433ms
+
+bash scripts/check.sh (final run 2)
+✓ built in 101ms
+
+bash experiments/runtime-gate-v2/run-canaries.sh
+orders: synthetic=PASS, OS=UNKNOWN
+stdin-flood: synthetic=DENIED, OS=UNKNOWN
+Synthetic suite: PASS; admission verdict: UNKNOWN; evidence: docs/build/task17-runtime-canaries.md
+```
+
+No tests were weakened or deleted; no skips or ignores were added. The first
+full check's Today regression was fixed before both successful final runs.
+
+Claude's review of task 20:
+- No added skips or ignores, and no test file lost assertions.
+- Sanitizer checks:
+  - a ReferenceError message is kept only when the identifier occurs in the program source;
+  - SyntaxError text is kept only for parse failures;
+  - constructed `ReferenceError(data)` and `SyntaxError(data)` are redacted, with tests.
+- The Today status change keeps runner diagnostics from being read as "skipped" or
+  "needs you".
+
+Rerun by Claude: both `check.sh` runs passed with **472 Rust + 127 UI tests** each.
+`run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer boundary).

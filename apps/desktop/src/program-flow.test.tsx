@@ -59,3 +59,25 @@ it("explains the missing model for programs on the offline route", async () => {
   expect(await screen.findByText("Writing a program needs a model: sign in to Muse or add a key")).toBeVisible();
   expect(screen.getByRole("button",{name:"Build tool"})).toBeDisabled();
 });
+
+it("shows the sanitized runtime check detail when a program build fails", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const input = backend.importText("synthetic.log", "ERROR invented");
+  const detail = "JavaScript execution failed: ReferenceError at line 7, column 3: groupBy is not defined";
+  vi.spyOn(backend, "startBuild").mockImplementation(async (draftId) => ({
+    buildId: "runtime-error", draftId, route: "api_key", phase: "failed", events: [],
+    candidate: null, comparison: null, spentMicros: null, routeLabel: "API key",
+    checks: [{id: "sandbox", label: "Runs inside sandbox limits without error", passed: false, detail}],
+    failure: {kind: "checks", message: `Checks failed: ${detail}. Edit the rules and build again.`},
+  }));
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
+  await user.type(screen.getByLabelText("What do you want to do with this file?"), "extract ERROR lines");
+  await user.click(screen.getByRole("button", {name: "Review task summary"}));
+  await user.click(screen.getByRole("button", {name: "Review what leaves this Mac"}));
+  await user.click(await screen.findByRole("checkbox"));
+  await user.click(screen.getByRole("button", {name: "Build tool"}));
+  expect(await screen.findByRole("alert")).toHaveTextContent(detail);
+  expect(screen.getByRole("button", {name: "Edit rules"})).toBeVisible();
+});

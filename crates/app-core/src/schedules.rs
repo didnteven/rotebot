@@ -182,6 +182,19 @@ impl Drop for ActiveRun<'_> {
         lock(&self.core.inner.running_tools).remove(&self.tool);
     }
 }
+// Only host admission errors may classify a run as skipped or needing action.
+// Runner failures have a separate variant and must remain failed regardless of
+// words in their diagnostic detail. StageResult::Failed also bypasses this.
+impl CoreError {
+    pub(crate) fn today_failure_status(&self) -> &'static str {
+        match self {
+            CoreError::Invalid(message) if message.contains("Skipped") => "skipped",
+            CoreError::Invalid(message) if message.contains("Reconnect") => "needs_you",
+            _ => "failed",
+        }
+    }
+}
+
 impl AppCore {
     pub(crate) fn claim_tool_run(&self, tool: &str) -> CoreResult<ActiveRun<'_>> {
         if !lock(&self.inner.running_tools).insert(tool.into()) {
@@ -440,7 +453,12 @@ impl AppCore {
         e.dismissed = true;
         self.put_today(&e)
     }
-    pub(crate) fn manual_today_failure(&self, tool_id: &str, message: &str) -> CoreResult<()> {
+    pub(crate) fn manual_today_failure(
+        &self,
+        tool_id: &str,
+        message: &str,
+        status: &'static str,
+    ) -> CoreResult<()> {
         let _admission = self.admit_local()?;
         let tool = self.get_tool(tool_id)?;
         if tool.no_input
@@ -457,14 +475,7 @@ impl AppCore {
                 schedule_id: None,
                 started_at_ms: self.now(),
                 finished_at_ms: Some(self.now()),
-                status: if message.contains("Skipped") {
-                    "skipped"
-                } else if message.contains("Reconnect") {
-                    "needs_you"
-                } else {
-                    "failed"
-                }
-                .into(),
+                status: status.into(),
                 body: message.chars().take(20_000).collect(),
                 note: None,
                 file_created: None,
@@ -741,14 +752,11 @@ impl AppCore {
                         continue;
                     }
                     Ok(StageResult::Failed(f)) => entry.body = f.failure.message(),
-                    Err(e) => entry.body = e.to_string(),
+                    Err(e) => {
+                        entry.status = e.today_failure_status().into();
+                        entry.body = e.to_string();
+                    }
                 }
-            }
-            if entry.body.contains("Reconnect") {
-                entry.status = "needs_you".into();
-            }
-            if entry.body.contains("Skipped") {
-                entry.status = "skipped".into();
             }
             let _admission = self.admit_local()?;
             self.put_today(&entry)?;

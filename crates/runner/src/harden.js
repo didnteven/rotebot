@@ -8,7 +8,7 @@
     Object.freeze(p);
   }
   for (const name of ["eval", "Function", "AsyncFunction", "GeneratorFunction",
-      "AsyncGeneratorFunction", "Worker", "SharedArrayBuffer", "Atomics", "Promise"]) {
+      "AsyncGeneratorFunction", "Worker", "SharedArrayBuffer", "Atomics", "Promise", "queueMicrotask"]) {
     Object.defineProperty(globalThis, name, {value: undefined, writable: false, configurable: false});
   }
   Object.defineProperty(Math, "random", {value: undefined, writable: false, configurable: false});

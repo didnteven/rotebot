@@ -5,14 +5,16 @@
   const proto = Object.getPrototypeOf;
   const syntax = SyntaxError.prototype;
   const includes = String.prototype.includes;
+  const apply = Reflect.apply;
   return e => {
     // QuickJS throws null when even allocating the out-of-memory Error fails
     // (JS_ThrowError2). Classify that sentinel without allocating a descriptor.
     if (e === null) return "memory";
     const object = e && typeof e === "object";
     const descriptor = object ? own(e, "message") : null;
-    const message = descriptor && typeof descriptor.value === "string" ? descriptor.value : "";
-    return includes.call(message, "out of memory") ? "memory" :
+    const value = descriptor ? own(descriptor, "value") : null;
+    const message = value && typeof value.value === "string" ? value.value : "";
+    return apply(includes, message, ["out of memory"]) ? "memory" :
       (object && proto(e) === syntax ? "syntax" : "runtime");
   };
 })()

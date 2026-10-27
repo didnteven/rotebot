@@ -915,3 +915,57 @@ async fn diagnostic_words_do_not_change_typed_today_failure_status() {
     let entries = f.core.list_today().unwrap();
     assert_eq!(entries[0].entries[0].status, "failed");
 }
+
+#[tokio::test]
+async fn runtime_diagnostic_words_remain_failed_for_model_replay_and_schedules() {
+    for model in [false, true] {
+        let mut p = program(model, false);
+        p.code="function run(){const s=macroscope.source('events');if(s==='trigger')throw new Error('Reconnect Skipped Local only');macroscope.output('summary.txt',s);}".into();
+        let f = Fixture::new(p).await;
+        let t = f.save().await;
+        *f.fake.result.lock().unwrap() =
+            Some(json!({"content":[{"type":"text","text":"trigger"}]}));
+        if model {
+            let error = f.stage(&t).await.unwrap_err();
+            assert!(matches!(error, macroscope_app_core::CoreError::Runtime(_)));
+            assert!(error.to_string().contains("Reconnect Skipped Local only"));
+            assert_eq!(f.core.list_today().unwrap()[0].entries[0].status, "failed");
+        }
+        f.core
+            .set_schedule(
+                &t.summary_row.id,
+                ScheduleRequest {
+                    frequency: Frequency::Daily {
+                        time: "07:00".into(),
+                    },
+                    outputs: ScheduleOutputs {
+                        today: true,
+                        notification: true,
+                        folder: None,
+                        filename: "summary-{date}.txt".into(),
+                    },
+                    version_hash: t.version_hash.clone(),
+                    approved: true,
+                },
+            )
+            .unwrap();
+        let notifications = Arc::new(Mutex::new(vec![]));
+        f.core
+            .set_notifier(Arc::new(Notifications(notifications.clone())));
+        let now = f.clock.fetch_add(2 * 3_600_000, Ordering::SeqCst) + 2 * 3_600_000;
+        let entries = f.core.run_due_schedules(now).await.unwrap();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].status, "failed", "{entries:?}");
+        assert!(
+            entries[0].body.contains("Reconnect Skipped Local only"),
+            "{entries:?}"
+        );
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            [format!(
+                "{}: Failed: Open Today for details",
+                t.summary_row.name
+            )]
+        );
+    }
+}

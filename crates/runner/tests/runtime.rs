@@ -16,7 +16,10 @@ fn run(code: &str, limits: Limits) -> Response {
 }
 fn success(code: &str) {
     let response = run(code, Limits::default());
-    assert!(matches!(response, Response::Success { .. }), "{response:?}");
+    assert!(
+        matches!(response, Response::Success { .. }),
+        "{code}: {response:?}"
+    );
 }
 fn kind(code: &str, limits: Limits, expected: &str) {
     match run(code, limits) {
@@ -341,4 +344,225 @@ fn connection_requests_are_bounded_json_snapshots_and_return_no_network_data() {
     assert!(
         matches!(Response::from_wire(&bytes).unwrap(), Response::Success {planned_calls,..} if planned_calls.len()==5)
     );
+}
+
+fn failure(code: &str) -> macroscope_runner::Failure {
+    match run(code, Limits::default()) {
+        Response::Error { error } => error,
+        other => panic!("expected failure: {other:?}"),
+    }
+}
+
+#[test]
+fn runtime_details_keep_program_identifiers_and_user_positions() {
+    let error = failure("function run() {\n  const rows = [];\n  groupBy(rows);\n}");
+    assert_eq!(error.kind, "runtime");
+    assert!(error.message.contains(", column "), "{error:?}");
+    assert!(
+        error.message.contains("ReferenceError at line 3"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("groupBy is not defined"),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("synchronous"), "{error:?}");
+    assert!(!error.message.contains(".js"), "{error:?}");
+    let error = failure("function run() {\n  const x = ;\n}");
+    assert_eq!(error.kind, "syntax");
+    assert!(error.message.contains("SyntaxError at line 2"), "{error:?}");
+    assert!(error.message.contains("unexpected token"), "{error:?}");
+    let error = failure("function run(){\n  return Date.now();\n}");
+    assert!(
+        error.message.contains("ReferenceError at line 2"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("Use synchronous SDK code only"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
+    let error = failure("function run(){\n  let row;\n  row.trim();\n}");
+    assert!(error.message.contains("TypeError at line 3"), "{error:?}");
+    assert!(
+        error
+            .message
+            .contains("cannot read property … of undefined"),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("trim"), "{error:?}");
+    for constructor in ["Error", "TypeError", "RangeError", "InternalError"] {
+        let code = format!(
+            r#"function run(){{throw new {constructor}("contains 123 and 'x@example.invalid'");}}"#
+        );
+        let error = failure(&code);
+        assert!(error.message.contains("contains … and …"), "{error:?}");
+        for secret in ["123", "x@example.invalid"] {
+            assert!(!error.message.contains(secret), "{error:?}");
+        }
+    }
+    let error = failure(r#"function run(){throw "secret-value";}"#);
+    assert_eq!(
+        error.message,
+        "JavaScript execution failed: a non-Error value was thrown"
+    );
+    for expression in [
+        "new Error(data)",
+        "new TypeError(data)",
+        "new ReferenceError(data)",
+        "new SyntaxError(data)",
+        "JSON.parse(data)",
+        "Object.assign(new Error(), {message:data, name:data, stack:data})",
+        "Object.assign(new TypeError(), {message:data})",
+    ] {
+        let response = macroscope_runner::execute(Request {
+            code: format!(
+                "function run(){{const data=macroscope.input('input_csv');throw {expression};}}"
+            ),
+            inputs: BTreeMap::from([(
+                "input_csv".into(),
+                "private-address@example.invalid 98765".into(),
+            )]),
+            sources: BTreeMap::new(),
+            answers: BTreeMap::new(),
+            limits: Limits::default(),
+            declared_model_prompt: None,
+        });
+        let Response::Error { error } = response else {
+            panic!("{response:?}");
+        };
+        for secret in ["private-address", "example.invalid", "98765"] {
+            assert!(!error.message.contains(secret), "{expression}: {error:?}");
+        }
+    }
+    let response = macroscope_runner::execute(Request {
+        code: "throw new SyntaxError(macroscope.source('secret')); function run(){}".into(),
+        inputs: BTreeMap::new(),
+        sources: BTreeMap::from([("secret".into(), "FETCHED_SECRET_TOP_LEVEL".into())]),
+        answers: BTreeMap::new(),
+        limits: Limits::default(),
+        declared_model_prompt: None,
+    });
+    let Response::Error { error } = response else {
+        panic!("{response:?}");
+    };
+    assert_eq!(error.kind, "syntax");
+    assert!(
+        !error.message.contains("FETCHED_SECRET_TOP_LEVEL"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn runtime_details_are_bounded_and_ignore_hostile_getters_and_stack_paths() {
+    let code = format!("function run(){{throw new Error('{}');}}", "x".repeat(500));
+    let error = failure(&code);
+    assert_eq!(
+        error.message.split(": ").last().unwrap().chars().count(),
+        200
+    );
+    for key in [
+        "name",
+        "message",
+        "stack",
+        "lineNumber",
+        "columnNumber",
+        "fileName",
+    ] {
+        let error = failure(&format!("function run(){{throw Object.defineProperty(new Error(),'{key}',{{get(){{for(;;){{}}}}}});}}"));
+        assert_eq!(error.kind, "runtime", "{error:?}");
+    }
+    let error = failure("function run(){const error=Object.defineProperty(new Error(),'message',{get(){for(;;){}}}); Object.defineProperty(Object.prototype,'value',{get(){for(;;){}}}); throw error;}");
+    assert_eq!(error.kind, "runtime", "{error:?}");
+    let error = failure("function run(){throw Object.assign(new Error(), {stack:'    at secret (/private/host/secret.js:8:9)\\n    at run (macroscope-user.js:1:16)', name:'/private/host/name', fileName:'/private/host/secret.js', lineNumber:8});}");
+    assert!(
+        error.message.contains("Error at line 1, column 16"),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("/private"), "{error:?}");
+}
+
+#[test]
+fn returned_promise_explains_synchronous_requirement() {
+    let error = failure("async function run(){}");
+    assert_eq!(error.kind, "runtime");
+    assert!(
+        error.message.contains("run must be synchronous"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("Use synchronous SDK code only"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn packet_builtin_claims_match_the_sandbox() {
+    // These exact lists also appear in the builder packet's SDK reference.
+    let available = [
+        "Array",
+        "Object",
+        "Map",
+        "Set",
+        "JSON",
+        "String",
+        "Number",
+        "Boolean",
+        "BigInt",
+        "Math",
+        "Error",
+        "TypeError",
+        "ReferenceError",
+        "SyntaxError",
+        "RangeError",
+        "InternalError",
+    ];
+    let unavailable = [
+        "Date",
+        "eval",
+        "Function",
+        "Worker",
+        "Promise",
+        "setTimeout",
+        "setInterval",
+        "setImmediate",
+        "queueMicrotask",
+        "fetch",
+        "require",
+        "process",
+        "RegExp",
+    ];
+    let sdk = include_str!("../SDK.md");
+    for name in available {
+        assert!(
+            sdk.contains(&format!("`{name}`")),
+            "SDK must document {name}"
+        );
+        success(&format!(
+            "function run(){{if(typeof globalThis['{name}']==='undefined')throw '{name}';}}"
+        ));
+    }
+    for name in unavailable {
+        assert!(
+            sdk.contains(&format!("`{name}`")),
+            "SDK must document {name}"
+        );
+        success(&format!(
+            "function run(){{if(typeof globalThis['{name}']!=='undefined')throw '{name}';}}"
+        ));
+    }
+    // QuickJS-NG supplies groupBy even though it is newer than ES2023.
+    for name in ["Object.groupBy", "Map.groupBy"] {
+        assert!(
+            sdk.contains(&format!("`{name}`")),
+            "SDK must document {name}"
+        );
+        success(&format!(
+            "function run(){{if(typeof {name}!=='function')throw '{name}';}}"
+        ));
+    }
+    success("function run(){if(typeof Math.random!=='undefined')throw 'random'; if(Object.groupBy([1,2,3],x=>x%2)[1].length!==2)throw 'object grouping'; if(Map.groupBy([1,2,3],x=>x%2).get(1).length!==2)throw 'map grouping';}");
 }

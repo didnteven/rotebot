@@ -1,11 +1,21 @@
 # Macroscope runtime v2 SDK (1.0)
 
 Write plain JavaScript defining a synchronous global `function run() { ... }`.
-No imports, dependencies, eval, Function, Worker, async work, Date, Math.random,
-filesystem, process, environment, console or network APIs are available.
-`Math` is available (e.g. `Math.round`, `Math.max`), except `Math.random`, which is removed so runs are repeatable. `Date` is not available; use `macroscope.date` helpers or the `{today}` URL placeholder.
-`import` is forbidden even in comments and strings. RegExp is unavailable; use
-string operations such as split, includes, indexOf, slice and join.
+Available JavaScript built-ins (standard ES2023 operations): `Array`, `Object`,
+`Map`, `Set`, `JSON`, `String`, `Number`, `Boolean`, `BigInt`, `Math` (except
+`Math.random`), `Error`, `TypeError`, `ReferenceError`, `SyntaxError`, `RangeError`,
+and `InternalError`. Pure array/string/object operations and JSON.parse/stringify
+are available. This QuickJS-NG also provides `Object.groupBy` and `Map.groupBy`;
+there is no standalone global `groupBy` (use those methods or a Map/reduce loop).
+
+Unavailable: `Date`, `eval`, `Function`, `Worker`, `Promise`, timers (`setTimeout`,
+`setInterval`, `setImmediate`, `queueMicrotask`), `fetch`, `require`, `process`,
+and `RegExp`. Use string operations such as split, includes, indexOf, slice and
+join instead of regular expressions. `Math.random` is removed for repeatability;
+use Math.round/Math.max for numeric operations. Use `macroscope.date` helpers or
+the `{today}` URL placeholder instead of Date. No imports, dependencies, async
+work, filesystem, environment, console or network APIs are available. `import`
+is forbidden even in comments and strings.
 
 - `macroscope.input("input_csv")` returns the selected UTF-8 text snapshot (the
   historical handle name applies to every text format). At most 10 MB. Tools

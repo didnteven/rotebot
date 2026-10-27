@@ -63,6 +63,9 @@ pub enum CoreError {
     NotFound(&'static str),
     #[error("{0}")]
     Invalid(String),
+    /// Sanitized user-program failure, distinct from host admission decisions.
+    #[error("{0}")]
+    Runtime(String),
     #[error("storage error: {0}")]
     Storage(String),
     #[error("secure storage error: {0}")]
@@ -76,7 +79,7 @@ impl CoreError {
     pub fn code(&self) -> &'static str {
         match self {
             CoreError::NotFound(_) => "not_found",
-            CoreError::Invalid(_) => "invalid",
+            CoreError::Invalid(_) | CoreError::Runtime(_) => "invalid",
             CoreError::Storage(_) => "storage",
             CoreError::Vault(_) => "vault",
             CoreError::Internal(_) => "internal",
@@ -854,7 +857,7 @@ impl AppCore {
     /// previous program code, the failed host-check shapes, and the
     /// instruction to return a corrected program in the same schema. It never
     /// includes host-fetched response bodies or selected input rows; failed
-    /// details are already shapes (`#` for numbers).
+    /// details are shapes (`#` for numbers) or sanitized runtime diagnostics.
     fn program_correction_packet(
         draft: &TaskDraft,
         previous_code: &str,
@@ -877,14 +880,14 @@ impl AppCore {
             "synthetic_text_shape": draft.synthetic_shape,
             "previous_program_code": previous_code,
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are shapes only, with numbers as #). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code and web_sources). The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code and web_sources). The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
         })
         .to_string()
     }
 
     fn correction_packet_text(correction: &str) -> String {
         format!(
-            "System instructions:\n{}\n\nMessage (correction; shapes only, no fetched data or input rows):\n{correction}",
+            "System instructions:\n{}\n\nMessage (correction; output shapes and sanitized diagnostics, no fetched data or input rows):\n{correction}",
             macroscope_builder::PROGRAM_SYSTEM,
             correction = correction,
         )
@@ -2594,7 +2597,7 @@ impl AppCore {
             .stage_inner(tool_id, Some(input_handle), dir_handle, output_name, None)
             .await;
         if let Err(e) = &result {
-            self.manual_today_failure(tool_id, &e.to_string())?;
+            self.manual_today_failure(tool_id, &e.to_string(), e.today_failure_status())?;
         }
         result
     }
@@ -2615,12 +2618,12 @@ impl AppCore {
             .stage_inner(tool_id, None, dir_handle, output_name, None)
             .await;
         let failure = match &result {
-            Ok(StageResult::Failed(f)) => Some(f.failure.message()),
-            Err(e) => Some(e.to_string()),
+            Ok(StageResult::Failed(f)) => Some((f.failure.message(), "failed")),
+            Err(e) => Some((e.to_string(), e.today_failure_status())),
             _ => None,
         };
-        if let Some(message) = failure {
-            self.manual_today_failure(tool_id, &message)?;
+        if let Some((message, status)) = failure {
+            self.manual_today_failure(tool_id, &message, status)?;
         }
         result
     }

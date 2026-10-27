@@ -1,4 +1,5 @@
 //! One-shot data-only QuickJS worker. No loader or OS bindings are registered.
+mod diagnostic;
 pub mod launch;
 pub mod model;
 mod sdk;
@@ -315,6 +316,7 @@ pub fn execute(request: Request) -> Response {
     };
     let result = context.with(|ctx| {
         let classify: Function = ctx.eval(include_str!("classify.js"))?;
+        let inspect: Function = ctx.eval(include_str!("inspect.js"))?;
         sdk::install(
             &ctx,
             request.inputs,
@@ -325,11 +327,14 @@ pub fn execute(request: Request) -> Response {
             request.declared_model_prompt,
         )?;
         ctx.eval::<(), _>(include_str!("harden.js"))?;
+        let mut compiling = true;
+        let mut returned_promise = false;
         let user_result = (|| {
-            ctx.eval::<(), _>(request.code)?;
+            diagnostic::eval_user(&ctx, &request.code, &mut compiling)?;
             let run: Function = ctx.globals().get("run")?;
             let value: rquickjs::Value = run.call(())?;
             if value.is_promise() {
+                returned_promise = true;
                 return Err(rquickjs::Exception::throw_type(
                     &ctx,
                     "run must be synchronous",
@@ -340,14 +345,36 @@ pub fn execute(request: Request) -> Response {
         if let Err(err) = user_result {
             let exception = ctx.catch();
             let kind: String = classify
-                .call((exception,))
+                .call((exception.clone(),))
                 .unwrap_or_else(|_| "runtime".into());
             let kind = if matches!(err, rquickjs::Error::Allocation) {
                 "memory"
             } else {
                 &kind
             };
-            return Ok(Some(Failure::new(kind, "JavaScript execution failed: use synchronous SDK code only; eval, Function, Worker, Date, Math.random and OS APIs are unavailable")));
+            let detail = if returned_promise {
+                diagnostic::promise_detail()
+            } else if exception.is_error() {
+                inspect
+                    .call::<_, rquickjs::Array>((exception,))
+                    .and_then(|parts| {
+                        Ok((
+                            parts.get(0)?,
+                            parts.get(1)?,
+                            parts.get(2)?,
+                            parts.get(3)?,
+                            parts.get(4)?,
+                            parts.get(5)?,
+                        ))
+                    })
+                    .map(|parts| diagnostic::error_detail(parts, &request.code, compiling))
+                    .unwrap_or_else(|_| {
+                        "JavaScript execution failed: error detail unavailable".into()
+                    })
+            } else {
+                "JavaScript execution failed: a non-Error value was thrown".into()
+            };
+            return Ok(Some(Failure::new(kind, &detail)));
         }
         Ok::<_, rquickjs::Error>(None)
     });

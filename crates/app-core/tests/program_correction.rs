@@ -339,3 +339,88 @@ async fn correction_failure_stays_failed_with_second_details() {
         failure.message
     );
 }
+
+#[tokio::test]
+async fn runtime_correction_contains_safe_detail_without_fixture_values_in_stored_events() {
+    // Cover an unquoted arbitrary Error payload and a native TypeError whose
+    // quoted property name is data, from both selected rows and fetched text.
+    for (expression, expected) in [
+        ("throw new Error(row.email)", "Error"),
+        (
+            "const missing = undefined; missing[row.email].trim()",
+            "TypeError",
+        ),
+        ("throw new Error(macroscope.source('forecast'))", "Error"),
+        (
+            "const missing = undefined; missing[macroscope.source('forecast')].trim()",
+            "TypeError",
+        ),
+        ("groupBy([])", "ReferenceError"),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let model_server = MockServer::start().await;
+        let fetch_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/forecast"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(FETCHED_CANARY))
+            .mount(&fetch_server)
+            .await;
+        let bad_code = format!("function run() {{\nconst row = macroscope.csv.parse(macroscope.input('input_csv'))[0];\n{expression};\n}}");
+        let bad = program_for(&fetch_server.uri(), &bad_code);
+        // Both attempts fail so the stored failure event also contains details.
+        let counter = mount_model(&model_server, bad.clone(), bad).await;
+        let core = core_at(temp.path(), model_server.uri());
+        let source = temp.path().join("selected.log");
+        std::fs::write(&source, format!("email\n{INPUT_CANARY}@example.invalid\n")).unwrap();
+        let file = core.register_picked_file(&source).unwrap();
+        let state = build_with_correction(&core, &file).await;
+        assert_eq!(state.phase, BuildPhase::Failed, "{expression}: {state:?}");
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+        let detail = state
+            .checks
+            .iter()
+            .find(|c| c.id == "sandbox")
+            .unwrap()
+            .detail
+            .as_deref()
+            .unwrap();
+        assert!(
+            detail.contains(&format!("{expected} at line 3")),
+            "{expression}: {detail}"
+        );
+        if expected == "ReferenceError" {
+            assert!(detail.contains("groupBy is not defined"), "{detail}");
+        }
+        if expected == "TypeError" {
+            assert!(
+                detail.contains("cannot read property … of undefined"),
+                "{detail}"
+            );
+        }
+        assert!(
+            state.events.iter().any(|e| e.message.contains(detail)),
+            "{state:?}"
+        );
+        let requests = model_server.received_requests().await.unwrap();
+        let calls = model_requests(&requests);
+        assert_eq!(calls.len(), 2);
+        let packet: serde_json::Value = serde_json::from_slice(&calls[1].body).unwrap();
+        let correction: serde_json::Value =
+            serde_json::from_str(packet["input"][1]["content"].as_str().unwrap()).unwrap();
+        assert_eq!(correction["failed_checks"][0]["detail"], detail);
+        // Read back persisted events/checks rather than only the returned state.
+        let stored = core.build_state(&state.build_id).unwrap();
+        for payload in [
+            String::from_utf8_lossy(&calls[1].body).into_owned(),
+            serde_json::to_string(&stored).unwrap(),
+            serde_json::to_string(&core.list_outbound().unwrap()).unwrap(),
+        ] {
+            for secret in [INPUT_CANARY, FETCHED_CANARY, "@example.invalid"] {
+                assert!(
+                    !payload.contains(secret),
+                    "{expression}: fixture value in persisted/correction payload: {payload}"
+                );
+            }
+        }
+    }
+}

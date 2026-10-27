@@ -31,7 +31,7 @@ impl AppCore {
             match response {
                 Response::Success { .. } => return Ok(answers),
                 Response::Error { error } => {
-                    return Err(CoreError::Invalid(format!(
+                    return Err(CoreError::Runtime(format!(
                         "{}: {}",
                         error.kind, error.message
                     )))
