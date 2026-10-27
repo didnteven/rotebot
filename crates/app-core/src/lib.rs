@@ -1957,6 +1957,25 @@ impl AppCore {
 }
 
 fn summary_text(summary: &Value) -> Option<String> {
+    // `muse usage --json` (1.4.13): {"allowance": {"tier", "window": {"usedPercent"},
+    // "weekly": {"usedPercent"}}}. Shown as e.g. "Pro plan · 12% of this window used, 30% this week".
+    if let Some(a) = summary.get("allowance") {
+        let tier = a.get("tier").and_then(Value::as_str).unwrap_or("Muse");
+        let pct = |k: &str| {
+            a.pointer(&format!("/{k}/usedPercent"))
+                .and_then(Value::as_i64)
+        };
+        let mut text = format!("{} plan", tier.chars().take(40).collect::<String>());
+        match (pct("window"), pct("weekly")) {
+            (Some(w), Some(k)) => {
+                text.push_str(&format!(" · {w}% of this window used, {k}% this week"))
+            }
+            (Some(w), None) => text.push_str(&format!(" · {w}% of this window used")),
+            (None, Some(k)) => text.push_str(&format!(" · {k}% used this week")),
+            (None, None) => {}
+        }
+        return Some(text);
+    }
     for key in ["plan", "planName", "tier", "name"] {
         if let Some(s) = summary.get(key).and_then(Value::as_str) {
             return Some(s.chars().take(120).collect());
@@ -2033,5 +2052,25 @@ fn make_writable(path: &Path) {
         #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         let _ = std::fs::set_permissions(path, perms);
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::summary_text;
+    use serde_json::json;
+
+    #[test]
+    fn muse_allowance_reads_as_plain_text() {
+        let s = json!({"schemaVersion": 1, "allowance": {"tier": "Pro", "window": {"usedPercent": 12, "resetsAtMs": 1},
+            "weekly": {"usedPercent": 30, "resetsAtMs": 2}, "asOfMs": 1, "source": "server"}});
+        assert_eq!(
+            summary_text(&s).as_deref(),
+            Some("Pro plan · 12% of this window used, 30% this week")
+        );
+        assert_eq!(
+            summary_text(&json!({"plan": "Muse Plus"})).as_deref(),
+            Some("Muse Plus")
+        );
     }
 }

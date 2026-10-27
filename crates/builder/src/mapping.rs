@@ -13,6 +13,42 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 pub const MAPPING_SCHEMA: &str = include_str!("../../../contracts/csv-mapping.schema.json");
+
+/// The CsvMapping schema as sent to models, in the strict dialect Meta's structured outputs
+/// accept. Each rule was observed as a 400 from the real service on 2026-10-27:
+/// numeric `format` keywords (`uint8`) are unsupported, `oneOf` is not permitted (use
+/// `anyOf`; variants differ by their `type` tag), `default` is dropped, and every object's
+/// `required` must list all of its properties. The host still deserializes and validates
+/// every candidate strictly, so this only changes what the model is told.
+pub fn model_schema() -> Value {
+    fn strict(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                let numeric_format = map.get("format").and_then(Value::as_str).is_some_and(|f| {
+                    f.starts_with("uint") || f.starts_with("int") || f == "float" || f == "double"
+                });
+                if numeric_format {
+                    map.remove("format");
+                }
+                map.remove("default");
+                if let Some(one_of) = map.remove("oneOf") {
+                    map.insert("anyOf".into(), one_of);
+                }
+                if let Some(Value::Object(props)) = map.get("properties") {
+                    let keys: Vec<Value> = props.keys().cloned().map(Value::String).collect();
+                    map.insert("required".into(), Value::Array(keys));
+                }
+                map.values_mut().for_each(strict);
+            }
+            Value::Array(items) => items.iter_mut().for_each(strict),
+            _ => {}
+        }
+    }
+    let mut schema: Value =
+        serde_json::from_str(MAPPING_SCHEMA).expect("committed schema is valid JSON");
+    strict(&mut schema);
+    schema
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildRoute {
     DirectMeta { key_ref: SecretRef },
@@ -106,7 +142,7 @@ pub fn packet_text(
     contract: &TaskContract,
     samples: &SyntheticSamples,
 ) -> Result<String, BuildError> {
-    let schema: Value = serde_json::from_str(MAPPING_SCHEMA).map_err(|_| BuildError::Validation)?;
+    let schema = model_schema();
     let packet = json!({"template":"macroscope-csv-mapping/v1","untrusted_contract_data":{
         "columns":contract.input_schema,"output_columns":contract.output_columns,"confirmed_rules":contract.mapping,
         "error_policy":contract.error_policy},"synthetic_example_rows":samples.rows,"csv_mapping_json_schema":schema});
@@ -247,8 +283,7 @@ impl MappingBuilder<'_> {
         validator: &dyn CandidateValidator,
         guard: &macroscope_policy::EpochGuard,
     ) -> Result<Candidate, BuildError> {
-        let schema: Value =
-            serde_json::from_str(MAPPING_SCHEMA).map_err(|_| BuildError::Validation)?;
+        let schema = model_schema();
         let mut prompt = packet_text(contract, &samples)?;
         if prompt.len() > 512 * 1024 || budget.max_output_tokens == 0 {
             return Err(BuildError::BudgetExceeded);
@@ -279,6 +314,16 @@ impl MappingBuilder<'_> {
         } else {
             None
         };
+        // Plan sign-in runs are billed to the user's Muse allowance, not dollars: no
+        // dollar reservation applies (the run stays capped by --max-model-steps).
+        let plan_route = matches!(
+            self.route,
+            BuildRoute::MuseExec {
+                route: CredentialRoute::PlanSignIn
+            } | BuildRoute::MuseServe {
+                route: CredentialRoute::PlanSignIn
+            }
+        );
         let estimator = CostEstimator::default();
         let mut reserved = 0u64;
         let mut charged = 0u64;
@@ -304,7 +349,11 @@ impl MappingBuilder<'_> {
                     ..Default::default()
                 }
             };
-            let reservation = estimator.estimate(DEFAULT_MODEL, &ceiling)?;
+            let reservation = if plan_route {
+                0
+            } else {
+                estimator.estimate(DEFAULT_MODEL, &ceiling)?
+            };
             if charged
                 .checked_add(reserved)
                 .and_then(|v| v.checked_add(reservation))
@@ -349,7 +398,7 @@ impl MappingBuilder<'_> {
             };
             match output {
                 Ok(output) => {
-                    if output.usage_known {
+                    if output.usage_known && !plan_route {
                         let cost = estimator.estimate(DEFAULT_MODEL, &output.usage)?;
                         if cost > reservation {
                             return Err(BuildError::BudgetExceeded);
@@ -386,7 +435,7 @@ impl MappingBuilder<'_> {
                         }
                         .into(),
                         usage: known.then_some(usage_total),
-                        cost_microusd: (known && reserved == 0).then_some(charged),
+                        cost_microusd: (known && reserved == 0 && !plan_route).then_some(charged),
                         reserved_microusd: reserved,
                         price_table_version: macroscope_model_gateway::PRICE_TABLE_VERSION,
                     });
@@ -430,7 +479,8 @@ impl MappingBuilder<'_> {
         let text = match self.route {
             BuildRoute::MuseExec { .. } => {
                 let path = ws.path().join("mapping.schema.json");
-                std::fs::write(&path, MAPPING_SCHEMA).map_err(|_| BuildError::Workspace)?;
+                std::fs::write(&path, model_schema().to_string())
+                    .map_err(|_| BuildError::Workspace)?;
                 let output = ExecClient::pinned(binary)
                     .exec_structured(prompt, &path, ws.path(), route, &env)
                     .await?;

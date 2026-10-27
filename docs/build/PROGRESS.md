@@ -10,8 +10,9 @@ access, connections, observer, runtime experiment, and UI. Claude reviewed and t
 every branch (including outside the agent sandbox), fixed what the reviews found, and
 wrote storage, the app core, the Tauri shell, Show, and connections wiring while Codex was
 rate-limited; Codex then reviewed that code independently (`m3/hardening`).
-Muse Code (`muse-spark-1.3`, contributor mode) was set up as a helper (`.dev/muse_help.sh`,
-native binary only), but Muse was never signed in during the build, so it could not run.
+Muse Code (`muse-spark-1.3`, contributor mode) helped once the owner signed in at 18:43: it
+reviewed the code read-only and found 8 defects, which Codex then fixed (`m3/muse-findings`,
+report in `muse-review.md`). Muse's plan route also produced the first real model-built tool.
 
 ## What works now
 
@@ -67,7 +68,8 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Real Meta API call with a real key, billing attribution (M0 day 5) | unverified | No key supplied yet |
 | Muse MSP transport against the installed binary (§4.3) | passed | echo conformance on Muse 1.4.13 (fingerprint changed from the plan's 1.4.11 pin; additive) |
 | Muse self-update hazard | found and handled | Launcher auto-updated 1.4.11 → 1.4.13 and deleted 1.4.11; app runs only native binaries (ADR 0002) |
-| Muse plan-route build with a real sign-in | unverified | `muse usage`: not logged in. Run `muse login`, then Settings → Check again |
+| Muse plan-route build with a real sign-in | **passed** | 2026-10-27 18:5x: `cargo run -p macroscope-app-core --example muse_plan_build` → Ready in 39 s via `muse-spark-1.3` on the owner's plan; all 7 host checks pass on the sample; mapping equals the confirmed rules |
+| Meta structured-output schema dialect | **passed (real service)** | Real 400s found and fixed: no numeric `format`, no `oneOf` (use `anyOf`), no `default`, `required` lists every property (`model_schema_uses_the_strict_dialect_meta_accepts`). Applies to the direct API route too |
 | Muse native-tool containment (P7) | unverified | Needs a signed-in Muse to exercise tools; plan route requires an explicit owner opt-in meanwhile |
 | Generated TypeScript runtime admission (§7.3, P8) | **failed** | Seatbelt denied all effect canaries, but `data:` imports run and RSS polling overshoots 256 MiB; finite CSV mapping ships (ADR 0002) |
 | Show observer: no titles/pixels leave the process (P1) | passed | observer tests; core ignores forged-session events; real observer start/stop test |
