@@ -20,14 +20,15 @@ the build.
 | 12 | `m3/muse-findings` | `m3/renderer-safety` | Fixes for the 8 defects Muse Code found in its review | M3 |
 | 13 | `m4/runtime-v2` | `m3/muse-findings` | QuickJS runner in a Seatbelt-confined child: generated-code boundary passes developer admission | M4 |
 | 14 | `m4/dev-file-vault` | `m4/runtime-v2` | Debug builds keep secrets in a private 0600 file (no Keychain prompts); release builds use the Keychain | M4 |
-| 15 | `m4/general-tasks` | `m4/dev-file-vault` | Tasks beyond CSV: model-written programs in the sandbox, checked, previewed, approved, committed | M4 |
+| 15 | `m4/general-tasks` | `m4/dev-file-vault` | Tasks beyond CSV: model-written programs in the sandbox, checked, previewed, approved, committed; ADR 0004 | M4 |
+| 16 | `m4/web-sources` | `m4/general-tasks` | Web sources ("check the weather"), no-input tasks; built by Muse Code as a trial | M4 |
 
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks m4/web-sources
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each
