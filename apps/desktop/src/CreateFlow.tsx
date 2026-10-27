@@ -59,6 +59,15 @@ function newTransform(type: Transform["type"]): Transform {
 const terminal = (build: BuildState) =>
   ["ready", "failed", "stopped"].includes(build.phase);
 
+/** Host of a declared web source URL, with the {today} template filled in. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url.replace("{today}", "2026-01-01")).hostname || url;
+  } catch {
+    return url;
+  }
+}
+
 export function CreateFlow({
   backend,
   initialInput,
@@ -80,6 +89,7 @@ export function CreateFlow({
 }) {
   const [step, setStep] = useState(0),
     [input, setInput] = useState(initialInput),
+    [noInput, setNoInput] = useState(false),
     [description, setDescription] = useState(
       initialInput && initialInput.text === undefined
         ? "Clean this orders CSV for import: Order, Date, Amount."
@@ -91,6 +101,7 @@ export function CreateFlow({
   const [preview, setPreview] = useState<OutboundPreview | null>(null),
     [reviewed, setReviewed] = useState(false),
     [build, setBuild] = useState<BuildState | null>(null),
+    [hostsApproved, setHostsApproved] = useState(false),
     [name, setName] = useState("Clean import CSV");
   const [example, setExample] = useState("");
   const { act, busy, error } = useAction();
@@ -147,6 +158,7 @@ export function CreateFlow({
     setOutputName(next.outputName);
     setPreview(null);
     setReviewed(false);
+    setHostsApproved(false);
   }
   function editColumn(
     index: number,
@@ -231,7 +243,10 @@ export function CreateFlow({
               onClick={() =>
                 void act(async () => {
                   const next = await backend.pickCsv();
-                  if (next) setInput(next);
+                  if (next) {
+                    setInput(next);
+                    setNoInput(false);
+                  }
                 })
               }
             >
@@ -240,20 +255,40 @@ export function CreateFlow({
             <button
               disabled={busy}
               onClick={() =>
-                void act(async () => setInput(await backend.loadSampleCsv()))
+                void act(async () => {
+                  setInput(await backend.loadSampleCsv());
+                  setNoInput(false);
+                })
               }
             >
               Use the sample CSV
             </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setInput(null);
+                setNoInput(true);
+              }}
+            >
+              No input file
+            </button>
           </div>
-          {input && <CsvView preview={input} />}
+          {input && !noInput && <CsvView preview={input} />}
+          {noInput && (
+            <p role="note" className="notice notice-info">
+              No input file — the program will read approved web sources
+              (for example a weather API) instead of a file you choose.
+            </p>
+          )}
           <button
             className="primary"
-            disabled={busy || !input || !description.trim()}
+            disabled={busy || (!input && !noInput) || !description.trim()}
             onClick={() =>
               void act(async () => {
                 acceptDraft(
-                  await backend.draftTask(input!.handle, description),
+                  noInput
+                    ? await backend.draftTaskNoInput(description)
+                    : await backend.draftTask(input!.handle, description),
                 );
                 setStep(1);
               })
@@ -266,8 +301,14 @@ export function CreateFlow({
       {step === 1 && draft && map && (
         <>
           <h2>Task summary</h2>
+          {draft.noInput && (
+            <p role="note" className="notice notice-info">
+              No input file: only a sandboxed program reading approved web
+              sources can do this task.
+            </p>
+          )}
           <Field label="Task kind">
-            <select value={draft.kind ?? "csv-mapping"} disabled={busy} onChange={(e) => void act(async () => {
+            <select value={draft.kind ?? "csv-mapping"} disabled={busy || draft.noInput} onChange={(e) => void act(async () => {
               const kind = e.target.value as "csv-mapping" | "program";
               acceptDraft(await backend.updateTask(draft.draftId, kind, outputName.replace(/\.[^.]+$/, kind === "program" ? ".txt" : ".csv"), example || null));
             })}>
@@ -576,6 +617,12 @@ export function CreateFlow({
                     <dd>{preview.model}</dd>
                   </dl>
                   <span className="badge">{preview.containsRealRows ? "Contains your real example text — review before sending" : "Contains only synthetic rows"}</span>
+                  {preview.webHosts.length > 0 && (
+                    <p className="notice notice-info">
+                      This tool will fetch from {preview.webHosts.join(", ")} at
+                      run time. Every fetch is recorded under Privacy.
+                    </p>
+                  )}
                   <pre tabIndex={0} aria-label="Exact outbound payload">
                     {preview.payloadText}
                   </pre>
@@ -709,8 +756,30 @@ export function CreateFlow({
               </p>
               <h3>Access</h3>
               <p>
-                Read the selected file; create one new output in the folder you choose. Source unchanged; existing files are never replaced.
+                {draft?.noInput
+                  ? "No input file; create one new output in the folder you choose. Existing files are never replaced."
+                  : "Read the selected file; create one new output in the folder you choose. Source unchanged; existing files are never replaced."}
               </p>
+              {build.program && build.program.webSources.length > 0 && (
+                <>
+                  <h3>Outbound fetches</h3>
+                  <p>
+                    This tool fetches from{" "}
+                    {build.program.webSources.map((s) => hostOf(s.url)).join(", ")}{" "}
+                    at run time. Runs fetch only these approved sites; a changed
+                    site needs a new build and approval. Every fetch is recorded
+                    under Privacy.
+                  </p>
+                  <label className="choice">
+                    <input
+                      type="checkbox"
+                      checked={hostsApproved}
+                      onChange={(e) => setHostsApproved(e.target.checked)}
+                    />
+                    I approve fetching from these sites
+                  </label>
+                </>
+              )}
               {build.comparison.inputText !== undefined ? <><h3>Input · first lines</h3><pre>{build.comparison.inputText}</pre><h3>Output · first lines</h3><pre>{build.comparison.outputText}</pre></> : <><DataTable
                 columns={build.comparison.inputColumns}
                 rows={build.comparison.inputRows}
@@ -725,27 +794,36 @@ export function CreateFlow({
                 <input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               <div className="actions">
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
-                      const sample = await backend.pickCsv();
-                      if (sample)
-                        setBuild(
-                          await backend.buildTryInput(
-                            build.buildId,
-                            sample.handle,
-                          ),
-                        );
-                    })
-                  }
-                >
-                  Try another sample…
-                </button>
+                {!draft?.noInput && !(build.program && build.program.webSources.length > 0) && (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        const sample = await backend.pickCsv();
+                        if (sample)
+                          setBuild(
+                            await backend.buildTryInput(
+                              build.buildId,
+                              sample.handle,
+                            ),
+                          );
+                      })
+                    }
+                  >
+                    Try another sample…
+                  </button>
+                )}
                 <button onClick={() => setStep(1)}>Edit rules</button>
                 <button
                   className="primary"
-                  disabled={busy || !name.trim()}
+                  disabled={
+                    busy ||
+                    !name.trim() ||
+                    (build.program !== null &&
+                      build.program !== undefined &&
+                      build.program.webSources.length > 0 &&
+                      !hostsApproved)
+                  }
                   onClick={() =>
                     void act(async () => {
                       await backend.saveTool(build.buildId, name);

@@ -16,11 +16,12 @@ mod privacy;
 pub mod runner;
 mod samples;
 pub mod show;
+pub mod web;
 
 use dto::*;
 use macroscope_builder::{
     BuildBudget, BuildError, BuildRoute, CandidateValidator, MappingBuilder, MuseConfig,
-    SyntheticSamples, ValidationError,
+    SyntheticSamples, ValidationError, WebSource,
 };
 use macroscope_domain::{CsvMapping, TaskContract, ToolId};
 use macroscope_effect_broker::{
@@ -35,7 +36,7 @@ use macroscope_storage::db::{self, Db};
 use macroscope_vault::{validate_key, Secret, SecretRef, SecretStore};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -174,6 +175,9 @@ struct Inner {
     #[cfg(feature = "generated-runtime")]
     runtime: Mutex<Option<Arc<runner::RunnerEngine>>>,
     deleting: std::sync::atomic::AtomicBool,
+    /// Test-only stand-in switch for web sources. See
+    /// `set_allow_insecure_web_sources_for_tests`.
+    allow_insecure_web: Mutex<bool>,
 }
 
 #[derive(Clone)]
@@ -273,6 +277,7 @@ struct NewTool<'a> {
     model: &'a str,
     sample: bool,
     program: Option<&'a macroscope_builder::Program>,
+    no_input: bool,
 }
 
 struct HostValidator;
@@ -316,6 +321,7 @@ impl AppCore {
                 #[cfg(feature = "generated-runtime")]
                 runtime: Mutex::new(None),
                 deleting: std::sync::atomic::AtomicBool::new(false),
+                allow_insecure_web: Mutex::new(false),
             }),
         };
         // Resume tombstones before reopening admission or recovering any jobs.
@@ -595,6 +601,7 @@ impl AppCore {
             kind,
             example_output: None,
             synthetic_shape: macroscope_builder::synthesize_text_sample(text),
+            no_input: false,
             draft_id: new_id("draft"),
             revision: 1,
             goal: description.trim().chars().take(2000).collect(),
@@ -615,6 +622,50 @@ impl AppCore {
                     "csv"
                 }
             ),
+            ready_to_build: false,
+            blockers: vec![],
+        };
+        drafts::refresh(&mut draft);
+        self.save_draft(&draft)?;
+        Ok(draft)
+    }
+
+    /// Drafts a program task with no input file (ADR 0004): the program reads
+    /// approved web sources through `macroscope.source(name)` instead of a
+    /// selected file, so `macroscope.input` is unavailable at run time.
+    pub fn draft_task_no_input(&self, description: &str) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
+        let goal: String = description.trim().chars().take(2000).collect();
+        let mut draft = TaskDraft {
+            kind: TaskKind::Program,
+            example_output: None,
+            synthetic_shape: String::new(),
+            no_input: true,
+            draft_id: new_id("draft"),
+            revision: 1,
+            goal,
+            input: CsvPreview {
+                text: None,
+                handle: FileHandle {
+                    handle_id: "no-input".into(),
+                    display_name: "No input file".into(),
+                    display_path: String::new(),
+                },
+                columns: vec![],
+                rows: vec![],
+                row_count: 0,
+                byte_size: 0,
+            },
+            summary: vec![],
+            mapping: CsvMapping {
+                output_columns: vec![],
+                on_error: macroscope_domain::OnError::StopAndExplain,
+                skip_header_rows: 0,
+                formula_escape: true,
+            },
+            questions: vec![],
+            mentioned_connectors: self.mentioned_connectors(description),
+            output_name: "output.txt".into(),
             ready_to_build: false,
             blockers: vec![],
         };
@@ -693,6 +744,20 @@ impl AppCore {
         if example_output.as_ref().is_some_and(|s| s.len() > 16_000) {
             return Err(CoreError::Invalid("Keep the example under 16 KB.".into()));
         }
+        if draft.no_input && kind != TaskKind::Program {
+            return Err(CoreError::Invalid(
+                "This task has no input file, so only a sandboxed program can use it. Describe a file task to use a CSV mapping.".into(),
+            ));
+        }
+        if draft.no_input {
+            draft.kind = TaskKind::Program;
+            draft.output_name = output_name.trim().into();
+            draft.example_output = example_output.filter(|s| !s.trim().is_empty());
+            draft.revision += 1;
+            drafts::refresh(&mut draft);
+            self.save_draft(&draft)?;
+            return Ok(draft);
+        }
         if kind != draft.kind {
             let (path, _) = self.handle_path(&draft.input.handle.handle_id, PickKind::File)?;
             let bytes = Self::read_limited(&path)?;
@@ -753,6 +818,118 @@ impl AppCore {
         *lock(&self.inner.runtime) = Some(Arc::new(
             runner::RunnerEngine::new_synthetic(runner_path, profile).unwrap(),
         ));
+    }
+
+    /// Test-only stand-in switch: allow `http://127.0.0.1` web sources so a
+    /// local test server can stand in for the weather API. Release code paths
+    /// never enable this; both validation and fetching consult it, and the
+    /// sandbox still gets no network access either way.
+    pub fn set_allow_insecure_web_sources_for_tests(&self, allow: bool) {
+        *lock(&self.inner.allow_insecure_web) = allow;
+    }
+
+    fn allow_insecure_web(&self) -> bool {
+        *lock(&self.inner.allow_insecure_web)
+    }
+
+    fn web_fetch_blocked(&self) -> Option<String> {
+        match self.inner.policy.state() {
+            PolicyState::CloudAllowed | PolicyState::KeyUnavailable => None,
+            _ => Some(
+                "Local only is on: web sources cannot be fetched. Turn off Local only to run this tool."
+                    .into(),
+            ),
+        }
+    }
+
+    fn record_web_fetch(&self, host: &str, url: &str) -> CoreResult<()> {
+        web::record_fetch(&self.inner.db, &new_id("out"), self.now(), host, url)
+            .map_err(CoreError::from)
+    }
+
+    /// Validates declared web sources for this host. Returns the approved
+    /// hosts (the declared hosts at build time; the saved grant at run time).
+    fn validated_web_hosts(&self, sources: &[WebSource]) -> Result<Vec<String>, String> {
+        macroscope_builder::validate_web_sources(sources, self.allow_insecure_web())
+    }
+
+    /// Host-fetches every declared source for a build, recording each fetch in
+    /// the outbound log. Returns the fetched texts plus a fetch failure to
+    /// report through the `web_sources` host check, or `None` when the build
+    /// was stopped or revoked (emergency stop / Local only) mid-fetch.
+    async fn fetch_for_build(
+        &self,
+        sources: &[WebSource],
+        hosts: &[String],
+        consent_epoch: u64,
+        cancelled: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Option<(BTreeMap<String, String>, Option<String>)> {
+        let today = web::today_local();
+        let mut fetched = BTreeMap::new();
+        let mut fetch_error = None;
+        for source in sources {
+            let url = web::substitute_today(&source.url, &today);
+            let host = web::host_of_url(&url);
+            let name = source.name.clone();
+            let attempt =
+                async { web::fetch_one(&url, hosts, self.allow_insecure_web(), &name).await };
+            let cancelled_wait = async {
+                if !*cancelled.borrow() {
+                    let _ = cancelled.changed().await;
+                }
+            };
+            tokio::select! {
+                biased;
+                _ = cancelled_wait => return None,
+                _ = self.inner.policy.revoked(consent_epoch) => return None,
+                result = attempt => match result {
+                    Ok(text) => {
+                        if self.record_web_fetch(&host, &url).is_err() {
+                            fetch_error = Some(format!(
+                                "Web source '{}' was fetched but the outbound record could not be saved.",
+                                source.name
+                            ));
+                            break;
+                        }
+                        fetched.insert(source.name.clone(), text);
+                    }
+                    Err(message) => {
+                        let _ = self.record_web_fetch(&host, &url);
+                        fetch_error = Some(message);
+                        break;
+                    }
+                },
+            }
+        }
+        Some((fetched, fetch_error))
+    }
+
+    /// Host-fetches every declared source for the stage path, with the same
+    /// rules as the build path. Local only blocks before any fetch; a
+    /// revocation observed afterwards still refuses the run. Async end to end
+    /// so it runs on any runtime (current-thread or multi-thread) and from
+    /// both sync and async callers without blocking a worker.
+    async fn fetch_for_stage(
+        &self,
+        sources: &[WebSource],
+        hosts: &[String],
+    ) -> Result<BTreeMap<String, String>, String> {
+        if let Some(blocked) = self.web_fetch_blocked() {
+            return Err(blocked);
+        }
+        let today = web::today_local();
+        let mut fetched = BTreeMap::new();
+        for source in sources {
+            let url = web::substitute_today(&source.url, &today);
+            let host = web::host_of_url(&url);
+            let text = web::fetch_one(&url, hosts, self.allow_insecure_web(), &source.name).await;
+            let _ = self.record_web_fetch(&host, &url);
+            fetched.insert(source.name.clone(), text?);
+        }
+        if let Some(blocked) = self.web_fetch_blocked() {
+            return Err(blocked);
+        }
+        Ok(fetched)
     }
 
     // ---------- model access ----------
@@ -1091,6 +1268,9 @@ impl AppCore {
             contains_real_rows: draft.example_output.is_some(),
             estimated_cost_micros: estimate,
             budget_micros: BUILD_BUDGET_MICROS,
+            // Declared fetch hosts are known only after the model answers;
+            // the build-and-compare review lists them for approval at save.
+            web_hosts: vec![],
         })
     }
 
@@ -1281,7 +1461,14 @@ impl AppCore {
             }
         }
         let build_id = new_id("build");
-        let (input_path, _) = self.handle_path(&draft.input.handle.handle_id, PickKind::File)?;
+        let input_path = if draft.no_input {
+            None
+        } else {
+            Some(
+                self.handle_path(&draft.input.handle.handle_id, PickKind::File)?
+                    .0,
+            )
+        };
         let route_label = match route {
             ModelRoute::OfflineDemo => "Offline demo (no model)".to_string(),
             ModelRoute::ApiKey => format!("Meta API key · {DEFAULT_MODEL}"),
@@ -1320,7 +1507,12 @@ impl AppCore {
             let outbound = self.db().insert_outbound(&db::OutboundRow {
                 id: format!("out_{build_id}"),
                 at_ms: now,
-                purpose: "Build packet for a file task".into(),
+                purpose: if draft.no_input {
+                    "Build packet for a web task"
+                } else {
+                    "Build packet for a file task"
+                }
+                .into(),
                 destination: Self::route_destination(route).into(),
                 route: route.as_str().into(),
                 synthetic_only: draft.example_output.is_none(),
@@ -1382,7 +1574,7 @@ impl AppCore {
         build_id: String,
         route: ModelRoute,
         draft: TaskDraft,
-        input: PathBuf,
+        input: Option<PathBuf>,
         consent_epoch: u64,
         cancelled: &mut tokio::sync::watch::Receiver<bool>,
     ) -> CoreResult<()> {
@@ -1481,8 +1673,57 @@ impl AppCore {
         self.push_phase(
             &build_id,
             BuildPhase::Checking,
-            "Checking the candidate on your selected file",
+            if draft.no_input {
+                "Checking the candidate on fetched web data"
+            } else {
+                "Checking the candidate on your selected file"
+            },
         )?;
+        // Programs that declare web sources are checked against host-fetched
+        // data: the sandbox never fetches. Validation rejects non-https URLs,
+        // more than 5 sources, and hosts that cannot be parsed.
+        let no_input = draft.no_input;
+        let mut fetched: BTreeMap<String, String> = BTreeMap::new();
+        let mut fetch_error: Option<String> = None;
+        let declared_sources: Vec<WebSource> = if draft.kind == TaskKind::Program {
+            candidate
+                .program
+                .as_ref()
+                .map(|p| p.web_sources.clone())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if !declared_sources.is_empty() {
+            let hosts = match self.validated_web_hosts(&declared_sources) {
+                Ok(hosts) => hosts,
+                Err(message) => {
+                    self.fail_build(
+                        &build_id,
+                        BuildFailureKind::Checks,
+                        format!("The program's web sources were rejected: {message}"),
+                    )?;
+                    return Ok(());
+                }
+            };
+            if let Some(blocked) = self.web_fetch_blocked() {
+                self.fail_build(&build_id, BuildFailureKind::NoModelAccess, blocked)?;
+                return Ok(());
+            }
+            match self
+                .fetch_for_build(&declared_sources, &hosts, consent_epoch, cancelled)
+                .await
+            {
+                Some((texts, error)) => {
+                    fetched = texts;
+                    fetch_error = error;
+                }
+                None => {
+                    self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
+                    return Ok(());
+                }
+            }
+        }
         #[cfg(feature = "generated-runtime")]
         let runtime = if draft.kind == TaskKind::Program {
             Some(self.runtime())
@@ -1490,18 +1731,29 @@ impl AppCore {
             None
         };
         let checked = tokio::task::spawn_blocking(move || {
-            let read = || Self::read_limited(&input).map_err(|e| e.to_string());
+            let read = || match &input {
+                Some(path) => Self::read_limited(path).map_err(|e| e.to_string()),
+                None => Err("This task has no input file.".to_string()),
+            };
             let outcome = if draft.kind == TaskKind::Program {
                 #[cfg(feature = "generated-runtime")]
                 {
                     match runtime.unwrap() {
-                        Ok(engine) => checks::run_program(
+                        Ok(engine) => checks::run_program_with_sources(
                             &draft,
                             candidate.program.as_ref().unwrap(),
+                            &fetched,
+                            fetch_error,
                             &read,
-                            &|input, code| {
+                            &|snapshot, sources, code| {
                                 engine
-                                    .execute(input, code, macroscope_runner::Limits::default())
+                                    .execute_with_sources(
+                                        snapshot,
+                                        sources,
+                                        !no_input,
+                                        code,
+                                        macroscope_runner::Limits::default(),
+                                    )
                                     .map_err(|e| e.to_string())
                             },
                         ),
@@ -1602,6 +1854,7 @@ impl AppCore {
             output_columns: strings("outputColumns"),
             access: strings("access"),
             version_hash: hash,
+            no_input: d.get("noInput").and_then(Value::as_bool).unwrap_or(false),
         })
     }
 
@@ -1638,6 +1891,7 @@ impl AppCore {
             model,
             sample,
             program,
+            no_input,
         } = new;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 {
@@ -1721,11 +1975,28 @@ impl AppCore {
             let _ = std::fs::set_permissions(&path, perms);
         }
         let now = self.now();
-        let access = vec![
-            "Read the text file you choose".to_string(),
-            "Create one new output in the folder you choose".into(),
-            "Never overwrites a file; the source stays unchanged".into(),
-        ];
+        // Approved fetch hosts are stored in the tool's grant at save; running
+        // the saved tool fetches only those hosts, and a changed host needs a
+        // new build and approval. Validation already passed during the build.
+        let web_hosts: Vec<String> = program
+            .map(|p| self.validated_web_hosts(&p.web_sources).unwrap_or_default())
+            .unwrap_or_default();
+        let mut access = if no_input {
+            vec![
+                "No input file; reads approved web sources".to_string(),
+                "Create one new output in the folder you choose".into(),
+                "Never overwrites a file".into(),
+            ]
+        } else {
+            vec![
+                "Read the text file you choose".to_string(),
+                "Create one new output in the folder you choose".into(),
+                "Never overwrites a file; the source stays unchanged".into(),
+            ]
+        };
+        for host in &web_hosts {
+            access.push(format!("Fetches from {host}"));
+        }
         let row = db::ToolRow {
             id: tool_id.0.clone(),
             name: name.into(),
@@ -1743,6 +2014,7 @@ impl AppCore {
                 "outputColumns": contract.output_columns,
                 "access": access,
                 "contract": contract,
+                "noInput": no_input,
             }),
         };
         self.db().put_tool(&row)?;
@@ -1762,7 +2034,7 @@ impl AppCore {
             &tool_id.0,
             &version_hash,
             1,
-            &json!({"read": "selected_input", "create": "one_output_in_selected_root"}),
+            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts}),
         )?;
         self.activity("build", format!("Saved tool “{name}”"), None);
         self.tool_detail(&row)
@@ -1815,6 +2087,7 @@ impl AppCore {
             model: &model,
             sample: false,
             program: state.program.as_ref(),
+            no_input: draft.no_input,
         })
     }
 
@@ -1839,6 +2112,7 @@ impl AppCore {
             model: "prebuilt-sample",
             sample: true,
             program: None,
+            no_input: false,
         })
     }
 
@@ -1881,15 +2155,41 @@ impl AppCore {
 
     // ---------- runs ----------
 
-    pub fn stage_run(
+    pub async fn stage_run(
         &self,
         tool_id: &str,
         input_handle: &str,
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
+        self.stage_inner(tool_id, Some(input_handle), dir_handle, output_name)
+            .await
+    }
+
+    /// Stages a run for a tool with no input file (ADR 0004): the program
+    /// reads host-fetched web sources instead of a selected file. The host
+    /// fetches now (one outbound record per source), the program runs on the
+    /// fetched data, and the run plan hash covers the source URLs and
+    /// fetched-response digests instead of an input file snapshot. Output is
+    /// still previewed, approved by plan hash, and created once by commit.
+    pub async fn stage_run_no_input(
+        &self,
+        tool_id: &str,
+        dir_handle: &str,
+        output_name: &str,
+    ) -> CoreResult<StageResult> {
+        self.stage_inner(tool_id, None, dir_handle, output_name)
+            .await
+    }
+
+    async fn stage_inner(
+        &self,
+        tool_id: &str,
+        input_handle: Option<&str>,
+        dir_handle: &str,
+        output_name: &str,
+    ) -> CoreResult<StageResult> {
         let _admission = self.admit_local()?;
-        let mut staged_runs = lock(&self.inner.staged);
         let row = self
             .db()
             .tool(tool_id)?
@@ -1899,14 +2199,41 @@ impl AppCore {
                 failure: map_run_failure(BrokerError::Revoked),
             }));
         }
-        if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
-            return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+        {
+            let staged_runs = lock(&self.inner.staged);
+            if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
+                return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+            }
         }
         let detail = self.tool_detail(&row)?;
         let contract: TaskContract =
             serde_json::from_value(row.detail.get("contract").cloned().unwrap_or(Value::Null))
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
-        let (input_path, input) = self.handle_path(input_handle, PickKind::File)?;
+        // Tools with no input file stage against a constant empty stand-in;
+        // the plan hash binds the fetched web data instead of input bytes.
+        let (input_path, input) = if detail.no_input {
+            let sentinel = web::no_input_sentinel(&self.inner.cfg.data_dir)
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
+            (
+                sentinel,
+                FileHandle {
+                    handle_id: "no-input".into(),
+                    display_name: "No input file".into(),
+                    display_path: String::new(),
+                },
+            )
+        } else {
+            let Some(handle_id) = input_handle else {
+                return Ok(StageResult::Failed(FailureEnvelope {
+                    failure: RunFailure::InputInvalid {
+                        message: "Choose an input file to run this tool.".into(),
+                        row: None,
+                        column: None,
+                    },
+                }));
+            };
+            self.handle_path(handle_id, PickKind::File)?
+        };
         let (dir_path, output_dir) = self.handle_path(dir_handle, PickKind::Dir)?;
         let output_name = output_name.trim().to_string();
         if broker::validate_basename(&output_name).is_err()
@@ -1921,12 +2248,88 @@ impl AppCore {
                 failure: map_run_failure(BrokerError::DestinationExists),
             }));
         }
-        let Some((_, grant_revision, _)) = self.db().active_grant(tool_id, &detail.version_hash)?
+        let Some((_, grant_revision, scope)) =
+            self.db().active_grant(tool_id, &detail.version_hash)?
         else {
             return Ok(StageResult::Failed(FailureEnvelope {
                 failure: map_run_failure(BrokerError::Revoked),
             }));
         };
+        // Running a saved tool fetches only approved hosts: the declared
+        // hosts must be covered by the grant stored at save. A changed host
+        // needs a new build and approval.
+        let declared_hosts = match detail.program.as_ref() {
+            Some(program) if !program.web_sources.is_empty() => {
+                match self.validated_web_hosts(&program.web_sources) {
+                    Ok(hosts) => hosts,
+                    Err(message) => {
+                        return Ok(StageResult::Failed(FailureEnvelope {
+                            failure: RunFailure::Internal { message },
+                        }))
+                    }
+                }
+            }
+            _ => Vec::new(),
+        };
+        if !declared_hosts.is_empty() {
+            let approved = web::approved_hosts(&scope);
+            if !declared_hosts.iter().all(|h| approved.contains(h)) {
+                return Ok(StageResult::Failed(FailureEnvelope {
+                    failure: RunFailure::Revoked {
+                        message: "This tool's approved sites changed. Build it again and approve the sites before running.".into(),
+                    },
+                }));
+            }
+        }
+        // The fetch below awaits network IO with no locks held: neither the
+        // admission guard nor the staged map may span an await (holding a
+        // blocking mutex across one would stall runtime workers and trips
+        // `await_holding_lock`). Deletion closes admission, so re-admitting
+        // afterwards fails if a wipe started mid-fetch; the paused, grant
+        // and limit checks are repeated there on fresh state.
+        let fetch_plan = match detail.program.as_ref() {
+            Some(program) if !program.web_sources.is_empty() => {
+                Some((program.web_sources.clone(), declared_hosts))
+            }
+            _ => None,
+        };
+        drop(_admission);
+        let fetched = match fetch_plan {
+            Some((sources, hosts)) => match self.fetch_for_stage(&sources, &hosts).await {
+                Ok(fetched) => Some(fetched),
+                Err(message) => {
+                    return Ok(StageResult::Failed(FailureEnvelope {
+                        failure: map_run_failure(BrokerError::Runner(message)),
+                    }))
+                }
+            },
+            None => None,
+        };
+        let _admission = self.admit_local()?;
+        {
+            let row = self
+                .db()
+                .tool(tool_id)?
+                .ok_or(CoreError::NotFound("tool"))?;
+            if row.state == "paused" {
+                return Ok(StageResult::Failed(FailureEnvelope {
+                    failure: map_run_failure(BrokerError::Revoked),
+                }));
+            }
+            if self
+                .db()
+                .active_grant(tool_id, &detail.version_hash)?
+                .is_none()
+            {
+                return Ok(StageResult::Failed(FailureEnvelope {
+                    failure: map_run_failure(BrokerError::Revoked),
+                }));
+            }
+            let staged_runs = lock(&self.inner.staged);
+            if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
+                return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+            }
+        }
         let epochs = Epochs {
             grant_revision: grant_revision as u64,
             // PLAN §2.7: these runs are deterministic local effects. Egress
@@ -1948,27 +2351,75 @@ impl AppCore {
                 key: self.inner.staging_key,
             })
         })();
-        let staged = match request.and_then(|request| {
-            if let Some(program) = &detail.program {
-                if output_name != program.output_name {
-                    return Err(BrokerError::Runner(
-                        "Use the confirmed output name for this program.".into(),
-                    ));
+        let request = match request {
+            Ok(request) => request,
+            Err(e) => {
+                return Ok(StageResult::Failed(FailureEnvelope {
+                    failure: map_run_failure(e),
+                }))
+            }
+        };
+        let staged: Result<StagedPlan, BrokerError> = if let Some(program) = &detail.program {
+            if output_name != program.output_name {
+                Err(BrokerError::Runner(
+                    "Use the confirmed output name for this program.".into(),
+                ))
+            } else {
+                #[cfg(not(feature = "generated-runtime"))]
+                {
+                    let _ = program;
+                    Err(BrokerError::Runner("Generated runtime is disabled.".into()))
                 }
                 #[cfg(feature = "generated-runtime")]
                 {
-                    self.runtime()
-                        .map_err(|e| BrokerError::Runner(e.to_string()))?
-                        .stage(request, &program.code, macroscope_runner::Limits::default())
+                    let engine = match self.runtime() {
+                        Ok(engine) => engine,
+                        Err(e) => {
+                            return Ok(StageResult::Failed(FailureEnvelope {
+                                failure: map_run_failure(BrokerError::Runner(e.to_string())),
+                            }))
+                        }
+                    };
+                    if program.web_sources.is_empty() {
+                        engine.stage(request, &program.code, macroscope_runner::Limits::default())
+                    } else {
+                        // Host-fetched above with no locks held; the run plan
+                        // hash binds the exact fetched bytes, so changed data
+                        // stages a new plan.
+                        let Some(fetched) = fetched.as_ref() else {
+                            return Ok(StageResult::Failed(FailureEnvelope {
+                                failure: map_run_failure(BrokerError::Runner(
+                                    "Web sources were not fetched.".into(),
+                                )),
+                            }));
+                        };
+                        let today = web::today_local();
+                        let urls: BTreeMap<String, String> = program
+                            .web_sources
+                            .iter()
+                            .map(|s| (s.name.clone(), web::substitute_today(&s.url, &today)))
+                            .collect();
+                        let digests = web::digests(fetched);
+                        let stage_sources = runner::SourceStage {
+                            sources: fetched,
+                            has_input_file: !detail.no_input,
+                            extra_binding: Some(
+                                serde_json::json!({"source_urls": urls, "source_digests": digests}),
+                            ),
+                        };
+                        engine.stage_with_sources(
+                            request,
+                            &stage_sources,
+                            &program.code,
+                            macroscope_runner::Limits::default(),
+                        )
+                    }
                 }
-                #[cfg(not(feature = "generated-runtime"))]
-                {
-                    Err(BrokerError::Runner("Generated runtime is disabled.".into()))
-                }
-            } else {
-                broker::stage(request)
             }
-        }) {
+        } else {
+            broker::stage(request)
+        };
+        let staged = match staged {
             Ok(s) => s,
             Err(e) => {
                 return Ok(StageResult::Failed(FailureEnvelope {
@@ -2021,14 +2472,21 @@ impl AppCore {
             created_ms: self.now(),
             run_dir: Some(staged.run_dir().to_string_lossy().into_owned()),
         })?;
-        staged_runs.insert(
-            run_id,
-            StagedSlot {
-                staged,
-                dto: dto.clone(),
-                tool_name: row.name,
-            },
-        );
+        {
+            let mut staged_runs = lock(&self.inner.staged);
+            if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
+                let _ = std::fs::remove_dir_all(staged.run_dir());
+                return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+            }
+            staged_runs.insert(
+                run_id,
+                StagedSlot {
+                    staged,
+                    dto: dto.clone(),
+                    tool_name: row.name,
+                },
+            );
+        }
         Ok(StageResult::Staged(Box::new(dto)))
     }
 

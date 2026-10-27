@@ -128,6 +128,7 @@ async fn sample_tell_flow_creates_exactly_the_expected_csv() {
             &output.handle_id,
             "orders_ready.csv",
         )
+        .await
         .unwrap()
     {
         StageResult::Staged(s) => *s,
@@ -170,6 +171,7 @@ async fn sample_tell_flow_creates_exactly_the_expected_csv() {
             &output.handle_id,
             "orders_ready.csv",
         )
+        .await
         .unwrap();
     assert!(matches!(
         again,
@@ -238,6 +240,7 @@ async fn bad_rows_in_a_later_input_stop_with_row_and_column_and_write_nothing() 
             &output.handle_id,
             "x.csv",
         )
+        .await
         .unwrap()
     {
         StageResult::Failed(FailureEnvelope {
@@ -270,6 +273,7 @@ async fn approval_must_match_and_staged_runs_can_be_discarded() {
             &output.handle_id,
             "a.csv",
         )
+        .await
         .unwrap()
     else {
         panic!()
@@ -284,6 +288,7 @@ async fn approval_must_match_and_staged_runs_can_be_discarded() {
             &output.handle_id,
             "a.csv",
         )
+        .await
         .unwrap()
     else {
         panic!()
@@ -451,6 +456,7 @@ async fn output_names_with_folders_are_refused_before_touching_the_filesystem() 
                 &output.handle_id,
                 name,
             )
+            .await
             .unwrap();
         assert!(
             matches!(
@@ -500,6 +506,7 @@ async fn unfinished_staging_is_discarded_and_cleaned_on_restart() {
             &output.handle_id,
             "stale.csv",
         )
+        .await
         .unwrap()
     else {
         panic!()
@@ -531,6 +538,7 @@ async fn staging_enforces_per_tool_and_global_run_limits() {
         &output.handle_id,
         "a.csv",
     )
+    .await
     .unwrap();
     assert!(core
         .stage_run(
@@ -539,6 +547,7 @@ async fn staging_enforces_per_tool_and_global_run_limits() {
             &output.handle_id,
             "b.csv"
         )
+        .await
         .is_err());
 }
 

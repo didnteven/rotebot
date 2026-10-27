@@ -21,11 +21,12 @@ fn core_at(root: &Path, vault: Arc<MemoryStore>) -> AppCore {
     .unwrap()
 }
 
-fn staged(core: &AppCore, tool: &str, root: &Path, name: &str) -> StagedRun {
+async fn staged(core: &AppCore, tool: &str, root: &Path, name: &str) -> StagedRun {
     let input = core.load_sample_csv().unwrap().handle;
     let dir = core.register_picked_dir(root).unwrap();
     match core
         .stage_run(tool, &input.handle_id, &dir.handle_id, name)
+        .await
         .unwrap()
     {
         StageResult::Staged(s) => *s,
@@ -39,10 +40,12 @@ async fn pause_and_restore_never_reauthorize_a_previously_staged_run() {
     let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
     let tool = core.install_sample_tool().unwrap();
     let id = &tool.summary_row.id;
-    let first = staged(&core, id, tmp.path(), "old.csv");
+    let first = staged(&core, id, tmp.path(), "old.csv").await;
     assert_eq!(core.revoke_tool(id).unwrap().summary_row.state, "paused");
     assert!(matches!(
-        core.stage_run(id, "forged", "forged", "other.csv").unwrap(),
+        core.stage_run(id, "forged", "forged", "other.csv")
+            .await
+            .unwrap(),
         StageResult::Failed(FailureEnvelope {
             failure: RunFailure::Revoked { .. }
         })
@@ -55,7 +58,7 @@ async fn pause_and_restore_never_reauthorize_a_previously_staged_run() {
         })
     ));
     assert!(!tmp.path().join("old.csv").exists());
-    let second = staged(&core, id, tmp.path(), "fresh.csv");
+    let second = staged(&core, id, tmp.path(), "fresh.csv").await;
     core.revoke_tool(id).unwrap();
     assert!(matches!(
         core.commit_run(&second.run_id, &second.plan_hash).unwrap(),
@@ -64,7 +67,7 @@ async fn pause_and_restore_never_reauthorize_a_previously_staged_run() {
         })
     ));
     core.restore_tool(id).unwrap();
-    let third = staged(&core, id, tmp.path(), "fresh.csv");
+    let third = staged(&core, id, tmp.path(), "fresh.csv").await;
     assert!(matches!(
         core.commit_run(&third.run_id, &third.plan_hash).unwrap(),
         CommitResult::Committed(_)
@@ -224,7 +227,7 @@ async fn history_wipe_keeps_tools_credentials_and_user_outputs_then_optional_too
     core.select_route(ModelRoute::OfflineDemo).await.unwrap();
     ready(&core).await;
     let tool = core.install_sample_tool().unwrap();
-    let run = staged(&core, &tool.summary_row.id, tmp.path(), "user-output.csv");
+    let run = staged(&core, &tool.summary_row.id, tmp.path(), "user-output.csv").await;
     core.commit_run(&run.run_id, &run.plan_hash).unwrap();
     core.database()
         .record_detection("gmail", "task_text", 1, core.now_ms())
@@ -273,7 +276,7 @@ async fn history_wipe_keeps_tools_credentials_and_user_outputs_then_optional_too
     assert!(core.database().pending_deletion().unwrap().is_none());
     assert!(vault.get(&key).unwrap().is_some() && vault.get(&token).unwrap().is_some());
     assert!(tmp.path().join("user-output.csv").exists());
-    let run = staged(&core, &tool.summary_row.id, tmp.path(), "after-wipe.csv");
+    let run = staged(&core, &tool.summary_row.id, tmp.path(), "after-wipe.csv").await;
     core.discard_run(&run.run_id).unwrap();
     core.delete_data(DeleteOptions {
         include_tools: true,
@@ -298,7 +301,7 @@ async fn startup_resumes_both_tombstone_scopes_before_recovering_jobs() {
         let vault = Arc::new(MemoryStore::default());
         let core = core_at(tmp.path(), vault.clone());
         let tool = core.install_sample_tool().unwrap();
-        staged(&core, &tool.summary_row.id, tmp.path(), "unpublished.csv");
+        staged(&core, &tool.summary_row.id, tmp.path(), "unpublished.csv").await;
         ready(&core).await;
         core.database().begin_deletion(include_tools).unwrap();
         // Simulate a crash after deleting rows but before deleting files.
@@ -327,13 +330,13 @@ async fn local_only_preserves_staged_local_runs_but_grant_revocation_blocks_comm
     let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
     let tool = core.install_sample_tool().unwrap();
     let id = &tool.summary_row.id;
-    let first = staged(&core, id, tmp.path(), "local.csv");
+    let first = staged(&core, id, tmp.path(), "local.csv").await;
     core.set_local_only(true).await.unwrap();
     assert!(matches!(
         core.commit_run(&first.run_id, &first.plan_hash).unwrap(),
         CommitResult::Committed(_)
     ));
-    let second = staged(&core, id, tmp.path(), "revoked.csv");
+    let second = staged(&core, id, tmp.path(), "revoked.csv").await;
     core.revoke_tool(id).unwrap();
     assert!(matches!(
         core.commit_run(&second.run_id, &second.plan_hash).unwrap(),
@@ -367,8 +370,8 @@ fn sample_setup_refuses_file_and_directory_symlinks_without_modifying_targets() 
     assert!(!tmp.path().join("orders.csv").exists());
 }
 
-#[test]
-fn invalid_control_names_are_rejected_before_destination_checks() {
+#[tokio::test]
+async fn invalid_control_names_are_rejected_before_destination_checks() {
     let tmp = tempfile::tempdir().unwrap();
     let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
     let tool = core.install_sample_tool().unwrap();
@@ -378,6 +381,7 @@ fn invalid_control_names_are_rejected_before_destination_checks() {
         std::fs::write(tmp.path().join(name), b"existing").unwrap();
         let result = core
             .stage_run(&tool.summary_row.id, &input.handle_id, &dir.handle_id, name)
+            .await
             .unwrap();
         assert!(
             matches!(

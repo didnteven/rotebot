@@ -62,6 +62,7 @@ async fn endpoint(code: &str) -> MockServer {
         summary: "Extract ERROR lines".into(),
         output_name: "errors.txt".into(),
         code: code.into(),
+        web_sources: vec![],
     };
     Mock::given(method("POST"))
         .and(path("/responses"))
@@ -94,7 +95,7 @@ fn saved_contract(core: &AppCore, tool: &ToolDetail) -> TaskContract {
     let row = core.database().tool(&tool.summary_row.id).unwrap().unwrap();
     serde_json::from_value(row.detail["contract"].clone()).unwrap()
 }
-fn stage(
+async fn stage(
     core: &AppCore,
     tool: &ToolDetail,
     input: &FileHandle,
@@ -107,6 +108,7 @@ fn stage(
             &folder.handle_id,
             "errors.txt",
         )
+        .await
         .unwrap()
     {
         StageResult::Staged(staged) => staged,
@@ -136,6 +138,7 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
         summary: "Extract ERROR lines".into(),
         output_name: "errors.txt".into(),
         code: CODE.into(),
+        web_sources: vec![],
     };
     Mock::given(method("POST")).and(path("/responses")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":serde_json::to_string(&program).unwrap()}]}],"usage":{"input_tokens":3000,"output_tokens":400}}))).mount(&server).await;
     let core = core(temp.path(), server.uri());
@@ -240,6 +243,7 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
             &folder.handle_id,
             "errors.txt",
         )
+        .await
         .unwrap();
     let StageResult::Staged(staged) = staged else {
         panic!("{staged:?}")
@@ -260,6 +264,7 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
             &folder.handle_id,
             "errors.txt"
         )
+        .await
         .unwrap(),
         StageResult::Failed(_)
     ));
@@ -283,7 +288,7 @@ async fn saved_text_program_runs_on_a_different_log_without_first_line_or_csv_re
     let first_output = temp.path().join("first-run");
     std::fs::create_dir(&first_output).unwrap();
     let first_folder = core.register_picked_dir(&first_output).unwrap();
-    let first_staged = stage(&core, &tool, &first, &first_folder);
+    let first_staged = stage(&core, &tool, &first, &first_folder).await;
     commit(
         &core,
         &first_staged,
@@ -297,13 +302,13 @@ async fn saved_text_program_runs_on_a_different_log_without_first_line_or_csv_re
     std::fs::write(&second_path, second_input).unwrap();
     let second = core.register_picked_file(&second_path).unwrap();
     let folder = core.register_picked_dir(temp.path()).unwrap();
-    let staged = stage(&core, &tool, &second, &folder);
+    let staged = stage(&core, &tool, &second, &folder).await;
     assert_eq!(staged.input.handle_id, second.handle_id);
     assert!(!temp.path().join("errors.txt").exists());
     // An approval for other bytes must still fail, even for arbitrary text.
     assert!(core.commit_run(&staged.run_id, "wrong-plan-hash").is_err());
     assert!(!temp.path().join("errors.txt").exists());
-    let staged = stage(&core, &tool, &second, &folder);
+    let staged = stage(&core, &tool, &second, &folder).await;
     // Replacing the selected input with identical bytes must still invalidate
     // the snapshot's file identity at commit.
     std::fs::rename(&second_path, second_path.with_extension("old")).unwrap();
@@ -315,7 +320,7 @@ async fn saved_text_program_runs_on_a_different_log_without_first_line_or_csv_re
         })
     ));
     assert!(!temp.path().join("errors.txt").exists());
-    let staged = stage(&core, &tool, &second, &folder);
+    let staged = stage(&core, &tool, &second, &folder).await;
     commit(&core, &staged, second_input, expected);
     assert_eq!(std::fs::read(&second_path).unwrap(), second_input);
     assert_eq!(std::fs::read(&source).unwrap(), teaching_input);
@@ -346,7 +351,7 @@ async fn csv_input_program_requires_confirmed_headers_and_allows_reordered_colum
     assert_eq!(contract.input_schema, ["level", "message"]);
     assert!(contract.output_columns.is_empty());
     let folder = core.register_picked_dir(temp.path()).unwrap();
-    let staged = stage(&core, &tool, &file, &folder);
+    let staged = stage(&core, &tool, &file, &folder).await;
     assert_eq!(staged.preview_text.as_deref(), Some("failed"));
     core.discard_run(&staged.run_id).unwrap();
     for (name, input) in [
@@ -363,6 +368,7 @@ async fn csv_input_program_requires_confirmed_headers_and_allows_reordered_colum
                 &folder.handle_id,
                 "errors.txt",
             )
+            .await
             .unwrap();
         assert!(
             matches!(
@@ -379,7 +385,7 @@ async fn csv_input_program_requires_confirmed_headers_and_allows_reordered_colum
     let path = temp.path().join("reordered.csv");
     std::fs::write(&path, reordered).unwrap();
     let file = core.register_picked_file(&path).unwrap();
-    let staged = stage(&core, &tool, &file, &folder);
+    let staged = stage(&core, &tool, &file, &folder).await;
     commit(&core, &staged, reordered, b"second failure\n");
 }
 
@@ -450,6 +456,7 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
             summary: "test".into(),
             output_name: "errors.txt".into(),
             code: code.into(),
+            web_sources: vec![],
         };
         let outcome = macroscope_app_core::checks::run_program(&draft, &candidate, &read, &execute);
         assert!(!outcome.all_passed(), "accepted {code}");
@@ -465,6 +472,7 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
         summary: "errors".into(),
         output_name: "errors.txt".into(),
         code: CODE.into(),
+        web_sources: vec![],
     };
     draft.example_output = Some(EXPECTED.into());
     assert!(
@@ -506,6 +514,7 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
                 serde_json::to_string(name).unwrap(),
                 serde_json::to_string(text).unwrap()
             ),
+            web_sources: vec![],
         };
         let outcome = macroscope_app_core::checks::run_program(&draft, &candidate, &read, &execute);
         assert_eq!(outcome.all_passed(), valid, "{name}: {:?}", outcome.checks);

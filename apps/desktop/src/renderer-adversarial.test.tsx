@@ -69,7 +69,7 @@ function fixture(payload: string) {
   };
   const folder = { handleId: "folder", displayName: "folder", displayPath: v("folder path") };
   const draft: TaskDraft = {
-    draftId: "draft", revision: 1, goal: "fixture", input: csv,
+    draftId: "draft", revision: 1, goal: "fixture", input: csv, noInput: false,
     summary: [v("summary")], questions: [], mentionedConnectors: [],
     mapping: {
       output_columns: [{ name: v("mapping column"), source: v("mapping source"), transform: { type: "constant", value: v("constant") } }],
@@ -98,7 +98,7 @@ function fixture(payload: string) {
       pickOutputDir: async () => folder,
       draftTask: async () => draft,
       updateMapping: async (_id, mapping, outputName) => ({ ...draft, mapping, outputName }),
-      outboundPreview: async () => ({ ...outbound, draftId: "draft", model: v("model"), containsRealRows: false, estimatedCostMicros: 0, budgetMicros: 1 }),
+      outboundPreview: async () => ({ ...outbound, draftId: "draft", model: v("model"), containsRealRows: false, estimatedCostMicros: 0, budgetMicros: 1, webHosts: [] }),
       startBuild: async () => build,
       buildState: async () => build,
       buildTryInput: async () => ({ ...build, phase: "failed", failure: { kind: "internal", message: v("build error") } }),

@@ -5,6 +5,7 @@ mod http;
 pub mod mcp;
 pub mod oauth;
 pub mod state;
+pub mod websource;
 
 pub use http::validate_url;
 pub use mcp::preview_tools;

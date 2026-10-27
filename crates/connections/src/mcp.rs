@@ -329,6 +329,7 @@ async fn sse_response(mut response: Response, id: u64) -> Result<Value, McpError
 mod tests {
     use super::*;
     use axum::{routing::post, Json, Router};
+
     #[tokio::test]
     async fn host_diagnostics_require_explicit_read_only_and_unique_names() {
         let app = Router::new().route("/mcp", post(|Json(body): Json<Value>| async move {

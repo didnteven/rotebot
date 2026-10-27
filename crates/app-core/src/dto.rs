@@ -175,6 +175,11 @@ pub struct TaskDraft {
     pub example_output: Option<String>,
     #[serde(default)]
     pub synthetic_shape: String,
+    /// True when the task reads approved web sources instead of a selected
+    /// input file. `input` then carries a placeholder; `macroscope.input` is
+    /// unavailable and the run plan hash covers fetched data instead.
+    #[serde(default)]
+    pub no_input: bool,
     pub draft_id: String,
     pub revision: u32,
     pub goal: String,
@@ -199,6 +204,11 @@ pub struct OutboundPreview {
     pub contains_real_rows: bool,
     pub estimated_cost_micros: Option<i64>,
     pub budget_micros: i64,
+    /// Hosts a built web-source tool would fetch from. Known only after the
+    /// model declares its sources, so this is empty before the build; the
+    /// build-and-compare review lists the declared hosts for approval.
+    #[serde(default)]
+    pub web_hosts: Vec<String>,
 }
 
 // ---------- builds ----------
@@ -333,6 +343,10 @@ pub struct ToolDetail {
     pub output_columns: Vec<String>,
     pub access: Vec<String>,
     pub version_hash: String,
+    /// True when the tool reads approved web sources instead of a selected
+    /// input file. Runs then stage without an input handle.
+    #[serde(default)]
+    pub no_input: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

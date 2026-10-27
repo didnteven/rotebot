@@ -8,6 +8,7 @@ use std::{
 
 struct Data {
     inputs: BTreeMap<String, String>,
+    sources: BTreeMap<String, String>,
     limits: Limits,
     state: Shared,
 }
@@ -31,6 +32,20 @@ fn input(ctx: Ctx<'_>, handle: String) -> Result<String> {
         .get(&handle)
         .cloned()
         .ok_or_else(|| fail(&ctx, "forbidden", "unknown input handle"))
+}
+/// Host-fetched web source body for a declared source name. The sandbox has no
+/// network access; the host fetches every declared source before the run and
+/// passes the response text here. Unknown names throw.
+fn source(ctx: Ctx<'_>, name: String) -> Result<String> {
+    if name.is_empty() || name.len() > 255 {
+        return Err(fail(&ctx, "forbidden", "unknown source name"));
+    }
+    ctx.userdata::<Data>()
+        .unwrap()
+        .sources
+        .get(&name)
+        .cloned()
+        .ok_or_else(|| fail(&ctx, "forbidden", "unknown source name"))
 }
 fn output(ctx: Ctx<'_>, name: String, text: String) -> Result<()> {
     if name.len() > 255
@@ -210,11 +225,13 @@ fn decimal(ctx: Ctx<'_>, value: String, options: Object<'_>) -> Result<String> {
 pub(crate) fn install(
     ctx: &Ctx<'_>,
     inputs: BTreeMap<String, String>,
+    sources: BTreeMap<String, String>,
     limits: &Limits,
     state: Shared,
 ) -> Result<()> {
     ctx.store_userdata(Data {
         inputs,
+        sources,
         limits: limits.clone(),
         state,
     })
@@ -222,6 +239,7 @@ pub(crate) fn install(
     let sdk = Object::new(ctx.clone())?;
     sdk.set_prototype(None)?;
     sdk.set("input", Function::new(ctx.clone(), input)?)?;
+    sdk.set("source", Function::new(ctx.clone(), source)?)?;
     sdk.set("output", Function::new(ctx.clone(), output)?)?;
     sdk.set("log", Function::new(ctx.clone(), log)?)?;
     let csv = Object::new(ctx.clone())?;

@@ -78,6 +78,11 @@ it("forwards every command with the shared camelCase arguments and snake_case na
       { input: { handleId: "file" }, description: "Clean" },
     ],
     [
+      "draftTaskNoInput",
+      ["Get the forecast"],
+      { description: "Get the forecast" },
+    ],
+    [
       "answerQuestion",
       ["d", "q", "a"],
       { draftId: "d", questionId: "q", answer: "a" },
@@ -119,6 +124,11 @@ it("forwards every command with the shared camelCase arguments and snake_case na
       "stageRun",
       ["t", {}, {}, "out.csv"],
       { toolId: "t", input: {}, outputDir: {}, outputName: "out.csv" },
+    ],
+    [
+      "stageRunNoInput",
+      ["t", {}, "weather.txt"],
+      { toolId: "t", outputDir: {}, outputName: "weather.txt" },
     ],
     ["commitRun", ["r", "hash"], { runId: "r", planHash: "hash" }],
     ["discardRun", ["r"], { runId: "r" }],

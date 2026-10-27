@@ -253,6 +253,11 @@ impl AppCore {
                 "The task changed after this build. Build it again.".into(),
             ));
         }
+        if draft.no_input {
+            return Err(CoreError::Invalid(
+                "This build has no input file, so there is no sample to try.".into(),
+            ));
+        }
         let contract = drafts::contract_for(&draft);
         let mapping = state
             .candidate
@@ -261,6 +266,12 @@ impl AppCore {
         let (path, _) = self.handle_path(input, PickKind::File)?;
         let read = || Self::read_limited(&path).map_err(|e| e.to_string());
         let outcome = if let Some(program) = &state.program {
+            if !program.web_sources.is_empty() {
+                return Err(CoreError::Invalid(
+                    "Trying another sample is unavailable for builds that fetch web sources."
+                        .into(),
+                ));
+            }
             #[cfg(feature = "generated-runtime")]
             {
                 let engine = self.runtime()?;

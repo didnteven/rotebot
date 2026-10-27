@@ -455,6 +455,16 @@ pub fn fits_mapping(description: &str) -> bool {
 
 pub fn summary(draft: &TaskDraft) -> Vec<String> {
     if draft.kind == crate::dto::TaskKind::Program {
+        if draft.no_input {
+            return vec![
+                draft.goal.clone(),
+                "Program (sandboxed): no input file; read approved web sources and create one output.".into(),
+                format!(
+                    "Create {}; the program reads fetched web data through macroscope.source.",
+                    draft.output_name
+                ),
+            ];
+        }
         return vec![
             draft.goal.clone(),
             "Program (sandboxed): read the selected text file and create one output.".into(),

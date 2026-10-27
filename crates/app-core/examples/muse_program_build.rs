@@ -100,6 +100,7 @@ async fn main() {
             &folder.handle_id,
             "errors.txt",
         )
+        .await
         .unwrap();
     let macroscope_app_core::dto::StageResult::Staged(stage) = stage else {
         panic!("{stage:?}")

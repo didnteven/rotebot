@@ -125,6 +125,7 @@ fn tool_detail_flattens_the_summary_fields() {
         output_columns: vec![],
         access: vec![],
         version_hash: "h".into(),
+        no_input: false,
     };
     let v = serde_json::to_value(&detail).unwrap();
     for key in [

@@ -64,36 +64,58 @@ export function RunFlow({
         Version {tool.version} · Every new input needs a fresh staged output and
         approval.
       </p>
+      {detail?.noInput && detail?.program && detail.program.webSources.length > 0 && (
+        <p role="note" className="notice notice-info">
+          This run fetches from{" "}
+          {detail.program.webSources
+            .map((s) => {
+              try {
+                return new URL(s.url.replace("{today}", "2026-01-01")).hostname;
+              } catch {
+                return s.url;
+              }
+            })
+            .join(", ")}{" "}
+          — the approved sites for this tool. Every fetch is recorded under Privacy.
+        </p>
+      )}
+      {detail?.noInput && (
+        <p>No input file: this tool reads its approved web sources.</p>
+      )}
       <Notice error={error} />
       {busy && <p role="status">Working…</p>}
       {!receipt && (
         <>
           <fieldset disabled={busy || !!staged}>
-            <legend>Choose files</legend>
+            <legend>{detail?.noInput ? "Choose output" : "Choose files"}</legend>
             <div className="actions">
-              <button
-                onClick={() =>
-                  void act(async () => {
-                    const next = await backend.pickCsv();
-                    if (next) {
-                      setInput(next);
-                      setFailure(null);
+              {!detail?.noInput && (
+                <>
+                  <button
+                    onClick={() =>
+                      void act(async () => {
+                        const next = await backend.pickCsv();
+                        if (next) {
+                          setInput(next);
+                          setFailure(null);
+                        }
+                      })
                     }
-                  })
-                }
-              >
-                Choose input file…
-              </button>
-              <button
-                onClick={() =>
-                  void act(async () => {
-                    setInput(await backend.loadSampleCsv());
-                    setFailure(null);
-                  })
-                }
-              >
-                Use sample input
-              </button>
+                  >
+                    Choose input file…
+                  </button>
+                  <button
+                    onClick={() =>
+                      void act(async () => {
+                        setInput(await backend.loadSampleCsv());
+                        setFailure(null);
+                      })
+                    }
+                  >
+                    Use sample input
+                  </button>
+                </>
+              )}
               <button
                 onClick={() =>
                   void act(async () => {
@@ -117,20 +139,22 @@ export function RunFlow({
               />
             </Field>
           </fieldset>
-          {input && !staged && <CsvView preview={input} />}
+          {input && !staged && !detail?.noInput && <CsvView preview={input} />}
           {!staged && (
             <button
               className="primary"
-              disabled={busy || !input || !folder || !name.trim()}
+              disabled={busy || (!detail?.noInput && !input) || !folder || !name.trim()}
               onClick={() =>
                 void act(async () => {
                   setFailure(null);
-                  const result = await backend.stageRun(
-                    tool.id,
-                    input!.handle,
-                    folder!,
-                    name,
-                  );
+                  const result = detail?.noInput
+                    ? await backend.stageRunNoInput(tool.id, folder!, name)
+                    : await backend.stageRun(
+                        tool.id,
+                        input!.handle,
+                        folder!,
+                        name,
+                      );
                   if ("failure" in result) setFailure(result.failure);
                   else setStaged(result);
                 })

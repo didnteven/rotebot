@@ -188,6 +188,13 @@ fn draft_task(core: State<'_, Core>, input: FileHandle, description: String) -> 
     Ok(core.0.draft_task(&input.handle_id, &description)?)
 }
 
+/// Drafts a program task with no input file: the program reads approved web
+/// sources through `macroscope.source(name)` instead of a selected file.
+#[tauri::command]
+fn draft_task_no_input(core: State<'_, Core>, description: String) -> Cmd<TaskDraft> {
+    Ok(core.0.draft_task_no_input(&description)?)
+}
+
 #[tauri::command]
 fn answer_question(
     core: State<'_, Core>,
@@ -375,24 +382,42 @@ async fn pick_output_dir<R: Runtime>(
 }
 
 #[tauri::command]
-fn stage_run(
+async fn stage_run(
     core: State<'_, Core>,
     tool_id: String,
     input: FileHandle,
     output_dir: FileHandle,
     output_name: String,
 ) -> Cmd<StageResult> {
-    Ok(core.0.stage_run(
-        &tool_id,
-        &input.handle_id,
-        &output_dir.handle_id,
-        &output_name,
-    )?)
+    Ok(core
+        .0
+        .stage_run(
+            &tool_id,
+            &input.handle_id,
+            &output_dir.handle_id,
+            &output_name,
+        )
+        .await?)
 }
 
 #[tauri::command]
 fn commit_run(core: State<'_, Core>, run_id: String, plan_hash: String) -> Cmd<CommitResult> {
     Ok(core.0.commit_run(&run_id, &plan_hash)?)
+}
+
+/// Stages a run for a tool with no input file: the host fetches the approved
+/// web sources now and the plan hash covers the fetched data.
+#[tauri::command]
+async fn stage_run_no_input(
+    core: State<'_, Core>,
+    tool_id: String,
+    output_dir: FileHandle,
+    output_name: String,
+) -> Cmd<StageResult> {
+    Ok(core
+        .0
+        .stage_run_no_input(&tool_id, &output_dir.handle_id, &output_name)
+        .await?)
 }
 
 #[tauri::command]
@@ -856,6 +881,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         pick_csv,
         load_sample_csv,
         draft_task,
+        draft_task_no_input,
         answer_question,
         update_mapping,
         update_task,
@@ -870,6 +896,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         delete_tool,
         pick_output_dir,
         stage_run,
+        stage_run_no_input,
         commit_run,
         discard_run,
         reveal_output,

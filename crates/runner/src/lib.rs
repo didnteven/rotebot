@@ -68,6 +68,10 @@ impl Limits {
 pub struct Request {
     pub code: String,
     pub inputs: BTreeMap<String, String>,
+    /// Host-fetched web source bodies, keyed by declared source name. The
+    /// sandbox never fetches: programs read these through `macroscope.source`.
+    #[serde(default)]
+    pub sources: BTreeMap<String, String>,
     #[serde(default)]
     pub limits: Limits,
 }
@@ -201,6 +205,11 @@ pub fn execute(request: Request) -> Response {
             .iter()
             .map(|(k, v)| k.len() + v.len())
             .sum::<usize>()
+        + request
+            .sources
+            .iter()
+            .map(|(k, v)| k.len() + v.len())
+            .sum::<usize>()
         > REQUEST_CAP
     {
         return Response::failure("forbidden", "request exceeds 20 MB");
@@ -254,7 +263,13 @@ pub fn execute(request: Request) -> Response {
     };
     let result = context.with(|ctx| {
         let classify: Function = ctx.eval(include_str!("classify.js"))?;
-        sdk::install(&ctx, request.inputs, &request.limits, state.clone())?;
+        sdk::install(
+            &ctx,
+            request.inputs,
+            request.sources,
+            &request.limits,
+            state.clone(),
+        )?;
         ctx.eval::<(), _>(include_str!("harden.js"))?;
         let user_result = (|| {
             ctx.eval::<(), _>(request.code)?;

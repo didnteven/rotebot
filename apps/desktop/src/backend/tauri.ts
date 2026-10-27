@@ -58,6 +58,8 @@ export class TauriBackend implements Backend {
   loadSampleCsv: Backend["loadSampleCsv"] = () => invoke("load_sample_csv");
   draftTask: Backend["draftTask"] = (input, description) =>
     invoke("draft_task", { input, description });
+  draftTaskNoInput: Backend["draftTaskNoInput"] = (description) =>
+    invoke("draft_task_no_input", { description });
   answerQuestion: Backend["answerQuestion"] = (draftId, questionId, answer) =>
     invoke("answer_question", { draftId, questionId, answer });
   updateMapping: Backend["updateMapping"] = (draftId, mapping, outputName) =>
@@ -93,6 +95,8 @@ export class TauriBackend implements Backend {
   pickOutputDir: Backend["pickOutputDir"] = () => invoke("pick_output_dir");
   stageRun: Backend["stageRun"] = (toolId, input, outputDir, outputName) =>
     invoke("stage_run", { toolId, input, outputDir, outputName });
+  stageRunNoInput: Backend["stageRunNoInput"] = (toolId, outputDir, outputName) =>
+    invoke("stage_run_no_input", { toolId, outputDir, outputName });
   commitRun: Backend["commitRun"] = (runId, planHash) =>
     invoke("commit_run", { runId, planHash });
   discardRun: Backend["discardRun"] = (runId) =>

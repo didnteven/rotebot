@@ -219,6 +219,8 @@ export class MockBackend implements Backend {
     string,
     { inputDigest: string; outputDigest: string }
   >();
+  /** Approved fetch hosts per tool, mirroring the core's tool grants. */
+  private webHosts = new Map<string, string[]>();
   private sampleInputs = new Set<string>();
   private destinations = new Set<string>();
   private receipts: Receipt[] = [];
@@ -278,6 +280,7 @@ export class MockBackend implements Backend {
         outputColumns: ["Order", "Date", "Amount"],
         access,
         versionHash: digest(seed),
+        noInput: false,
         ...clone(seed),
       });
     Object.assign(this, options.testOnlyOverrides);
@@ -492,7 +495,7 @@ export class MockBackend implements Backend {
       .map((c) => c.id);
     const kind = file.preview.text !== undefined || /extract|filter|containing|sort|group|json|dedup|duplicat|blank rows|empty rows|calculat|multiply|divide|subtract|percent|tax|replace|regex|search|find|pivot|split/i.test(description) ? "program" : "csv-mapping";
     const draft: TaskDraft = {
-      kind, exampleOutput: null,
+      kind, exampleOutput: null, noInput: false,
       draftId: this.id("draft"),
       revision: 1,
       goal: description,
@@ -529,6 +532,42 @@ export class MockBackend implements Backend {
     this.drafts.set(draft.draftId, draft);
     return this.validate(draft);
   }
+  /** Drafts a program with no input file; the mock weather build declares one web source. */
+  async draftTaskNoInput(description: string) {
+    const handle = {
+      handleId: `no-input-${this.serial + 1}`,
+      displayName: "No input file",
+      displayPath: "",
+    };
+    const draft: TaskDraft = {
+      kind: "program",
+      exampleOutput: null,
+      noInput: true,
+      draftId: this.id("draft"),
+      revision: 1,
+      goal: description,
+      input: {
+        handle,
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        byteSize: 0,
+      },
+      summary: [
+        description,
+        "Program (sandboxed): no input file; read approved web sources and create one output.",
+        "Create weather.txt; the program reads fetched web data through macroscope.source.",
+      ],
+      mapping: mapping(),
+      questions: [],
+      mentionedConnectors: [],
+      outputName: "weather.txt",
+      readyToBuild: true,
+      blockers: [],
+    };
+    this.drafts.set(draft.draftId, draft);
+    return this.validate(draft);
+  }
   async answerQuestion(draftId: string, questionId: string, answer: string) {
     const draft = this.draft(draftId);
     const q = draft.questions.find((q) => q.id === questionId);
@@ -562,6 +601,7 @@ export class MockBackend implements Backend {
     return {
       draftId,
       route,
+      webHosts: draft.noInput ? ["api.open-meteo.com"] : [],
       model: route === "offline_demo" ? "No model" : status.model,
       destination:
         route === "api_key"
@@ -651,7 +691,7 @@ export class MockBackend implements Backend {
       this.outbound.unshift({
         id: this.id("outbound"),
         atMs: Date.now(),
-        purpose: "Build CSV tool",
+        purpose: draft.noInput ? "Build web tool" : "Build CSV tool",
         destination: preview.destination,
         route: preview.route,
         syntheticOnly: !draft.exampleOutput,
@@ -670,11 +710,32 @@ export class MockBackend implements Backend {
         if (build.phase === "stopped" || build.phase === "failed") return;
         if (phase === "candidate") build.candidate = clone(draft.mapping);
         if (phase === "ready") {
+          if (draft.noInput) {
+            // Simulated weather tool: one declared web source, fixed summary output.
+            const output = "Auckland: fine, high 21C, low 14C.\n";
+            build.program = {
+              summary: "Summarize the Auckland forecast",
+              output_name: draft.outputName,
+              code: 'function run() { const api = macroscope.source("forecast"); macroscope.output(' + JSON.stringify(draft.outputName) + ', "Auckland: fine, high 21C, low 14C.\\n"); }',
+              webSources: [{ name: "forecast", url: "https://api.open-meteo.com/v1/forecast?latitude=-36.85&longitude=174.76&daily=temperature_2m_max&start_date={today}&end_date={today}" }],
+            };
+            const matches = !draft.exampleOutput || output.includes(draft.exampleOutput.trim());
+            build.checks = [
+              { id: "web_sources", label: "Web sources fetched successfully", passed: true, detail: "api.open-meteo.com" },
+              { id: "example", label: "Every example line appears in order", passed: matches, detail: null },
+              { id: "deterministic", label: "Two fresh runs produce identical bytes", passed: true, detail: null },
+            ];
+            build.comparison = { inputColumns: [], inputRows: [], outputColumns: [], outputRows: [], inputText: "No input file", outputText: output.trimEnd(), rowsIn: 0, rowsOut: 1 };
+            if (!matches) { build.failure = { kind: "checks", message: "Example lines did not appear in order." }; this.emitBuild(build, "failed", build.failure.message); return; }
+            this.emitBuild(build, "ready", "Ready to compare");
+            this.log("build", "Program checks passed");
+            return;
+          }
           const file = this.files.get(draft.input.handle.handleId)!;
           if (draft.kind === "program") {
             // Fixed mock fixture; generated code is never evaluated in the renderer.
             const output = file.rows.map(row => row.join(",")).filter(line => line.includes("ERROR")).join("\n") + "\n";
-            build.program = {summary: "Extract ERROR lines", output_name: draft.outputName, code: 'function run() { const text = macroscope.input("input_csv"); macroscope.output(' + JSON.stringify(draft.outputName) + ', text.split("\\n").filter(line => line.includes("ERROR")).join("\\n") + "\\n"); }'};
+            build.program = {summary: "Extract ERROR lines", output_name: draft.outputName, code: 'function run() { const text = macroscope.input("input_csv"); macroscope.output(' + JSON.stringify(draft.outputName) + ', text.split("\\n").filter(line => line.includes("ERROR")).join("\\n") + "\\n"); }', webSources: []};
             let cursor = 0;
             const lines = output.split("\n");
             const matches = !draft.exampleOutput || draft.exampleOutput.split("\n").every(line => { const i = lines.indexOf(line, cursor); cursor = i + 1; return i >= 0; });
@@ -857,6 +918,7 @@ export class MockBackend implements Backend {
     const draft = this.buildDrafts.get(buildId)!;
     if (this.drafts.get(draft.draftId)?.revision !== draft.revision)
       throw new Error("The task changed after this build. Build it again.");
+    const hosts = (build.program?.webSources ?? []).map((s) => new URL(s.url.replace("{today}", "2026-01-01")).hostname);
     const tool: ToolDetail = {
       id: this.id("tool"),
       name: name.trim(),
@@ -872,9 +934,13 @@ export class MockBackend implements Backend {
       mapping: build.candidate,
       inputColumns: draft.input.columns,
       outputColumns: build.candidate.output_columns.map((c) => c.name),
-      access: clone(access),
+      access: draft.noInput
+        ? ["No input file; reads approved web sources", "Create one new output in the folder you choose", "Never overwrites a file", ...hosts.map((h) => `Fetches from ${h}`)]
+        : clone(access),
       versionHash: digest({mapping:build.candidate, program:build.program}),
+      noInput: draft.noInput,
     };
+    this.webHosts.set(tool.id, hosts);
     this.tools.set(tool.id, tool);
     this.log("build", `Saved ${tool.name}`);
     return clone(tool);
@@ -907,6 +973,7 @@ export class MockBackend implements Backend {
       outputColumns: ["Order", "Date", "Amount"],
       access: clone(access),
       versionHash: digest(mapping()),
+      noInput: false,
     };
     this.tools.set(tool.id, tool);
     return clone(tool);
@@ -943,6 +1010,7 @@ export class MockBackend implements Backend {
   }
   async deleteTool(toolId: string) {
     this.tools.delete(toolId);
+    this.webHosts.delete(toolId);
   }
   async pickOutputDir() {
     return {
@@ -964,6 +1032,15 @@ export class MockBackend implements Backend {
         failure: {
           kind: "revoked",
           message: "This tool is paused.",
+        } as RunFailure,
+      };
+    if (tool.noInput)
+      return {
+        failure: {
+          kind: "input_invalid",
+          row: null,
+          column: null,
+          message: "This tool has no input file. Stage it without choosing a file.",
         } as RunFailure,
       };
     if (!file)
@@ -1017,6 +1094,78 @@ export class MockBackend implements Backend {
     });
     return run;
   }
+  /** Stages a run for a tool with no input file; records the simulated fetch. */
+  async stageRunNoInput(toolId: string, outputDir: FileHandle, outputName: string) {
+    const tool = await this.getTool(toolId);
+    if (tool.state === "paused")
+      return {
+        failure: {
+          kind: "revoked",
+          message: "This tool is paused.",
+        } as RunFailure,
+      };
+    if (!tool.noInput)
+      return {
+        failure: {
+          kind: "input_invalid",
+          row: null,
+          column: null,
+          message: "Choose an input file to run this tool.",
+        } as RunFailure,
+      };
+    if (!/^[^/\\:]+\.(csv|tsv|txt|md|json)$/i.test(outputName))
+      return {
+        failure: {
+          kind: "input_invalid",
+          row: null,
+          column: null,
+          message: "Choose an output name without folder separators.",
+        } as RunFailure,
+      };
+    if (this.status.egress !== "cloud_allowed")
+      return {
+        failure: {
+          kind: "internal",
+          message: "Local only is on: web sources cannot be fetched. Turn off Local only to run this tool.",
+        } as RunFailure,
+      };
+    const hosts = this.webHosts.get(toolId) ?? [];
+    const output = "Auckland: fine, high 21C, low 14C.\n";
+    for (const host of hosts)
+      this.outbound.unshift({
+        id: this.id("outbound"),
+        atMs: Date.now(),
+        purpose: "Web source",
+        destination: host,
+        route: "offline_demo",
+        syntheticOnly: false,
+        costMicros: null,
+        payloadText: `https://${host}/v1/forecast`,
+      });
+    const run: StagedRun = {
+      previewText: output.trimEnd(),
+      runId: this.id("run"),
+      toolId,
+      input: { handleId: "no-input", displayName: "No input file", displayPath: "" },
+      outputDir: clone(outputDir),
+      outputName,
+      planHash: digest({ tool: tool.versionHash, fetched: output, outputDir, outputName }),
+      rowsIn: 0,
+      rowsOut: 1,
+      outputColumns: [],
+      previewRows: [],
+      destinationExists: this.destinations.has(
+        `${outputDir.displayPath}/${outputName}`,
+      ),
+    };
+    this.runRevisions.set(run.runId, this.grantRevisions.get(toolId) ?? 1);
+    this.staged.set(run.runId, clone(run));
+    this.stagedData.set(run.runId, {
+      inputDigest: "no-input",
+      outputDigest: digest(output),
+    });
+    return run;
+  }
   async commitRun(runId: string, planHash: string) {
     const run = this.staged.get(runId);
     if (!run)
@@ -1055,9 +1204,9 @@ export class MockBackend implements Backend {
           message: "Tool was removed.",
         } as RunFailure,
       };
-    const file = this.files.get(run.input.handleId)!;
     const stagedData = this.stagedData.get(runId)!;
-    if (digest(file.rows) !== stagedData.inputDigest)
+    const file = this.files.get(run.input.handleId);
+    if (file && digest(file.rows) !== stagedData.inputDigest)
       return {
         failure: {
           kind: "input_changed",
@@ -1172,6 +1321,7 @@ export class MockBackend implements Backend {
     if (options.includeTools) {
       this.tools.clear();
       this.grantRevisions.clear();
+      this.webHosts.clear();
       this.receipts = [];
     }
   }

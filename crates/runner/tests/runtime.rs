@@ -8,6 +8,7 @@ fn run(code: &str, limits: Limits) -> Response {
     macroscope_runner::execute(Request {
         code: code.into(),
         inputs: BTreeMap::new(),
+        sources: BTreeMap::new(),
         limits,
     })
 }
@@ -29,6 +30,7 @@ fn sdk_orders_matches_independent_fixture() {
             "input_csv".into(),
             include_str!("../../../fixtures/orders/input.csv").into(),
         )]),
+        sources: BTreeMap::new(),
         limits: Limits::default(),
     };
     match macroscope_runner::execute(request) {
@@ -149,6 +151,7 @@ fn child_memory_limit_and_kernel_peak_rss() {
     let request = Request {
         code: "function run(){const a=[];for(;;)a.push(new Uint8Array(1024*1024).fill(1));}".into(),
         inputs: BTreeMap::new(),
+        sources: BTreeMap::new(),
         limits: Limits::default(),
     };
     let mut child = Command::new(env!("CARGO_BIN_EXE_macroscope-runner"))
@@ -238,5 +241,34 @@ fn clock_and_randomness_are_unavailable_and_text_output_formats_work() {
         success(&format!(
             "function run(){{macroscope.output('result.{ext}','synthetic')}}"
         ));
+    }
+}
+#[test]
+fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
+    let request = Request {
+        code:
+            "function run(){macroscope.output(\"weather.txt\", macroscope.source(\"forecast\"));}"
+                .into(),
+        inputs: BTreeMap::new(),
+        sources: BTreeMap::from([("forecast".into(), "sunny".into())]),
+        limits: Limits::default(),
+    };
+    match macroscope_runner::execute(request) {
+        Response::Success { outputs, .. } => {
+            assert_eq!(outputs.len(), 1);
+            assert_eq!(outputs[0].text, "sunny");
+        }
+        other => panic!("{other:?}"),
+    }
+    let bad = Request {
+        code: "function run(){macroscope.output(\"weather.txt\", macroscope.source(\"nope\"));}"
+            .into(),
+        inputs: BTreeMap::new(),
+        sources: BTreeMap::new(),
+        limits: Limits::default(),
+    };
+    match macroscope_runner::execute(bad) {
+        Response::Error { error } => assert_eq!(error.kind, "forbidden"),
+        other => panic!("{other:?}"),
     }
 }

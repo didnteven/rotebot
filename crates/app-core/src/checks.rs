@@ -284,6 +284,17 @@ pub fn program_failure(message: String) -> CheckOutcome {
 pub type ProgramExecutor<'a> =
     dyn Fn(&[u8], &str) -> Result<Vec<macroscope_runner::Output>, String> + 'a;
 
+/// Executor variant that also passes host-fetched web source bodies as data.
+/// The same fetched map is used for both runs, proving determinism on the
+/// same fetched data.
+#[cfg(feature = "generated-runtime")]
+pub type ProgramExecutorWithSources<'a> = dyn Fn(
+        &[u8],
+        &std::collections::BTreeMap<String, String>,
+        &str,
+    ) -> Result<Vec<macroscope_runner::Output>, String>
+    + 'a;
+
 #[cfg(feature = "generated-runtime")]
 pub fn run_program(
     draft: &crate::dto::TaskDraft,
@@ -291,24 +302,78 @@ pub fn run_program(
     read_input: &dyn Fn() -> Result<Vec<u8>, String>,
     execute: &ProgramExecutor<'_>,
 ) -> CheckOutcome {
-    let before = match read_input() {
-        Ok(b) => b,
-        Err(e) => return program_failure(e),
+    run_program_with_sources(
+        draft,
+        program,
+        &std::collections::BTreeMap::new(),
+        None,
+        read_input,
+        &|input, _sources, code| execute(input, code),
+    )
+}
+
+/// Program checks for tools with web sources. `sources` holds the host-fetched
+/// response texts; `fetch_error` carries a host fetch failure, which fails the
+/// `web_sources` check instead of running the program on missing data. With no
+/// input file the empty snapshot is used, `macroscope.input` is unavailable,
+/// and the source-unchanged check is skipped.
+#[cfg(feature = "generated-runtime")]
+pub fn run_program_with_sources(
+    draft: &crate::dto::TaskDraft,
+    program: &macroscope_builder::Program,
+    sources: &std::collections::BTreeMap<String, String>,
+    fetch_error: Option<String>,
+    read_input: &dyn Fn() -> Result<Vec<u8>, String>,
+    execute: &ProgramExecutorWithSources<'_>,
+) -> CheckOutcome {
+    let no_input = draft.no_input;
+    let before = if no_input {
+        Vec::new()
+    } else {
+        match read_input() {
+            Ok(b) => b,
+            Err(e) => return program_failure(e),
+        }
     };
-    let first = match execute(&before, &program.code) {
+    let mut checks = Vec::new();
+    if !program.web_sources.is_empty() || fetch_error.is_some() {
+        let missing: Vec<&str> = program
+            .web_sources
+            .iter()
+            .filter(|s| !sources.contains_key(&s.name))
+            .map(|s| s.name.as_str())
+            .collect();
+        let passed = fetch_error.is_none() && missing.is_empty();
+        let detail = fetch_error.or_else(|| {
+            (!missing.is_empty()).then(|| format!("No fetched data for: {}.", missing.join(", ")))
+        });
+        checks.push(check(
+            "web_sources",
+            "Web sources fetched successfully",
+            passed,
+            detail,
+        ));
+        if !passed {
+            return CheckOutcome {
+                checks,
+                comparison: None,
+            };
+        }
+    }
+    let first = match execute(&before, sources, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
-    let second = match execute(&before, &program.code) {
+    let second = match execute(&before, sources, &program.code) {
         Ok(out) => out,
         Err(e) => return program_failure(e),
     };
-    let mut checks = vec![check(
+    checks.push(check(
         "sandbox",
         "Runs inside sandbox limits without error",
         true,
         None,
-    )];
+    ));
     let named = program.output_name == draft.output_name
         && first.len() == 1
         && second.len() == 1
@@ -358,12 +423,16 @@ pub fn run_program(
             },
         ));
     }
-    checks.push(check(
-        "source_unchanged",
-        "Source unchanged",
-        read_input().is_ok_and(|b| digest(&b) == digest(&before)),
-        None,
-    ));
+    // With no input file there is no source snapshot to re-read; the run plan
+    // hash covers the source URLs and fetched-response digests instead.
+    if !no_input {
+        checks.push(check(
+            "source_unchanged",
+            "Source unchanged",
+            read_input().is_ok_and(|b| digest(&b) == digest(&before)),
+            None,
+        ));
+    }
     let input = std::str::from_utf8(&before).unwrap_or_default();
     CheckOutcome {
         checks,
@@ -502,5 +571,100 @@ mod tests {
         assert_eq!(outcome.checks.len(), 1);
         assert_eq!(outcome.checks[0].id, "contract");
         assert!(!outcome.all_passed());
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    fn web_draft() -> crate::dto::TaskDraft {
+        crate::dto::TaskDraft {
+            kind: crate::dto::TaskKind::Program,
+            example_output: None,
+            synthetic_shape: String::new(),
+            no_input: true,
+            draft_id: "draft".into(),
+            revision: 1,
+            goal: "weather".into(),
+            input: crate::dto::CsvPreview {
+                text: None,
+                handle: crate::dto::FileHandle {
+                    handle_id: "no-input".into(),
+                    display_name: "No input file".into(),
+                    display_path: String::new(),
+                },
+                columns: vec![],
+                rows: vec![],
+                row_count: 0,
+                byte_size: 0,
+            },
+            summary: vec![],
+            mapping: contract().mapping,
+            questions: vec![],
+            mentioned_connectors: vec![],
+            output_name: "weather.txt".into(),
+            ready_to_build: true,
+            blockers: vec![],
+        }
+    }
+
+    /// No-input program checks without any network or worker: the fake
+    /// executor stands in for the host fetch plus sandbox execution.
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn no_input_checks_serve_declared_sources_and_skip_source_unchanged() {
+        use std::collections::BTreeMap;
+        let draft = web_draft();
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        // The executor derives its output from the fetched map, proving the
+        // program ran on the fetched data; both runs see the same map.
+        let execute = |_: &[u8], sources: &BTreeMap<String, String>, _: &str| {
+            let body = sources.get("forecast").cloned().unwrap_or_default();
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: format!("got {} bytes", body.len()),
+            }])
+        };
+        let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &sources,
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        assert!(outcome.all_passed(), "{:#?}", outcome.checks);
+        let ids: Vec<_> = outcome.checks.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"web_sources"));
+        assert!(!ids.contains(&"source_unchanged"));
+        // Missing fetched data fails the web_sources check before any run.
+        let calls = std::cell::Cell::new(0);
+        let counting = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            calls.set(calls.get() + 1);
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "x".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::new(),
+            Some("Web source 'forecast' could not be fetched: down.".into()),
+            &|| panic!("no input file must not be re-read"),
+            &counting,
+        );
+        assert!(!outcome.all_passed());
+        assert_eq!(calls.get(), 0);
+        assert!(outcome
+            .checks
+            .iter()
+            .any(|c| c.id == "web_sources" && !c.passed));
     }
 }

@@ -113,11 +113,15 @@ export interface RuleQuestion {
 }
 
 export type TaskKind = "csv-mapping" | "program";
-export interface Program { summary: string; output_name: string; code: string; }
+/** A web source the host fetches and passes to the program as data (ADR 0004). */
+export interface WebSource { name: string; url: string; }
+export interface Program { summary: string; output_name: string; code: string; webSources: WebSource[]; }
 export interface TaskDraft {
   kind?: TaskKind;
   exampleOutput?: string | null;
   syntheticShape?: string;
+  /** True when the task reads approved web sources instead of a selected file. */
+  noInput: boolean;
   draftId: string;
   revision: number;
   goal: string;
@@ -144,6 +148,8 @@ export interface OutboundPreview {
   containsRealRows: boolean;
   estimatedCostMicros: number | null; // null for plan route (counts against the plan allowance)
   budgetMicros: number;
+  /** Hosts a built web-source tool would fetch from (empty before the build). */
+  webHosts: string[];
 }
 
 // ---------- Builds ----------
@@ -230,6 +236,8 @@ export interface ToolDetail extends ToolSummary {
   outputColumns: string[];
   access: string[]; // "Read the CSV you choose", "Create one new CSV in the folder you choose", "Never overwrites"
   versionHash: string;
+  /** True when the tool reads approved web sources instead of a selected file. */
+  noInput: boolean;
 }
 
 export interface StagedRun {
@@ -398,6 +406,8 @@ export interface Backend {
   pickCsv(): Promise<CsvPreview | null>; // null when the user cancels
   loadSampleCsv(): Promise<CsvPreview>;
   draftTask(input: FileHandle, description: string): Promise<TaskDraft>;
+  /** Drafts a program task with no input file; the program reads approved web sources. */
+  draftTaskNoInput(description: string): Promise<TaskDraft>;
   answerQuestion(
     draftId: string,
     questionId: string,
@@ -436,6 +446,12 @@ export interface Backend {
   stageRun(
     toolId: string,
     input: FileHandle,
+    outputDir: FileHandle,
+    outputName: string,
+  ): Promise<StagedRun | { failure: RunFailure }>;
+  /** Stages a run for a tool with no input file; the host fetches the approved web sources. */
+  stageRunNoInput(
+    toolId: string,
     outputDir: FileHandle,
     outputName: string,
   ): Promise<StagedRun | { failure: RunFailure }>;

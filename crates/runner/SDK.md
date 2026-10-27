@@ -7,7 +7,12 @@ filesystem, process, environment, console or network APIs are available.
 string operations such as split, includes, indexOf, slice and join.
 
 - `macroscope.input("input_csv")` returns the selected UTF-8 text snapshot (the
-  historical handle name applies to every text format). At most 10 MB.
+  historical handle name applies to every text format). At most 10 MB. Tools
+  with no input file cannot call it; it throws when no file was selected.
+- `macroscope.source(name)` returns the host-fetched response text for a
+  declared web source (see `web_sources` in the program packet). The sandbox
+  never fetches: the host performs one HTTPS GET per source and passes the
+  response text here. Unknown names throw.
 - `macroscope.output(name, text)` stages exactly one UTF-8 output, at most 20 MB.
   Use the user's confirmed basename verbatim, with .csv/.tsv/.txt/.md/.json.
   This never writes a user file. The host previews and commits frozen bytes only

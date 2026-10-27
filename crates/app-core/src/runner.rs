@@ -17,6 +17,26 @@ pub struct RunnerEngine {
 fn hash_file(path: &Path) -> Result<String, BrokerError> {
     Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
 }
+
+/// Host-fetched web sources for one staged run, with the plan binding that
+/// covers the exact fetched bytes.
+pub struct SourceStage<'a> {
+    pub sources: &'a BTreeMap<String, String>,
+    pub has_input_file: bool,
+    pub extra_binding: Option<serde_json::Value>,
+}
+
+static EMPTY_SOURCES: BTreeMap<String, String> = BTreeMap::new();
+
+impl Default for SourceStage<'static> {
+    fn default() -> Self {
+        Self {
+            sources: &EMPTY_SOURCES,
+            has_input_file: true,
+            extra_binding: None,
+        }
+    }
+}
 impl RunnerEngine {
     pub fn new(runner: &Path, profile: &Path) -> Result<Self, BrokerError> {
         let runner = runner.canonicalize()?;
@@ -65,12 +85,29 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
-        self.execute_inner(input, code, limits, self.synthetic)
+        self.execute_inner(input, &BTreeMap::new(), true, code, limits, self.synthetic)
+    }
+
+    /// Executes with host-fetched web source bodies available as data through
+    /// `macroscope.source(name)`. The sandbox still gets no network access.
+    /// With `has_input_file` false the snapshot is absent and
+    /// `macroscope.input` is unavailable (unknown handle).
+    pub fn execute_with_sources(
+        &self,
+        input: &[u8],
+        sources: &BTreeMap<String, String>,
+        has_input_file: bool,
+        code: &str,
+        limits: Limits,
+    ) -> Result<Vec<macroscope_runner::Output>, BrokerError> {
+        self.execute_inner(input, sources, has_input_file, code, limits, self.synthetic)
     }
 
     fn execute_inner(
         &self,
         input: &[u8],
+        sources: &BTreeMap<String, String>,
+        has_input_file: bool,
         code: &str,
         limits: Limits,
         synthetic: bool,
@@ -82,9 +119,14 @@ impl RunnerEngine {
         }
         let text = std::str::from_utf8(input)
             .map_err(|_| BrokerError::Runner("input must be UTF-8".into()))?;
+        let mut inputs = BTreeMap::new();
+        if has_input_file {
+            inputs.insert("input_csv".to_string(), text.to_string());
+        }
         let request = Request {
             code: code.into(),
-            inputs: BTreeMap::from([("input_csv".into(), text.into())]),
+            inputs,
+            sources: sources.clone(),
             limits,
         };
         let command = if synthetic {
@@ -114,7 +156,20 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, code, limits, self.synthetic)
+        self.stage_inner(run, &SourceStage::default(), code, limits, self.synthetic)
+    }
+
+    /// Stages a program run with host-fetched web sources. The stage binding
+    /// covers the exact fetched bytes: the run plan hash covers them instead
+    /// of an input file snapshot when there is no input file.
+    pub fn stage_with_sources(
+        &self,
+        run: StageRequest,
+        stage_sources: &SourceStage<'_>,
+        code: &str,
+        limits: Limits,
+    ) -> Result<StagedPlan, BrokerError> {
+        self.stage_inner(run, stage_sources, code, limits, self.synthetic)
     }
     /// Explicit synthetic developer experiment, never an OS-denial fallback.
     #[cfg(feature = "synthetic-runtime-tests")]
@@ -124,11 +179,12 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
     ) -> Result<StagedPlan, BrokerError> {
-        self.stage_inner(run, code, limits, true)
+        self.stage_inner(run, &SourceStage::default(), code, limits, true)
     }
     fn stage_inner(
         &self,
         run: StageRequest,
+        stage_sources: &SourceStage<'_>,
         code: &str,
         limits: Limits,
         synthetic: bool,
@@ -142,11 +198,15 @@ impl RunnerEngine {
             return Err(BrokerError::Runner("runner/profile pin changed".into()));
         }
         let binding = serde_json::json!({"code":code,"runner":self.runner_hash,"profile":self.profile_hash,
-            "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic});
+            "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic,
+            "sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
         let execution_hash = format!("{:x}", Sha256::digest(broker::canonical_json(&binding)?));
         let basename = run.basename.clone();
+        let sources = stage_sources.sources.clone();
+        let has_input_file = stage_sources.has_input_file;
         broker::stage_generated(run, execution_hash, |snapshot| {
-            let mut outputs = self.execute_inner(snapshot, code, limits, synthetic)?;
+            let mut outputs =
+                self.execute_inner(snapshot, &sources, has_input_file, code, limits, synthetic)?;
             if outputs.len() != 1 || outputs[0].name != basename {
                 return Err(BrokerError::Runner(
                     "expected one output with the approved basename".into(),
