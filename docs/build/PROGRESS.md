@@ -555,3 +555,10 @@ including the 10.0% and 33.5% halfway cases), 15-top-scores (score ties broken b
 line in lib.rs. The runner refuses `api_key` without `META_API_KEY` in the environment plus
 `--confirm-spend`. Rerun by Claude: both `check.sh` runs passed with **461 Rust + 126 UI tests**
 each, and OS canaries **PASS**.
+
+Eval smoke on the real Muse plan route, 2026-10-28: `eval_suite --route muse_plan --tasks 05
+--reps 1` returned **PASS (1/1)**. Muse built the line-total tool in 151 s, and the staged
+output matched `expected.csv` byte for byte. This shows the runner works end to end against
+a real model. It is not the §9.3 gate. The full gate is 30 tasks × 3 reps = 90 builds, about
+3–4 hours on the plan route, and is held for the owner's go-ahead because it uses Muse plan
+allowance (window 24%, weekly 20% used after this smoke).
