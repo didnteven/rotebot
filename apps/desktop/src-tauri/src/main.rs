@@ -247,8 +247,20 @@ fn stop_build(core: State<'_, Core>, build_id: String) -> Cmd<BuildState> {
 }
 
 #[tauri::command]
-async fn save_tool(core: State<'_, Core>, build_id: String, name: String) -> Cmd<ToolDetail> {
-    Ok(core.0.save_tool(&build_id, &name).await?)
+async fn save_tool<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    build_id: String,
+    name: String,
+) -> Cmd<ToolDetail> {
+    let tool = core.0.save_tool(&build_id, &name).await?;
+    refresh_tray(&app);
+    Ok(tool)
+}
+
+#[tauri::command]
+fn build_try_input(core: State<'_, Core>, build_id: String, input: FileHandle) -> Cmd<BuildState> {
+    Ok(core.0.build_try_input(&build_id, &input.handle_id)?)
 }
 
 // ---------- tools and runs ----------
@@ -264,13 +276,64 @@ fn get_tool(core: State<'_, Core>, tool_id: String) -> Cmd<ToolDetail> {
 }
 
 #[tauri::command]
-fn install_sample_tool(core: State<'_, Core>) -> Cmd<ToolDetail> {
-    Ok(core.0.install_sample_tool()?)
+fn install_sample_tool<R: Runtime>(app: AppHandle<R>, core: State<'_, Core>) -> Cmd<ToolDetail> {
+    let tool = core.0.install_sample_tool()?;
+    refresh_tray(&app);
+    Ok(tool)
 }
 
 #[tauri::command]
-fn delete_tool(core: State<'_, Core>, tool_id: String) -> Cmd<()> {
-    Ok(core.0.delete_tool(&tool_id)?)
+fn delete_tool<R: Runtime>(app: AppHandle<R>, core: State<'_, Core>, tool_id: String) -> Cmd<()> {
+    core.0.delete_tool(&tool_id)?;
+    refresh_tray(&app);
+    Ok(())
+}
+
+#[cfg(test)]
+struct ExportSelection(PathBuf);
+
+#[tauri::command]
+async fn export_tool<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+) -> Cmd<Option<String>> {
+    #[cfg(not(test))]
+    let path = app
+        .dialog()
+        .file()
+        .set_title("Export tool to folder")
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok());
+    #[cfg(test)]
+    let path = app.try_state::<ExportSelection>().map(|s| s.0.clone());
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let handle = core.0.register_picked_dir(&path)?;
+    Ok(Some(core.0.export_tool(&tool_id, &handle.handle_id)?))
+}
+
+#[tauri::command]
+fn revoke_tool<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+) -> Cmd<ToolDetail> {
+    let tool = core.0.revoke_tool(&tool_id)?;
+    refresh_tray(&app);
+    Ok(tool)
+}
+
+#[tauri::command]
+fn restore_tool<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+) -> Cmd<ToolDetail> {
+    let tool = core.0.restore_tool(&tool_id)?;
+    refresh_tray(&app);
+    Ok(tool)
 }
 
 #[tauri::command]
@@ -343,6 +406,22 @@ fn list_receipts(core: State<'_, Core>) -> Cmd<Vec<Receipt>> {
 #[tauri::command]
 async fn privacy_overview(core: State<'_, Core>) -> Cmd<PrivacyOverview> {
     Ok(core.0.privacy_overview().await?)
+}
+
+#[tauri::command]
+fn delete_preview(core: State<'_, Core>) -> Cmd<DeletePreview> {
+    Ok(core.0.delete_preview()?)
+}
+
+#[tauri::command]
+async fn delete_data<R: Runtime>(
+    app: AppHandle<R>,
+    show: State<'_, Show>,
+    options: DeleteOptions,
+) -> Cmd<()> {
+    show.0.delete_data(options).await?;
+    refresh_tray(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -539,33 +618,99 @@ fn vault() -> Arc<dyn macroscope_vault::SecretStore> {
     }
 }
 
-fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+fn tool_menu_rows(tools: Vec<ToolSummary>) -> Vec<(String, String)> {
+    tools
+        .into_iter()
+        .take(5)
+        .map(|tool| {
+            let sample = if tool.sample && !tool.name.contains("(sample)") {
+                " (sample)"
+            } else {
+                ""
+            };
+            (
+                format!("run:{}", tool.id),
+                format!("Run {}{}…", tool.name, sample),
+            )
+        })
+        .collect()
+}
+
+fn tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::new(app)?;
     let open = MenuItem::with_id(app, "open", "Open Macroscope", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Stop builds and runs", true, None::<&str>)?;
-    let local = CheckMenuItem::with_id(app, "local_only", "Local only", true, false, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Macroscope", true, None::<&str>)?;
-    let menu = Menu::with_items(
+    menu.append(&open)?;
+    for (id, label) in tool_menu_rows(app.state::<Core>().0.list_tools().unwrap_or_default()) {
+        menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+    }
+    menu.append(&MenuItem::with_id(
         app,
-        &[
-            &open,
-            &stop,
-            &local,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
-    let local_item = local.clone();
+        "create",
+        "Describe a task…",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "stop",
+        "Stop builds and runs",
+        true,
+        None::<&str>,
+    )?)?;
+    let local = app
+        .state::<Core>()
+        .0
+        .database()
+        .setting("local_only")
+        .ok()
+        .flatten()
+        == Some(serde_json::json!(true));
+    menu.append(&CheckMenuItem::with_id(
+        app,
+        "local_only",
+        "Local only",
+        true,
+        local,
+        None::<&str>,
+    )?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "quit",
+        "Quit Macroscope",
+        true,
+        None::<&str>,
+    )?)?;
+    Ok(menu)
+}
+
+fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Ok(menu) = tray_menu(app) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+}
+
+fn open_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    let menu = tray_menu(app.handle())?;
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Macroscope")
         .menu(&menu)
         .on_menu_event(move |app, event| {
             let core = app.state::<Core>().0.clone();
             match event.id().as_ref() {
-                "open" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.show();
-                        let _ = w.set_focus();
-                    }
+                "open" => open_main(app),
+                "create" => {
+                    open_main(app);
+                    let _ = app.emit("navigate://create", ());
                 }
                 "stop" => {
                     tauri::async_runtime::spawn(async move {
@@ -573,12 +718,19 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                     });
                 }
                 "local_only" => {
-                    let on = local_item.is_checked().unwrap_or(false);
+                    let on = core.database().setting("local_only").ok().flatten()
+                        != Some(serde_json::json!(true));
+                    let handle = app.clone();
                     tauri::async_runtime::spawn(async move {
                         let _ = core.set_local_only(on).await;
+                        refresh_tray(&handle);
                     });
                 }
                 "quit" => app.exit(0),
+                id if id.starts_with("run:") => {
+                    open_main(app);
+                    let _ = app.emit("navigate://run", &id[4..]);
+                }
                 _ => {}
             }
         });
@@ -592,6 +744,12 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 /// Every product command. Shared by the app and the IPC tests so the lists cannot drift.
 fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        build_try_input,
+        export_tool,
+        revoke_tool,
+        restore_tool,
+        delete_preview,
+        delete_data,
         app_info,
         model_access,
         enter_api_key_native,
@@ -766,7 +924,8 @@ mod tests {
                 )
                 .unwrap(),
             ))
-            .manage(Core(core))
+            .manage(ExportSelection(out_dir.clone()))
+            .manage(Core(core.clone()))
             // The generated context carries the real ACL manifest and capabilities.
             .build(context())
             .unwrap();
@@ -776,6 +935,24 @@ mod tests {
 
         let info = invoke(&w, "app_info", json!({})).unwrap();
         assert_eq!(info["mock"], false);
+        let listener = invoke(
+            &w,
+            "plugin:event|listen",
+            json!({"event": "navigate://run", "target": {"kind": "Any"}, "handler": 0}),
+        )
+        .unwrap();
+        invoke(
+            &w,
+            "plugin:event|unlisten",
+            json!({"event": "navigate://run", "eventId": listener}),
+        )
+        .unwrap();
+        assert!(invoke(
+            &w,
+            "plugin:event|emit",
+            json!({"event": "navigate://run", "payload": "forged"})
+        )
+        .is_err());
         let access = invoke(&w, "model_access", json!({})).unwrap();
         assert_eq!(access["effectiveRoute"], "offline_demo");
         assert_eq!(access["muse"]["kind"], "missing");
@@ -811,6 +988,14 @@ mod tests {
         }
         assert_eq!(state["phase"], "ready", "{state}");
 
+        let rechecked = invoke(
+            &w,
+            "build_try_input",
+            json!({"buildId": build_id, "input": preview["handle"]}),
+        )
+        .unwrap();
+        assert_eq!(rechecked["phase"], "ready");
+        assert_eq!(rechecked["comparison"]["rowsOut"], 18);
         let tool = invoke(
             &w,
             "save_tool",
@@ -818,6 +1003,20 @@ mod tests {
         )
         .unwrap();
         let tool_id = tool["id"].clone();
+        let exported = invoke(&w, "export_tool", json!({"toolId": tool_id})).unwrap();
+        assert!(PathBuf::from(exported.as_str().unwrap())
+            .join("README.txt")
+            .exists());
+        assert_eq!(
+            invoke(&w, "revoke_tool", json!({"toolId": tool_id})).unwrap()["state"],
+            "paused"
+        );
+        let denied = invoke(&w, "stage_run", json!({"toolId": tool_id, "input": preview["handle"], "outputDir": output, "outputName": "paused.csv"})).unwrap();
+        assert_eq!(denied["failure"]["kind"], "revoked");
+        assert_eq!(
+            invoke(&w, "restore_tool", json!({"toolId": tool_id})).unwrap()["state"],
+            "enabled"
+        );
         assert_eq!(
             invoke(&w, "list_tools", json!({}))
                 .unwrap()
@@ -842,6 +1041,37 @@ mod tests {
         .unwrap();
         assert_eq!(receipt["status"], "committed", "{receipt}");
         assert!(out_dir.join("orders_ready.csv").exists());
+        let stale = invoke(&w, "stage_run", json!({"toolId": tool_id, "input": input, "outputDir": output, "outputName": "stale.csv"})).unwrap();
+        invoke(&w, "revoke_tool", json!({"toolId": tool_id})).unwrap();
+        invoke(&w, "restore_tool", json!({"toolId": tool_id})).unwrap();
+        assert_eq!(
+            invoke(
+                &w,
+                "commit_run",
+                json!({"runId": stale["runId"], "planHash": stale["planHash"]})
+            )
+            .unwrap()["failure"]["kind"],
+            "revoked"
+        );
+        assert!(!out_dir.join("stale.csv").exists());
+        let bad = core
+            .register_picked_file(
+                &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../fixtures/orders/negative/bad-date.csv"),
+            )
+            .unwrap();
+        let checked = invoke(
+            &w,
+            "build_try_input",
+            json!({"buildId": build_id, "input": bad}),
+        )
+        .unwrap();
+        assert_eq!(checked["phase"], "failed");
+        assert_eq!(checked["failure"]["kind"], "checks");
+        assert!(checked["failure"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("created"));
 
         let err = invoke(&w, "get_tool", json!({"toolId": "missing"})).unwrap_err();
         assert_eq!(err["code"], "not_found");
@@ -890,6 +1120,62 @@ mod tests {
         assert_eq!(
             invoke(&w, "connection_suggestions", json!({})).unwrap(),
             json!([])
+        );
+        let preview = invoke(&w, "delete_preview", json!({})).unwrap();
+        assert_eq!(preview["toolsIncluded"], false);
+        assert!(preview["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["count"].as_i64().unwrap() > 0));
+        invoke(
+            &w,
+            "delete_data",
+            json!({"options": {"includeTools": false}}),
+        )
+        .unwrap();
+        assert_eq!(
+            invoke(&w, "list_tools", json!({}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        invoke(
+            &w,
+            "delete_data",
+            json!({"options": {"includeTools": true}}),
+        )
+        .unwrap();
+        assert_eq!(invoke(&w, "list_tools", json!({})).unwrap(), json!([]));
+        assert_eq!(invoke(&w, "list_activity", json!({})).unwrap(), json!([]));
+    }
+
+    #[test]
+    fn tray_rows_are_limited_to_five_and_label_samples() {
+        let tools = (0..7)
+            .map(|i| ToolSummary {
+                id: format!("tool{i}"),
+                name: "Clean import CSV".into(),
+                version: 1,
+                engine: "csv-mapping".into(),
+                created_at_ms: 0,
+                last_run_at_ms: None,
+                run_count: 0,
+                sample: i == 0,
+                state: "enabled".into(),
+            })
+            .collect();
+        let rows = tool_menu_rows(tools);
+        assert_eq!(rows.len(), 5);
+        assert_eq!(
+            rows[0],
+            ("run:tool0".into(), "Run Clean import CSV (sample)…".into())
+        );
+        assert_eq!(
+            rows[1],
+            ("run:tool1".into(), "Run Clean import CSV…".into())
         );
     }
 

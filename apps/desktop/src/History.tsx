@@ -4,6 +4,7 @@ import type {
   Backend,
   ModelAccessStatus,
   PrivacyOverview,
+  DeletePreview,
   Receipt,
 } from "./backend/types";
 import { DataTable, Notice, ReceiptCard, useAction } from "./ui";
@@ -73,7 +74,18 @@ export function Privacy({
   const [overview, setOverview] = useState<PrivacyOverview | null>(null),
     [stopping, setStopping] = useState(false);
   const { act, busy, error } = useAction();
-  const load = async () => setOverview(await backend.privacyOverview());
+  const [preview, setPreview] = useState<DeletePreview | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [includeTools, setIncludeTools] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const load = async () => {
+    const [o, p] = await Promise.all([
+      backend.privacyOverview(),
+      backend.deletePreview(),
+    ]);
+    setOverview(o);
+    setPreview(p);
+  };
   useEffect(() => {
     void act(load);
   }, [backend]);
@@ -82,6 +94,78 @@ export function Privacy({
       <Notice error={error} />
       {busy && !stopping && <p role="status">Updating privacy…</p>}
       {error && <button onClick={() => void act(load)}>Reload privacy</button>}
+      <h2>Your data</h2>
+      <p>
+        Deleting history stops builds, Show, and runs, then removes the local
+        items listed below. Your API key and connection tokens stay until you
+        use Remove key or Disconnect. Files you selected and exported outputs
+        stay in their own folders. Provider copies cannot be recalled.
+      </p>
+      {preview && (
+        <DataTable
+          caption="Local history to delete"
+          columns={["Item", "Count"]}
+          rows={preview.items.map((item) => [item.label, String(item.count)])}
+        />
+      )}
+      {deleted && <p role="status">Local history deleted.</p>}
+      {confirmDelete ? (
+        <section aria-label="Confirm local history deletion" className="card">
+          <h3>Delete local history?</h3>
+          <p>
+            Everything listed above will be deleted immediately. Cloud models
+            will be set to Local only.
+          </p>
+          <label className="choice">
+            <input
+              type="checkbox"
+              checked={includeTools}
+              disabled={busy}
+              onChange={(e) => setIncludeTools(e.target.checked)}
+            />
+            Also delete my tools
+          </label>
+          <p>
+            {includeTools
+              ? "All tools, versions, grants, runs and receipts, and version folders will also be deleted."
+              : "Your saved tools, versions, grants, and run receipts will be kept."}
+          </p>
+          <div className="actions">
+            <button
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  await backend.deleteData({ includeTools });
+                  setConfirmDelete(false);
+                  setDeleted(true);
+                  setIncludeTools(false);
+                  await stopped();
+                  await load();
+                })
+              }
+            >
+              Delete history
+            </button>
+            <button disabled={busy} onClick={() => setConfirmDelete(false)}>
+              Keep
+            </button>
+          </div>
+        </section>
+      ) : (
+        <button
+          disabled={busy || !preview}
+          onClick={() =>
+            void act(async () => {
+              setPreview(await backend.deletePreview());
+              setIncludeTools(false);
+              setConfirmDelete(true);
+              setDeleted(false);
+            })
+          }
+        >
+          Delete local history…
+        </button>
+      )}
       <h2>Cloud models</h2>
       <fieldset disabled={busy}>
         <legend>Cloud models</legend>

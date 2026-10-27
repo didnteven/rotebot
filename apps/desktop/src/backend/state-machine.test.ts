@@ -188,7 +188,7 @@ it("remembers dismissals and stops recording at the five-minute limit", async ()
   expect(await backend.connectionSuggestions()).toEqual([]);
 });
 
-it("saves the immutable build revision after the editable draft changes", async () => {
+it("keeps the checked candidate immutable and requires rebuilding after draft edits", async () => {
   vi.useFakeTimers();
   const backend = new MockBackend();
   await backend.selectRoute("offline_demo");
@@ -200,7 +200,23 @@ it("saves the immutable build revision after the editable draft changes", async 
   changed.output_columns[0].name = "Changed after build started";
   await backend.updateMapping(task.draftId, changed, "different.csv");
   await vi.advanceTimersByTimeAsync(2000);
-  const saved = await backend.saveTool(build.buildId, "Frozen build");
-  expect(saved.mapping.output_columns[0].name).toBe("Order");
-  expect(saved.outputColumns).toEqual(["Order", "Date", "Amount"]);
+  const frozen = await backend.buildState(build.buildId);
+  expect(frozen.candidate!.output_columns[0].name).toBe("Order");
+  expect(frozen.comparison!.outputColumns).toEqual(["Order", "Date", "Amount"]);
+  await expect(backend.saveTool(build.buildId, "Frozen build")).rejects.toThrow(
+    "task changed",
+  );
+  const rebuilt = await backend.startBuild(task.draftId, {
+    outboundReviewed: true,
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  const saved = await backend.saveTool(rebuilt.buildId, "Reviewed revision");
+  expect(saved.mapping.output_columns[0].name).toBe(
+    "Changed after build started",
+  );
+  expect(saved.outputColumns).toEqual([
+    "Changed after build started",
+    "Date",
+    "Amount",
+  ]);
 });

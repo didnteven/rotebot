@@ -22,10 +22,15 @@ export type MuseState =
   | { kind: "signed_in"; version: string; planSummary: string | null }
   | { kind: "unknown"; version: string | null; message: string };
 
-export type EgressState = "cloud_allowed" | "stopping" | "local_only" | "key_unavailable";
+export type EgressState =
+  "cloud_allowed" | "stopping" | "local_only" | "key_unavailable";
 
 export interface ModelAccessStatus {
-  apiKey: { present: boolean; fingerprint: string | null; lastTest: KeyTestResult | null };
+  apiKey: {
+    present: boolean;
+    fingerprint: string | null;
+    lastTest: KeyTestResult | null;
+  };
   muse: MuseState;
   /** The route the user picked; null until they choose. */
   selectedRoute: ModelRoute | null;
@@ -65,7 +70,13 @@ export interface CsvPreview {
   byteSize: number;
 }
 
-export type DateFormat = "mm_dd_yy" | "mm_dd_yyyy" | "dd_mm_yy" | "dd_mm_yyyy" | "yyyy_mm_dd" | "iso8601";
+export type DateFormat =
+  | "mm_dd_yy"
+  | "mm_dd_yyyy"
+  | "dd_mm_yy"
+  | "dd_mm_yyyy"
+  | "yyyy_mm_dd"
+  | "iso8601";
 
 export type Transform =
   | { type: "copy" }
@@ -131,10 +142,10 @@ export interface OutboundPreview {
 
 export type BuildPhase =
   | "queued"
-  | "writing"      // model is producing a candidate
-  | "candidate"    // "Candidate received" — not ready
-  | "checking"     // host checks running
-  | "ready"        // host checks passed; staged result available to compare
+  | "writing" // model is producing a candidate
+  | "candidate" // "Candidate received" — not ready
+  | "checking" // host checks running
+  | "ready" // host checks passed; staged result available to compare
   | "failed"
   | "stopped";
 
@@ -162,9 +173,26 @@ export interface BuildState {
   candidate: CsvMapping | null;
   checks: CheckResult[];
   /** Host-rendered comparison of the staged sample output (never HTML). */
-  comparison: { inputColumns: string[]; inputRows: string[][]; outputColumns: string[]; outputRows: string[][]; rowsIn: number; rowsOut: number } | null;
+  comparison: {
+    inputColumns: string[];
+    inputRows: string[][];
+    outputColumns: string[];
+    outputRows: string[][];
+    rowsIn: number;
+    rowsOut: number;
+  } | null;
   spentMicros: number | null;
-  failure: { kind: "auth" | "quota" | "budget" | "malformed" | "checks" | "no_model_access" | "internal"; message: string } | null;
+  failure: {
+    kind:
+      | "auth"
+      | "quota"
+      | "budget"
+      | "malformed"
+      | "checks"
+      | "no_model_access"
+      | "internal";
+    message: string;
+  } | null;
   /** Route label for the UI, e.g. "Offline demo (no model)". */
   routeLabel: string;
 }
@@ -180,6 +208,7 @@ export interface ToolSummary {
   lastRunAtMs: number | null;
   runCount: number;
   sample: boolean;
+  state: "enabled" | "paused";
 }
 
 export interface ToolDetail extends ToolSummary {
@@ -206,7 +235,12 @@ export interface StagedRun {
 }
 
 export type RunFailure =
-  | { kind: "input_invalid"; message: string; row: number | null; column: string | null }
+  | {
+      kind: "input_invalid";
+      message: string;
+      row: number | null;
+      column: string | null;
+    }
   | { kind: "input_changed"; message: string }
   | { kind: "destination_exists"; message: string }
   | { kind: "destination_changed"; message: string }
@@ -251,6 +285,11 @@ export interface PrivacyOverview {
   egress: EgressState;
   stored: { label: string; count: number; bytes: number; expires: string }[];
   outbound: OutboundRecord[];
+}
+
+export interface DeletePreview {
+  items: { label: string; count: number }[];
+  toolsIncluded: false;
 }
 
 // ---------- Connections (ADR 0001 §2) ----------
@@ -305,8 +344,22 @@ export interface ConnectStart {
 export type ShowState =
   | { kind: "unavailable"; reason: string }
   | { kind: "idle"; accessibility: "granted" | "denied" | "unknown" }
-  | { kind: "recording"; sessionId: string; startedAtMs: number; maxSeconds: number; paused: boolean; appsSeen: number; matches: number }
-  | { kind: "finished"; sessionId: string; durationSeconds: number; appsSeen: string[]; suggestions: ConnectionSuggestion[] };
+  | {
+      kind: "recording";
+      sessionId: string;
+      startedAtMs: number;
+      maxSeconds: number;
+      paused: boolean;
+      appsSeen: number;
+      matches: number;
+    }
+  | {
+      kind: "finished";
+      sessionId: string;
+      durationSeconds: number;
+      appsSeen: string[];
+      suggestions: ConnectionSuggestion[];
+    };
 
 // ---------- The seam ----------
 
@@ -332,13 +385,28 @@ export interface Backend {
   pickCsv(): Promise<CsvPreview | null>; // null when the user cancels
   loadSampleCsv(): Promise<CsvPreview>;
   draftTask(input: FileHandle, description: string): Promise<TaskDraft>;
-  answerQuestion(draftId: string, questionId: string, answer: string): Promise<TaskDraft>;
-  updateMapping(draftId: string, mapping: CsvMapping, outputName: string): Promise<TaskDraft>;
+  answerQuestion(
+    draftId: string,
+    questionId: string,
+    answer: string,
+  ): Promise<TaskDraft>;
+  updateMapping(
+    draftId: string,
+    mapping: CsvMapping,
+    outputName: string,
+  ): Promise<TaskDraft>;
   outboundPreview(draftId: string): Promise<OutboundPreview>;
-  startBuild(draftId: string, consent: { outboundReviewed: boolean }): Promise<BuildState>;
+  startBuild(
+    draftId: string,
+    consent: { outboundReviewed: boolean },
+  ): Promise<BuildState>;
   buildState(buildId: string): Promise<BuildState>;
   /** Subscribe to build events; returns an unsubscribe function. */
-  onBuildEvent(buildId: string, cb: (state: BuildState) => void): Promise<() => void>;
+  onBuildEvent(
+    buildId: string,
+    cb: (state: BuildState) => void,
+  ): Promise<() => void>;
+  buildTryInput(buildId: string, input: FileHandle): Promise<BuildState>;
   stopBuild(buildId: string): Promise<BuildState>;
   saveTool(buildId: string, name: string): Promise<ToolDetail>;
 
@@ -346,10 +414,21 @@ export interface Backend {
   listTools(): Promise<ToolSummary[]>;
   getTool(toolId: string): Promise<ToolDetail>;
   installSampleTool(): Promise<ToolDetail>;
+  exportTool(toolId: string): Promise<string | null>; // null when the folder picker is canceled
+  revokeTool(toolId: string): Promise<ToolDetail>;
+  restoreTool(toolId: string): Promise<ToolDetail>;
   deleteTool(toolId: string): Promise<void>;
   pickOutputDir(): Promise<FileHandle | null>;
-  stageRun(toolId: string, input: FileHandle, outputDir: FileHandle, outputName: string): Promise<StagedRun | { failure: RunFailure }>;
-  commitRun(runId: string, planHash: string): Promise<Receipt | { failure: RunFailure }>;
+  stageRun(
+    toolId: string,
+    input: FileHandle,
+    outputDir: FileHandle,
+    outputName: string,
+  ): Promise<StagedRun | { failure: RunFailure }>;
+  commitRun(
+    runId: string,
+    planHash: string,
+  ): Promise<Receipt | { failure: RunFailure }>;
   discardRun(runId: string): Promise<void>;
   revealOutput(receiptRunId: string): Promise<void>;
 
@@ -357,6 +436,8 @@ export interface Backend {
   listActivity(): Promise<ActivityItem[]>;
   listReceipts(): Promise<Receipt[]>;
   privacyOverview(): Promise<PrivacyOverview>;
+  deletePreview(): Promise<DeletePreview>;
+  deleteData(options: { includeTools: boolean }): Promise<void>;
   deleteOutboundHistory(): Promise<void>;
   emergencyStop(): Promise<void>;
   /** Opens a documentation or authorization URL in the system browser. The core only allows
@@ -366,7 +447,11 @@ export interface Backend {
   // Connections
   listConnectors(): Promise<ConnectorInfo[]>;
   setConnectorUrl(connectorId: string, url: string): Promise<ConnectorInfo>;
-  setClientCredentials(connectorId: string, clientId: string, clientSecret: string | null): Promise<ConnectorInfo>;
+  setClientCredentials(
+    connectorId: string,
+    clientId: string,
+    clientSecret: string | null,
+  ): Promise<ConnectorInfo>;
   beginConnect(connectorId: string): Promise<ConnectStart>;
   /** Resolves when the browser redirect completes (or fails/times out). */
   completeConnect(pendingId: string): Promise<ConnectorInfo>;

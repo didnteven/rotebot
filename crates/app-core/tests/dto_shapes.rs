@@ -95,6 +95,7 @@ fn tool_detail_flattens_the_summary_fields() {
             last_run_at_ms: None,
             run_count: 0,
             sample: true,
+            state: "enabled".into(),
         },
         summary: vec![],
         mapping: serde_json::from_value(
@@ -123,11 +124,12 @@ fn tool_detail_flattens_the_summary_fields() {
     }
     assert!(v.get("summaryRow").is_none());
     assert_eq!(v["mapping"]["on_error"], "stop_and_explain");
+    assert_eq!(v["state"], "enabled");
 }
 
 #[test]
 fn build_state_uses_camel_case_and_snake_case_phases() {
-    let state = BuildState {
+    let mut state = BuildState {
         build_id: "b".into(),
         draft_id: "d".into(),
         route: ModelRoute::MusePlan,
@@ -156,6 +158,19 @@ fn build_state_uses_camel_case_and_snake_case_phases() {
     assert_eq!(v["failure"]["kind"], "no_model_access");
     assert_eq!(v["comparison"]["rowsIn"], 1);
     assert!(v.get("routeLabel").is_some() && v.get("spentMicros").is_some());
+    // buildTryInput returns this same DTO, including check failures on the new input.
+    state.phase = BuildPhase::Failed;
+    state.failure = Some(BuildFailure {
+        kind: BuildFailureKind::Checks,
+        message: "Row 1, column created: invalid date".into(),
+    });
+    let checked = serde_json::to_value(&state).unwrap();
+    assert_eq!(checked["phase"], "failed");
+    assert_eq!(checked["failure"]["kind"], "checks");
+    assert_eq!(
+        checked["failure"]["message"],
+        "Row 1, column created: invalid date"
+    );
 }
 
 #[test]
@@ -244,4 +259,40 @@ fn connector_info_matches_the_contract() {
         serde_json::to_value(start).unwrap(),
         json!({"connectorId": "c", "authorizationUrl": "u", "pendingId": "p"})
     );
+}
+
+#[test]
+fn privacy_control_shapes_match_the_contract() {
+    assert_eq!(
+        serde_json::to_value(DeletePreview {
+            items: vec![DeleteItem {
+                label: "Drafts".into(),
+                count: 3
+            }],
+            tools_included: false
+        })
+        .unwrap(),
+        json!({"items": [{"label": "Drafts", "count": 3}], "toolsIncluded": false})
+    );
+    assert_eq!(
+        serde_json::to_value(DeleteOptions {
+            include_tools: true
+        })
+        .unwrap(),
+        json!({"includeTools": true})
+    );
+    assert_eq!(
+        serde_json::to_value(StageResult::Failed(FailureEnvelope {
+            failure: RunFailure::Revoked {
+                message: "Paused".into()
+            }
+        }))
+        .unwrap(),
+        json!({"failure": {"kind": "revoked", "message": "Paused"}})
+    );
+    assert_eq!(
+        serde_json::to_value(Some("/Exports/tool-v1".to_string())).unwrap(),
+        json!("/Exports/tool-v1")
+    );
+    assert_eq!(serde_json::to_value(None::<String>).unwrap(), json!(null));
 }

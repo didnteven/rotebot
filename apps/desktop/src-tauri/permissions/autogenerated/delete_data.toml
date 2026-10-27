@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-data"
+description = "Enables the delete_data command without any pre-configured scope."
+commands.allow = ["delete_data"]
+
+[[permission]]
+identifier = "deny-delete-data"
+description = "Denies the delete_data command without any pre-configured scope."
+commands.deny = ["delete_data"]

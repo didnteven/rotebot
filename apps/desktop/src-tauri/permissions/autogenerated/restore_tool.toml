@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-tool"
+description = "Enables the restore_tool command without any pre-configured scope."
+commands.allow = ["restore_tool"]
+
+[[permission]]
+identifier = "deny-restore-tool"
+description = "Denies the restore_tool command without any pre-configured scope."
+commands.deny = ["restore_tool"]

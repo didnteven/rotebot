@@ -195,7 +195,8 @@ describe("Tell and deterministic runs", () => {
     await user.click(button("Choose output folder…"));
     await user.click(button("Stage and compare"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Row: 2 · Column: created",
+      // The executor numbers data records from 1 (headers are excluded).
+      "Row: 1 · Column: created",
     );
     expect(button("Choose another input")).toBeVisible();
   });

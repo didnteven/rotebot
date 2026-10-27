@@ -293,6 +293,7 @@ pub struct ToolSummary {
     pub last_run_at_ms: Option<i64>,
     pub run_count: i64,
     pub sample: bool,
+    pub state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -529,4 +530,24 @@ pub struct ConnectStart {
     pub connector_id: String,
     pub authorization_url: String,
     pub pending_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteItem {
+    pub label: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePreview {
+    pub items: Vec<DeleteItem>,
+    pub tools_included: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteOptions {
+    pub include_tools: bool,
 }

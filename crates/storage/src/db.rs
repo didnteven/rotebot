@@ -83,6 +83,9 @@ CREATE TABLE suggestion_dismissals (connector_id TEXT PRIMARY KEY, until_ms INTE
     r#"
 ALTER TABLE runs ADD COLUMN run_dir TEXT;
 "#,
+    r#"
+CREATE TABLE deletion_journal (id INTEGER PRIMARY KEY CHECK (id = 1), include_tools INTEGER NOT NULL);
+"#,
 ];
 
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
@@ -452,6 +455,66 @@ impl Db {
                 "UPDATE grants SET revoked_ms = ?2 WHERE tool_id = ?1 AND revoked_ms IS NULL",
                 params![tool_id, at_ms],
             )?)
+        })
+    }
+
+    /// Revisions never repeat, including after all previous grants were revoked.
+    pub fn next_grant_revision(&self, tool_id: &str) -> Result<i64, DbError> {
+        self.with(|c| {
+            Ok(c.query_row(
+                "SELECT coalesce(max(revision), 0) + 1 FROM grants WHERE tool_id = ?1",
+                [tool_id],
+                |r| r.get(0),
+            )?)
+        })
+    }
+
+    pub fn begin_deletion(&self, include_tools: bool) -> Result<(), DbError> {
+        self.with(|c| {
+            // Never narrow an unfinished wipe on a retry.
+            c.execute("INSERT INTO deletion_journal VALUES (1, ?1)
+                ON CONFLICT(id) DO UPDATE SET include_tools = max(include_tools, excluded.include_tools)", [include_tools])?;
+            Ok(())
+        })
+    }
+
+    pub fn pending_deletion(&self) -> Result<Option<bool>, DbError> {
+        self.with(|c| {
+            Ok(c.query_row(
+                "SELECT include_tools FROM deletion_journal WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+        })
+    }
+
+    /// Keep the tombstone until the core has also removed files. Idempotent after a crash.
+    pub fn delete_local_rows(&self, include_tools: bool) -> Result<(), DbError> {
+        self.with(|c| {
+            let tx = c.unchecked_transaction()?;
+            tx.execute_batch(
+                "DELETE FROM model_usage; DELETE FROM builds; DELETE FROM drafts;
+                DELETE FROM outbound; DELETE FROM detections; DELETE FROM suggestion_dismissals;
+                DELETE FROM activity;",
+            )?;
+            if include_tools {
+                tx.execute_batch("DELETE FROM runs; DELETE FROM tools;")?;
+            } else {
+                tx.execute_batch(
+                    "UPDATE runs SET run_dir = NULL,
+                    state = CASE WHEN state = 'staged' THEN 'discarded' ELSE state END;",
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
+    pub fn finish_deletion(&self) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute("DELETE FROM deletion_journal", [])?;
+            Ok(())
         })
     }
 
@@ -952,7 +1015,7 @@ impl Db {
 
     /// Row counts for the Privacy page.
     pub fn stats(&self) -> Result<Vec<TableStats>, DbError> {
-        const TABLES: [&str; 7] = [
+        const TABLES: [&str; 11] = [
             "tools",
             "versions",
             "runs",
@@ -960,6 +1023,10 @@ impl Db {
             "outbound",
             "activity",
             "detections",
+            "drafts",
+            "model_usage",
+            "suggestion_dismissals",
+            "grants",
         ];
         self.with(|c| {
             TABLES

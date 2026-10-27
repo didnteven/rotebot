@@ -288,3 +288,17 @@ mod windows {
 }
 #[cfg(windows)]
 pub use windows::*;
+
+#[cfg(unix)]
+pub fn create_directory(root: &File, name: &str) -> Result<File, BrokerError> {
+    use rustix::fs::{mkdirat, openat, Mode, OFlags};
+    mkdirat(root, name, Mode::RUSR | Mode::WUSR | Mode::XUSR).map_err(io::Error::from)?;
+    let fd = openat(
+        root,
+        name,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(io::Error::from)?;
+    Ok(File::from(fd))
+}

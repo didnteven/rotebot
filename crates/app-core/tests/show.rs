@@ -305,3 +305,28 @@ async fn concurrent_start_spawns_only_one_observer() {
     show.stop().await;
     assert_eq!(std::fs::read_to_string(starts).unwrap().lines().count(), 1);
 }
+
+#[tokio::test]
+async fn deleting_history_stops_show_and_clears_session_detections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let show = ShowController::new(Some(fake_observer(tmp.path())), core.clone());
+    show.start().await;
+    let recording = wait_for(&show, |s| {
+        matches!(s, ShowState::Recording { matches: 1, .. })
+    })
+    .await;
+    assert!(matches!(recording, ShowState::Recording { matches: 1, .. }));
+    show.delete_data(macroscope_app_core::dto::DeleteOptions {
+        include_tools: false,
+    })
+    .await
+    .unwrap();
+    assert!(matches!(show.state(), ShowState::Idle { .. }));
+    assert!(core
+        .delete_preview()
+        .unwrap()
+        .items
+        .iter()
+        .all(|i| i.count == 0));
+}

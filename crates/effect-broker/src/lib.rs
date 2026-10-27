@@ -810,3 +810,29 @@ pub fn reconcile(run_dir: &Path) -> Result<ReconcileOutcome, BrokerError> {
 
 #[cfg(test)]
 mod tests;
+
+/// Create a new export directory beneath the selected root. All traversal and writes
+/// use pinned directory descriptors; existing directories and links are refused.
+#[cfg(unix)]
+pub fn export_bundle(
+    root: &Path,
+    name: &str,
+    files: &[(&str, Vec<u8>)],
+) -> Result<PathBuf, BrokerError> {
+    if name.is_empty() || name.contains(['/', '\\', '\0']) || name == "." || name == ".." {
+        return Err(BrokerError::InvalidSelection);
+    }
+    let root_fd = platform::open(root, true)?;
+    let dir = platform::create_directory(&root_fd, name)?;
+    for (name, bytes) in files {
+        if name.contains(['/', '\\', '\0']) || *name == "." || *name == ".." {
+            return Err(BrokerError::InvalidSelection);
+        }
+        let mut file = platform::create_temp(&dir, name)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    platform::sync_directory(&dir)?;
+    platform::sync_directory(&root_fd)?;
+    Ok(root.join(name))
+}

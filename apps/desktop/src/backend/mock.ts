@@ -159,7 +159,7 @@ function apply(
     if (row.length !== preview.columns.length)
       return {
         kind: "input_invalid",
-        row: i + 2,
+        row: i + 1,
         column: null,
         message: "Row has a different number of cells than the header.",
       };
@@ -182,7 +182,7 @@ function apply(
       } catch (error) {
         return {
           kind: "input_invalid",
-          row: i + 2,
+          row: i + 1,
           column: column.source,
           message: (error as Error).message,
         };
@@ -234,20 +234,24 @@ export class MockBackend implements Backend {
     model: "muse-spark-1.3",
     museUnverifiedOk: false,
   };
-  private connectors: ConnectorInfo[] = connectorCatalog.connectors.map((c) => ({
-    id: c.id,
-    name: c.name,
-    category: c.category,
-    mcpUrl: c.mcp_url,
-    registration: c.auth.registration as ConnectorInfo["registration"],
-    verification: c.verification as ConnectorInfo["verification"],
-    docsUrl: c.auth.docs_url || null,
-    clientSetup: c.auth.client_setup ?? null,
-    redirectUri: c.auth.fixed_redirect_port == null
-      ? null : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
-    state: { kind: "not_connected" },
-    hasClientCredentials: false,
-  }));
+  private connectors: ConnectorInfo[] = connectorCatalog.connectors.map(
+    (c) => ({
+      id: c.id,
+      name: c.name,
+      category: c.category,
+      mcpUrl: c.mcp_url,
+      registration: c.auth.registration as ConnectorInfo["registration"],
+      verification: c.verification as ConnectorInfo["verification"],
+      docsUrl: c.auth.docs_url || null,
+      clientSetup: c.auth.client_setup ?? null,
+      redirectUri:
+        c.auth.fixed_redirect_port == null
+          ? null
+          : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
+      state: { kind: "not_connected" },
+      hasClientCredentials: false,
+    }),
+  );
 
   constructor(
     seeds: (Pick<ToolSummary, "id" | "name" | "version"> &
@@ -260,6 +264,7 @@ export class MockBackend implements Backend {
         lastRunAtMs: null,
         runCount: 0,
         sample: false,
+        state: "enabled",
         summary: ["Map orders for import"],
         mapping: mapping(),
         inputColumns: ["order_id", "created", "amount", "customer"],
@@ -719,6 +724,54 @@ export class MockBackend implements Backend {
     })();
     return clone(build);
   }
+  async buildTryInput(buildId: string, input: FileHandle) {
+    const build = this.builds.get(buildId);
+    if (!build || build.phase !== "ready" || !build.candidate)
+      throw new Error("Only a ready candidate can check another sample.");
+    const reviewed = this.buildDrafts.get(buildId)!;
+    if (this.drafts.get(reviewed.draftId)?.revision !== reviewed.revision)
+      throw new Error("The task changed after this build. Build it again.");
+    const file = this.files.get(input.handleId);
+    if (!file) throw new Error("Choose a CSV first.");
+    const result = apply(file.preview, file.rows, build.candidate);
+    if (!Array.isArray(result)) {
+      const detail =
+        result.kind === "input_invalid"
+          ? `Row ${result.row}, column ${result.column}: ${result.message}`
+          : result.message;
+      build.checks = [
+        {
+          id: "input",
+          label: "New sample follows the rules",
+          passed: false,
+          detail,
+        },
+      ];
+      build.comparison = null;
+      build.failure = { kind: "checks", message: detail };
+      this.emitBuild(build, "failed", detail);
+    } else {
+      build.comparison = {
+        inputColumns: file.preview.columns,
+        inputRows: file.preview.rows,
+        outputColumns: build.candidate.output_columns.map((c) => c.name),
+        outputRows: result.slice(0, 8),
+        rowsIn: file.rows.length,
+        rowsOut: result.length,
+      };
+      build.checks = [
+        {
+          id: "input",
+          label: "New sample follows the rules",
+          passed: true,
+          detail: `${file.rows.length} → ${result.length}`,
+        },
+      ];
+      build.failure = null;
+      this.emitBuild(build, "ready", "New sample checks passed");
+    }
+    return clone(build);
+  }
   async buildState(buildId: string) {
     const build = this.builds.get(buildId);
     if (!build) throw new Error("Build unavailable.");
@@ -747,6 +800,8 @@ export class MockBackend implements Backend {
       throw new Error("Checks must pass before saving.");
     if (!name.trim()) throw new Error("Give your tool a name.");
     const draft = this.buildDrafts.get(buildId)!;
+    if (this.drafts.get(draft.draftId)?.revision !== draft.revision)
+      throw new Error("The task changed after this build. Build it again.");
     const tool: ToolDetail = {
       id: this.id("tool"),
       name: name.trim(),
@@ -756,6 +811,7 @@ export class MockBackend implements Backend {
       lastRunAtMs: null,
       runCount: 0,
       sample: this.sampleInputs.has(draft.input.handle.handleId),
+      state: "enabled",
       summary: clone(draft.summary),
       mapping: build.candidate,
       inputColumns: draft.input.columns,
@@ -788,6 +844,7 @@ export class MockBackend implements Backend {
       lastRunAtMs: null,
       runCount: 0,
       sample: true,
+      state: "enabled",
       summary: draft.summary,
       mapping: mapping(),
       inputColumns: input.columns,
@@ -796,6 +853,36 @@ export class MockBackend implements Backend {
       versionHash: digest(mapping()),
     };
     this.tools.set(tool.id, tool);
+    return clone(tool);
+  }
+  private exports = new Set<string>();
+  private grantRevisions = new Map<string, number>();
+  private runRevisions = new Map<string, number>();
+  async exportTool(toolId: string) {
+    const tool = await this.getTool(toolId);
+    const path = `/Demo/Exports/${tool.name.replace(/[\/\\:\u0000-\u001f\u007f]/g, "_")}-v${tool.version}`;
+    if (this.exports.has(path))
+      throw new Error("Export folder already exists.");
+    this.exports.add(path);
+    this.log("settings", `Exported tool “${tool.name}”`);
+    return path;
+  }
+  async revokeTool(toolId: string) {
+    const tool = this.tools.get(toolId);
+    if (!tool) throw new Error("Tool unavailable.");
+    tool.state = "paused";
+    this.log("settings", `Paused tool “${tool.name}”`);
+    return clone(tool);
+  }
+  async restoreTool(toolId: string) {
+    const tool = this.tools.get(toolId);
+    if (!tool) throw new Error("Tool unavailable.");
+    if (tool.state === "paused")
+      this.grantRevisions.set(
+        toolId,
+        (this.grantRevisions.get(toolId) ?? 1) + 1,
+      );
+    tool.state = "enabled";
     return clone(tool);
   }
   async deleteTool(toolId: string) {
@@ -816,6 +903,13 @@ export class MockBackend implements Backend {
   ) {
     const tool = await this.getTool(toolId),
       file = this.files.get(input.handleId);
+    if (tool.state === "paused")
+      return {
+        failure: {
+          kind: "revoked",
+          message: "This tool is paused.",
+        } as RunFailure,
+      };
     if (!file)
       return {
         failure: {
@@ -857,6 +951,7 @@ export class MockBackend implements Backend {
         `${outputDir.displayPath}/${outputName}`,
       ),
     };
+    this.runRevisions.set(run.runId, this.grantRevisions.get(toolId) ?? 1);
     this.staged.set(run.runId, clone(run));
     this.stagedData.set(run.runId, {
       inputDigest: digest(file.rows),
@@ -890,7 +985,12 @@ export class MockBackend implements Backend {
         } as RunFailure,
       };
     const tool = this.tools.get(run.toolId);
-    if (!tool)
+    if (
+      !tool ||
+      tool.state === "paused" ||
+      this.runRevisions.get(runId) !==
+        (this.grantRevisions.get(run.toolId) ?? 1)
+    )
       return {
         failure: {
           kind: "revoked",
@@ -975,6 +1075,47 @@ export class MockBackend implements Backend {
       ],
       outbound: clone(this.outbound),
     };
+  }
+  async deletePreview() {
+    return {
+      toolsIncluded: false as const,
+      items: [
+        { label: "Drafts", count: this.drafts.size },
+        { label: "Builds", count: this.builds.size },
+        { label: "Build usage legs", count: 0 },
+        { label: "Outbound records and payloads", count: this.outbound.length },
+        { label: "Connection detections", count: this.suggestions.length },
+        { label: "Suggestion dismissals", count: this.dismissed.size },
+        { label: "Activity", count: this.activity.length },
+        { label: "Staging directories", count: this.staged.size },
+        { label: "Sample copies", count: this.sampleInputs.size },
+        { label: "Build workspaces", count: 0 },
+      ],
+    };
+  }
+  async deleteData(options: { includeTools: boolean }) {
+    await this.emergencyStop();
+    await this.setLocalOnly(true);
+    this.drafts.clear();
+    this.builds.clear();
+    this.buildDrafts.clear();
+    this.files.clear();
+    this.sampleInputs.clear();
+    this.staged.clear();
+    this.stagedData.clear();
+    this.runRevisions.clear();
+    this.outbound = [];
+    this.suggestions = [];
+    this.dismissed.clear();
+    this.activity = [];
+    if (this.show.kind !== "unavailable")
+      this.show = { kind: "idle", accessibility: "unknown" };
+    this.emitShow();
+    if (options.includeTools) {
+      this.tools.clear();
+      this.grantRevisions.clear();
+      this.receipts = [];
+    }
   }
   async deleteOutboundHistory() {
     this.outbound = [];

@@ -11,6 +11,7 @@ pub mod checks;
 pub mod connections;
 pub mod drafts;
 pub mod dto;
+mod privacy;
 pub mod show;
 
 use dto::*;
@@ -165,6 +166,8 @@ struct Inner {
     plan_cache: Mutex<Option<(i64, PlanStatus)>>,
     last_key_test: Mutex<Option<KeyTestResult>>,
     cloud_controls: tokio::sync::Mutex<()>,
+    lifecycle: Mutex<()>,
+    deleting: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone)]
@@ -302,8 +305,12 @@ impl AppCore {
                 plan_cache: Mutex::new(None),
                 last_key_test: Mutex::new(None),
                 cloud_controls: tokio::sync::Mutex::new(()),
+                lifecycle: Mutex::new(()),
+                deleting: std::sync::atomic::AtomicBool::new(false),
             }),
         };
+        // Resume tombstones before reopening admission or recovering any jobs.
+        core.resume_deletion()?;
         // The policy starts closed; reopen cloud egress unless the user chose Local only.
         if core.db().setting("local_only")? != Some(json!(true)) {
             core.inner
@@ -441,11 +448,13 @@ impl AppCore {
 
     /// Registers a file chosen in the native picker. Only the shell calls this.
     pub fn register_picked_file(&self, path: &Path) -> CoreResult<FileHandle> {
+        let _admission = self.admit_local()?;
         self.register(path, PickKind::File)
     }
 
     /// Registers a folder chosen in the native picker. Only the shell calls this.
     pub fn register_picked_dir(&self, path: &Path) -> CoreResult<FileHandle> {
+        let _admission = self.admit_local()?;
         self.register(path, PickKind::Dir)
     }
 
@@ -475,6 +484,7 @@ impl AppCore {
     }
 
     pub fn load_sample_csv(&self) -> CoreResult<CsvPreview> {
+        let _admission = self.admit_local()?;
         let path = self.inner.cfg.data_dir.join("samples/orders.csv");
         if std::fs::read(&path).ok().as_deref() != Some(SAMPLE_CSV) {
             std::fs::write(&path, SAMPLE_CSV).map_err(|e| CoreError::Internal(e.to_string()))?;
@@ -485,6 +495,7 @@ impl AppCore {
 
     /// A folder for sample outputs, so the sample tool can run without a picker.
     pub fn sample_output_dir(&self) -> CoreResult<FileHandle> {
+        let _admission = self.admit_local()?;
         let dir = self.inner.cfg.data_dir.join("samples/output");
         std::fs::create_dir_all(&dir).map_err(|e| CoreError::Internal(e.to_string()))?;
         self.register(&dir, PickKind::Dir)
@@ -533,6 +544,7 @@ impl AppCore {
     }
 
     pub fn draft_task(&self, input_handle: &str, description: &str) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
         let (path, handle) = self.handle_path(input_handle, PickKind::File)?;
         let bytes = Self::read_limited(&path)?;
         let parsed = drafts::parse(&bytes, 200).map_err(CoreError::Invalid)?;
@@ -566,6 +578,7 @@ impl AppCore {
         question_id: &str,
         answer: &str,
     ) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
         let mut draft = self.load_draft(draft_id)?;
         let question = draft
             .questions
@@ -607,6 +620,7 @@ impl AppCore {
         mapping: CsvMapping,
         output_name: &str,
     ) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
         let mut draft = self.load_draft(draft_id)?;
         draft.mapping = mapping;
         draft.output_name = output_name.trim().into();
@@ -876,6 +890,7 @@ impl AppCore {
 
     pub async fn set_local_only(&self, local_only: bool) -> CoreResult<ModelAccessStatus> {
         let _control = self.inner.cloud_controls.lock().await;
+        self.ensure_active()?;
         if local_only {
             // Persist the closed choice before waiting for any workers.
             self.db().set_setting("local_only", &json!(true))?;
@@ -916,8 +931,9 @@ impl AppCore {
     }
 
     pub async fn outbound_preview(&self, draft_id: &str) -> CoreResult<OutboundPreview> {
-        let draft = self.load_draft(draft_id)?;
         let access = self.model_access().await;
+        let _admission = self.admit_local()?;
+        let draft = self.load_draft(draft_id)?;
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
         let contract = drafts::contract_for(&draft);
         let (payload_text, estimate) = match route {
@@ -1035,6 +1051,9 @@ impl AppCore {
         draft_id: &str,
         outbound_reviewed: bool,
     ) -> CoreResult<BuildState> {
+        let consent_epoch = self.inner.policy.epoch();
+        let access = self.model_access().await;
+        let _admission = self.admit_local()?;
         let draft = self.load_draft(draft_id)?;
         if !draft.ready_to_build {
             return Err(CoreError::Invalid(format!(
@@ -1042,8 +1061,6 @@ impl AppCore {
                 draft.blockers.join("; ")
             )));
         }
-        let consent_epoch = self.inner.policy.epoch();
-        let access = self.model_access().await;
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
         if route != ModelRoute::OfflineDemo {
             self.inner
@@ -1342,6 +1359,7 @@ impl AppCore {
             last_run_at_ms: row.last_run_ms,
             run_count: row.run_count,
             sample: row.sample,
+            state: row.state.clone(),
         }
     }
 
@@ -1471,6 +1489,7 @@ impl AppCore {
     }
 
     pub async fn save_tool(&self, build_id: &str, name: &str) -> CoreResult<ToolDetail> {
+        let _admission = self.admit_local()?;
         let state = self.build_state(build_id)?;
         if state.phase != BuildPhase::Ready {
             return Err(CoreError::Invalid(
@@ -1517,6 +1536,7 @@ impl AppCore {
     }
 
     pub fn install_sample_tool(&self) -> CoreResult<ToolDetail> {
+        let _admission = self.admit_local()?;
         if let Some(existing) = self.db().list_tools()?.into_iter().find(|t| t.sample) {
             return self.tool_detail(&existing);
         }
@@ -1556,10 +1576,12 @@ impl AppCore {
     }
 
     pub fn delete_tool(&self, tool_id: &str) -> CoreResult<()> {
+        let _admission = self.admit_local()?;
         let row = self
             .db()
             .tool(tool_id)?
             .ok_or(CoreError::NotFound("tool"))?;
+        lock(&self.inner.staged).retain(|_, s| s.dto.tool_id != tool_id);
         for run in self.db().runs_for_tool(tool_id)? {
             if let Some(dir) = run.run_dir {
                 let _ = std::fs::remove_dir_all(dir);
@@ -1582,14 +1604,20 @@ impl AppCore {
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
+        let _admission = self.admit_local()?;
         let mut staged_runs = lock(&self.inner.staged);
-        if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
-            return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
-        }
         let row = self
             .db()
             .tool(tool_id)?
             .ok_or(CoreError::NotFound("tool"))?;
+        if row.state == "paused" {
+            return Ok(StageResult::Failed(FailureEnvelope {
+                failure: map_run_failure(BrokerError::Revoked),
+            }));
+        }
+        if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
+            return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+        }
         let detail = self.tool_detail(&row)?;
         let contract: TaskContract =
             serde_json::from_value(row.detail.get("contract").cloned().unwrap_or(Value::Null))
@@ -1611,12 +1639,12 @@ impl AppCore {
                 failure: map_run_failure(BrokerError::DestinationExists),
             }));
         }
-        let (_, grant_revision, _) = self
-            .db()
-            .active_grant(tool_id, &detail.version_hash)?
-            .ok_or_else(|| {
-                CoreError::Invalid("This tool has no active permission grant.".into())
-            })?;
+        let Some((_, grant_revision, _)) = self.db().active_grant(tool_id, &detail.version_hash)?
+        else {
+            return Ok(StageResult::Failed(FailureEnvelope {
+                failure: map_run_failure(BrokerError::Revoked),
+            }));
+        };
         let epochs = Epochs {
             grant_revision: grant_revision as u64,
             policy_epoch: 0,
@@ -1685,6 +1713,7 @@ impl AppCore {
     }
 
     pub fn commit_run(&self, run_id: &str, plan_hash: &str) -> CoreResult<CommitResult> {
+        let _admission = self.admit_local()?;
         // Keep run admission closed through publication, not just while staging.
         let mut staged_runs = lock(&self.inner.staged);
         let slot = staged_runs
@@ -1711,13 +1740,17 @@ impl AppCore {
             approved_at_ms: self.now().max(0) as u64,
         };
         // Current revisions, not the plan's: a grant revoked after staging must refuse.
+        let paused = self
+            .db()
+            .tool(&dto.tool_id)?
+            .is_none_or(|t| t.state == "paused");
         let current_grant = self
             .db()
             .active_grant(&dto.tool_id, &staged.plan().version_hash)?
             .map(|(_, rev, _)| rev as u64)
             .unwrap_or(u64::MAX);
         let epochs = Epochs {
-            grant_revision: current_grant,
+            grant_revision: if paused { u64::MAX } else { current_grant },
             policy_epoch: 0,
         };
         let run_dir = staged.run_dir().to_path_buf();
@@ -1765,6 +1798,7 @@ impl AppCore {
     }
 
     pub fn discard_run(&self, run_id: &str) -> CoreResult<()> {
+        let _admission = self.admit_local()?;
         if let Some(slot) = lock(&self.inner.staged).remove(run_id) {
             let _ = std::fs::remove_dir_all(slot.staged.run_dir());
         }
@@ -1882,6 +1916,7 @@ impl AppCore {
     }
 
     pub fn delete_outbound_history(&self) -> CoreResult<()> {
+        let _admission = self.admit_local()?;
         let n = self.db().delete_outbound_history()?;
         self.activity("settings", format!("Deleted {n} outbound records"), None);
         Ok(())

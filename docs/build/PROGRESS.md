@@ -53,6 +53,9 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Secret never in argv, logs, DB, files (P6) | passed | `canary_parent_env_never_reaches_child_and_key_never_argv`, `api_key_route_requires_review_and_key_is_never_stored_in_the_database`, osascript pipe key entry |
 | App-owned credential item, never Muse's (§4.5) | passed | `rejects_muse_service_and_bad_refs`; app run created `dev.macroscope.app` items only |
 | Data-protection Keychain in a signed build | unverified | Unsigned dev builds fall back to the login keychain (`-34018`); recheck once signed |
+| Local history deletion and restartable cleanup (P4, §§2.7/3.3) | passed | `history_wipe_keeps_tools_credentials_and_user_outputs_then_optional_tools_wipe`, `startup_resumes_both_tombstone_scopes_before_recovering_jobs`, `deletion_during_dispatch_awaits_workers_and_cannot_resurrect_history`; persistent tombstone before row/file cleanup, admission/cancellation barrier first |
+| Tool export (§2.7) | passed | `export_is_structural_create_only_and_refuses_symlink_swaps`; native folder picker, four structural files, pinned no-follow directory writes, create-only destination; no samples or row data |
+| Tool revoke/restore (§2.7) | passed | `pause_and_restore_never_reauthorize_a_previously_staged_run`; paused tools refuse staging/commit, restoration uses a fresh grant revision; real IPC regression |
 | Encrypted metadata, staging (P3) | passed | `wrong_key_is_rejected_and_file_has_no_plaintext`; XChaCha20-Poly1305 staging tamper tests |
 | Stage once → approve exact bytes → atomic no-overwrite commit (§7.3) | passed | broker adversarial suite (tamper, input/destination swap, revocation, crash reconcile, no rerun) |
 | Host-owned checks gate "ready" (§7.4) | passed | `a_schema_valid_but_wrong_answer_is_stopped_by_host_checks`, `candidates_cannot_replace_confirmed_rules_even_when_rows_still_look_valid` |
@@ -71,6 +74,7 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Signed bundle TCC attribution, N-1 update (§5.3, P9) | unverified | No signing identity yet |
 | MCP discovery matches real servers | passed | `live_discovery_matches_catalog` (8 providers) |
 | A real OAuth sign-in to a provider | unverified | Needs the owner; Gmail/Slack/GitHub need an OAuth client of your own |
+| Background footprint under 350 MiB, quiescent CPU (§9.2) | passed (initial sample) | Debug bundle idle 60 s on 2026-10-27: app process 73 MiB RSS, 0.40 s CPU including startup. WebKit helper processes not counted; release build and an 8-hour soak still to do |
 | Windows code paths compile | passed (partial) | `cargo check` + `clippy -D warnings` for `x86_64-pc-windows-msvc` on broker (MoveFileExW no-replace), vault (Credential Manager), executor, domain, policy. Crates with C deps (TLS, SQLCipher) need Windows CI |
 | Windows runtime behaviour | unverified | Plan M6: packaged MSIX, interactive and physical testing |
 
@@ -83,3 +87,17 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 3. Try Show with a browser on Gmail; macOS will ask to allow Accessibility for Macroscope.
 4. For Gmail's MCP server: Google Workspace Developer Preview, a Cloud project with the
    Gmail API and Gmail MCP API enabled, and a desktop OAuth client (Connections → Gmail).
+
+
+## Privacy controls (Task 07)
+
+Added local deletion previews and confirmation, restartable deletion journals,
+structural tool export, pause/resume with fresh grant revisions, another-sample
+host checks, and the five-tool tray menu with Run/Create navigation. P4 deletion,
+export, and revoke evidence is listed in the gates table above.
+
+Final verification: **185 Rust tests passed, 4 existing checks ignored; 61 UI tests
+passed**. `cargo test --workspace`, both final `bash scripts/check.sh` runs, and
+`npx tauri build --debug --no-bundle` all exited 0. Exact tails and the external
+contract-mirror scope clarification are recorded in
+[Task 07 verification](task-07-verification.md).

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Only the main window may call Macroscope's own commands; no plugin commands are exposed to the webview.",
+  "description": "Only the main window may call Macroscope's commands and subscribe to host events; no filesystem, shell, or opener plugin commands are exposed.",
   "windows": [
     "main"
   ],
@@ -55,6 +55,14 @@
     "allow-disconnect",
     "allow-preview-connector-tools",
     "allow-connection-suggestions",
-    "allow-dismiss-suggestion"
+    "allow-dismiss-suggestion",
+    "allow-build-try-input",
+    "allow-export-tool",
+    "allow-revoke-tool",
+    "allow-restore-tool",
+    "allow-delete-preview",
+    "allow-delete-data",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

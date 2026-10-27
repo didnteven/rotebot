@@ -497,7 +497,11 @@ export function CreateFlow({
             .map(
               (c) =>
                 c && (
-                  <div role="note" className="suggestion notice notice-info" key={c.id}>
+                  <div
+                    role="note"
+                    className="suggestion notice notice-info"
+                    key={c.id}
+                  >
                     <p>
                       You mentioned {c.name}. Connect it in Connections so later
                       tools can use it.
@@ -707,6 +711,23 @@ export function CreateFlow({
                 <input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               <div className="actions">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      const sample = await backend.pickCsv();
+                      if (sample)
+                        setBuild(
+                          await backend.buildTryInput(
+                            build.buildId,
+                            sample.handle,
+                          ),
+                        );
+                    })
+                  }
+                >
+                  Try another sample…
+                </button>
                 <button onClick={() => setStep(1)}>Edit rules</button>
                 <button
                   className="primary"

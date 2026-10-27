@@ -19,14 +19,18 @@ export function toBackendError(e: unknown): Error {
   if (e && typeof e === "object" && "message" in e) {
     const { message, code } = e as { message: unknown; code?: unknown };
     if (typeof message === "string")
-      return new BackendError(message, typeof code === "string" ? code : "error");
+      return new BackendError(
+        message,
+        typeof code === "string" ? code : "error",
+      );
   }
   if (typeof e === "string") return new BackendError(e, "error");
   return new BackendError("Something went wrong. Try again.", "unknown");
 }
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const call = args === undefined ? tauriInvoke<T>(cmd) : tauriInvoke<T>(cmd, args);
+  const call =
+    args === undefined ? tauriInvoke<T>(cmd) : tauriInvoke<T>(cmd, args);
   return Promise.resolve(call).catch((e: unknown) => {
     throw toBackendError(e);
   });
@@ -66,6 +70,8 @@ export class TauriBackend implements Backend {
     invoke("build_state", { buildId });
   onBuildEvent: Backend["onBuildEvent"] = (buildId, cb) =>
     listen<BuildState>("build://" + buildId, (event) => cb(event.payload));
+  buildTryInput: Backend["buildTryInput"] = (buildId, input) =>
+    invoke("build_try_input", { buildId, input });
   stopBuild: Backend["stopBuild"] = (buildId) =>
     invoke("stop_build", { buildId });
   saveTool: Backend["saveTool"] = (buildId, name) =>
@@ -74,6 +80,12 @@ export class TauriBackend implements Backend {
   getTool: Backend["getTool"] = (toolId) => invoke("get_tool", { toolId });
   installSampleTool: Backend["installSampleTool"] = () =>
     invoke("install_sample_tool");
+  exportTool: Backend["exportTool"] = (toolId) =>
+    invoke("export_tool", { toolId });
+  revokeTool: Backend["revokeTool"] = (toolId) =>
+    invoke("revoke_tool", { toolId });
+  restoreTool: Backend["restoreTool"] = (toolId) =>
+    invoke("restore_tool", { toolId });
   deleteTool: Backend["deleteTool"] = (toolId) =>
     invoke("delete_tool", { toolId });
   pickOutputDir: Backend["pickOutputDir"] = () => invoke("pick_output_dir");
@@ -89,6 +101,9 @@ export class TauriBackend implements Backend {
   listReceipts: Backend["listReceipts"] = () => invoke("list_receipts");
   privacyOverview: Backend["privacyOverview"] = () =>
     invoke("privacy_overview");
+  deletePreview: Backend["deletePreview"] = () => invoke("delete_preview");
+  deleteData: Backend["deleteData"] = (options) =>
+    invoke("delete_data", { options });
   deleteOutboundHistory: Backend["deleteOutboundHistory"] = () =>
     invoke("delete_outbound_history");
   emergencyStop: Backend["emergencyStop"] = () => invoke("emergency_stop");

@@ -191,6 +191,9 @@ impl ShowController {
     /// Starts one recording. Returns the current state if one is already running.
     pub async fn start(&self) -> ShowState {
         let _lifecycle = self.lifecycle.lock().await;
+        if self.core.ensure_active().is_err() {
+            return self.state();
+        }
         let path = match (&self.observer, self.state()) {
             (_, ShowState::Unavailable { .. }) => return self.state(),
             (_, s @ ShowState::Recording { .. }) => return s,
@@ -440,6 +443,25 @@ impl ShowController {
     /// Acknowledges stop only after the helper has been killed and reaped.
     pub async fn stop(&self) -> ShowState {
         let _lifecycle = self.lifecycle.lock().await;
+        self.stop_locked().await
+    }
+
+    /// Hold Show admission closed until cleanup ends, so start cannot race the wipe.
+    pub async fn delete_data(&self, options: crate::dto::DeleteOptions) -> crate::CoreResult<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.stop_locked().await;
+        self.core.delete_data(options).await?;
+        let mut inner = lock(&self.inner);
+        if !matches!(inner.state, ShowState::Unavailable { .. }) {
+            inner.state = ShowState::Idle {
+                accessibility: inner.accessibility.clone(),
+            };
+            self.publish(&mut inner);
+        }
+        Ok(())
+    }
+
+    async fn stop_locked(&self) -> ShowState {
         let mut done = {
             let inner = lock(&self.inner);
             let Some(s) = inner.session.as_ref() else {

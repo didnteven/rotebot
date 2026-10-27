@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   AppInfo,
   Backend,
@@ -95,6 +97,40 @@ export function App({ backend }: { backend: Backend }) {
       unsubscribe?.();
     };
   }, [backend]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    const subscriptions = [
+      listen<string>("navigate://run", (event) => {
+        void act(async () => {
+          const tool = await backend.getTool(event.payload);
+          if (active) {
+            setCreating(false);
+            setShowPanel(false);
+            setRunning(tool);
+            setDestination("Tools");
+          }
+        });
+      }),
+      listen("navigate://create", () => {
+        if (active) {
+          setRunning(null);
+          setShowPanel(false);
+          setInitialInput(null);
+          setCreating(true);
+          setDestination("Tools");
+        }
+      }),
+    ];
+    subscriptions.forEach((p) => void p.catch(() => {}));
+    return () => {
+      active = false;
+      subscriptions.forEach(
+        (p) => void p.then((stop) => stop()).catch(() => {}),
+      );
+    };
+  }, [backend]);
+  const [exported, setExported] = useState<string | null>(null);
   function connect(id: string) {
     setSelectedConnector(id);
     setDestination("Connections");
@@ -171,6 +207,7 @@ export function App({ backend }: { backend: Backend }) {
             <h1 id="page-title">{destination}</h1>
           </header>
           <Notice error={error} />
+          {exported && <p role="status">Tool exported to {exported}</p>}
           {error && (
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}
@@ -294,6 +331,34 @@ export function App({ backend }: { backend: Backend }) {
                               </p>
                             </div>
                             <button
+                              disabled={busy}
+                              onClick={() =>
+                                void act(async () => {
+                                  setExported(
+                                    await backend.exportTool(tool.id),
+                                  );
+                                })
+                              }
+                            >
+                              Export…
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void act(async () => {
+                                  if (tool.state === "paused")
+                                    await backend.restoreTool(tool.id);
+                                  else await backend.revokeTool(tool.id);
+                                  await refreshTools();
+                                })
+                              }
+                            >
+                              {tool.state === "paused"
+                                ? "Resume tool"
+                                : "Pause tool"}
+                            </button>
+                            <button
+                              disabled={tool.state === "paused"}
                               aria-label={`Run ${tool.name}…`}
                               onClick={() => setRunning(tool)}
                             >
@@ -326,7 +391,13 @@ export function App({ backend }: { backend: Backend }) {
               backend={backend}
               status={status}
               update={setStatus}
-              stopped={refresh}
+              stopped={async () => {
+                setCreating(false);
+                setRunning(null);
+                setInitialInput(null);
+                await refresh();
+                await refreshTools();
+              }}
             />
           )}
           {destination === "Settings" && status && info && show && (

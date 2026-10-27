@@ -2,6 +2,12 @@ fn main() {
     // Every command is enrolled in the app manifest and granted to the main window only
     // (capabilities/main.json). Keep this list identical to generate_handler! in main.rs.
     const COMMANDS: &[&str] = &[
+        "build_try_input",
+        "export_tool",
+        "revoke_tool",
+        "restore_tool",
+        "delete_preview",
+        "delete_data",
         "app_info",
         "model_access",
         "enter_api_key_native",

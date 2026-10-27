@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-build-try-input"
+description = "Enables the build_try_input command without any pre-configured scope."
+commands.allow = ["build_try_input"]
+
+[[permission]]
+identifier = "deny-build-try-input"
+description = "Denies the build_try_input command without any pre-configured scope."
+commands.deny = ["build_try_input"]

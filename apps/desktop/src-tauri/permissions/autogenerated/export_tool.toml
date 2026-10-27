@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-tool"
+description = "Enables the export_tool command without any pre-configured scope."
+commands.allow = ["export_tool"]
+
+[[permission]]
+identifier = "deny-export-tool"
+description = "Denies the export_tool command without any pre-configured scope."
+commands.deny = ["export_tool"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-revoke-tool"
+description = "Enables the revoke_tool command without any pre-configured scope."
+commands.allow = ["revoke_tool"]
+
+[[permission]]
+identifier = "deny-revoke-tool"
+description = "Denies the revoke_tool command without any pre-configured scope."
+commands.deny = ["revoke_tool"]

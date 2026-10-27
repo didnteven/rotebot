@@ -203,3 +203,50 @@ async fn unknown_charges_keep_the_monthly_build_reservation_and_block_admission(
     assert!(core.start_build(&draft.draft_id, true).await.is_err());
     assert!(core.list_outbound().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn deletion_during_dispatch_awaits_workers_and_cannot_resurrect_history() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_secs(30))
+                .set_body_json(responses_body(&fixture_mapping())),
+        )
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path(), server.uri());
+    core.save_api_key(KEY).await.unwrap();
+    let preview = core.load_sample_csv().unwrap();
+    let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
+    let build = core.start_build(&draft.draft_id, true).await.unwrap();
+    for _ in 0..100 {
+        if !server.received_requests().await.unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        core.delete_data(DeleteOptions {
+            include_tools: false,
+        }),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(core.build_state(&build.build_id).is_err());
+    assert!(core
+        .delete_preview()
+        .unwrap()
+        .items
+        .iter()
+        .all(|i| i.count == 0));
+    assert!(core.model_access().await.api_key.present);
+    tokio::task::yield_now().await;
+    assert!(core.list_activity().unwrap().is_empty());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
