@@ -64,6 +64,11 @@ pub struct SelectedFile {
     path: PathBuf,
 }
 impl SelectedFile {
+    /// Read through the same bounded, no-symlink boundary used for staging.
+    pub fn read_bounded(&self, max_bytes: u64) -> Result<Vec<u8>, BrokerError> {
+        read_snapshot(self, max_bytes).map(|(bytes, _)| bytes)
+    }
+
     pub fn from_picker(path: impl Into<PathBuf>) -> Result<Self, BrokerError> {
         let path = path.into();
         validate_selected_path(&path)?;

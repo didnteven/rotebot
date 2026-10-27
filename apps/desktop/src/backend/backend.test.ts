@@ -67,6 +67,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["openMuseSignIn", [], undefined],
     ["selectRoute", ["offline_demo"], { route: "offline_demo" }],
     ["setLocalOnly", [true], { localOnly: true }],
+    ["setMuseUnverifiedOk", [true], { ok: true }],
     ["pickCsv", [], undefined],
     ["loadSampleCsv", [], undefined],
     [
@@ -161,8 +162,8 @@ it("provides verified catalog metadata and public Gmail tool previews", async ()
     );
     const preregistered = [
       "gmail",
-      "google_calendar",
-      "google_drive",
+      "google-calendar",
+      "google-drive",
       "slack",
       "github",
     ].includes(connector.id);

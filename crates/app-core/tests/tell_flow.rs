@@ -464,3 +464,151 @@ async fn output_names_with_folders_are_refused_before_touching_the_filesystem() 
     }
     assert!(!tmp.path().join("escape.csv").exists());
 }
+
+#[tokio::test]
+async fn saving_a_build_after_editing_its_draft_requires_a_new_build() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let input = core.load_sample_csv().unwrap();
+    let draft = core.draft_task(&input.handle.handle_id, "").unwrap();
+    let b = core.start_build(&draft.draft_id, false).await.unwrap();
+    assert_eq!(
+        wait_terminal(&core, &b.build_id).await.phase,
+        BuildPhase::Ready
+    );
+    let mut mapping = draft.mapping;
+    mapping.output_columns[0].transform = macroscope_domain::Transform::Constant {
+        value: "changed".into(),
+    };
+    core.update_mapping(&draft.draft_id, mapping, "changed.csv")
+        .unwrap();
+    assert!(core.save_tool(&b.build_id, "Stale").await.is_err());
+}
+
+#[tokio::test]
+async fn unfinished_staging_is_discarded_and_cleaned_on_restart() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
+    let core = core_at(tmp.path(), vault.clone(), PlanStatus::NotSignedIn);
+    let tool = core.install_sample_tool().unwrap();
+    let input = core.load_sample_csv().unwrap();
+    let output = out_dir(&core, tmp.path());
+    let StageResult::Staged(run) = core
+        .stage_run(
+            &tool.summary_row.id,
+            &input.handle.handle_id,
+            &output.handle_id,
+            "stale.csv",
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    drop(core);
+    let core = core_at(tmp.path(), vault, PlanStatus::NotSignedIn);
+    assert_eq!(
+        core.database().run(&run.run_id).unwrap().unwrap().state,
+        "discarded"
+    );
+    assert_eq!(
+        std::fs::read_dir(tmp.path().join("data/runs"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn staging_enforces_per_tool_and_global_run_limits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let tool = core.install_sample_tool().unwrap();
+    let input = core.load_sample_csv().unwrap();
+    let output = out_dir(&core, tmp.path());
+    core.stage_run(
+        &tool.summary_row.id,
+        &input.handle.handle_id,
+        &output.handle_id,
+        "a.csv",
+    )
+    .unwrap();
+    assert!(core
+        .stage_run(
+            &tool.summary_row.id,
+            &input.handle.handle_id,
+            &output.handle_id,
+            "b.csv"
+        )
+        .is_err());
+}
+
+#[tokio::test]
+async fn outbound_expiry_applies_without_restarting_the_app() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    core.database()
+        .insert_outbound(&macroscope_storage::db::OutboundRow {
+            id: "old".into(),
+            at_ms: 0,
+            purpose: "test".into(),
+            destination: "test".into(),
+            route: "api_key".into(),
+            synthetic_only: true,
+            cost_micros: None,
+            payload_text: Some("expired".into()),
+        })
+        .unwrap();
+    assert!(core.list_outbound().unwrap().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn preview_and_drafting_refuse_symlink_swaps_after_selection() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let chosen = tmp.path().join("chosen.csv");
+    let private = tmp.path().join("private.csv");
+    std::fs::write(&chosen, "a\npublic\n").unwrap();
+    std::fs::write(&private, "a\nSECRET\n").unwrap();
+    let handle = core.register_picked_file(&chosen).unwrap();
+    std::fs::remove_file(&chosen).unwrap();
+    std::os::unix::fs::symlink(&private, &chosen).unwrap();
+    assert!(core.preview_handle(&handle.handle_id).is_err());
+    assert!(core.draft_task(&handle.handle_id, "").is_err());
+}
+
+#[tokio::test]
+async fn long_headers_remain_exact_in_the_contract_and_mapping() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    let chosen = tmp.path().join("long.csv");
+    let header = "x".repeat(201);
+    std::fs::write(&chosen, format!("{header}\nvalue\n")).unwrap();
+    let handle = core.register_picked_file(&chosen).unwrap();
+    let draft = core.draft_task(&handle.handle_id, "").unwrap();
+    assert_eq!(draft.input.columns, [header]);
+    assert!(draft.ready_to_build, "{:?}", draft.blockers);
+}
+
+#[tokio::test]
+async fn malformed_existing_vault_keys_are_never_silently_replaced() {
+    use macroscope_vault::{Secret, SecretRef};
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = Arc::new(MemoryStore::default());
+    let reference = SecretRef::new("db-key").unwrap();
+    vault
+        .set(&reference, Secret::new(b"bad-key".to_vec()))
+        .unwrap();
+    let result = AppCore::new(CoreConfig {
+        data_dir: tmp.path().join("data"),
+        vault: vault.clone(),
+        gateway_base_url: "http://127.0.0.1:9".into(),
+        home: tmp.path().join("home"),
+        muse: Arc::new(FakeMuse(PlanStatus::NotSignedIn)),
+        app_version: "test".into(),
+        platform: "macos".into(),
+        now_ms: CoreConfig::system_clock(),
+    });
+    assert!(result.is_err());
+    assert_eq!(vault.get(&reference).unwrap().unwrap().expose(), b"bad-key");
+}

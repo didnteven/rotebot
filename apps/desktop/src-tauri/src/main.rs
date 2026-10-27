@@ -217,9 +217,12 @@ async fn start_build<R: Runtime>(
         .start_build(&draft_id, consent.outbound_reviewed)
         .await?;
     let mut rx = core.0.subscribe_build(&state.build_id)?;
+    let state = core.0.build_state(&state.build_id)?;
     let channel = format!("build://{}", state.build_id);
+    let current = core.0.clone();
+    let id = state.build_id.clone();
     tauri::async_runtime::spawn(async move {
-        while let Ok(update) = rx.recv().await {
+        while let Some(update) = receive_update(&mut rx, || current.build_state(&id).ok()).await {
             let done = matches!(
                 update.phase,
                 BuildPhase::Ready | BuildPhase::Failed | BuildPhase::Stopped
@@ -483,6 +486,7 @@ fn allowed_external(url: &str) -> bool {
         "docs.github.com",
         "github.com",
         "api.slack.com",
+        "docs.slack.dev",
         "support.atlassian.com",
         "modelcontextprotocol.io",
     ];
@@ -506,6 +510,17 @@ fn open_external<R: Runtime>(app: AppHandle<R>, conns: State<'_, Conns>, url: St
 }
 
 // ---------- startup ----------
+
+async fn receive_update<T: Clone>(
+    receiver: &mut tokio::sync::broadcast::Receiver<T>,
+    snapshot: impl Fn() -> Option<T>,
+) -> Option<T> {
+    match receiver.recv().await {
+        Ok(update) => Some(update),
+        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Some(snapshot()?),
+        Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+    }
+}
 
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -658,8 +673,10 @@ fn main() {
             let show = ShowController::new(observer_path(), core.clone());
             let mut updates = show.subscribe();
             let handle = app.handle().clone();
+            let current = show.clone();
             tauri::async_runtime::spawn(async move {
-                while let Ok(state) = updates.recv().await {
+                while let Some(state) = receive_update(&mut updates, || Some(current.state())).await
+                {
                     let _ = handle.emit("show://state", &state);
                 }
             });
@@ -874,6 +891,25 @@ mod tests {
             invoke(&w, "connection_suggestions", json!({})).unwrap(),
             json!([])
         );
+    }
+
+    #[tokio::test]
+    async fn event_forwarding_recovers_from_a_lagged_receiver() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(2);
+        for n in 0..10 {
+            tx.send(n).unwrap();
+        }
+        assert_eq!(receive_update(&mut rx, || Some(9)).await, Some(9));
+    }
+
+    #[test]
+    fn every_catalog_documentation_link_can_be_opened() {
+        let catalog: Value =
+            serde_json::from_str(include_str!("../../../../contracts/connectors.json")).unwrap();
+        for c in catalog["connectors"].as_array().unwrap() {
+            let docs = c["auth"]["docs_url"].as_str().unwrap();
+            assert!(allowed_external(docs), "{docs}");
+        }
     }
 
     #[test]

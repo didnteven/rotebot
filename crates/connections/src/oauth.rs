@@ -697,44 +697,69 @@ pub fn pkce_challenge(verifier: &str) -> String {
 /// expected state (the caller's deadline bounds the wait), so a stray local connection,
 /// a browser preconnect, or a favicon request cannot consume the one real callback.
 async fn callback(listener: TcpListener, state: AccessToken) -> Result<AccessToken, OAuthError> {
+    // Bound both concurrent socket state and per-client deadlines. When saturated,
+    // evict stalled clients so a fresh browser redirect can still be accepted.
+    let mut clients = tokio::task::JoinSet::new();
     loop {
-        let (mut stream, _) = listener.accept().await.map_err(|_| OAuthError::Callback)?;
-        let mut request = Vec::new();
-        let read = tokio::time::timeout(Duration::from_secs(5), async {
-            let mut buffer = [0u8; 1024];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = stream.read(&mut buffer).await.ok()?;
-                if n == 0 || request.len() + n > 8192 {
-                    return None;
-                }
-                request.extend_from_slice(&buffer[..n]);
+        tokio::select! {
+            biased;
+            Some(result) = clients.join_next(), if !clients.is_empty() => {
+                if let Ok(Some(result)) = result { return result; }
             }
-            Some(())
-        })
-        .await;
-        if !matches!(read, Ok(Some(()))) {
-            request.zeroize();
-            continue;
+            accepted = listener.accept() => {
+                let (stream, _) = accepted.map_err(|_| OAuthError::Callback)?;
+                if clients.len() >= 32 {
+                    clients.abort_all();
+                    while clients.join_next().await.is_some() {}
+                }
+                let state = state.clone();
+                clients.spawn(callback_client(stream, state));
+            }
         }
-        let result = parse_callback(&request, &state);
+    }
+}
+
+async fn callback_client(
+    mut stream: tokio::net::TcpStream,
+    state: AccessToken,
+) -> Option<Result<AccessToken, OAuthError>> {
+    let mut request = Vec::new();
+    let read = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut buffer = [0u8; 1024];
+        while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = stream.read(&mut buffer).await.ok()?;
+            if n == 0 || request.len() + n > 8192 {
+                return None;
+            }
+            request.extend_from_slice(&buffer[..n]);
+        }
+        Some(())
+    })
+    .await;
+    if !matches!(read, Ok(Some(()))) {
         request.zeroize();
-        // Entire page is fixed: no query reflection, scripts, links, external resources, or IPC.
-        let (status, body) = match &result {
-            Ok(_) => ("200 OK", "You can close this tab."),
-            Err(OAuthError::Denied) => ("200 OK", "Sign-in was cancelled. You can close this tab."),
-            Err(_) => ("404 Not Found", "Not found."),
-        };
-        let page = format!(
-            "<!doctype html><html><head><title>Macroscope</title></head><body>{body}</body></html>"
-        );
-        let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{page}", page.len());
+        return None;
+    }
+    let result = parse_callback(&request, &state);
+    request.zeroize();
+    // Entire page is fixed: no query reflection, scripts, links, external resources, or IPC.
+    let (status, body) = match &result {
+        Ok(_) => ("200 OK", "You can close this tab."),
+        Err(OAuthError::Denied) => ("200 OK", "Sign-in was cancelled. You can close this tab."),
+        Err(_) => ("404 Not Found", "Not found."),
+    };
+    let page = format!(
+        "<!doctype html><html><head><title>Macroscope</title></head><body>{body}</body></html>"
+    );
+    let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{page}", page.len());
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.shutdown().await;
-        match result {
-            // A request without the expected state is not our callback: keep waiting.
-            Err(OAuthError::Callback | OAuthError::StateMismatch) => continue,
-            other => return other,
-        }
+    })
+    .await;
+    match result {
+        Err(OAuthError::Callback | OAuthError::StateMismatch) => None,
+        other => Some(other),
     }
 }
 fn parse_callback(request: &[u8], expected_state: &AccessToken) -> Result<AccessToken, OAuthError> {
@@ -779,4 +804,51 @@ fn parse_callback(request: &[u8], expected_state: &AccessToken) -> Result<Access
         return Err(OAuthError::Callback);
     }
     Ok(AccessToken(code))
+}
+
+#[cfg(test)]
+mod callback_hardening_tests {
+    use super::*;
+    use tokio::net::TcpStream;
+
+    #[tokio::test]
+    async fn callback_accepts_the_real_redirect_while_many_clients_stall() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(callback(listener, AccessToken::new("expected")));
+        let mut slow = Vec::new();
+        for _ in 0..40 {
+            let mut s = TcpStream::connect(addr).await.unwrap();
+            s.write_all(b"GET /callback?").await.unwrap();
+            slow.push(s);
+        }
+        let mut real = TcpStream::connect(addr).await.unwrap();
+        real.write_all(b"GET /callback?state=expected&code=ok HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(1), task).await;
+        assert!(result.is_ok(), "slow clients blocked the browser callback");
+        assert_eq!(result.unwrap().unwrap().unwrap().expose(), "ok");
+    }
+
+    #[tokio::test]
+    async fn callback_ignores_stray_requests_and_returns_matching_denial() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(callback(listener, AccessToken::new("expected")));
+        for query in ["/favicon.ico", "/callback?state=wrong&error=denied"] {
+            let mut s = TcpStream::connect(addr).await.unwrap();
+            s.write_all(format!("GET {query} HTTP/1.1\r\n\r\n").as_bytes())
+                .await
+                .unwrap();
+            let mut response = Vec::new();
+            s.read_to_end(&mut response).await.unwrap();
+            assert!(response.starts_with(b"HTTP/1.1 404"));
+        }
+        let mut s = TcpStream::connect(addr).await.unwrap();
+        s.write_all(b"GET /callback?state=expected&error=access_denied HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        assert!(matches!(task.await.unwrap(), Err(OAuthError::Denied)));
+    }
 }

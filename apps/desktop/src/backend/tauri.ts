@@ -18,7 +18,8 @@ export function toBackendError(e: unknown): Error {
   if (e instanceof Error) return e;
   if (e && typeof e === "object" && "message" in e) {
     const { message, code } = e as { message: unknown; code?: unknown };
-    return new BackendError(String(message), typeof code === "string" ? code : "error");
+    if (typeof message === "string")
+      return new BackendError(message, typeof code === "string" ? code : "error");
   }
   if (typeof e === "string") return new BackendError(e, "error");
   return new BackendError("Something went wrong. Try again.", "unknown");

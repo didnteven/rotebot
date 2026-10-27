@@ -128,3 +128,78 @@ async fn a_schema_valid_but_wrong_answer_is_stopped_by_host_checks() {
         .iter()
         .any(|c| c.id == "selected_input" && !c.passed));
 }
+
+#[tokio::test]
+async fn local_only_during_a_request_cancels_and_acknowledges_the_barrier() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_secs(30))
+                .set_body_json(responses_body(&fixture_mapping())),
+        )
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path(), server.uri());
+    core.save_api_key(KEY).await.unwrap();
+    let preview = core.load_sample_csv().unwrap();
+    let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
+    let b = core.start_build(&draft.draft_id, true).await.unwrap();
+    for _ in 0..100 {
+        if !server.received_requests().await.unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    let access = tokio::time::timeout(std::time::Duration::from_secs(5), core.set_local_only(true))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(access.egress, EgressState::LocalOnly);
+    assert_eq!(
+        core.build_state(&b.build_id).unwrap().phase,
+        BuildPhase::Stopped
+    );
+    assert_eq!(
+        core.set_local_only(false).await.unwrap().egress,
+        EgressState::CloudAllowed
+    );
+}
+
+#[tokio::test]
+async fn local_only_refuses_api_key_network_checks() {
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path(), server.uri());
+    core.save_api_key(KEY).await.unwrap();
+    core.set_local_only(true).await.unwrap();
+    assert!(core.test_api_key().await.is_err());
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn unknown_charges_keep_the_monthly_build_reservation_and_block_admission() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path(), "http://127.0.0.1:9".into());
+    core.save_api_key(KEY).await.unwrap();
+    let input = core.load_sample_csv().unwrap();
+    let draft = core.draft_task(&input.handle.handle_id, "").unwrap();
+    core.database()
+        .put_build(&macroscope_storage::db::BuildRow {
+            id: "previous".into(),
+            draft_id: draft.draft_id.clone(),
+            route: "api_key".into(),
+            phase: "failed".into(),
+            reserved_micros: 24_000_000,
+            spent_micros: None,
+            state: json!({}),
+            created_ms: core.now_ms(),
+            updated_ms: core.now_ms(),
+        })
+        .unwrap();
+    assert!(core.start_build(&draft.draft_id, true).await.is_err());
+    assert!(core.list_outbound().unwrap().is_empty());
+}

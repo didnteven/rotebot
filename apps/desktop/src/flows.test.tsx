@@ -528,7 +528,7 @@ it("opens connector docs through the backend and copies the registered redirect 
   await user.click(button("Connect Gmail"));
   await user.click(screen.getByRole("link", { name: "Documentation" }));
   expect(external).toHaveBeenCalledExactlyOnceWith(
-    "https://developers.google.com/workspace/gmail/api/guides",
+    "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
   );
   await user.click(button("Connect Slack"));
   const slack = (await backend.listConnectors()).find((c) => c.id === "slack")!;

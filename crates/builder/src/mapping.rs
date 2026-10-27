@@ -176,6 +176,18 @@ impl MappingBuilder<'_> {
         budget: BuildBudget,
         validator: &dyn CandidateValidator,
     ) -> Result<Candidate, BuildError> {
+        self.propose_cancellable(contract, samples, budget, validator, std::future::pending())
+            .await
+    }
+
+    pub async fn propose_cancellable(
+        &self,
+        contract: &TaskContract,
+        samples: SyntheticSamples,
+        budget: BuildBudget,
+        validator: &dyn CandidateValidator,
+        cancelled: impl std::future::Future<Output = ()>,
+    ) -> Result<Candidate, BuildError> {
         if matches!(self.route, BuildRoute::Offline) {
             let mapping = offline_mapping(contract)?;
             validator
@@ -200,9 +212,13 @@ impl MappingBuilder<'_> {
                 epoch: self.consent_epoch,
             })
             .map_err(|_| BuildError::EgressDenied)?;
-        let result = self
-            .propose_cloud(contract, samples, budget, validator, &admission.guard)
-            .await;
+        let result = macroscope_muse_client::reap_on_return(async {
+            tokio::select! {
+                biased;
+                _ = cancelled => Err(BuildError::EgressDenied),
+                result = self.propose_cloud(contract, samples, budget, validator, &admission.guard) => result,
+            }
+        }).await;
         // All awaited single-shot transports have ended; Muse paths explicitly
         // shutdown/reap before returning, including unsuccessful turns.
         let key_unavailable = matches!(

@@ -15,12 +15,37 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc};
 
 pub const MAX_SECONDS: u32 = 300;
 const LINE_LIMIT: usize = 64 * 1024;
+
+/// Bound allocation before accepting an untrusted observer line, including a
+/// stream that never terminates its line. Oversize/partial frames end the session.
+async fn bounded_line(reader: &mut (impl AsyncBufRead + Unpin)) -> Option<Vec<u8>> {
+    let mut line = Vec::new();
+    loop {
+        let available = reader.fill_buf().await.ok()?;
+        if available.is_empty() {
+            return None;
+        }
+        let count = available
+            .iter()
+            .position(|b| *b == b'\n')
+            .map_or(available.len(), |p| p + 1);
+        if line.len() + count > LINE_LIMIT {
+            return None;
+        }
+        let complete = available[count - 1] == b'\n';
+        line.extend_from_slice(&available[..count]);
+        reader.consume(count);
+        if complete {
+            return Some(line);
+        }
+    }
+}
 
 /// Browsers whose window titles may identify a web app such as Gmail.
 const BROWSERS: &[&str] = &[
@@ -37,6 +62,8 @@ struct Session {
     started_ms: i64,
     paused: bool,
     control: mpsc::Sender<String>,
+    shutdown: tokio::sync::watch::Sender<bool>,
+    done: tokio::sync::watch::Receiver<bool>,
     apps: BTreeSet<String>,
     /// connector id -> (signal kind, count) seen in this session.
     matched: BTreeMap<String, (String, i64)>,
@@ -54,6 +81,7 @@ pub struct ShowController {
     core: AppCore,
     inner: Arc<Mutex<Inner>>,
     tx: broadcast::Sender<ShowState>,
+    lifecycle: Arc<tokio::sync::Mutex<()>>,
 }
 
 fn lock(m: &Mutex<Inner>) -> std::sync::MutexGuard<'_, Inner> {
@@ -134,6 +162,7 @@ impl ShowController {
                 accessibility: "unknown".into(),
             })),
             tx,
+            lifecycle: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -161,6 +190,7 @@ impl ShowController {
 
     /// Starts one recording. Returns the current state if one is already running.
     pub async fn start(&self) -> ShowState {
+        let _lifecycle = self.lifecycle.lock().await;
         let path = match (&self.observer, self.state()) {
             (_, ShowState::Unavailable { .. }) => return self.state(),
             (_, s @ ShowState::Recording { .. }) => return s,
@@ -190,10 +220,12 @@ impl ShowController {
         };
         let session_id = format!("show_{}", uuid::Uuid::new_v4().simple());
         let (control, mut control_rx) = mpsc::channel::<String>(8);
+        let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
+        let (done_tx, done) = tokio::sync::watch::channel(false);
         let first = start_message(&session_id, &Catalog::embedded(), MAX_SECONDS).to_string();
         let _ = control.send(first).await;
         // Writer: owns stdin. When every sender is dropped, stdin closes (observer EOF stop).
-        tokio::spawn(async move {
+        let writer = tokio::spawn(async move {
             while let Some(line) = control_rx.recv().await {
                 if stdin
                     .write_all(format!("{line}\n").as_bytes())
@@ -212,6 +244,8 @@ impl ShowController {
                 started_ms: self.core.now_ms(),
                 paused: false,
                 control,
+                shutdown,
+                done,
                 apps: BTreeSet::new(),
                 matched: BTreeMap::new(),
             });
@@ -222,32 +256,41 @@ impl ShowController {
             "Show recording started",
             Some("Metadata only; up to 5 minutes".into()),
         );
-        // Reader: observer events until it stops or exits.
+        // One owner supervises reading, cancellation, the deadline and child reaping.
         let reader = self.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.len() > LINE_LIMIT {
-                    continue;
+            let mut stdout = BufReader::new(stdout);
+            let events = async {
+                for index in 0..10_000 {
+                    if index % 32 == 0 {
+                        tokio::task::yield_now().await;
+                    }
+                    let Some(line) = bounded_line(&mut stdout).await else {
+                        break;
+                    };
+                    let Ok(event) = serde_json::from_slice::<Value>(&line) else {
+                        continue;
+                    };
+                    if reader.current_session_id().as_deref() != Some(&session_id)
+                        || reader.handle_event(&event)
+                    {
+                        break;
+                    }
                 }
-                let Ok(event) = serde_json::from_str::<Value>(&line) else {
-                    continue;
-                };
-                if reader.handle_event(&event) {
-                    break;
-                }
+            };
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => {},
+                _ = tokio::time::sleep(Duration::from_secs(MAX_SECONDS as u64)) => {},
+                _ = events => {},
             }
-            reader.finish();
+            // Drop the writer even if a hostile helper stopped reading stdin.
+            writer.abort();
+            let _ = writer.await;
+            let _ = child.kill().await;
             let _ = child.wait().await;
-        });
-        // Hard cap enforced here as well as in the observer.
-        let timer = self.clone();
-        let id = session_id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(MAX_SECONDS as u64 + 5)).await;
-            if timer.current_session_id().as_deref() == Some(id.as_str()) {
-                timer.stop().await;
-            }
+            reader.finish(&session_id);
+            let _ = done_tx.send(true);
         });
         self.state()
     }
@@ -265,7 +308,11 @@ impl ShowController {
         if event.get("sessionId").and_then(Value::as_str) != Some(session.id.as_str()) {
             return false; // never accept another session's events
         }
-        match event.get("type").and_then(Value::as_str) {
+        let kind = event.get("type").and_then(Value::as_str);
+        if session.paused && matches!(kind, Some("app_focus" | "connector_match")) {
+            return false;
+        }
+        match kind {
             Some("ready") => {
                 let ax = event
                     .pointer("/permissions/accessibility")
@@ -275,7 +322,9 @@ impl ShowController {
             }
             Some("app_focus") => {
                 if let Some(name) = event.get("appName").and_then(Value::as_str) {
-                    session.apps.insert(name.chars().take(80).collect());
+                    if session.apps.len() < 1024 {
+                        session.apps.insert(name.chars().take(80).collect());
+                    }
                 }
             }
             Some("connector_match") => {
@@ -307,8 +356,11 @@ impl ShowController {
         false
     }
 
-    fn finish(&self) {
+    fn finish(&self, session_id: &str) {
         let mut inner = lock(&self.inner);
+        if inner.session.as_ref().map(|s| s.id.as_str()) != Some(session_id) {
+            return;
+        }
         let Some(session) = inner.session.take() else {
             return;
         };
@@ -370,49 +422,34 @@ impl ShowController {
     }
 
     pub async fn pause(&self, paused: bool) -> ShowState {
-        let control = {
-            let mut inner = lock(&self.inner);
-            let Some(s) = inner.session.as_mut() else {
-                return inner.state.clone();
-            };
-            s.paused = paused;
-            let c = s.control.clone();
-            self.publish(&mut inner);
-            c
+        let _lifecycle = self.lifecycle.lock().await;
+        let mut inner = lock(&self.inner);
+        let Some(s) = inner.session.as_mut() else {
+            return inner.state.clone();
         };
-        let _ = control
-            .send(json!({"type": if paused { "pause" } else { "resume" }}).to_string())
-            .await;
-        self.state()
+        if s.control
+            .try_send(json!({"type": if paused { "pause" } else { "resume" }}).to_string())
+            .is_ok()
+        {
+            s.paused = paused;
+            self.publish(&mut inner);
+        }
+        inner.state.clone()
     }
 
-    /// Asks the observer to stop, then closes its stdin; the reader finishes the session.
+    /// Acknowledges stop only after the helper has been killed and reaped.
     pub async fn stop(&self) -> ShowState {
-        let control = {
+        let _lifecycle = self.lifecycle.lock().await;
+        let mut done = {
             let inner = lock(&self.inner);
             let Some(s) = inner.session.as_ref() else {
                 return inner.state.clone();
             };
-            s.control.clone()
+            let _ = s.shutdown.send(true);
+            s.done.clone()
         };
-        let _ = control.send(json!({"type": "stop"}).to_string()).await;
-        // Replace the session's sender so stdin closes once the writer drains.
-        {
-            let mut inner = lock(&self.inner);
-            if let Some(s) = inner.session.as_mut() {
-                let (dead, _) = mpsc::channel(1);
-                s.control = dead;
-            }
-        }
-        drop(control);
-        for _ in 0..40 {
-            if lock(&self.inner).session.is_none() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        if lock(&self.inner).session.is_some() {
-            self.finish(); // observer did not exit in 2 s; kill_on_drop reaps it with the reader
+        if !*done.borrow() {
+            let _ = done.changed().await;
         }
         self.state()
     }

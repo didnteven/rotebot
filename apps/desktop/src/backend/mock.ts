@@ -1,3 +1,4 @@
+import connectorCatalog from "../../../../contracts/connectors.json";
 import type {
   ActivityItem,
   AppInfo,
@@ -233,93 +234,17 @@ export class MockBackend implements Backend {
     model: "muse-spark-1.3",
     museUnverifiedOk: false,
   };
-  private connectors: ConnectorInfo[] = [
-    [
-      "gmail",
-      "Gmail",
-      "Email",
-      "https://gmail.mcp.google.com/mcp",
-      "preregistered",
-      "verified-live",
-    ],
-    [
-      "google_calendar",
-      "Google Calendar",
-      "Calendar",
-      "https://calendar.mcp.google.com/mcp",
-      "preregistered",
-      "verified-live",
-    ],
-    [
-      "google_drive",
-      "Google Drive",
-      "Files",
-      "https://drive.mcp.google.com/mcp",
-      "preregistered",
-      "verified-live",
-    ],
-    [
-      "slack",
-      "Slack",
-      "Messaging",
-      "https://mcp.slack.com/mcp",
-      "preregistered",
-      "verified-live",
-    ],
-    [
-      "notion",
-      "Notion",
-      "Documents",
-      "https://mcp.notion.com/mcp",
-      "dynamic",
-      "verified-live",
-    ],
-    [
-      "github",
-      "GitHub",
-      "Development",
-      "https://api.githubcopilot.com/mcp/",
-      "preregistered",
-      "verified-live",
-    ],
-    [
-      "linear",
-      "Linear",
-      "Projects",
-      "https://mcp.linear.app/mcp",
-      "dynamic",
-      "verified-live",
-    ],
-    [
-      "jira",
-      "Jira",
-      "Projects",
-      "https://mcp.atlassian.com/v1/mcp",
-      "dynamic",
-      "verified-live",
-    ],
-    ["custom", "Custom MCP server", "Custom", "", "dynamic", "unverified"],
-  ].map(([id, name, category, mcpUrl, registration, verification]) => ({
-    id,
-    name,
-    category,
-    mcpUrl,
-    registration: registration as ConnectorInfo["registration"],
-    verification: verification as ConnectorInfo["verification"],
-    clientSetup:
-      registration === "preregistered"
-        ? id.startsWith("google_") || id === "gmail"
-          ? "Create an OAuth client in your Google Cloud project and save its credentials here."
-          : `Create an OAuth app in ${name}'s developer settings and save its credentials here.`
-        : null,
-    redirectUri:
-      id === "slack" || id === "github"
-        ? "http://127.0.0.1:53682/callback"
-        : null,
-    docsUrl:
-      id === "gmail"
-        ? "https://developers.google.com/workspace/gmail/api/guides"
-        : null,
+  private connectors: ConnectorInfo[] = connectorCatalog.connectors.map((c) => ({
+    id: c.id,
+    name: c.name,
+    category: c.category,
+    mcpUrl: c.mcp_url,
+    registration: c.auth.registration as ConnectorInfo["registration"],
+    verification: c.verification as ConnectorInfo["verification"],
+    docsUrl: c.auth.docs_url || null,
+    clientSetup: c.auth.client_setup ?? null,
+    redirectUri: c.auth.fixed_redirect_port == null
+      ? null : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
     state: { kind: "not_connected" },
     hasClientCredentials: false,
   }));

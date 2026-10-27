@@ -201,3 +201,107 @@ async fn real_swift_observer_session_starts_and_stops() {
     );
     assert!(["granted", "denied"].contains(&show.accessibility().as_str()));
 }
+
+#[tokio::test]
+async fn stop_kills_and_reaps_an_observer_that_ignores_control() {
+    let tmp = tempfile::tempdir().unwrap();
+    let script = tmp.path().join("hang.sh");
+    let pid_file = tmp.path().join("pid");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nread -r start\nexec /bin/sleep 30\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let show = ShowController::new(Some(script), core(tmp.path()));
+    show.start().await;
+    // Generous deadline: under a fully parallel test run the shell can take a while to start.
+    for _ in 0..1000 {
+        if std::fs::read_to_string(&pid_file).is_ok_and(|p| !p.trim().is_empty()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let pid = std::fs::read_to_string(&pid_file).expect("fake observer never started");
+    let state = show.stop().await;
+    let alive = std::process::Command::new("/bin/kill")
+        .args(["-0", pid.trim()])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    if alive {
+        let _ = std::process::Command::new("/bin/kill")
+            .args(["-KILL", pid.trim()])
+            .status();
+    }
+    assert!(
+        !alive,
+        "stop acknowledged while observer still running: {state:?}"
+    );
+}
+
+#[tokio::test]
+async fn observer_events_while_paused_do_not_record_detections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let script = tmp.path().join("pause.sh");
+    std::fs::write(&script, r#"#!/bin/sh
+read -r start
+sid=$(printf '%s' "$start" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+while read -r line; do
+ case "$line" in
+  *'"pause"'*) printf '{"sessionId":"%s","type":"connector_match","connectorId":"gmail","signalKind":"window_title"}\n' "$sid" ;;
+  *'"stop"'*) exit 0 ;;
+ esac
+done
+"#).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let core = core(tmp.path());
+    let show = ShowController::new(Some(script), core.clone());
+    show.start().await;
+    show.pause(true).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    show.stop().await;
+    assert!(core.database().detections().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_start_spawns_only_one_observer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = fake_observer(tmp.path());
+    let starts = tmp.path().join("starts");
+    let script = std::fs::read_to_string(&path).unwrap().replacen(
+        "#!/bin/sh\n",
+        &format!("#!/bin/sh\necho started >> '{}'\n", starts.display()),
+        1,
+    );
+    std::fs::write(&path, script).unwrap();
+    let show = ShowController::new(Some(path), core(tmp.path()));
+    let barrier = Arc::new(tokio::sync::Barrier::new(3));
+    let mut tasks = Vec::new();
+    for _ in 0..2 {
+        let s = show.clone();
+        let b = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            b.wait().await;
+            s.start().await
+        }));
+    }
+    barrier.wait().await;
+    for task in tasks {
+        task.await.unwrap();
+    }
+    let recording = wait_for(&show, |s| {
+        matches!(s, ShowState::Recording { apps_seen: 2, .. })
+    })
+    .await;
+    assert!(
+        matches!(recording, ShowState::Recording { apps_seen: 2, .. }),
+        "{recording:?}"
+    );
+    show.stop().await;
+    assert_eq!(std::fs::read_to_string(starts).unwrap().lines().count(), 1);
+}

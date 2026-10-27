@@ -293,3 +293,32 @@ async fn suggestions_from_task_text_and_recording_respect_dismissal() {
     conns.snooze("slack", 30).unwrap();
     assert!(conns.suggestions().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn failed_discovery_updates_the_snapshot_and_cancel_revokes_browser_authority() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
+    let conns = Connections::new(core(tmp.path(), vault.clone()), vault).unwrap();
+    conns
+        .set_url("custom", "http://127.0.0.1:9/mcp")
+        .await
+        .unwrap();
+    assert!(conns.begin_connect("custom").await.is_err());
+    assert!(matches!(
+        conns
+            .list()
+            .iter()
+            .find(|c| c.id == "custom")
+            .unwrap()
+            .state,
+        ConnectionState::Error { .. }
+    ));
+    let base = fake_server().await;
+    conns
+        .set_url("custom", &format!("{base}/mcp"))
+        .await
+        .unwrap();
+    let start = conns.begin_connect("custom").await.unwrap();
+    conns.cancel("custom");
+    assert!(!conns.allow_authorization_url(&start.authorization_url));
+}

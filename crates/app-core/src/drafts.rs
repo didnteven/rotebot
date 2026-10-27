@@ -10,6 +10,7 @@ use macroscope_domain::{
 
 pub const PREVIEW_ROWS: usize = 8;
 pub const CELL_LIMIT: usize = 200;
+pub const MAX_COLUMNS: usize = 1024;
 pub const MAX_INPUT_BYTES: u64 = 10_000_000;
 pub const DATE_QUESTION: &str = "date-format";
 
@@ -34,10 +35,20 @@ pub fn parse(bytes: &[u8], sample: usize) -> Result<ParsedCsv, String> {
         .headers()
         .map_err(|e| format!("This file is not a readable CSV: {e}"))?
         .iter()
-        .map(|c| c.trim().to_string())
+        .map(str::to_string)
         .collect();
-    if columns.is_empty() || columns.iter().all(String::is_empty) {
+    if columns.is_empty() || columns.iter().all(|c| c.trim().is_empty()) {
         return Err("The CSV has no header row.".into());
+    }
+    let mut names = std::collections::HashSet::new();
+    if columns.len() > MAX_COLUMNS {
+        return Err(format!("This CSV has more than {MAX_COLUMNS} columns."));
+    }
+    if columns
+        .iter()
+        .any(|c| c.trim().is_empty() || !names.insert(c))
+    {
+        return Err("CSV headers must be nonempty and unique.".into());
     }
     let mut rows = Vec::new();
     let mut row_count = 0u64;
@@ -59,7 +70,7 @@ pub fn preview(handle: FileHandle, bytes: &[u8]) -> Result<CsvPreview, String> {
     let parsed = parse(bytes, PREVIEW_ROWS)?;
     Ok(CsvPreview {
         handle,
-        columns: parsed.columns.iter().map(|c| truncate(c)).collect(),
+        columns: parsed.columns.clone(),
         rows: parsed
             .rows
             .iter()
@@ -255,13 +266,17 @@ pub fn propose(parsed: &ParsedCsv) -> Proposal {
             Kind::SlashDate(slash) => {
                 let day_first = matches!(slash, SlashDate::DayFirst { .. });
                 if let SlashDate::Ambiguous { four_digit_year } = slash {
-                    if questions.is_empty() {
+                    {
                         let example = values
                             .iter()
                             .find(|v| !v.trim().is_empty())
                             .copied()
                             .unwrap_or("03/04/26");
-                        questions.push(date_question(column, example, four_digit_year));
+                        let mut question = date_question(column, example, four_digit_year);
+                        if !questions.is_empty() {
+                            question.id = format!("{DATE_QUESTION}:{index}");
+                        }
+                        questions.push(question);
                     }
                 }
                 Transform::Date {
@@ -467,6 +482,34 @@ mod tests {
 
     fn parsed(text: &str) -> ParsedCsv {
         parse(text.as_bytes(), 50).unwrap()
+    }
+
+    #[test]
+    fn headers_keep_exact_names_and_reject_empty_duplicate_or_excessive_width() {
+        let p = parsed("\u{feff} id ,amount\r\nA,1\r\n");
+        assert_eq!(p.columns, [" id ", "amount"]);
+        for text in ["a,a\n1,2\n", "a,\n1,2\n", "a,   \n1,2\n"] {
+            assert!(parse(text.as_bytes(), 8).is_err(), "{text:?}");
+        }
+        let wide = (0..1025)
+            .map(|i| format!("c{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(parse(wide.as_bytes(), 8).is_err());
+    }
+
+    #[test]
+    fn quoted_newlines_and_crlf_are_csv_records() {
+        let p = parsed("a,b\r\n\"first\r\nsecond\",x\r\n");
+        assert_eq!(p.row_count, 1);
+        assert_eq!(p.rows[0], ["first\r\nsecond", "x"]);
+    }
+
+    #[test]
+    fn every_ambiguous_date_column_gets_its_own_question() {
+        let proposal = propose(&parsed("created,paid\n03/04/26,05/06/2026\n"));
+        assert_eq!(proposal.questions.len(), 2);
+        assert_ne!(proposal.questions[0].id, proposal.questions[1].id);
     }
 
     #[test]

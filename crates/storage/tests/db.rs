@@ -272,3 +272,24 @@ fn usage_legs_deduplicate_by_id() {
     .unwrap();
     assert_eq!(db.usage_estimated_total("build-1").unwrap(), None);
 }
+
+#[test]
+fn missing_usage_legs_keep_the_reservation_unknown() {
+    let db = Db::open_in_memory(&KEY).unwrap();
+    assert_eq!(db.usage_estimated_total("not-recorded").unwrap(), None);
+}
+
+#[test]
+fn a_future_schema_is_refused_without_modifying_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("future.db");
+    drop(Db::open(&path, &KEY).unwrap());
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(&format!(
+        "PRAGMA key = \"x'{}'\"; PRAGMA user_version = 999;",
+        hex::encode(KEY)
+    ))
+    .unwrap();
+    drop(conn);
+    assert!(Db::open(&path, &KEY).is_err());
+}

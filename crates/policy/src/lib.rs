@@ -97,6 +97,18 @@ impl EgressPolicy {
             Err(PolicyError::Revoked)
         }
     }
+    /// Completes when this job's dispatch authority has been revoked.
+    pub async fn revoked(&self, epoch: u64) {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.authorize_dispatch(epoch).is_err() {
+                return;
+            }
+            notified.await;
+        }
+    }
     pub fn admit(&self, job: Job) -> Result<Admission, Denied> {
         let mut i = self.inner.lock().unwrap();
         if i.state != EgressState::CloudAllowed || job.epoch != i.epoch {

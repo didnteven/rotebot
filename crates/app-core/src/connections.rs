@@ -76,6 +76,7 @@ struct Pending {
     connector_id: String,
     handle: Option<PendingConnect>,
     task: Option<AbortHandle>,
+    authorization_url: Option<String>,
 }
 
 #[derive(Clone)]
@@ -86,7 +87,6 @@ pub struct Connections {
     service: Arc<tokio::sync::Mutex<ConnectionsService>>,
     snapshot: Arc<Mutex<Vec<ConnectionStatus>>>,
     pending: Arc<Mutex<HashMap<String, Pending>>>,
-    auth_urls: Arc<Mutex<HashSet<String>>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -137,7 +137,6 @@ impl Connections {
             service: Arc::new(tokio::sync::Mutex::new(service)),
             snapshot: Arc::new(Mutex::new(snapshot)),
             pending: Arc::new(Mutex::new(HashMap::new())),
-            auth_urls: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -193,11 +192,6 @@ impl Connections {
         })
     }
 
-    async fn refresh(&self) {
-        let list = self.service.lock().await.list();
-        *lock(&self.snapshot) = list;
-    }
-
     fn info_for(&self, id: &str) -> CoreResult<ConnectorInfo> {
         let snapshot = lock(&self.snapshot).clone();
         let status = snapshot
@@ -214,13 +208,11 @@ impl Connections {
 
     pub async fn set_url(&self, id: &str, url: &str) -> CoreResult<ConnectorInfo> {
         self.cancel(id);
-        self.service
-            .lock()
-            .await
-            .set_url(id, url.trim())
-            .await
-            .map_err(user_error)?;
-        self.refresh().await;
+        let mut service = self.service.lock().await;
+        let result = service.set_url(id, url.trim()).await;
+        *lock(&self.snapshot) = service.list();
+        drop(service);
+        result.map_err(user_error)?;
         self.core.log_activity(
             "connection",
             &format!("Changed the server address for {id}"),
@@ -276,25 +268,51 @@ impl Connections {
             )));
         }
         self.cancel(id);
-        let (url, handle) = self
-            .service
-            .lock()
-            .await
-            .begin_connect(id, creds)
-            .await
-            .map_err(user_error)?;
         let pending_id = format!("pending_{}", uuid::Uuid::new_v4().simple());
+        let task = {
+            // Register an abort handle before discovery yields, so cancel during
+            // begin cannot leave a new browser flow behind after disconnect.
+            let mut pending = lock(&self.pending);
+            let service = self.service.clone();
+            let snapshot = self.snapshot.clone();
+            let id = id.to_string();
+            let task_id = id.clone();
+            let task = tokio::spawn(async move {
+                let mut service = service.lock().await;
+                let result = service.begin_connect(&task_id, creds).await;
+                *lock(&snapshot) = service.list();
+                result
+            });
+            pending.insert(
+                pending_id.clone(),
+                Pending {
+                    connector_id: id,
+                    handle: None,
+                    task: Some(task.abort_handle()),
+                    authorization_url: None,
+                },
+            );
+            task
+        };
+        let result = task.await;
+        let mut pending = lock(&self.pending);
+        let Some(slot) = pending.get_mut(&pending_id) else {
+            return Err(CoreError::Invalid("Sign-in was cancelled.".into()));
+        };
+        let (url, handle) = match result {
+            Ok(Ok(pair)) => pair,
+            other => {
+                pending.remove(&pending_id);
+                return Err(match other {
+                    Ok(Err(e)) => user_error(e),
+                    _ => CoreError::Invalid("Sign-in was cancelled.".into()),
+                });
+            }
+        };
         let authorization_url = url.as_str().to_string();
-        lock(&self.auth_urls).insert(authorization_url.clone());
-        lock(&self.pending).insert(
-            pending_id.clone(),
-            Pending {
-                connector_id: id.into(),
-                handle: Some(handle),
-                task: None,
-            },
-        );
-        self.refresh().await;
+        slot.handle = Some(handle);
+        slot.task = None;
+        slot.authorization_url = Some(authorization_url.clone());
         Ok(ConnectStart {
             connector_id: id.into(),
             authorization_url,
@@ -304,26 +322,27 @@ impl Connections {
 
     /// Waits for the browser redirect, exchanges the code, and verifies the server lists tools.
     pub async fn complete_connect(&self, pending_id: &str) -> CoreResult<ConnectorInfo> {
-        let (id, handle) = {
+        let (id, task) = {
             let mut pending = lock(&self.pending);
             let slot = pending
                 .get_mut(pending_id)
                 .ok_or(CoreError::NotFound("pending sign-in"))?;
-            (
-                slot.connector_id.clone(),
-                slot.handle.take().ok_or(CoreError::Invalid(
-                    "This sign-in is already being completed.".into(),
-                ))?,
-            )
-        };
-        let service = self.service.clone();
-        let task = tokio::spawn(async move { service.lock().await.complete_connect(handle).await });
-        if let Some(slot) = lock(&self.pending).get_mut(pending_id) {
+            let handle = slot.handle.take().ok_or(CoreError::Invalid(
+                "This sign-in is already being completed.".into(),
+            ))?;
+            let service = self.service.clone();
+            let snapshot = self.snapshot.clone();
+            let task = tokio::spawn(async move {
+                let mut service = service.lock().await;
+                let result = service.complete_connect(handle).await;
+                *lock(&snapshot) = service.list();
+                result
+            });
             slot.task = Some(task.abort_handle());
-        }
+            (slot.connector_id.clone(), task)
+        };
         let result = task.await;
         lock(&self.pending).remove(pending_id);
-        self.refresh().await;
         match result {
             Ok(Ok(status)) => {
                 let tools = match status.state {
@@ -363,16 +382,20 @@ impl Connections {
     }
 
     pub async fn test(&self, id: &str) -> CoreResult<ConnectorInfo> {
-        let result = self.service.lock().await.test(id).await;
-        self.refresh().await;
+        let mut service = self.service.lock().await;
+        let result = service.test(id).await;
+        *lock(&self.snapshot) = service.list();
+        drop(service);
         result.map_err(user_error)?;
         self.info_for(id)
     }
 
     pub async fn disconnect(&self, id: &str) -> CoreResult<ConnectorInfo> {
         self.cancel(id);
-        let result = self.service.lock().await.disconnect(id).await;
-        self.refresh().await;
+        let mut service = self.service.lock().await;
+        let result = service.disconnect(id).await;
+        *lock(&self.snapshot) = service.list();
+        drop(service);
         self.core
             .log_activity("connection", &format!("Disconnected {id}"), None);
         // Local tokens are deleted even when remote revocation fails.
@@ -473,6 +496,8 @@ impl Connections {
 
     /// The shell may open exactly the authorization URLs this service produced.
     pub fn allow_authorization_url(&self, url: &str) -> bool {
-        lock(&self.auth_urls).contains(url)
+        lock(&self.pending)
+            .values()
+            .any(|p| p.authorization_url.as_deref() == Some(url))
     }
 }

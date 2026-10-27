@@ -10,6 +10,25 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 
+tokio::task_local! {
+    static REAPERS: std::cell::RefCell<Vec<tokio::task::JoinHandle<()>>>;
+}
+
+/// Wait for children killed while a cancellable operation unwinds before acknowledging
+/// its policy barrier. This scope must itself be allowed to finish, never aborted.
+pub async fn reap_on_return<F: std::future::Future>(operation: F) -> F::Output {
+    REAPERS
+        .scope(std::cell::RefCell::new(Vec::new()), async {
+            let output = operation.await;
+            let reapers = REAPERS.with(|r| std::mem::take(&mut *r.borrow_mut()));
+            for reaper in reapers {
+                let _ = reaper.await;
+            }
+            output
+        })
+        .await
+}
+
 pub(crate) struct ManagedChild {
     pub child: Option<Child>,
     #[cfg(unix)]
@@ -69,9 +88,10 @@ impl Drop for ManagedChild {
         self.kill_group();
         if let Some(mut child) = self.child.take() {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
+                let reaper = handle.spawn(async move {
                     let _ = child.wait().await;
                 });
+                let _ = REAPERS.try_with(|r| r.borrow_mut().push(reaper));
             }
         }
     }
@@ -501,6 +521,41 @@ mod tests {
             json!({})
         );
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_scope_waits_for_dropped_children_to_be_reaped() {
+        let mut command = Command::new("/bin/sh");
+        command
+            .env_clear()
+            .env("PATH", crate::SAFE_PATH)
+            .args(["-c", "sleep 30 & wait"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let (pid, mut output) = reap_on_return(async {
+            let mut child = ManagedChild::new(command).unwrap();
+            let pid = child.child().id().unwrap();
+            let output = child.child().stdout.take().unwrap();
+            drop(child);
+            (pid, output)
+        })
+        .await;
+        let mut status = 0;
+        // SAFETY: only inspect this test's own child; WNOHANG cannot block.
+        assert_eq!(
+            unsafe { libc::waitpid(pid as i32, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        let mut bytes = vec![];
+        tokio::time::timeout(Duration::from_secs(1), output.read_to_end(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn process_deadline_kills_and_reaps_group() {

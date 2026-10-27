@@ -18,6 +18,8 @@ pub enum DbError {
     Sql(String),
     #[error("stored JSON is invalid: {0}")]
     Json(String),
+    #[error("database schema is newer than this app supports")]
+    FutureSchema,
     #[error("database lock poisoned")]
     Poisoned,
 }
@@ -249,6 +251,9 @@ impl Db {
         self.with(|c| {
             let current: usize =
                 c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
+            if current > SCHEMA_VERSION {
+                return Err(DbError::FutureSchema);
+            }
             for (index, sql) in MIGRATIONS.iter().enumerate().skip(current) {
                 c.execute_batch(&format!(
                     "BEGIN; {sql} PRAGMA user_version = {}; COMMIT;",
@@ -705,14 +710,14 @@ impl Db {
     /// has unknown usage, so callers keep the reservation (plan §9.1).
     pub fn usage_estimated_total(&self, parent_id: &str) -> Result<Option<i64>, DbError> {
         self.with(|c| {
-            let (total, unknown): (i64, i64) = c.query_row(
+            let (total, unknown, count): (i64, i64, i64) = c.query_row(
                 "SELECT COALESCE(SUM(estimated_micros), 0),
-                        COALESCE(SUM(estimated_micros IS NULL OR reconciliation = 'unknown'), 0)
+                        COALESCE(SUM(estimated_micros IS NULL OR reconciliation = 'unknown'), 0), COUNT(*)
                  FROM model_usage WHERE parent_id = ?1",
                 [parent_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )?;
-            Ok((unknown == 0).then_some(total))
+            Ok((count > 0 && unknown == 0).then_some(total))
         })
     }
 

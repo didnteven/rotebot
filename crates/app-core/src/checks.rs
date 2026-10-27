@@ -6,7 +6,7 @@
 use crate::drafts;
 use crate::dto::{CheckResult, Comparison};
 use macroscope_domain::{CsvMapping, DateFormat, TaskContract, Transform};
-use macroscope_executor::{apply_mapping, validate_mapping, Limits, MappingError};
+use macroscope_executor::{apply_mapping, require_columns, validate_mapping, Limits, MappingError};
 use sha2::{Digest, Sha256};
 
 pub struct CheckOutcome {
@@ -109,6 +109,19 @@ pub fn run(
             comparison: None,
         };
     }
+    // The finite mapping encodes confirmed business rules, not just a schema.
+    // Successful parsing and preserved counts cannot establish their meaning.
+    if candidate != &contract.mapping {
+        checks.push(check(
+            "confirmed_rules",
+            "Preserves every confirmed mapping rule",
+            false,
+            Some(
+                "The candidate changed the confirmed mapping. Edit the task and build again."
+                    .into(),
+            ),
+        ));
+    }
     let before = match read_input() {
         Ok(b) => b,
         Err(e) => {
@@ -122,7 +135,9 @@ pub fn run(
     let digest_before = digest(&before);
     let limits = Limits::default();
     let mut comparison = None;
-    match apply_mapping(candidate, &before, &limits) {
+    match require_columns(&before, candidate.skip_header_rows, &contract.input_schema)
+        .and_then(|_| apply_mapping(candidate, &before, &limits))
+    {
         Ok(out) => {
             let preserved = out.rows_in == out.rows_out;
             checks.push(check(
@@ -195,12 +210,7 @@ pub fn run(
             checks.push(check(id, label, stopped, None));
         }
     }
-    if let Some(first_source) = candidate
-        .output_columns
-        .iter()
-        .map(|c| c.source.clone())
-        .next()
-    {
+    if let Some(first_source) = contract.input_schema.first().cloned() {
         let kept: Vec<String> = contract
             .input_schema
             .iter()
@@ -216,8 +226,12 @@ pub fn run(
             .collect();
         let missing = csv_line(&kept) + &csv_line(&row);
         let stopped = matches!(
-            apply_mapping(candidate, missing.as_bytes(), &limits),
-            Err(MappingError::MissingColumns(_))
+            require_columns(
+                missing.as_bytes(),
+                candidate.skip_header_rows,
+                &contract.input_schema
+            ),
+            Err(MappingError::MissingColumns(_) | MappingError::Csv(_) | MappingError::EmptyInput)
         );
         checks.push(check(
             "missing_column",
@@ -256,6 +270,48 @@ mod tests {
 
     fn contract() -> TaskContract {
         serde_json::from_str(include_str!("../../../fixtures/orders/task.json")).unwrap()
+    }
+
+    #[test]
+    fn candidates_cannot_replace_confirmed_rules_even_when_rows_still_look_valid() {
+        let c = contract();
+        let input = b"order_id,created,amount,customer\nA,03/04/26,1.25,X\n";
+        let mut swapped = c.mapping.clone();
+        swapped.output_columns[1].transform = Transform::Date {
+            from: DateFormat::DdMmYy,
+            to: DateFormat::YyyyMmDd,
+        };
+        let mut copied = c.mapping.clone();
+        copied.output_columns[1].transform = Transform::Copy;
+        let mut constant = c.mapping.clone();
+        constant.output_columns[0].transform = Transform::Constant {
+            value: "wrong".into(),
+        };
+        for candidate in [swapped, copied, constant] {
+            assert!(!run(&c, &candidate, &|| Ok(input.to_vec())).all_passed());
+        }
+    }
+
+    #[test]
+    fn confirmed_constant_outputs_and_single_column_inputs_can_pass_checks() {
+        let mut c = contract();
+        c.input_schema = vec!["id".into()];
+        c.output_columns = vec!["ID".into()];
+        c.mapping.output_columns = vec![macroscope_domain::OutputColumn {
+            name: "ID".into(),
+            source: "id".into(),
+            transform: Transform::Copy,
+        }];
+        for transform in [
+            Transform::Copy,
+            Transform::Constant {
+                value: "fixed".into(),
+            },
+        ] {
+            c.mapping.output_columns[0].transform = transform;
+            let outcome = run(&c, &c.mapping, &|| Ok(b"id\n1\n".to_vec()));
+            assert!(outcome.all_passed(), "{:?}", outcome.checks);
+        }
     }
 
     #[test]

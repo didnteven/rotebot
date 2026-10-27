@@ -144,6 +144,8 @@ struct BuildSlot {
     state: BuildState,
     tx: broadcast::Sender<BuildState>,
     task: Option<JoinHandle<()>>,
+    cancel: tokio::sync::watch::Sender<bool>,
+    draft_revision: u32,
 }
 
 struct StagedSlot {
@@ -162,6 +164,7 @@ struct Inner {
     staged: Mutex<HashMap<String, StagedSlot>>,
     plan_cache: Mutex<Option<(i64, PlanStatus)>>,
     last_key_test: Mutex<Option<KeyTestResult>>,
+    cloud_controls: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone)]
@@ -188,9 +191,11 @@ fn vault_key(vault: &dyn SecretStore, name: &str) -> CoreResult<[u8; 32]> {
         .get(&reference)
         .map_err(|e| CoreError::Vault(e.to_string()))?
     {
-        if let Ok(key) = <[u8; 32]>::try_from(secret.expose()) {
-            return Ok(key);
-        }
+        return <[u8; 32]>::try_from(secret.expose()).map_err(|_| {
+            CoreError::Vault(
+                "The stored encryption key has an invalid length. It was not replaced.".into(),
+            )
+        });
     }
     let key = random_key()?;
     vault
@@ -296,6 +301,7 @@ impl AppCore {
                 staged: Mutex::new(HashMap::new()),
                 plan_cache: Mutex::new(None),
                 last_key_test: Mutex::new(None),
+                cloud_controls: tokio::sync::Mutex::new(()),
             }),
         };
         // The policy starts closed; reopen cloud egress unless the user chose Local only.
@@ -356,6 +362,10 @@ impl AppCore {
             };
             let dir = PathBuf::from(dir);
             if !dir.join("journal.jsonl").exists() {
+                std::fs::remove_dir_all(&dir).ok();
+                run.state = "discarded".into();
+                run.run_dir = None;
+                self.db().put_run(&run)?;
                 continue;
             }
             match broker::reconcile(&dir) {
@@ -375,7 +385,11 @@ impl AppCore {
                         Some("Check the output folder before running it again; nothing will be overwritten.".into()),
                     );
                 }
-                Ok(broker::ReconcileOutcome::NotPublished) => run.state = "not_published".into(),
+                Ok(broker::ReconcileOutcome::NotPublished) => {
+                    std::fs::remove_dir_all(&dir).ok();
+                    run.state = "discarded".into();
+                    run.run_dir = None;
+                }
             }
             self.db().put_run(&run)?;
         }
@@ -449,13 +463,9 @@ impl AppCore {
     }
 
     fn read_limited(path: &Path) -> CoreResult<Vec<u8>> {
-        let meta = std::fs::metadata(path).map_err(|e| CoreError::Invalid(e.to_string()))?;
-        if meta.len() > drafts::MAX_INPUT_BYTES {
-            return Err(CoreError::Invalid(
-                "This CSV is larger than 10 MB, the current limit.".into(),
-            ));
-        }
-        std::fs::read(path).map_err(|e| CoreError::Invalid(e.to_string()))
+        SelectedFile::from_picker(path)
+            .and_then(|selection| selection.read_bounded(drafts::MAX_INPUT_BYTES))
+            .map_err(|_| CoreError::Invalid("The selected CSV changed, is not a regular file, or exceeds 10 MB. Choose it again.".into()))
     }
 
     pub fn preview_handle(&self, handle_id: &str) -> CoreResult<CsvPreview> {
@@ -568,7 +578,9 @@ impl AppCore {
             ));
         }
         question.answer = Some(answer.into());
-        if question_id == drafts::DATE_QUESTION {
+        if question_id == drafts::DATE_QUESTION
+            || question_id.starts_with(&format!("{}:", drafts::DATE_QUESTION))
+        {
             let column = question.column.clone();
             let from = drafts::parse_date_answer(answer)
                 .ok_or_else(|| CoreError::Invalid("Unknown date format.".into()))?;
@@ -735,6 +747,12 @@ impl AppCore {
     pub async fn save_api_key(&self, raw: &str) -> CoreResult<ModelAccessStatus> {
         let (secret, fingerprint) = validate_key(raw)
             .map_err(|_| CoreError::Invalid("That key is empty or has line breaks.".into()))?;
+        let _control = self.inner.cloud_controls.lock().await;
+        let reopen = matches!(
+            self.inner.policy.state(),
+            PolicyState::CloudAllowed | PolicyState::KeyUnavailable
+        );
+        self.stop_cloud_work().await?;
         self.inner
             .cfg
             .vault
@@ -744,14 +762,19 @@ impl AppCore {
         self.db()
             .set_setting("api_key_fingerprint", &json!(label))?;
         *lock(&self.inner.last_key_test) = None;
-        if self.inner.policy.state() == PolicyState::KeyUnavailable {
-            let _ = self.inner.policy.allow_cloud();
+        if reopen {
+            self.inner
+                .policy
+                .allow_cloud()
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
         }
         self.activity("settings", "Meta API key saved", None);
         Ok(self.model_access().await)
     }
 
     pub async fn remove_api_key(&self) -> CoreResult<ModelAccessStatus> {
+        let _control = self.inner.cloud_controls.lock().await;
+        self.stop_cloud_work().await?;
         self.inner
             .cfg
             .vault
@@ -773,7 +796,24 @@ impl AppCore {
             .ok_or_else(|| CoreError::Invalid("Add a key first.".into()))?;
         let now = self.now();
         let client = MetaResponsesClient::new(self.inner.cfg.gateway_base_url.clone());
-        let result = match client.catalog_check(&key).await {
+        let admission = self
+            .inner
+            .policy
+            .admit(macroscope_policy::Job {
+                epoch: self.inner.policy.epoch(),
+            })
+            .map_err(|_| {
+                CoreError::Invalid(
+                    "Cloud models are paused. Turn off Local only to test a key.".into(),
+                )
+            })?;
+        let response = tokio::select! {
+            biased;
+            _ = self.inner.policy.revoked(admission.epoch) => Err(GatewayError::Unavailable),
+            result = client.catalog_check(&key) => result,
+        };
+        admission.guard.acknowledge(true);
+        let result = match response {
             Ok(_) => KeyTestResult::Ok { checked_at_ms: now },
             Err(GatewayError::AuthRejected) => KeyTestResult::Rejected { checked_at_ms: now },
             Err(GatewayError::BillingRequired) => {
@@ -809,29 +849,44 @@ impl AppCore {
         Ok(self.model_access().await)
     }
 
+    async fn stop_cloud_work(&self) -> CoreResult<()> {
+        let barrier = self
+            .inner
+            .policy
+            .begin_local_only()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let ids: Vec<String> = lock(&self.inner.builds)
+            .iter()
+            .filter(|(_, s)| {
+                !s.state.phase.is_terminal() && s.state.route != ModelRoute::OfflineDemo
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            let _ = self.stop_build(&id);
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(10), barrier.wait())
+            .await
+            .map_err(|_| {
+                CoreError::Invalid("Cloud work is still stopping. Try again shortly.".into())
+            })?
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
     pub async fn set_local_only(&self, local_only: bool) -> CoreResult<ModelAccessStatus> {
-        self.db().set_setting("local_only", &json!(local_only))?;
+        let _control = self.inner.cloud_controls.lock().await;
         if local_only {
-            let builds: Vec<String> = lock(&self.inner.builds)
-                .iter()
-                .filter(|(_, s)| {
-                    !s.state.phase.is_terminal() && s.state.route != ModelRoute::OfflineDemo
-                })
-                .map(|(id, _)| id.clone())
-                .collect();
-            for id in builds {
-                let _ = self.stop_build(&id);
-            }
-            if let Ok(barrier) = self.inner.policy.begin_local_only() {
-                // Every admitted job has been stopped above; their guards drop and ack.
-                let _ = barrier.is_resolved();
-            }
+            // Persist the closed choice before waiting for any workers.
+            self.db().set_setting("local_only", &json!(true))?;
+            self.stop_cloud_work().await?;
             self.activity("settings", "Local only turned on", None);
         } else {
             self.inner
                 .policy
                 .allow_cloud()
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
+            self.db().set_setting("local_only", &json!(false))?;
             self.activity("settings", "Cloud models turned on", None);
         }
         Ok(self.model_access().await)
@@ -909,7 +964,7 @@ impl AppCore {
     }
 
     fn update_build(&self, build_id: &str, f: impl FnOnce(&mut BuildState)) {
-        let snapshot = {
+        {
             let mut builds = lock(&self.inner.builds);
             let Some(slot) = builds.get_mut(build_id) else {
                 return;
@@ -918,25 +973,27 @@ impl AppCore {
                 return; // stopped/failed builds never resurrect
             }
             f(&mut slot.state);
-            let _ = slot.tx.send(slot.state.clone());
-            slot.state.clone()
+            let snapshot = slot.state.clone();
+            let mut stored = serde_json::to_value(&snapshot).unwrap_or(Value::Null);
+            stored["draftRevision"] = json!(slot.draft_revision);
+            let now = self.now();
+            let _ = self.db().put_build(&db::BuildRow {
+                id: snapshot.build_id.clone(),
+                draft_id: snapshot.draft_id.clone(),
+                route: snapshot.route.as_str().into(),
+                phase: snapshot.phase.as_str().into(),
+                reserved_micros: if snapshot.route == ModelRoute::OfflineDemo {
+                    0
+                } else {
+                    BUILD_BUDGET_MICROS
+                },
+                spent_micros: snapshot.spent_micros,
+                state: stored,
+                created_ms: snapshot.events.first().map(|e| e.at_ms).unwrap_or(now),
+                updated_ms: now,
+            });
+            let _ = slot.tx.send(snapshot);
         };
-        let now = self.now();
-        let _ = self.db().put_build(&db::BuildRow {
-            id: snapshot.build_id.clone(),
-            draft_id: snapshot.draft_id.clone(),
-            route: snapshot.route.as_str().into(),
-            phase: snapshot.phase.as_str().into(),
-            reserved_micros: if snapshot.route == ModelRoute::OfflineDemo {
-                0
-            } else {
-                BUILD_BUDGET_MICROS
-            },
-            spent_micros: snapshot.spent_micros,
-            state: serde_json::to_value(&snapshot).unwrap_or(Value::Null),
-            created_ms: snapshot.events.first().map(|e| e.at_ms).unwrap_or(now),
-            updated_ms: now,
-        });
     }
 
     fn push_phase(&self, build_id: &str, phase: BuildPhase, message: impl Into<String>) {
@@ -985,20 +1042,45 @@ impl AppCore {
                 draft.blockers.join("; ")
             )));
         }
+        let consent_epoch = self.inner.policy.epoch();
         let access = self.model_access().await;
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
+        if route != ModelRoute::OfflineDemo {
+            self.inner
+                .policy
+                .authorize_dispatch(consent_epoch)
+                .map_err(|_| {
+                    CoreError::Invalid("Cloud consent changed. Review the build again.".into())
+                })?;
+        }
         if route != ModelRoute::OfflineDemo && !outbound_reviewed {
             return Err(CoreError::Invalid(
                 "Review what will be sent before building.".into(),
             ));
         }
-        if lock(&self.inner.builds)
-            .values()
-            .any(|s| !s.state.phase.is_terminal())
-        {
+        let mut builds = lock(&self.inner.builds);
+        if builds.values().any(|s| {
+            !s.state.phase.is_terminal() || s.task.as_ref().is_some_and(|t| !t.is_finished())
+        }) {
             return Err(CoreError::Invalid(
                 "Another build is running. Stop it or wait for it to finish.".into(),
             ));
+        }
+        if route != ModelRoute::OfflineDemo {
+            let month_start =
+                time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(self.now()) * 1_000_000)
+                    .and_then(|now| now.replace_day(1))
+                    .map(|now| now.replace_time(time::Time::MIDNIGHT).unix_timestamp() * 1000)
+                    .map_err(|_| {
+                        CoreError::Internal("The current month could not be determined.".into())
+                    })?;
+            let reserved = self.db().reserved_micros_since(month_start)?;
+            if reserved
+                .checked_add(BUILD_BUDGET_MICROS)
+                .is_none_or(|total| total > 25_000_000)
+            {
+                return Err(CoreError::Invalid("This build would exceed the $25 monthly build budget. Unknown charges keep their reservation.".into()));
+            }
         }
         let build_id = new_id("build");
         let contract = drafts::contract_for(&draft);
@@ -1022,14 +1104,18 @@ impl AppCore {
             route_label,
         };
         let (tx, _) = broadcast::channel(64);
-        lock(&self.inner.builds).insert(
+        let (cancel, mut cancelled) = tokio::sync::watch::channel(false);
+        builds.insert(
             build_id.clone(),
             BuildSlot {
                 state,
                 tx,
                 task: None,
+                cancel,
+                draft_revision: draft.revision,
             },
         );
+        drop(builds);
         self.push_phase(&build_id, BuildPhase::Queued, "Queued");
         if route != ModelRoute::OfflineDemo {
             let now = self.now();
@@ -1051,11 +1137,22 @@ impl AppCore {
         );
         let core = self.clone();
         let id = build_id.clone();
-        let task =
-            tokio::spawn(async move { core.run_build(id, route, contract, input_path).await });
-        if let Some(slot) = lock(&self.inner.builds).get_mut(&build_id) {
+        let mut builds = lock(&self.inner.builds);
+        let task = tokio::spawn(async move {
+            core.run_build(
+                id,
+                route,
+                contract,
+                input_path,
+                consent_epoch,
+                &mut cancelled,
+            )
+            .await
+        });
+        if let Some(slot) = builds.get_mut(&build_id) {
             slot.task = Some(task);
         }
+        drop(builds);
         self.build_state(&build_id)
     }
 
@@ -1065,7 +1162,12 @@ impl AppCore {
         route: ModelRoute,
         contract: TaskContract,
         input: PathBuf,
+        consent_epoch: u64,
+        cancelled: &mut tokio::sync::watch::Receiver<bool>,
     ) {
+        if *cancelled.borrow() {
+            return;
+        }
         self.push_phase(&build_id, BuildPhase::Writing, "Writing a candidate");
         let builder_route = match route {
             ModelRoute::OfflineDemo => BuildRoute::Offline,
@@ -1103,7 +1205,7 @@ impl AppCore {
             vault: &*self.inner.cfg.vault,
             gateway: MetaResponsesClient::new(self.inner.cfg.gateway_base_url.clone()),
             policy: &self.inner.policy,
-            consent_epoch: self.inner.policy.epoch(),
+            consent_epoch,
             muse,
         };
         let samples = SyntheticSamples::from_contract(&contract, 5);
@@ -1112,7 +1214,11 @@ impl AppCore {
             ..BuildBudget::default()
         };
         let candidate = match builder
-            .propose(&contract, samples, budget, &HostValidator)
+            .propose_cancellable(&contract, samples, budget, &HostValidator, async {
+                if !*cancelled.borrow() {
+                    let _ = cancelled.changed().await;
+                }
+            })
             .await
         {
             Ok(c) => c,
@@ -1144,7 +1250,7 @@ impl AppCore {
             "Checking the candidate on your CSV and on cases that must stop",
         );
         let checked = tokio::task::spawn_blocking(move || {
-            let read = || std::fs::read(&input).map_err(|e| e.to_string());
+            let read = || Self::read_limited(&input).map_err(|e| e.to_string());
             let outcome = checks::run(&contract, &mapping, &read);
             (outcome.all_passed(), outcome.checks, outcome.comparison)
         })
@@ -1182,15 +1288,10 @@ impl AppCore {
     }
 
     pub fn stop_build(&self, build_id: &str) -> CoreResult<BuildState> {
-        let task = {
-            let mut builds = lock(&self.inner.builds);
-            let slot = builds
-                .get_mut(build_id)
-                .ok_or(CoreError::NotFound("build"))?;
-            slot.task.take()
-        };
-        if let Some(task) = task {
-            task.abort();
+        {
+            let builds = lock(&self.inner.builds);
+            let slot = builds.get(build_id).ok_or(CoreError::NotFound("build"))?;
+            let _ = slot.cancel.send(true);
         }
         self.push_phase(build_id, BuildPhase::Stopped, "Stopped by you");
         self.activity("build", "Build stopped", None);
@@ -1381,6 +1482,17 @@ impl AppCore {
             .clone()
             .ok_or(CoreError::NotFound("candidate"))?;
         let draft = self.load_draft(&state.draft_id)?;
+        let stored = self
+            .db()
+            .build(build_id)?
+            .ok_or(CoreError::NotFound("build"))?;
+        if stored.state.get("draftRevision").and_then(Value::as_u64) != Some(draft.revision as u64)
+        {
+            return Err(CoreError::Invalid(
+                "The task changed after this build. Build and compare it again before saving."
+                    .into(),
+            ));
+        }
         let mut contract = drafts::contract_for(&draft);
         contract.mapping = mapping.clone();
         contract.output_columns = mapping
@@ -1470,6 +1582,10 @@ impl AppCore {
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
+        let mut staged_runs = lock(&self.inner.staged);
+        if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {
+            return Err(CoreError::Invalid("Review or discard the staged run before starting another (one per tool, two total).".into()));
+        }
         let row = self
             .db()
             .tool(tool_id)?
@@ -1557,7 +1673,7 @@ impl AppCore {
             created_ms: self.now(),
             run_dir: Some(staged.run_dir().to_string_lossy().into_owned()),
         })?;
-        lock(&self.inner.staged).insert(
+        staged_runs.insert(
             run_id,
             StagedSlot {
                 staged,
@@ -1569,10 +1685,18 @@ impl AppCore {
     }
 
     pub fn commit_run(&self, run_id: &str, plan_hash: &str) -> CoreResult<CommitResult> {
-        let slot = lock(&self.inner.staged)
+        // Keep run admission closed through publication, not just while staging.
+        let mut staged_runs = lock(&self.inner.staged);
+        let slot = staged_runs
             .remove(run_id)
             .ok_or(CoreError::NotFound("staged run"))?;
         if slot.dto.plan_hash != plan_hash {
+            let _ = std::fs::remove_dir_all(slot.staged.run_dir());
+            if let Some(mut row) = self.db().run(run_id)? {
+                row.state = "discarded".into();
+                row.run_dir = None;
+                self.db().put_run(&row)?;
+            }
             return Err(CoreError::Invalid(
                 "The approval does not match the staged output. Stage again.".into(),
             ));
@@ -1690,6 +1814,7 @@ impl AppCore {
 
     pub async fn privacy_overview(&self) -> CoreResult<PrivacyOverview> {
         let egress = self.model_access().await.egress;
+        let outbound = self.list_outbound()?;
         let stats = self.db().stats()?;
         let count = |t: &str| {
             stats
@@ -1698,7 +1823,6 @@ impl AppCore {
                 .map(|s| s.rows)
                 .unwrap_or(0)
         };
-        let outbound = self.list_outbound()?;
         let dir_size = |p: PathBuf| -> i64 { walk_size(&p) as i64 };
         Ok(PrivacyOverview {
             egress,
@@ -1739,6 +1863,7 @@ impl AppCore {
     }
 
     pub fn list_outbound(&self) -> CoreResult<Vec<OutboundRecord>> {
+        self.db().purge_expired_outbound(self.now())?;
         Ok(self
             .db()
             .list_outbound()?

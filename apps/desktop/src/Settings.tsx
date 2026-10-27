@@ -164,6 +164,21 @@ export function Settings({
             <>
               <p>Signed in</p>
               <p>{muse.planSummary ?? "Plan summary unavailable"}</p>
+              <label className="choice">
+                <input
+                  type="checkbox"
+                  checked={status.museUnverifiedOk}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const ok = event.target.checked;
+                    void act(async () => update(await backend.setMuseUnverifiedOk(ok)));
+                  }}
+                />
+                Allow Muse builds before file-access confinement is verified
+              </label>
+              <p>
+                Muse runs with its shell and file writes turned off in a separate build folder, but its file-reading tools have not yet been proven to stay inside that folder.
+              </p>
             </>
           ) : muse.kind === "unsupported_version" ? (
             <p>

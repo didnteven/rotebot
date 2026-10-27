@@ -140,15 +140,17 @@ function ConnectionDetail({
     attempt = useRef(0);
   const { act, busy, error, setError } = useAction();
   async function connect() {
+    setNotice(null);
     const start = await backend.beginConnect(connector.id);
     const current = ++attempt.current;
     setPending(start);
     await changed();
     try {
-      await backend.completeConnect(start.pendingId);
+      const result = await backend.completeConnect(start.pendingId);
       if (current === attempt.current) {
         setPending(null);
-        setNotice("Connected · 12 tools available");
+        setNotice(result.state.kind === "connected"
+          ? `Connected · ${result.state.toolCount} tools available` : "Sign-in finished. Check connection status.");
         await changed();
       }
     } catch (e) {

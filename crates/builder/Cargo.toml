@@ -17,6 +17,6 @@ macroscope-model-gateway.workspace = true
 macroscope-muse-client.workspace = true
 tempfile = "3"
 jsonschema = { version = "0.60", default-features = false }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 [dev-dependencies]
 wiremock = "0.6"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

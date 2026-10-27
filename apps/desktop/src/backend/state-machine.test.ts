@@ -23,7 +23,7 @@ it("loads the complete 18-row fabricated fixture and detects connectors by word"
     "gmail, slackers, githubbing, google calendar and Notion",
   );
   expect(d.readyToBuild).toBe(false);
-  expect(d.mentionedConnectors).toEqual(["gmail", "google_calendar", "notion"]);
+  expect(d.mentionedConnectors).toEqual(["gmail", "google-calendar", "notion"]);
   expect(d.questions[0].prompt).toBe("Does 03/04/26 mean March 4 or April 3?");
 });
 it("requires cloud consent, emits all milestones, and independently checks the sample", async () => {
