@@ -27,6 +27,9 @@ enum Mode {
     Path,
     Origin,
     WrongIssuer,
+    BadStatus,
+    BadJson,
+    Oversize,
 }
 #[derive(Default)]
 struct Observed {
@@ -103,10 +106,20 @@ async fn handle(State(fake): State<Arc<Fake>>, request: Request<Body>) -> Respon
     let path = request.uri().path().to_owned();
     if request.method() == "GET" {
         fake.observed.lock().unwrap().gets.push(path.clone());
+        if path == "/.well-known/oauth-protected-resource/v1/mcp" {
+            match fake.mode {
+                Mode::BadStatus => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                Mode::BadJson => return "garbage".into_response(),
+                Mode::Oversize => return "x".repeat(1024 * 1024 + 1).into_response(),
+                _ => {}
+            }
+        }
         let prm = match fake.mode {
             Mode::Challenge | Mode::WrongIssuer => path == "/challenge-metadata",
             Mode::Path => path == "/.well-known/oauth-protected-resource/v1/mcp",
-            Mode::Origin => path == "/.well-known/oauth-protected-resource",
+            Mode::Origin | Mode::BadStatus | Mode::BadJson | Mode::Oversize => {
+                path == "/.well-known/oauth-protected-resource"
+            }
             _ => false,
         };
         if prm {
@@ -453,4 +466,34 @@ async fn different_issuer_path_is_rejected() {
             .await,
         Err(OAuthError::Discovery)
     ));
+}
+
+#[tokio::test]
+async fn discovery_tries_root_prm_after_a_broken_path_prm() {
+    for mode in [Mode::BadStatus, Mode::BadJson, Mode::Oversize] {
+        let server = Server::start(mode, None).await;
+        let result = client()
+            .discover_connector(&server.connector(), &server.url())
+            .await
+            .unwrap();
+        assert_eq!(result.resource, server.fake.origin);
+        assert_eq!(result.scopes, ["metadata-scope"]);
+    }
+}
+
+#[tokio::test]
+async fn discovery_tries_fallback_after_transport_failure_and_fails_when_all_prm_fail() {
+    let server = Server::start(Mode::Origin, None).await;
+    let result = client()
+        .discover(&server.url(), Some("http://127.0.0.1:9/prm"))
+        .await
+        .unwrap();
+    assert_eq!(result.issuer, server.fake.origin);
+    // A hint error must not silently downgrade to catalog/origin discovery when
+    // every PRM candidate is absent or broken.
+    let server = Server::start(Mode::Atlassian, None).await;
+    assert!(client()
+        .discover(&server.url(), Some("http://127.0.0.1:9/prm"))
+        .await
+        .is_err());
 }

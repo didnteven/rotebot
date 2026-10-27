@@ -292,7 +292,8 @@ fn validate_selected_path(path: &Path) -> Result<(), BrokerError> {
     }
     Ok(())
 }
-fn validate_basename(name: &str) -> Result<(), BrokerError> {
+/// Shared admission check for the core and broker, including platform restrictions.
+pub fn validate_basename(name: &str) -> Result<(), BrokerError> {
     if name.is_empty()
         || name.contains(['/', '\\', '\0', ':'])
         || name == "."

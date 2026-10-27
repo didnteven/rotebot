@@ -12,6 +12,7 @@ pub mod connections;
 pub mod drafts;
 pub mod dto;
 mod privacy;
+mod samples;
 pub mod show;
 
 use dto::*;
@@ -43,6 +44,7 @@ use tokio::task::JoinHandle;
 pub const API_KEY_REF: &str = "meta-api-key";
 const DB_KEY_REF: &str = "db-key";
 const STAGING_KEY_REF: &str = "staging-key";
+const LOCAL_RUN_POLICY_EPOCH: u64 = 0;
 const BUILD_BUDGET_MICROS: i64 = 2_000_000;
 const SAMPLE_CSV: &[u8] = include_bytes!("../../../fixtures/orders/input.csv");
 const SAMPLE_TASK: &str = include_str!("../../../fixtures/orders/task.json");
@@ -331,13 +333,20 @@ impl AppCore {
     }
 
     fn activity(&self, kind: &str, title: impl Into<String>, detail: Option<String>) {
-        let _ = self.db().add_activity(&db::ActivityRow {
-            id: new_id("act"),
-            at_ms: self.now(),
-            kind: kind.into(),
-            title: title.into(),
-            detail,
-        });
+        if self
+            .db()
+            .add_activity(&db::ActivityRow {
+                id: new_id("act"),
+                at_ms: self.now(),
+                kind: kind.into(),
+                title: title.into(),
+                detail,
+            })
+            .is_err()
+        {
+            // Best-effort history must be observable without logging its payload.
+            eprintln!("Macroscope: activity persistence failed");
+        }
     }
 
     /// Startup recovery (plan §3.2): builds that were running are marked interrupted,
@@ -486,9 +495,7 @@ impl AppCore {
     pub fn load_sample_csv(&self) -> CoreResult<CsvPreview> {
         let _admission = self.admit_local()?;
         let path = self.inner.cfg.data_dir.join("samples/orders.csv");
-        if std::fs::read(&path).ok().as_deref() != Some(SAMPLE_CSV) {
-            std::fs::write(&path, SAMPLE_CSV).map_err(|e| CoreError::Internal(e.to_string()))?;
-        }
+        samples::restore(&path, SAMPLE_CSV).map_err(|e| CoreError::Internal(e.to_string()))?;
         let handle = self.register(&path, PickKind::File)?;
         self.preview_handle(&handle.handle_id)
     }
@@ -876,8 +883,11 @@ impl AppCore {
             })
             .map(|(id, _)| id.clone())
             .collect();
+        let mut persistence_error = None;
         for id in ids {
-            let _ = self.stop_build(&id);
+            if let Err(error) = self.stop_build(&id) {
+                persistence_error.get_or_insert(error);
+            }
         }
         tokio::time::timeout(std::time::Duration::from_secs(10), barrier.wait())
             .await
@@ -885,6 +895,9 @@ impl AppCore {
                 CoreError::Invalid("Cloud work is still stopping. Try again shortly.".into())
             })?
             .map_err(|e| CoreError::Internal(e.to_string()))?;
+        if let Some(error) = persistence_error {
+            return Err(error);
+        }
         Ok(())
     }
 
@@ -979,40 +992,78 @@ impl AppCore {
         serde_json::from_value(row.state).map_err(|e| CoreError::Internal(e.to_string()))
     }
 
-    fn update_build(&self, build_id: &str, f: impl FnOnce(&mut BuildState)) {
-        {
-            let mut builds = lock(&self.inner.builds);
-            let Some(slot) = builds.get_mut(build_id) else {
-                return;
-            };
-            if slot.state.phase.is_terminal() {
-                return; // stopped/failed builds never resurrect
-            }
-            f(&mut slot.state);
-            let snapshot = slot.state.clone();
-            let mut stored = serde_json::to_value(&snapshot).unwrap_or(Value::Null);
-            stored["draftRevision"] = json!(slot.draft_revision);
-            let now = self.now();
-            let _ = self.db().put_build(&db::BuildRow {
-                id: snapshot.build_id.clone(),
-                draft_id: snapshot.draft_id.clone(),
-                route: snapshot.route.as_str().into(),
-                phase: snapshot.phase.as_str().into(),
-                reserved_micros: if snapshot.route == ModelRoute::OfflineDemo {
-                    0
-                } else {
-                    BUILD_BUDGET_MICROS
-                },
-                spent_micros: snapshot.spent_micros,
-                state: stored,
-                created_ms: snapshot.events.first().map(|e| e.at_ms).unwrap_or(now),
-                updated_ms: now,
-            });
-            let _ = slot.tx.send(snapshot);
-        };
+    fn persist_build(&self, snapshot: &BuildState, draft_revision: u32) -> CoreResult<()> {
+        let mut stored =
+            serde_json::to_value(snapshot).map_err(|e| CoreError::Internal(e.to_string()))?;
+        stored["draftRevision"] = json!(draft_revision);
+        let now = self.now();
+        self.db().put_build(&db::BuildRow {
+            id: snapshot.build_id.clone(),
+            draft_id: snapshot.draft_id.clone(),
+            route: snapshot.route.as_str().into(),
+            phase: snapshot.phase.as_str().into(),
+            reserved_micros: if snapshot.route == ModelRoute::OfflineDemo {
+                0
+            } else {
+                BUILD_BUDGET_MICROS
+            },
+            spent_micros: snapshot.spent_micros,
+            state: stored,
+            created_ms: snapshot.events.first().map(|e| e.at_ms).unwrap_or(now),
+            updated_ms: now,
+        })?;
+        Ok(())
     }
 
-    fn push_phase(&self, build_id: &str, phase: BuildPhase, message: impl Into<String>) {
+    fn update_build(&self, build_id: &str, f: impl FnOnce(&mut BuildState)) -> CoreResult<()> {
+        // Serialize persistence and publication under the state lock. In particular,
+        // never expose Ready or dispatch work after a failed intent write (§3.2).
+        let mut builds = lock(&self.inner.builds);
+        let slot = builds
+            .get_mut(build_id)
+            .ok_or(CoreError::NotFound("build"))?;
+        if slot.state.phase.is_terminal() {
+            return Ok(());
+        }
+        let mut next = slot.state.clone();
+        f(&mut next);
+        if let Err(error) = self.persist_build(&next, slot.draft_revision) {
+            let message = "Build state could not be saved. The build was stopped.".to_string();
+            slot.state.phase = BuildPhase::Failed;
+            slot.state.failure = Some(BuildFailure {
+                kind: BuildFailureKind::Internal,
+                message: message.clone(),
+            });
+            slot.state.events.push(BuildEvent {
+                build_id: build_id.into(),
+                seq: slot.state.events.len() as u32 + 1,
+                phase: BuildPhase::Failed,
+                message,
+                at_ms: self.now(),
+            });
+            // The DB may be wholly unavailable. Keep the last durable reservation
+            // and intent for startup recovery, and visibly fail in memory now.
+            if self
+                .persist_build(&slot.state, slot.draft_revision)
+                .is_err()
+            {
+                eprintln!("Macroscope: failed build state could not be persisted");
+            }
+            let _ = slot.cancel.send(true);
+            let _ = slot.tx.send(slot.state.clone());
+            return Err(error);
+        }
+        slot.state = next;
+        let _ = slot.tx.send(slot.state.clone());
+        Ok(())
+    }
+
+    fn push_phase(
+        &self,
+        build_id: &str,
+        phase: BuildPhase,
+        message: impl Into<String>,
+    ) -> CoreResult<()> {
         let now = self.now();
         let message = message.into();
         self.update_build(build_id, |s| {
@@ -1024,10 +1075,15 @@ impl AppCore {
                 message,
                 at_ms: now,
             });
-        });
+        })
     }
 
-    fn fail_build(&self, build_id: &str, kind: BuildFailureKind, message: impl Into<String>) {
+    fn fail_build(
+        &self,
+        build_id: &str,
+        kind: BuildFailureKind,
+        message: impl Into<String>,
+    ) -> CoreResult<()> {
         let message = message.into();
         let now = self.now();
         self.update_build(build_id, |s| {
@@ -1043,7 +1099,7 @@ impl AppCore {
                 message,
                 at_ms: now,
             });
-        });
+        })
     }
 
     pub async fn start_build(
@@ -1133,10 +1189,10 @@ impl AppCore {
             },
         );
         drop(builds);
-        self.push_phase(&build_id, BuildPhase::Queued, "Queued");
+        self.push_phase(&build_id, BuildPhase::Queued, "Queued")?;
         if route != ModelRoute::OfflineDemo {
             let now = self.now();
-            self.db().insert_outbound(&db::OutboundRow {
+            let outbound = self.db().insert_outbound(&db::OutboundRow {
                 id: format!("out_{build_id}"),
                 at_ms: now,
                 purpose: "Build packet for a CSV tool".into(),
@@ -1145,7 +1201,15 @@ impl AppCore {
                 synthetic_only: true,
                 cost_micros: None,
                 payload_text: Some(Self::packet_text(&contract)),
-            })?;
+            });
+            if let Err(error) = outbound {
+                self.fail_build(
+                    &build_id,
+                    BuildFailureKind::Internal,
+                    "The outbound intent could not be saved.",
+                )?;
+                return Err(error.into());
+            }
         }
         self.activity(
             "build",
@@ -1156,15 +1220,30 @@ impl AppCore {
         let id = build_id.clone();
         let mut builds = lock(&self.inner.builds);
         let task = tokio::spawn(async move {
-            core.run_build(
-                id,
-                route,
-                contract,
-                input_path,
-                consent_epoch,
-                &mut cancelled,
-            )
-            .await
+            if core
+                .run_build(
+                    id.clone(),
+                    route,
+                    contract,
+                    input_path,
+                    consent_epoch,
+                    &mut cancelled,
+                )
+                .await
+                .is_err()
+            {
+                eprintln!("Macroscope: build persistence or internal operation failed");
+                if core
+                    .fail_build(
+                        &id,
+                        BuildFailureKind::Internal,
+                        "The build could not save its state or outbound cost.",
+                    )
+                    .is_err()
+                {
+                    eprintln!("Macroscope: internal build failure could not be persisted");
+                }
+            }
         });
         if let Some(slot) = builds.get_mut(&build_id) {
             slot.task = Some(task);
@@ -1181,11 +1260,11 @@ impl AppCore {
         input: PathBuf,
         consent_epoch: u64,
         cancelled: &mut tokio::sync::watch::Receiver<bool>,
-    ) {
+    ) -> CoreResult<()> {
         if *cancelled.borrow() {
-            return;
+            return Ok(());
         }
-        self.push_phase(&build_id, BuildPhase::Writing, "Writing a candidate");
+        self.push_phase(&build_id, BuildPhase::Writing, "Writing a candidate")?;
         let builder_route = match route {
             ModelRoute::OfflineDemo => BuildRoute::Offline,
             ModelRoute::ApiKey => BuildRoute::DirectMeta {
@@ -1210,8 +1289,8 @@ impl AppCore {
                         &build_id,
                         BuildFailureKind::NoModelAccess,
                         "Muse Code's program could not be found or changed during the build. Check Settings.",
-                    );
-                    return;
+                    )?;
+                    return Ok(());
                 }
             }
         } else {
@@ -1241,31 +1320,30 @@ impl AppCore {
             Ok(c) => c,
             Err(e) => {
                 let (kind, message) = build_error_message(&e);
-                self.fail_build(&build_id, kind, message);
-                return;
+                self.fail_build(&build_id, kind, message)?;
+                return Ok(());
             }
         };
         let spent = candidate.cost_microusd.map(|c| c as i64);
         if let Some(cost) = spent {
-            let _ = self
-                .db()
-                .set_outbound_cost(&format!("out_{build_id}"), Some(cost));
+            self.db()
+                .set_outbound_cost(&format!("out_{build_id}"), Some(cost))?;
         }
         let mapping = candidate.mapping.clone();
         self.update_build(&build_id, |s| {
             s.candidate = Some(mapping.clone());
             s.spent_micros = spent;
-        });
+        })?;
         self.push_phase(
             &build_id,
             BuildPhase::Candidate,
             format!("Candidate received from {}", candidate.label),
-        );
+        )?;
         self.push_phase(
             &build_id,
             BuildPhase::Checking,
             "Checking the candidate on your CSV and on cases that must stop",
-        );
+        )?;
         let checked = tokio::task::spawn_blocking(move || {
             let read = || Self::read_limited(&input).map_err(|e| e.to_string());
             let outcome = checks::run(&contract, &mapping, &read);
@@ -1282,9 +1360,9 @@ impl AppCore {
                 self.update_build(&build_id, |s| {
                     s.checks = check_list;
                     s.comparison = comparison;
-                });
+                })?;
                 if passed {
-                    self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare");
+                    self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
                 } else {
                     self.fail_build(
                         &build_id,
@@ -1293,15 +1371,16 @@ impl AppCore {
                             "Checks failed: {}. Edit the rules and build again.",
                             failed.join(", ")
                         ),
-                    );
+                    )?;
                 }
             }
             Err(_) => self.fail_build(
                 &build_id,
                 BuildFailureKind::Internal,
                 "The checks could not run.",
-            ),
+            )?,
         }
+        Ok(())
     }
 
     pub fn stop_build(&self, build_id: &str) -> CoreResult<BuildState> {
@@ -1310,7 +1389,7 @@ impl AppCore {
             let slot = builds.get(build_id).ok_or(CoreError::NotFound("build"))?;
             let _ = slot.cancel.send(true);
         }
-        self.push_phase(build_id, BuildPhase::Stopped, "Stopped by you");
+        self.push_phase(build_id, BuildPhase::Stopped, "Stopped by you")?;
         self.activity("build", "Build stopped", None);
         self.build_state(build_id)
     }
@@ -1625,11 +1704,7 @@ impl AppCore {
         let (input_path, input) = self.handle_path(input_handle, PickKind::File)?;
         let (dir_path, output_dir) = self.handle_path(dir_handle, PickKind::Dir)?;
         let output_name = output_name.trim().to_string();
-        let bad_name = output_name.is_empty()
-            || output_name.contains(['/', '\\', ':', '\0'])
-            || output_name == ".."
-            || !output_name.to_ascii_lowercase().ends_with(".csv");
-        if bad_name {
+        if broker::validate_basename(&output_name).is_err() {
             return Ok(StageResult::Failed(FailureEnvelope {
                 failure: map_run_failure(BrokerError::InvalidBasename),
             }));
@@ -1647,7 +1722,9 @@ impl AppCore {
         };
         let epochs = Epochs {
             grant_revision: grant_revision as u64,
-            policy_epoch: 0,
+            // PLAN §2.7: these runs are deterministic local effects. Egress
+            // consent epochs do not revoke them; tool grant revisions do.
+            policy_epoch: LOCAL_RUN_POLICY_EPOCH,
         };
         let request = (|| -> Result<StageRequest, BrokerError> {
             Ok(StageRequest {
@@ -1751,7 +1828,9 @@ impl AppCore {
             .unwrap_or(u64::MAX);
         let epochs = Epochs {
             grant_revision: if paused { u64::MAX } else { current_grant },
-            policy_epoch: 0,
+            // PLAN §2.7: these runs are deterministic local effects. Egress
+            // consent epochs do not revoke them; tool grant revisions do.
+            policy_epoch: LOCAL_RUN_POLICY_EPOCH,
         };
         let run_dir = staged.run_dir().to_path_buf();
         let result = broker::approve(&mut staged, plan_hash, approval.clone())
@@ -1930,15 +2009,23 @@ impl AppCore {
             .filter(|(_, s)| !s.state.phase.is_terminal())
             .map(|(id, _)| id.clone())
             .collect();
+        let mut persistence_error = None;
         for id in ids {
-            let _ = self.stop_build(&id);
+            if let Err(error) = self.stop_build(&id) {
+                persistence_error.get_or_insert(error);
+            }
         }
         let staged: Vec<String> = lock(&self.inner.staged).keys().cloned().collect();
         for id in staged {
-            let _ = self.discard_run(&id);
+            if let Err(error) = self.discard_run(&id) {
+                persistence_error.get_or_insert(error);
+            }
         }
         self.set_local_only(true).await?;
         self.activity("settings", "Emergency stop", None);
+        if let Some(error) = persistence_error {
+            return Err(error);
+        }
         Ok(())
     }
 

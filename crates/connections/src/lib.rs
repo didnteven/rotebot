@@ -6,6 +6,7 @@ pub mod mcp;
 pub mod oauth;
 pub mod state;
 
+pub use http::validate_url;
 pub use mcp::preview_tools;
 pub use state::ConnectionsService;
 

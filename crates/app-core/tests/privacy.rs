@@ -320,3 +320,73 @@ async fn startup_resumes_both_tombstone_scopes_before_recovering_jobs() {
         );
     }
 }
+
+#[tokio::test]
+async fn local_only_preserves_staged_local_runs_but_grant_revocation_blocks_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
+    let tool = core.install_sample_tool().unwrap();
+    let id = &tool.summary_row.id;
+    let first = staged(&core, id, tmp.path(), "local.csv");
+    core.set_local_only(true).await.unwrap();
+    assert!(matches!(
+        core.commit_run(&first.run_id, &first.plan_hash).unwrap(),
+        CommitResult::Committed(_)
+    ));
+    let second = staged(&core, id, tmp.path(), "revoked.csv");
+    core.revoke_tool(id).unwrap();
+    assert!(matches!(
+        core.commit_run(&second.run_id, &second.plan_hash).unwrap(),
+        CommitResult::Failed(FailureEnvelope {
+            failure: RunFailure::Revoked { .. }
+        })
+    ));
+    assert!(!tmp.path().join("revoked.csv").exists());
+}
+
+#[test]
+fn sample_setup_refuses_file_and_directory_symlinks_without_modifying_targets() {
+    use std::os::unix::fs::symlink;
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
+    let target = tmp.path().join("private.csv");
+    std::fs::write(&target, b"keep me").unwrap();
+    let sample = tmp.path().join("data/samples/orders.csv");
+    symlink(&target, &sample).unwrap();
+    let result = core.load_sample_csv();
+    assert_eq!(
+        std::fs::read(&target).unwrap(),
+        b"keep me",
+        "sample setup overwrote a symlink target"
+    );
+    assert!(result.is_err());
+    std::fs::remove_file(sample).unwrap();
+    std::fs::remove_dir(tmp.path().join("data/samples")).unwrap();
+    symlink(tmp.path(), tmp.path().join("data/samples")).unwrap();
+    assert!(core.load_sample_csv().is_err());
+    assert!(!tmp.path().join("orders.csv").exists());
+}
+
+#[test]
+fn invalid_control_names_are_rejected_before_destination_checks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
+    let tool = core.install_sample_tool().unwrap();
+    let input = core.load_sample_csv().unwrap().handle;
+    let dir = core.register_picked_dir(tmp.path()).unwrap();
+    for name in ["a\u{1}b.csv", "a\u{7f}b.csv"] {
+        std::fs::write(tmp.path().join(name), b"existing").unwrap();
+        let result = core
+            .stage_run(&tool.summary_row.id, &input.handle_id, &dir.handle_id, name)
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                StageResult::Failed(FailureEnvelope {
+                    failure: RunFailure::InputInvalid { .. }
+                })
+            ),
+            "{result:?}"
+        );
+    }
+}

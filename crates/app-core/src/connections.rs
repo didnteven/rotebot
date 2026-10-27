@@ -116,6 +116,15 @@ fn user_error(e: ConnectionError) -> CoreError {
     CoreError::Invalid(message)
 }
 
+// Bind even in-flight credential saves to the exact configured URL. Legacy
+// unbound records require re-entry rather than guessing which server owns them.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredClient {
+    resource: String,
+    #[serde(flatten)]
+    credentials: ClientCredentials,
+}
+
 fn client_key(id: &str) -> String {
     format!("mcp-client:{id}")
 }
@@ -140,10 +149,11 @@ impl Connections {
         })
     }
 
-    fn client_credentials(&self, id: &str) -> Option<ClientCredentials> {
+    fn client_credentials(&self, id: &str, resource: &str) -> Option<ClientCredentials> {
         let r = SecretRef::new(client_key(id)).ok()?;
         let secret = self.vault.get(&r).ok()??;
-        serde_json::from_slice(secret.expose()).ok()
+        let stored: StoredClient = serde_json::from_slice(secret.expose()).ok()?;
+        (stored.resource == resource).then_some(stored.credentials)
     }
 
     fn info(&self, status: &ConnectionStatus) -> Option<ConnectorInfo> {
@@ -183,7 +193,7 @@ impl Connections {
             .into(),
             docs_url: (!c.auth.docs_url.is_empty()).then(|| c.auth.docs_url.clone()),
             state,
-            has_client_credentials: self.client_credentials(&c.id).is_some(),
+            has_client_credentials: self.client_credentials(&c.id, &status.mcp_url).is_some(),
             client_setup: c.auth.client_setup.clone(),
             redirect_uri: c
                 .auth
@@ -209,7 +219,22 @@ impl Connections {
     pub async fn set_url(&self, id: &str, url: &str) -> CoreResult<ConnectorInfo> {
         self.cancel(id);
         let mut service = self.service.lock().await;
-        let result = service.set_url(id, url.trim()).await;
+        let url = url.trim();
+        macroscope_connections::validate_url(url).map_err(|e| user_error(e.into()))?;
+        let old = service
+            .list()
+            .into_iter()
+            .find(|s| s.connector_id == id)
+            .ok_or(CoreError::NotFound("connection"))?;
+        if old.mcp_url != url {
+            // Delete before publishing a changed URL; failure leaves admission at
+            // the old server. Tokens and pending flows are cleared by set_url.
+            let r = SecretRef::new(client_key(id)).map_err(|e| CoreError::Vault(e.to_string()))?;
+            self.vault
+                .delete(&r)
+                .map_err(|e| CoreError::Vault(e.to_string()))?;
+        }
+        let result = service.set_url(id, url).await;
         *lock(&self.snapshot) = service.list();
         drop(service);
         result.map_err(user_error)?;
@@ -241,7 +266,11 @@ impl Connections {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(String::from);
-        let creds = ClientCredentials::new(client_id, secret);
+        let resource = self.info_for(id)?.mcp_url;
+        let creds = StoredClient {
+            resource,
+            credentials: ClientCredentials::new(client_id, secret),
+        };
         let bytes = serde_json::to_vec(&creds).map_err(|e| CoreError::Internal(e.to_string()))?;
         let r = SecretRef::new(client_key(id)).map_err(|e| CoreError::Vault(e.to_string()))?;
         self.vault
@@ -260,13 +289,6 @@ impl Connections {
             .catalog
             .get(id)
             .ok_or(CoreError::NotFound("connection"))?;
-        let creds = self.client_credentials(id);
-        if connector.auth.registration == Registration::Preregistered && creds.is_none() {
-            return Err(CoreError::Invalid(format!(
-                "{} needs an OAuth client of your own. Add its client ID first.",
-                connector.name
-            )));
-        }
         self.cancel(id);
         let pending_id = format!("pending_{}", uuid::Uuid::new_v4().simple());
         let task = {
@@ -275,13 +297,27 @@ impl Connections {
             let mut pending = lock(&self.pending);
             let service = self.service.clone();
             let snapshot = self.snapshot.clone();
+            let owner = self.clone();
+            let registration = connector.auth.registration;
             let id = id.to_string();
             let task_id = id.clone();
             let task = tokio::spawn(async move {
                 let mut service = service.lock().await;
+                let resource = service
+                    .list()
+                    .into_iter()
+                    .find(|s| s.connector_id == task_id)
+                    .ok_or(CoreError::NotFound("connection"))?
+                    .mcp_url;
+                let creds = owner.client_credentials(&task_id, &resource);
+                if registration == Registration::Preregistered && creds.is_none() {
+                    return Err(CoreError::Invalid(
+                        "Add your OAuth client ID for this service first.".into(),
+                    ));
+                }
                 let result = service.begin_connect(&task_id, creds).await;
                 *lock(&snapshot) = service.list();
-                result
+                result.map_err(user_error)
             });
             pending.insert(
                 pending_id.clone(),
@@ -304,7 +340,7 @@ impl Connections {
             other => {
                 pending.remove(&pending_id);
                 return Err(match other {
-                    Ok(Err(e)) => user_error(e),
+                    Ok(Err(e)) => e,
                     _ => CoreError::Invalid("Sign-in was cancelled.".into()),
                 });
             }

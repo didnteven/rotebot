@@ -330,3 +330,31 @@ async fn deleting_history_stops_show_and_clears_session_detections() {
         .iter()
         .all(|i| i.count == 0));
 }
+
+#[tokio::test]
+async fn observer_start_carries_the_current_policy_epoch_after_privacy_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    core.set_local_only(true).await.unwrap();
+    core.set_local_only(false).await.unwrap();
+    let observer = fake_observer(tmp.path());
+    let capture = tmp.path().join("start.json");
+    let script = std::fs::read_to_string(&observer).unwrap().replace(
+        "read -r start",
+        &format!(
+            "read -r start\nprintf '%s' \"$start\" > '{}'",
+            capture.display()
+        ),
+    );
+    std::fs::write(&observer, script).unwrap();
+    let show = ShowController::new(Some(observer), core);
+    show.start().await;
+    wait_for(&show, |s| {
+        matches!(s, ShowState::Recording { apps_seen: 2, .. })
+    })
+    .await;
+    show.stop().await;
+    let message: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(capture).unwrap()).unwrap();
+    assert_eq!(message["policyEpoch"], 3);
+}

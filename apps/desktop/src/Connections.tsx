@@ -267,7 +267,7 @@ function ConnectionDetail({
           <p>
             {connector.hasClientCredentials
               ? "✓ Client credentials saved"
-              : "Client ID required before Connect."}
+              : "Add your OAuth client ID"}
           </p>
         </form>
       )}

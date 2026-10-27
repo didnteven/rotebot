@@ -580,3 +580,21 @@ it("shows five privacy controls in a definition list and no size for empty data"
     if (cells[1].textContent === "0") expect(cells[2]).toHaveTextContent("—");
   }
 });
+
+it("URL edits ask for an OAuth client ID again", async () => {
+  const { user } = await open();
+  await user.click(button("Connections"));
+  await user.click(button("Connect Gmail"));
+  await user.type(screen.getByLabelText("Client ID"), "old-client-id");
+  await user.type(screen.getByLabelText("Client secret"), "old-client-secret");
+  await user.click(button("Save client credentials"));
+  expect(await screen.findByText("✓ Client credentials saved")).toBeVisible();
+  expect(button("Connect")).toBeEnabled();
+  await user.clear(screen.getByLabelText("MCP URL"));
+  await user.type(screen.getByLabelText("MCP URL"), "https://new.example/mcp");
+  await user.click(button("Save MCP URL"));
+  expect(await screen.findByText("Add your OAuth client ID")).toBeVisible();
+  expect(button("Connect")).toBeDisabled();
+  expect(screen.getByLabelText("Client ID")).toHaveValue("");
+  expect(screen.getByLabelText("Client secret")).toHaveValue("");
+});

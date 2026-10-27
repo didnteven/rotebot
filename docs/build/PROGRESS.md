@@ -119,3 +119,30 @@ Their build tails were `✓ built in 664ms` and `✓ built in 89ms`.
 `cd apps/desktop && npx tauri build --debug --no-bundle` exited 0:
 `Finished dev profile [unoptimized + debuginfo] target(s) in 52.29s`.
 No Rust source changes were needed.
+
+
+## Muse Code review (Task 10)
+
+Muse Code (`muse-spark-1.3`, contributor mode) reviewed the repository read-only.
+Codex reproduced and fixed seven defects: URL-bound OAuth clients and deletion on
+URL edits, PRM fallback after per-URL failures, no-follow sample restoration,
+propagated build/outbound persistence failures, zeroizing OAuth request bodies,
+shared basename admission, and the current Show policy epoch. Finding 5 is
+intentional: Local-only revokes model egress while deterministic runs continue;
+a new regression confirms commit still works and grant revocation still blocks it.
+The UI returns to “Add your OAuth client ID” after a URL edit. Legacy unbound
+client records require re-entry.
+
+Each confirmed finding failed a regression before its fix. Existing tests and the
+[core review guarantees](codex-review-of-core.md) remain in place. Full verdicts,
+test names, reproduction evidence and final verification are recorded in
+[muse-review.md](muse-review.md).
+
+
+Final Task 10 verification: `cargo test --workspace` and both required
+`bash scripts/check.sh` runs exited 0. Each passed **199 Rust tests**, with **4
+existing integration tests ignored**; each script also passed **104 UI tests**,
+formatting, clippy, typechecking, and the production build. Earlier intermittent
+Show startup and SQLCipher initialization failures, which were not reproduced in
+these three final runs, are recorded with the verification evidence in the report.
+No test was weakened or deleted.

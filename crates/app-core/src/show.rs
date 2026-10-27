@@ -90,7 +90,12 @@ fn lock(m: &Mutex<Inner>) -> std::sync::MutexGuard<'_, Inner> {
 
 /// The observer's `start` message: connector signatures from the catalog plus the
 /// plan's default exclusions (the observer adds its own built-in list too).
-pub fn start_message(session_id: &str, catalog: &Catalog, max_seconds: u32) -> Value {
+pub fn start_message(
+    session_id: &str,
+    catalog: &Catalog,
+    max_seconds: u32,
+    policy_epoch: u64,
+) -> Value {
     let connectors: Vec<Value> = catalog
         .connectors
         .iter()
@@ -119,7 +124,7 @@ pub fn start_message(session_id: &str, catalog: &Catalog, max_seconds: u32) -> V
         "maxSeconds": max_seconds.min(MAX_SECONDS),
         "rules": {"connectors": connectors},
         "exclusions": {"bundleIds": []},
-        "policyEpoch": 1,
+        "policyEpoch": policy_epoch,
     })
 }
 
@@ -225,7 +230,13 @@ impl ShowController {
         let (control, mut control_rx) = mpsc::channel::<String>(8);
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
         let (done_tx, done) = tokio::sync::watch::channel(false);
-        let first = start_message(&session_id, &Catalog::embedded(), MAX_SECONDS).to_string();
+        let first = start_message(
+            &session_id,
+            &Catalog::embedded(),
+            MAX_SECONDS,
+            self.core.inner.policy.epoch(),
+        )
+        .to_string();
         let _ = control.send(first).await;
         // Writer: owns stdin. When every sender is dropped, stdin closes (observer EOF stop).
         let writer = tokio::spawn(async move {
@@ -488,7 +499,8 @@ mod tests {
 
     #[test]
     fn start_message_carries_catalog_signatures_and_the_cap() {
-        let msg = start_message("s1", &Catalog::embedded(), 9999);
+        let msg = start_message("s1", &Catalog::embedded(), 9999, 42);
+        assert_eq!(msg["policyEpoch"], 42);
         assert_eq!(msg["type"], "start");
         assert_eq!(msg["maxSeconds"], MAX_SECONDS);
         let connectors = msg["rules"]["connectors"].as_array().unwrap();

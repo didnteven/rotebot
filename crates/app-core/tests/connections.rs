@@ -9,7 +9,7 @@ use axum::{Json, Router};
 use macroscope_app_core::connections::Connections;
 use macroscope_app_core::dto::ConnectionState;
 use macroscope_app_core::{AppCore, CoreConfig, NativeMuse};
-use macroscope_vault::{MemoryStore, SecretRef, SecretStore};
+use macroscope_vault::{MemoryStore, Secret, SecretRef, SecretStore};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;
@@ -17,8 +17,10 @@ use std::sync::Arc;
 
 const ACCESS: &str = "ACCESS-TOKEN-CANARY-7f3a";
 
+type ObservedForms = Arc<std::sync::Mutex<Vec<HashMap<String, String>>>>;
+
 #[derive(Clone)]
-struct Fake(Arc<String>);
+struct Fake(Arc<String>, ObservedForms);
 
 async fn resource(State(f): State<Fake>) -> Json<Value> {
     Json(json!({"resource": format!("{}/mcp", f.0), "authorization_servers": [f.0.as_str()]}))
@@ -40,7 +42,8 @@ async fn authorize(Query(q): Query<HashMap<String, String>>) -> Redirect {
         q["redirect_uri"], q["state"]
     ))
 }
-async fn token(Form(form): Form<HashMap<String, String>>) -> Json<Value> {
+async fn token(State(f): State<Fake>, Form(form): Form<HashMap<String, String>>) -> Json<Value> {
+    f.1.lock().unwrap().push(form.clone());
     assert_eq!(form["grant_type"], "authorization_code");
     assert!(form.contains_key("code_verifier"));
     Json(
@@ -72,9 +75,10 @@ async fn mcp(State(f): State<Fake>, headers: HeaderMap, Json(body): Json<Value>)
     }
 }
 
-async fn fake_server() -> String {
+async fn observed_server() -> (String, ObservedForms) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let forms = Arc::new(std::sync::Mutex::new(Vec::new()));
     let app = Router::new()
         .route("/.well-known/oauth-protected-resource", get(resource))
         .route("/.well-known/oauth-protected-resource/mcp", get(resource))
@@ -83,9 +87,13 @@ async fn fake_server() -> String {
         .route("/authorize", get(authorize))
         .route("/token", post(token))
         .route("/mcp", post(mcp))
-        .with_state(Fake(Arc::new(base.clone())));
+        .with_state(Fake(Arc::new(base.clone()), forms.clone()));
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    base
+    (base, forms)
+}
+
+async fn fake_server() -> String {
+    observed_server().await.0
 }
 
 fn core(dir: &Path, vault: Arc<dyn SecretStore>) -> AppCore {
@@ -321,4 +329,138 @@ async fn failed_discovery_updates_the_snapshot_and_cancel_revokes_browser_author
     let start = conns.begin_connect("custom").await.unwrap();
     conns.cancel("custom");
     assert!(!conns.allow_authorization_url(&start.authorization_url));
+}
+
+#[tokio::test]
+async fn changed_url_deletes_credentials_and_never_sends_the_old_secret() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
+    let conns = Connections::new(core(tmp.path(), vault.clone()), vault.clone()).unwrap();
+    let old = fake_server().await;
+    let (new, forms) = observed_server().await;
+    conns
+        .set_url("custom", &format!("{old}/mcp"))
+        .await
+        .unwrap();
+    conns
+        .set_client_credentials("custom", "old-client", Some("OLD-SERVER-SECRET"))
+        .unwrap();
+    assert!(conns.set_url("custom", "javascript:invalid").await.is_err());
+    assert!(
+        conns
+            .list()
+            .iter()
+            .find(|c| c.id == "custom")
+            .unwrap()
+            .has_client_credentials
+    );
+    // A same-URL save retains credentials.
+    assert!(
+        conns
+            .set_url("custom", &format!("{old}/mcp"))
+            .await
+            .unwrap()
+            .has_client_credentials
+    );
+    let start = conns.begin_connect("custom").await.unwrap();
+    let (_, done) = tokio::join!(
+        reqwest::get(&start.authorization_url),
+        conns.complete_connect(&start.pending_id)
+    );
+    done.unwrap();
+    assert!(vault
+        .get(&SecretRef::new("mcp-token:custom").unwrap())
+        .unwrap()
+        .is_some());
+    conns
+        .set_url("custom", &format!("{new}/mcp"))
+        .await
+        .unwrap();
+    assert!(vault
+        .get(&SecretRef::new("mcp-token:custom").unwrap())
+        .unwrap()
+        .is_none());
+    // Dynamic registration can still connect, but cannot reuse the old secret.
+    let start = conns.begin_connect("custom").await.unwrap();
+    let (_, done) = tokio::join!(
+        reqwest::get(&start.authorization_url),
+        conns.complete_connect(&start.pending_id)
+    );
+    done.unwrap();
+    assert_eq!(forms.lock().unwrap().len(), 1);
+    assert!(
+        forms
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|f| !f.contains_key("client_secret")),
+        "old secret reached changed server"
+    );
+    assert!(vault
+        .get(&SecretRef::new("mcp-client:custom").unwrap())
+        .unwrap()
+        .is_none());
+    conns
+        .set_client_credentials("gmail", "old-gmail", Some("OLD-GMAIL-SECRET"))
+        .unwrap();
+    let info = conns.set_url("gmail", &format!("{new}/mcp")).await.unwrap();
+    assert!(!info.has_client_credentials);
+    let error = conns.begin_connect("gmail").await.unwrap_err();
+    assert!(error.to_string().contains("Add your OAuth client ID"));
+    assert!(vault
+        .get(&SecretRef::new("mcp-token:gmail").unwrap())
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn stale_server_bound_and_legacy_unbound_clients_require_reentry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
+    let conns = Connections::new(core(tmp.path(), vault.clone()), vault.clone()).unwrap();
+    let key = SecretRef::new("mcp-client:gmail").unwrap();
+    conns
+        .set_client_credentials("gmail", "old-client", Some("old-secret"))
+        .unwrap();
+    let old = vault.get(&key).unwrap().unwrap().expose().to_vec();
+    conns
+        .set_url("gmail", "https://new.example/mcp")
+        .await
+        .unwrap();
+    // Simulate a delayed credential save that captured the old URL before an edit.
+    vault.set(&key, Secret::new(old)).unwrap();
+    assert!(
+        !conns
+            .list()
+            .iter()
+            .find(|c| c.id == "gmail")
+            .unwrap()
+            .has_client_credentials
+    );
+    assert!(conns
+        .begin_connect("gmail")
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Add your OAuth client ID"));
+    vault
+        .set(
+            &key,
+            Secret::new(br#"{"client_id":"legacy","client_secret":"legacy-secret"}"#.to_vec()),
+        )
+        .unwrap();
+    assert!(
+        !conns
+            .list()
+            .iter()
+            .find(|c| c.id == "gmail")
+            .unwrap()
+            .has_client_credentials
+    );
+    assert!(conns
+        .begin_connect("gmail")
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Add your OAuth client ID"));
 }
