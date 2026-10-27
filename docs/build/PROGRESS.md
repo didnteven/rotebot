@@ -10,7 +10,8 @@ access, connections, observer, runtime experiment, and UI. Claude reviewed and t
 every branch (including outside the agent sandbox), fixed what the reviews found, and
 wrote storage, the app core, the Tauri shell, Show, and connections wiring while Codex was
 rate-limited; Codex then reviewed that code independently (`m3/hardening`).
-Muse Code was never signed in during the build, so it could not help (see below).
+Muse Code (`muse-spark-1.3`, contributor mode) was set up as a helper (`.dev/muse_help.sh`,
+native binary only), but Muse was never signed in during the build, so it could not run.
 
 ## What works now
 
@@ -33,6 +34,18 @@ Muse Code was never signed in during the build, so it could not help (see below)
   task text and from Show, with dismiss/snooze. Wired through the core and shell; tested
   end to end against an in-process OAuth + MCP server.
 
+## Independent review (`m3/hardening`)
+
+After the Claude-written parts landed, Codex reviewed them as a skeptic and fixed 28
+findings, each with a regression test that failed first
+([codex-review-of-core.md](codex-review-of-core.md)). The most important: host checks now
+enforce every confirmed rule (a schema-valid model answer could otherwise change a date's
+meaning and still pass), stopping a cloud build can no longer wedge Local only, the
+$25/month build ceiling is enforced, saved tools must match the draft revision they were
+built from, and Show always kills an unresponsive observer. Claude reran everything outside
+the agent sandbox: 176 Rust tests and 56 UI tests pass, plus the real Swift observer and
+Muse 1.4.13 echo tests, and the app bundle builds and launches.
+
 ## Gates
 
 | Gate (plan section) | Status | Evidence |
@@ -42,7 +55,9 @@ Muse Code was never signed in during the build, so it could not help (see below)
 | Data-protection Keychain in a signed build | unverified | Unsigned dev builds fall back to the login keychain (`-34018`); recheck once signed |
 | Encrypted metadata, staging (P3) | passed | `wrong_key_is_rejected_and_file_has_no_plaintext`; XChaCha20-Poly1305 staging tamper tests |
 | Stage once → approve exact bytes → atomic no-overwrite commit (§7.3) | passed | broker adversarial suite (tamper, input/destination swap, revocation, crash reconcile, no rerun) |
-| Host-owned checks gate "ready" (§7.4) | passed | `a_schema_valid_but_wrong_answer_is_stopped_by_host_checks`, `checks::tests` |
+| Host-owned checks gate "ready" (§7.4) | passed | `a_schema_valid_but_wrong_answer_is_stopped_by_host_checks`, `candidates_cannot_replace_confirmed_rules_even_when_rows_still_look_valid` |
+| Spend admission limits (§9.1: $2/build, $25/month) | passed | `unknown_charges_keep_the_monthly_build_reservation_and_block_admission` |
+| Local-only barrier during active work (§2.7) | passed | `local_only_during_a_request_cancels_and_acknowledges_the_barrier`, `local_only_refuses_api_key_network_checks` |
 | Outbound review shows the exact payload; synthetic only (P5) | passed | `a_correct_model_answer_becomes_ready_with_cost_and_a_synthetic_packet` |
 | Responses request shape (`text.format`, `store:false`) (§4.1) | passed | gateway and cloud-build tests against a local stand-in |
 | Real Meta API call with a real key, billing attribution (M0 day 5) | unverified | No key supplied yet |
