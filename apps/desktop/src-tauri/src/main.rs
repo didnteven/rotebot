@@ -699,6 +699,22 @@ fn open_main<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Plain-language startup failure text. Keychain refusal is the common case for
+/// unsigned development builds (each rebuild is a different app to macOS).
+fn startup_failure_message(e: &CoreError) -> String {
+    match e.code() {
+        "vault" => "Macroscope couldn't read its key from your Keychain, so it can't open its \
+                    encrypted data.\n\nOpen Macroscope again and, when macOS asks, enter your Mac \
+                    login password and choose Always Allow."
+            .to_string(),
+        "storage" => format!(
+            "Macroscope couldn't open its data folder.\n\n{e}\n\nIf this keeps happening, \
+             quit other copies of Macroscope and try again."
+        ),
+        _ => format!("Macroscope couldn't start.\n\n{e}"),
+    }
+}
+
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = tray_menu(app.handle())?;
     let mut tray = TrayIconBuilder::with_id("main")
@@ -824,10 +840,19 @@ fn main() {
                 app_version: env!("CARGO_PKG_VERSION").into(),
                 platform: std::env::consts::OS.into(),
                 now_ms: CoreConfig::system_clock(),
-            })
-            .map_err(|e| {
-                Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
-            })?;
+            });
+            let core = match core {
+                Ok(core) => core,
+                Err(e) => {
+                    // Explain instead of crashing silently, then quit.
+                    app.dialog()
+                        .message(startup_failure_message(&e))
+                        .title("Macroscope can't open")
+                        .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                        .blocking_show();
+                    std::process::exit(1);
+                }
+            };
             let show = ShowController::new(observer_path(), core.clone());
             let mut updates = show.subscribe();
             let handle = app.handle().clone();
@@ -1196,6 +1221,15 @@ mod tests {
             let docs = c["auth"]["docs_url"].as_str().unwrap();
             assert!(allowed_external(docs), "{docs}");
         }
+    }
+
+    #[test]
+    fn startup_failures_explain_what_to_do() {
+        let vault =
+            startup_failure_message(&CoreError::Vault("credential store unavailable".into()));
+        assert!(vault.contains("Always Allow") && vault.contains("Keychain"));
+        let storage = startup_failure_message(&CoreError::Storage("locked".into()));
+        assert!(storage.contains("data folder") && storage.contains("locked"));
     }
 
     #[test]
