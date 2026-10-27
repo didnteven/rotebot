@@ -757,6 +757,40 @@ fn startup_failure_message(e: &CoreError, store: macroscope_vault::SecretStoreKi
     }
 }
 
+/// A database that exists but rejects this build's key: the folder was created with a
+/// key held in a different secret store (or a removed one).
+fn is_foreign_key_data(e: &CoreError) -> bool {
+    e.code() == "storage" && e.to_string().contains("key rejected")
+}
+
+fn foreign_key_message(store: macroscope_vault::SecretStoreKind) -> String {
+    let here = match store {
+        macroscope_vault::SecretStoreKind::File => {
+            "this development build keeps its key in a private file"
+        }
+        _ => "this build keeps its key in your Keychain",
+    };
+    format!(
+        "Macroscope's data folder was encrypted with a key this copy doesn't have ({here}, and the \
+         folder was made by a build that kept its key somewhere else).\n\nStart fresh to move the old \
+         folder aside as a backup and open with an empty one. Nothing is deleted."
+    )
+}
+
+/// `<data dir>.backup-<unix seconds>` next to the data folder.
+fn backup_path(data_dir: &std::path::Path, now: std::time::SystemTime) -> std::path::PathBuf {
+    let secs = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut name = data_dir
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(format!(".backup-{secs}"));
+    data_dir.with_file_name(name)
+}
+
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = tray_menu(app.handle())?;
     let mut tray = TrayIconBuilder::with_id("main")
@@ -873,6 +907,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            let data_dir_for_backup = data_dir.clone();
             let vault = vault(&data_dir)?;
             eprintln!("Macroscope secret store: {:?}", vault.kind());
             let home = home_dir();
@@ -888,6 +923,40 @@ fn main() {
             });
             let core = match core {
                 Ok(core) => core,
+                Err(e) if is_foreign_key_data(&e) => {
+                    // The data folder was encrypted with a key this build's secret store does
+                    // not hold (e.g. a Keychain-era folder opened by a file-store debug build).
+                    // Offer to keep it as a backup and start fresh; never delete it.
+                    let fresh = app
+                        .dialog()
+                        .message(foreign_key_message(vault.kind()))
+                        .title("Macroscope can't open its data")
+                        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+                        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                            "Start fresh (keep a backup)".into(),
+                            "Quit".into(),
+                        ))
+                        .blocking_show();
+                    if !fresh {
+                        std::process::exit(1);
+                    }
+                    let backup = backup_path(&data_dir_for_backup, std::time::SystemTime::now());
+                    std::fs::rename(&data_dir_for_backup, &backup)?;
+                    let vault = self::vault(&data_dir_for_backup)?;
+                    AppCore::new(CoreConfig {
+                        data_dir: data_dir_for_backup.clone(),
+                        vault,
+                        gateway_base_url: "https://api.meta.ai/v1".into(),
+                        home: home_dir(),
+                        muse: Arc::new(NativeMuse { home: home_dir() }),
+                        app_version: env!("CARGO_PKG_VERSION").into(),
+                        platform: std::env::consts::OS.into(),
+                        now_ms: CoreConfig::system_clock(),
+                    })
+                    .map_err(|e| {
+                        Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+                    })?
+                }
                 Err(e) => {
                     // Explain instead of crashing silently, then quit.
                     app.dialog()
@@ -1295,6 +1364,26 @@ mod tests {
             let docs = c["auth"]["docs_url"].as_str().unwrap();
             assert!(allowed_external(docs), "{docs}");
         }
+    }
+
+    #[test]
+    fn foreign_key_data_is_detected_and_backed_up_beside_the_folder() {
+        let e =
+            CoreError::Storage("database key rejected or file is not a Macroscope database".into());
+        assert!(is_foreign_key_data(&e));
+        assert!(!is_foreign_key_data(&CoreError::Storage(
+            "disk full".into()
+        )));
+        let msg = foreign_key_message(macroscope_vault::SecretStoreKind::File);
+        assert!(msg.contains("Nothing is deleted") && msg.contains("private file"));
+        let p = backup_path(
+            std::path::Path::new("/x/Application Support/dev.macroscope.desktop"),
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(42),
+        );
+        assert_eq!(
+            p,
+            std::path::Path::new("/x/Application Support/dev.macroscope.desktop.backup-42")
+        );
     }
 
     #[test]
