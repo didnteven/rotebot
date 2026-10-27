@@ -8,7 +8,7 @@ use macroscope_app_core::show::ShowController;
 use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
 use macroscope_domain::CsvMapping;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -64,13 +64,19 @@ async fn model_access(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
 }
 
 /// macOS: a native hidden-input dialog. The key travels only over the osascript
-/// stdout pipe into the core and the Keychain; never argv, logs, or the webview.
+/// stdout pipe into the core and the vault; never argv, logs, or the webview.
 #[tauri::command]
 async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
     if !cfg!(target_os = "macos") {
         return Err(invalid("Use the key field on this platform."));
     }
-    let script = r#"text returned of (display dialog "Paste your Meta API key. Macroscope stores it in your macOS Keychain." default answer "" with hidden answer with title "Macroscope" buttons {"Cancel", "Save key"} default button "Save key")"#;
+    let storage = match core.0.app_info().secret_store {
+        macroscope_vault::SecretStoreKind::File => "a private file in Macroscope's data folder",
+        _ => "your macOS Keychain",
+    };
+    let script = format!(
+        r#"text returned of (display dialog "Paste your Meta API key. Macroscope stores it in {storage}." default answer "" with hidden answer with title "Macroscope" buttons {{"Cancel", "Save key"}} default button "Save key")"#
+    );
     let output = tokio::process::Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -607,14 +613,32 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
-fn vault() -> Arc<dyn macroscope_vault::SecretStore> {
-    #[cfg(target_os = "macos")]
-    {
-        Arc::new(macroscope_vault::KeychainStore)
+fn vault_kind(
+    override_store: Option<&std::ffi::OsStr>,
+) -> Result<macroscope_vault::SecretStoreKind, macroscope_vault::VaultError> {
+    use macroscope_vault::{SecretStoreKind, VaultError};
+    match override_store {
+        Some(value) if value == "file" => Ok(SecretStoreKind::File),
+        Some(value) if value == "keychain" && cfg!(target_os = "macos") => {
+            Ok(SecretStoreKind::Keychain)
+        }
+        Some(_) => Err(VaultError::Unavailable),
+        None if cfg!(debug_assertions) => Ok(SecretStoreKind::File),
+        None if cfg!(target_os = "macos") => Ok(SecretStoreKind::Keychain),
+        None => Ok(SecretStoreKind::Memory),
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Arc::new(macroscope_vault::MemoryStore::default())
+}
+
+fn vault(
+    data_dir: &Path,
+) -> Result<Arc<dyn macroscope_vault::SecretStore>, macroscope_vault::VaultError> {
+    use macroscope_vault::{FileStore, MemoryStore, SecretStoreKind, VaultError};
+    match vault_kind(std::env::var_os("MACROSCOPE_VAULT").as_deref())? {
+        SecretStoreKind::File => Ok(Arc::new(FileStore::new(data_dir.join("dev-secrets"))?)),
+        #[cfg(target_os = "macos")]
+        SecretStoreKind::Keychain => Ok(Arc::new(macroscope_vault::KeychainStore)),
+        SecretStoreKind::Memory => Ok(Arc::new(MemoryStore::default())),
+        _ => Err(VaultError::Unavailable),
     }
 }
 
@@ -699,10 +723,12 @@ fn open_main<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Plain-language startup failure text. Keychain refusal is the common case for
-/// unsigned development builds (each rebuild is a different app to macOS).
-fn startup_failure_message(e: &CoreError) -> String {
+/// Plain-language startup failure text for the selected store.
+fn startup_failure_message(e: &CoreError, store: macroscope_vault::SecretStoreKind) -> String {
     match e.code() {
+        "vault" if store == macroscope_vault::SecretStoreKind::File =>
+            "Macroscope couldn't read its private secrets file, so it can't open its encrypted data.\n\nCheck that dev-secrets in Macroscope's data folder belongs to you, with directory permissions 0700 and file permissions 0600."
+                .to_string(),
         "vault" => "Macroscope couldn't read its key from your Keychain, so it can't open its \
                     encrypted data.\n\nOpen Macroscope again and, when macOS asks, enter your Mac \
                     login password and choose Always Allow."
@@ -830,10 +856,12 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            let vault = vault(&data_dir)?;
+            eprintln!("Macroscope secret store: {:?}", vault.kind());
             let home = home_dir();
             let core = AppCore::new(CoreConfig {
                 data_dir,
-                vault: vault(),
+                vault: vault.clone(),
                 gateway_base_url: "https://api.meta.ai/v1".into(),
                 home: home.clone(),
                 muse: Arc::new(NativeMuse { home }),
@@ -846,7 +874,7 @@ fn main() {
                 Err(e) => {
                     // Explain instead of crashing silently, then quit.
                     app.dialog()
-                        .message(startup_failure_message(&e))
+                        .message(startup_failure_message(&e, vault.kind()))
                         .title("Macroscope can't open")
                         .kind(tauri_plugin_dialog::MessageDialogKind::Error)
                         .blocking_show();
@@ -863,7 +891,7 @@ fn main() {
                     let _ = handle.emit("show://state", &state);
                 }
             });
-            let conns = Connections::new(core.clone(), vault()).map_err(|e| {
+            let conns = Connections::new(core.clone(), vault).map_err(|e| {
                 Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
             })?;
             app.manage(Core(core));
@@ -891,6 +919,35 @@ mod tests {
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, INVOKE_KEY};
     use tauri::webview::InvokeRequest;
+
+    #[test]
+    fn vault_selection_defaults_and_overrides_without_touching_keychain() {
+        use macroscope_vault::{SecretStoreKind, VaultError};
+        let default = if cfg!(debug_assertions) {
+            SecretStoreKind::File
+        } else if cfg!(target_os = "macos") {
+            SecretStoreKind::Keychain
+        } else {
+            SecretStoreKind::Memory
+        };
+        assert_eq!(vault_kind(None).unwrap(), default);
+        assert_eq!(
+            vault_kind(Some("file".as_ref())).unwrap(),
+            SecretStoreKind::File
+        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                vault_kind(Some("keychain".as_ref())).unwrap(),
+                SecretStoreKind::Keychain
+            );
+        }
+        for invalid in ["", "invalid", "FILE"] {
+            assert_eq!(
+                vault_kind(Some(invalid.as_ref())),
+                Err(VaultError::Unavailable)
+            );
+        }
+    }
 
     fn invoke<W: AsRef<tauri::Webview<tauri::test::MockRuntime>>>(
         w: &W,
@@ -1225,10 +1282,22 @@ mod tests {
 
     #[test]
     fn startup_failures_explain_what_to_do() {
-        let vault =
-            startup_failure_message(&CoreError::Vault("credential store unavailable".into()));
+        use macroscope_vault::SecretStoreKind;
+        let vault = startup_failure_message(
+            &CoreError::Vault("credential store unavailable".into()),
+            SecretStoreKind::Keychain,
+        );
         assert!(vault.contains("Always Allow") && vault.contains("Keychain"));
-        let storage = startup_failure_message(&CoreError::Storage("locked".into()));
+        let file = startup_failure_message(
+            &CoreError::Vault("credential store unavailable".into()),
+            SecretStoreKind::File,
+        );
+        assert!(
+            file.contains("private secrets file") && file.contains("0700") && file.contains("0600")
+        );
+        assert!(!file.contains("password") && !file.contains("Keychain"));
+        let storage =
+            startup_failure_message(&CoreError::Storage("locked".into()), SecretStoreKind::File);
         assert!(storage.contains("data folder") && storage.contains("locked"));
     }
 

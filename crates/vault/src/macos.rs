@@ -79,6 +79,9 @@ fn delete_keychains(mut delete: impl FnMut(bool) -> Result<(), i32>) -> Result<(
 }
 
 impl SecretStore for KeychainStore {
+    fn kind(&self) -> SecretStoreKind {
+        SecretStoreKind::Keychain
+    }
     fn get(&self, reference: &SecretRef) -> Result<Option<Secret>, VaultError> {
         read_keychain(
             |protected| get_in(reference, protected),

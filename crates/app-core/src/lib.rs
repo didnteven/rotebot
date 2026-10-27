@@ -419,6 +419,8 @@ impl AppCore {
             version: self.inner.cfg.app_version.clone(),
             platform: self.inner.cfg.platform.clone(),
             mock: false,
+            secret_store: self.inner.cfg.vault.kind(),
+            debug_build: cfg!(debug_assertions),
         }
     }
 

@@ -289,6 +289,8 @@ describe("Settings, connections, Show and privacy", () => {
       platform: "macos",
       version: "0.1.0",
       mock: false,
+      secretStore: "keychain",
+      debugBuild: false,
     });
     const native = vi
       .spyOn(backend, "enterApiKeyNative")

@@ -11,6 +11,9 @@ fn target(r: &SecretRef) -> Vec<u16> {
         .collect()
 }
 impl SecretStore for CredentialStore {
+    fn kind(&self) -> SecretStoreKind {
+        SecretStoreKind::CredentialManager
+    }
     fn get(&self, r: &SecretRef) -> Result<Option<Secret>, VaultError> {
         let name = target(r);
         let mut ptr = std::ptr::null_mut();
