@@ -321,7 +321,13 @@ export class MockBackend implements Backend {
     return clone(this.status);
   }
   async appInfo(): Promise<AppInfo> {
-    return { version: "0.1.0", platform: "browser" as const, mock: true };
+    return {
+      version: "0.1.0",
+      platform: "browser" as const,
+      mock: true,
+      secretStore: "memory",
+      debugBuild: false,
+    };
   }
   async modelAccess() {
     return this.resolveRoute();

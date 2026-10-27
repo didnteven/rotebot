@@ -56,6 +56,11 @@ export function Settings({
   return (
     <section>
       <h2>Model access</h2>
+      {info.debugBuild && info.secretStore === "file" && (
+        <p className="muted">
+          Development build: secrets are stored in a private file in Macroscope's data folder instead of the Keychain.
+        </p>
+      )}
       <Notice error={error} />
       {busy && <p role="status">Checking…</p>}
       <div className="card-grid">

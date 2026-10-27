@@ -4,6 +4,24 @@ use macroscope_app_core::dto::*;
 use serde_json::json;
 
 #[test]
+fn app_info_identifies_the_actual_store_and_build() {
+    let info = AppInfo {
+        version: "0.1.0".into(),
+        platform: "macos".into(),
+        mock: false,
+        secret_store: macroscope_vault::SecretStoreKind::File,
+        debug_build: true,
+    };
+    assert_eq!(
+        serde_json::to_value(info).unwrap(),
+        json!({
+            "version": "0.1.0", "platform": "macos", "mock": false,
+            "secretStore": "file", "debugBuild": true
+        })
+    );
+}
+
+#[test]
 fn model_access_and_tagged_unions_match_the_contract() {
     let status = ModelAccessStatus {
         api_key: ApiKeyStatus {

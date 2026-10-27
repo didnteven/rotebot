@@ -9,6 +9,8 @@ export interface AppInfo {
   platform: "macos" | "windows" | "linux" | "browser";
   /** True when running against the in-memory mock (browser dev / tests). */
   mock: boolean;
+  secretStore: "file" | "keychain" | "memory" | "credential_manager";
+  debugBuild: boolean;
 }
 
 // ---------- Model access (ADR 0001 §1) ----------

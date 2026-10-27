@@ -81,7 +81,19 @@ pub fn validate_key(raw: &str) -> Result<(Secret, KeyFingerprint), VaultError> {
     ))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretStoreKind {
+    File,
+    Keychain,
+    Memory,
+    CredentialManager,
+}
+
 pub trait SecretStore: Send + Sync {
+    fn kind(&self) -> SecretStoreKind {
+        SecretStoreKind::Memory
+    }
     fn get(&self, reference: &SecretRef) -> Result<Option<Secret>, VaultError>;
     fn set(&self, reference: &SecretRef, secret: Secret) -> Result<(), VaultError>;
     fn delete(&self, reference: &SecretRef) -> Result<(), VaultError>;
@@ -115,6 +127,9 @@ impl SecretStore for MemoryStore {
     }
 }
 pub type MemorySecretStore = MemoryStore;
+
+mod file;
+pub use file::FileStore;
 
 #[cfg(target_os = "macos")]
 mod macos;

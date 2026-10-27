@@ -18,6 +18,8 @@ describe("typed backend seam", () => {
       version: "0.1.0",
       platform: "browser",
       mock: true,
+      secretStore: "memory",
+      debugBuild: false,
     });
     expect(await backend.listTools()).toEqual([]);
     expect(invoke).not.toHaveBeenCalled();

@@ -25,13 +25,14 @@ A double-clickable app for this Mac (unsigned, observer included): `scripts/bund
 
 Browser preview with the in-memory mock backend: `npm run -w apps/desktop dev`.
 Native binary: `cd apps/desktop && npx tauri build --debug --no-bundle`.
+Debug builds keep secrets in `dev-secrets/secrets.json` (0600, in a 0700 directory) in Macroscope's data folder to avoid Keychain prompts; macOS release builds use the Keychain, with `MACROSCOPE_VAULT=file|keychain` available to test either store.
 All checks (fmt, Clippy, Rust tests, TypeScript, UI tests, Vite build): `bash scripts/check.sh`.
 
 ### Model access (Settings → Model access)
 
 | Route | What you need | Notes |
 |---|---|---|
-| Meta API key | A Meta developer API key | Entered in a native hidden-input dialog, stored in your Keychain, billed to the key |
+| Meta API key | A Meta developer API key | Entered in a native hidden-input dialog, stored in the app's secret store, billed to the key |
 | Muse plan | `muse login` in Terminal (Macroscope never signs in for you) | Uses your Muse allowance; needs an explicit opt-in until Muse's file-access confinement is verified |
 | Offline demo | Nothing | Builds from your confirmed rules without a model; labelled as a demo |
 

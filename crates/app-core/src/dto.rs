@@ -10,6 +10,8 @@ pub struct AppInfo {
     pub version: String,
     pub platform: String,
     pub mock: bool,
+    pub secret_store: macroscope_vault::SecretStoreKind,
+    pub debug_build: bool,
 }
 
 // ---------- model access ----------

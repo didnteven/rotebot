@@ -84,7 +84,7 @@ fallback is at `.dev/task11/backend-types.ts` (verified with `cmp`).
   The fixture produces `expected.csv` byte for byte through the same IPC commands the UI
   calls (`frontend_argument_shapes_drive_the_tell_flow_over_ipc`).
 - **Model access settings** (owner request): Meta API key in a native hidden dialog →
-  app-owned Keychain item; Muse plan sign-in status from the read-only `muse usage`;
+  app-owned vault (private file in debug, Keychain in release); Muse plan sign-in status from the read-only `muse usage`;
   route selection with an honest fallback to the offline demo; Local only persisted.
 - **Show** (owner request): a 5-minute, metadata-only recording through the Swift
   observer. Using Gmail in a browser during the recording yields "You used Gmail while
@@ -92,7 +92,7 @@ fallback is at `.dev/task11/backend-types.ts` (verified with `cmp`).
   observer; only connector ids and counts are kept.
 - **Connections** (owner request): catalog of 9 MCP connectors whose endpoints and OAuth
   discovery were checked live (unauthenticated) on 2026-10-27; OAuth with PKCE, dynamic
-  registration or user-supplied client, tokens only in the Keychain; suggestions from
+  registration or user-supplied client, tokens only in the app-owned vault; suggestions from
   task text and from Show, with dismiss/snooze. Wired through the core and shell; tested
   end to end against an in-process OAuth + MCP server.
 
@@ -112,9 +112,9 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 
 | Gate (plan section) | Status | Evidence |
 |---|---|---|
-| Secret never in argv, logs, DB, files (P6) | passed | `canary_parent_env_never_reaches_child_and_key_never_argv`, `api_key_route_requires_review_and_key_is_never_stored_in_the_database`, osascript pipe key entry |
+| Secret never in argv, logs, DB, or ordinary files (P6) | passed | `canary_parent_env_never_reaches_child_and_key_never_argv`, `api_key_route_requires_review_and_key_is_never_stored_in_the_database`, osascript pipe key entry; owner-approved debug exception: private 0600 vault file in a 0700 directory |
 | App-owned credential item, never Muse's (§4.5) | passed | `rejects_muse_service_and_bad_refs`; app run created `dev.macroscope.app` items only |
-| Data-protection Keychain in a signed build | unverified | Unsigned dev builds fall back to the login keychain (`-34018`); recheck once signed |
+| Data-protection Keychain in a signed build | unverified | Owner decision (2026-10-27): debug builds use a private owner-only directory (0700) and file (0600), avoiding Keychain prompts on rebuild; release builds use the Keychain; recheck the data-protection path once signed |
 | Local history deletion and restartable cleanup (P4, §§2.7/3.3) | passed | `history_wipe_keeps_tools_credentials_and_user_outputs_then_optional_tools_wipe`, `startup_resumes_both_tombstone_scopes_before_recovering_jobs`, `deletion_during_dispatch_awaits_workers_and_cannot_resurrect_history`; persistent tombstone before row/file cleanup, admission/cancellation barrier first |
 | Tool export (§2.7) | passed | `export_is_structural_create_only_and_refuses_symlink_swaps`; native folder picker, four structural files, pinned no-follow directory writes, create-only destination; no samples or row data |
 | Tool revoke/restore (§2.7) | passed | `pause_and_restore_never_reauthorize_a_previously_staged_run`; paused tools refuse staging/commit, restoration uses a fresh grant revision; real IPC regression |
@@ -146,7 +146,7 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 ## Owner to-do (only things the build could not do)
 
 1. `muse login` in Terminal if you want the Muse plan route; then Settings → Check again.
-2. A Meta API key when it arrives: Settings → Enter key… (stored in your Keychain), then
+2. A Meta API key when it arrives: Settings → Enter key… (private file in debug, Keychain in release), then
    `cargo run -p macroscope-model-gateway --example smoke` for one capped real call
    (catalog + ~64 output tokens) and check the charge in your Meta dashboard.
 3. Try Show with a browser on Gmail; macOS will ask to allow Accessibility for Macroscope.
