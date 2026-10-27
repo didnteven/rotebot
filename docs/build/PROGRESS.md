@@ -818,3 +818,10 @@ Rerun by Claude: both `check.sh` runs passed with **481 Rust + 127 UI tests** ea
 regex-benign and regex-huge-literal pass under the OS boundary. regex-redos,
 regex-huge-pattern and regex-legacy-statics are denied, and the memory canaries are still
 denied.
+
+**§9.3 generated-execution gate: PASS** on the frozen `m4/runtime-errors` build (Muse plan
+route): **84/90 (93.3%)** over 30 tasks × 3 repetitions. That includes 4 Muse "deadline
+exceeded" infrastructure failures (counted) and 2 generation failures (task 22), with zero
+forbidden effects. Details are in
+`evals/csv-family/results/2026-10-28-muse-plan-frozen-gate.md`. The Meta API-key route is
+still unmeasured.
