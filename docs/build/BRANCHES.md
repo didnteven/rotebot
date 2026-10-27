@@ -15,13 +15,14 @@ the build.
 | 7 | `m2/desktop-ui` | `m0/foundation` | React UI for every screen against the typed contract, mock backend, review fixes | M2 |
 | 8 | `m2/app-integration` | merge of 2–7 | Encrypted storage, app core, Tauri commands, Show controller, connections wiring, docs | M1–M2 |
 | 9 | `m3/hardening` | `m2/app-integration` | Independent Codex review of the Claude-written core with fixes; remaining UI items | M3 |
+| 10 | `m3/privacy-controls` | `m3/hardening` | Privacy center data deletion, tool export/pause, Try another sample, tray tool rows | M2–M3 |
 
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each
