@@ -2,7 +2,7 @@
 
 **Admission verdict: PASS (developer boundary; release admission pending signed bundle). Synthetic suite: PASS.**
 
-Measured 2026-10-27T16:59:45.136520+00:00. Synthetic developer evidence; OS rows are UNKNOWN until an outside rerun with `bash experiments/runtime-gate-v2/run-canaries.sh --os`.
+Measured 2026-10-27T20:20:47.401928+00:00. Synthetic developer evidence; OS rows are UNKNOWN until an outside rerun with `bash experiments/runtime-gate-v2/run-canaries.sh --os`.
 
 The production launcher fails closed if any setrlimit or sandbox setup fails. Finite RLIMIT_AS availability on this host: **False**. The explicit synthetic path omits Seatbelt and RLIMIT_AS; it is never an automatic fallback.
 
@@ -26,12 +26,12 @@ Runner 0.1.0; rquickjs **0.14.0**, embedding QuickJS-NG **0.16.2**. Cargo.lock p
       "checksum": "cee271d0eeba64f0915b846cb7ae02e16faf3dfdffdca91731101d9d30fe3423"
     }
   },
-  "runner_sha256": "95c0c8b7fa6da5cb8d970158e199fae6c3bcf862193a6705072206b1e8df53ed",
-  "launcher_sha256": "372f0c6e168835ec119964e32a16c5cdc0a21247155ec2ab6715746722469ac9",
+  "runner_sha256": "b7b5dfa1627f0fca586c01528dc0e562146201481815f8dcd51981385827d19f",
+  "launcher_sha256": "77e1fb0dccc31aed176760d5d8dd3b5788755658ae1f06d079860dd929fdc159",
   "profile_sha256": "9d9d615e1d6772666f0cb96a197f7a1a9391ebe66719f8d9b73f60cc7bcb1e3a",
   "cargo_lock_sha256": "b13306dab03c642c246f6a64a266d944cd0ab8d9222597bdb8ad652407df4359",
   "quickjs_header_sha256": "979127138da79cad5ddc7effa1afb13e8b02f744da2aa36844d4cb9d8cb92de9",
-  "harness_sha256": "8558640e8c803c7ee4dc86fb1cc9f4c840dcdf1dd113a3dcdaacf70e0a5b4e49"
+  "harness_sha256": "90d70afb600e635a3e449edb34f0597d96a5c509341fbe41bbd7cfdf01b6486e"
 }
 ```
 
@@ -50,10 +50,10 @@ All concrete argv, empty env, source hashes, statuses and kernel usage are in `e
 [
   "/usr/bin/sandbox-exec",
   "-D",
-  "RUNNER=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner",
+  "RUNNER=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner",
   "-f",
-  "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/runtime-errors/experiments/runtime-gate-v2/profile.sb",
-  "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner"
+  "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/regexp-retention/experiments/runtime-gate-v2/profile.sb",
+  "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner"
 ]
 ```
 
@@ -103,79 +103,94 @@ A generic crash/error never counts as a denial. API rows require an explicit abs
 
 | Canary | Expected | Synthetic worker | OS boundary | Evidence |
 |---|---|---|---|---|
-| command | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| config-import-map | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| config | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| connect | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| connection-args-limit | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "invalid connection request or args exceed 64 KiB"}}; peak RSS=5390336 |
-| connection-call-limit | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "at most 5 connection calls per run"}}; peak RSS=5128192 |
-| connection-planned | exact fixture | PASS | PASS | {"ok": true, "log": [], "planned_calls": [{"connectorId": "gmail", "toolName": "create_draft", "args": {"body": "review me"}}], "outputs": []}; peak RSS=4767744 |
-| cpu | error:cpu | DENIED | DENIED | {"ok": false, "error": {"kind": "cpu", "message": "execution budget exceeded"}}; peak RSS=5062656 |
-| dynamic-blob | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| dynamic-data | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| dynamic-remote | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| env-all | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: process absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| env-home | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| eval | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: eval absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| fetch | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: fetch absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| ffi | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
-| function-constructor | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: constructors absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
-| host-huge-date | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "date argument too large"}}; peak RSS=7127040 |
-| host-huge-money | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "money argument too large"}}; peak RSS=7127040 |
-| host-unknown-handle | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "unknown input handle"}}; peak RSS=5062656 |
-| hostile-exception | error:runtime | DENIED | DENIED | {"ok": false, "error": {"kind": "runtime", "message": "JavaScript execution failed: a non-Error value was thrown"}}; peak RSS=4718592 |
-| memory-objects | error:memory | DENIED | DENIED | {"ok": false, "error": {"kind": "memory", "message": "JavaScript execution failed: InternalError at line 1, column 47: out of memory"}}; peak RSS=74285056 |
-| memory | error:memory | DENIED | DENIED | {"ok": false, "error": {"kind": "memory", "message": "JavaScript execution failed: InternalError at line 1, column 45: out of memory"}}; peak RSS=71532544 |
-| model-ask-limit | error:model_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "model_limit", "message": "At most 3 model requests per run; repeated unanswered key"}}; peak RSS=10371072 |
-| model-ask-no-network | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: no fetch or socket API exists"], "planned_calls": [], "outputs": []}; peak RSS=4702208 |
-| ok | exact fixture | PASS | PASS | {"ok": true, "log": [], "planned_calls": [], "outputs": [{"name": "ok.csv", "bytes": 9}]}; peak RSS=4718592 |
-| output-absolute | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5062656 |
-| output-flood | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "output byte limit exceeded"}}; peak RSS=45154304 |
-| output-nul | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5062656 |
-| output-repeat | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "only one output is allowed"}}; peak RSS=5095424 |
-| output-symlink | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5062656 |
-| output-traversal | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5062656 |
-| prototype-pollution | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: frozen SDK"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| read-home | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| read-hosts | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| static-hosts | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| static-private | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| static-remote | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| stderr | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: console absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| stdout | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "log byte limit exceeded"}}; peak RSS=6127616 |
-| storage-cache | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: caches absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| storage-indexeddb | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: indexedDB absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| storage-local | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: localStorage absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| symlink-hosts | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| symlink-private | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3047424 |
-| wall | error:wall | DENIED | DENIED | {"ok": false, "error": {"kind": "wall", "message": "execution budget exceeded"}}; peak RSS=5062656 |
-| worker-command | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-connect | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-cpu | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-data | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-env | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-fetch | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-ffi | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-local | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-memory | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-read | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-remote | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-storage | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| worker-write | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| write | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4685824 |
-| orders | exact fixture | PASS | PASS | {"ok": true, "log": ["rows: 18"], "planned_calls": [], "outputs": [{"name": "orders_ready.csv", "bytes": 481}]}; peak RSS=5488640 |
+| command | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| config-import-map | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| config | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| connect | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| connection-args-limit | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "invalid connection request or args exceed 64 KiB"}}; peak RSS=5472256 |
+| connection-call-limit | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "at most 5 connection calls per run"}}; peak RSS=5210112 |
+| connection-planned | exact fixture | PASS | PASS | {"ok": true, "log": [], "planned_calls": [{"connectorId": "gmail", "toolName": "create_draft", "args": {"body": "review me"}}], "outputs": []}; peak RSS=4816896 |
+| cpu | error:cpu | DENIED | DENIED | {"ok": false, "error": {"kind": "cpu", "message": "execution budget exceeded"}}; peak RSS=5128192 |
+| dynamic-blob | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| dynamic-data | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| dynamic-remote | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| env-all | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: process absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| env-home | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4767744 |
+| eval | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: eval absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| fetch | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: fetch absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| ffi | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4767744 |
+| function-constructor | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: constructors absent"], "planned_calls": [], "outputs": []}; peak RSS=4767744 |
+| host-huge-date | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "date argument too large"}}; peak RSS=7176192 |
+| host-huge-money | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "money argument too large"}}; peak RSS=7192576 |
+| host-unknown-handle | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "unknown input handle"}}; peak RSS=5111808 |
+| hostile-exception | error:runtime | DENIED | DENIED | {"ok": false, "error": {"kind": "runtime", "message": "JavaScript execution failed: a non-Error value was thrown"}}; peak RSS=4767744 |
+| memory-objects | error:memory | DENIED | DENIED | {"ok": false, "error": {"kind": "memory", "message": "JavaScript execution failed: InternalError at line 1, column 47: out of memory"}}; peak RSS=74317824 |
+| memory | error:memory | DENIED | DENIED | {"ok": false, "error": {"kind": "memory", "message": "JavaScript execution failed: InternalError at line 1, column 45: out of memory"}}; peak RSS=71548928 |
+| model-ask-limit | error:model_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "model_limit", "message": "At most 3 model requests per run; repeated unanswered key"}}; peak RSS=10452992 |
+| model-ask-no-network | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: no fetch or socket API exists"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| ok | exact fixture | PASS | PASS | {"ok": true, "log": [], "planned_calls": [], "outputs": [{"name": "ok.csv", "bytes": 9}]}; peak RSS=4767744 |
+| output-absolute | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5128192 |
+| output-flood | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "output byte limit exceeded"}}; peak RSS=45203456 |
+| output-nul | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5111808 |
+| output-repeat | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "only one output is allowed"}}; peak RSS=5160960 |
+| output-symlink | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5095424 |
+| output-traversal | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "output requires a .csv, .tsv, .txt, .md or .json basename"}}; peak RSS=5128192 |
+| prototype-pollution | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: frozen SDK"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| read-home | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| read-hosts | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| regex-benign | exact fixture | PASS | PASS | {"ok": true, "log": [], "planned_calls": [], "outputs": [{"name": "regex.txt", "bytes": 91}]}; peak RSS=4947968 |
+| regex-huge-literal | success or error:memory; wall < 12 s; peak RSS <= 80 MiB | PASS | PASS | {"ok": true, "log": [], "planned_calls": [], "outputs": []}; peak RSS=6619136 |
+| regex-huge-pattern | error:runtime | DENIED | DENIED | {"ok": false, "error": {"kind": "runtime", "message": "JavaScript execution failed: RangeError at line 6, column 1: regex pattern exceeds \u2026,\u2026 characters"}}; peak RSS=5193728 |
+| regex-legacy-statics | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: regex legacy statics and compile absent"], "planned_calls": [], "outputs": []}; peak RSS=4833280 |
+| regex-redos | error:cpu or error:wall | DENIED | DENIED | {"ok": false, "error": {"kind": "cpu", "message": "execution budget exceeded"}}; peak RSS=5636096 |
+| static-hosts | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| static-private | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| static-remote | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| stderr | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: console absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| stdout | error:output_limit | DENIED | DENIED | {"ok": false, "error": {"kind": "output_limit", "message": "log byte limit exceeded"}}; peak RSS=6176768 |
+| storage-cache | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: caches absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| storage-indexeddb | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: indexedDB absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| storage-local | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: localStorage absent"], "planned_calls": [], "outputs": []}; peak RSS=4751360 |
+| symlink-hosts | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| symlink-private | error:syntax | DENIED | DENIED | {"ok": false, "error": {"kind": "syntax", "message": "imports are forbidden"}}; peak RSS=3063808 |
+| wall | error:wall | DENIED | DENIED | {"ok": false, "error": {"kind": "wall", "message": "execution budget exceeded"}}; peak RSS=5128192 |
+| worker-command | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-connect | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-cpu | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4767744 |
+| worker-data | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| worker-env | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-fetch | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| worker-ffi | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-local | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| worker-memory | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| worker-read | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-remote | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| worker-storage | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| worker-write | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Worker absent"], "planned_calls": [], "outputs": []}; peak RSS=4734976 |
+| write | explicit denial marker | DENIED | DENIED | {"ok": true, "log": ["DENIED: Deno absent"], "planned_calls": [], "outputs": []}; peak RSS=4718592 |
+| orders | exact fixture | PASS | PASS | {"ok": true, "log": ["rows: 18"], "planned_calls": [], "outputs": [{"name": "orders_ready.csv", "bytes": 481}]}; peak RSS=5586944 |
 | stdin-flood | error:forbidden | DENIED | DENIED | {"ok": false, "error": {"kind": "forbidden", "message": "stdin request exceeds 20 MB or cannot be read"}} |
 
 ## Memory peak evidence
 
-Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. Each launcher has exactly one child. Memory canaries touch allocations so demand-zero pages do not hide resident growth. Unit tests independently use wait4 rusage. Admission threshold for these probes: 64 MiB + 16 MiB fixed slack.
+Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. Each launcher has exactly one child. Memory canaries touch allocations so demand-zero pages do not hide resident growth. Unit tests independently use wait4 rusage. Admission threshold for every memory and regex canary: 64 MiB + 16 MiB fixed slack. The huge literal must succeed or return error:memory within 12 s; other errors, crashes and parent timeouts fail.
 
 | Canary / layer | Peak RSS bytes | Above 64 MiB | Slack bytes |
 |---|---:|---:|---:|
-| memory-objects / synthetic | 74285056 | 7176192 | 16777216 |
-| memory-objects / os | 74301440 | 7192576 | 16777216 |
-| memory / synthetic | 71532544 | 4423680 | 16777216 |
-| memory / os | 71499776 | 4390912 | 16777216 |
+| memory-objects / synthetic | 74317824 | 7208960 | 16777216 |
+| memory-objects / os | 74350592 | 7241728 | 16777216 |
+| memory / synthetic | 71548928 | 4440064 | 16777216 |
+| memory / os | 71548928 | 4440064 | 16777216 |
+| regex-benign / synthetic | 4947968 | 0 | 16777216 |
+| regex-benign / os | 4947968 | 0 | 16777216 |
+| regex-huge-literal / synthetic | 6619136 | 0 | 16777216 |
+| regex-huge-literal / os | 6602752 | 0 | 16777216 |
+| regex-huge-pattern / synthetic | 5193728 | 0 | 16777216 |
+| regex-huge-pattern / os | 5193728 | 0 | 16777216 |
+| regex-legacy-statics / synthetic | 4833280 | 0 | 16777216 |
+| regex-legacy-statics / os | 4816896 | 0 | 16777216 |
+| regex-redos / synthetic | 5636096 | 0 | 16777216 |
+| regex-redos / os | 5652480 | 0 | 16777216 |
 
 ## Signatures, remaining gate requirements and verdict
 
@@ -187,11 +202,11 @@ Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. E
       "-dvv",
       "--entitlements",
       ":-",
-      "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner"
+      "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner"
     ],
     "exit": 0,
     "stdout": "",
-    "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner\nIdentifier=macroscope_runner-e5fcb2d420d6a35d\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=163227 flags=0x20002(adhoc,linker-signed) hashes=5097+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
+    "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner\nIdentifier=macroscope_runner-e5fcb2d420d6a35d\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=164315 flags=0x20002(adhoc,linker-signed) hashes=5131+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
   },
   {
     "argv": [
@@ -199,11 +214,11 @@ Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. E
       "-dvv",
       "--entitlements",
       ":-",
-      "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner-launch"
+      "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner-launch"
     ],
     "exit": 0,
     "stdout": "",
-    "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-runtime-errors/debug/macroscope-runner-launch\nIdentifier=macroscope_runner_launch-4c98731b2016c928\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=18018 flags=0x20002(adhoc,linker-signed) hashes=559+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
+    "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/wt-regexp-retention/debug/macroscope-runner-launch\nIdentifier=macroscope_runner_launch-4c98731b2016c928\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=18018 flags=0x20002(adhoc,linker-signed) hashes=559+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
   }
 ]
 ```

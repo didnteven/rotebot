@@ -86,6 +86,7 @@ fn corpus_files_hashes_and_hidden_checks_match() {
         &std::fs::read(root.join("manifest.json")).expect("manifest.json exists"),
     )
     .expect("manifest.json parses");
+    assert_eq!(manifest["revision"], 2);
     assert_eq!(manifest["repetitions"], 3);
     assert_eq!(manifest["pass_threshold"], 0.75);
     assert_eq!(manifest["route"], "muse_plan");
@@ -175,4 +176,31 @@ fn sandbox_rejections_are_generation_failures_not_infrastructure() {
         ),
         FailureClass::Infrastructure
     );
+}
+
+#[test]
+fn manifest_revision_controls_one_final_lf_only() {
+    let hidden = HiddenChecks {
+        row_count: 1,
+        columns: vec!["id".into()],
+        must_not_contain: vec![],
+    };
+    assert!(eval::score_output_revision(b"id\nA", b"id\nA\n", &hidden, 2).is_ok());
+    assert!(eval::score_output_revision(b"id\nA", b"id\nA\n", &hidden, 1).is_err());
+    assert!(eval::score_output_revision(b"id\nA\n", b"id\nA", &hidden, 2).is_ok());
+    for revision in [1, 2] {
+        for actual in [
+            b"id\nA\n\n".as_slice(),
+            b"id\nA\n\n\n",
+            b"id\nA \n",
+            b"id\nA\r\n",
+            b"id\nB\n",
+        ] {
+            assert!(
+                eval::score_output_revision(actual, b"id\nA\n", &hidden, revision).is_err(),
+                "revision {revision}: {actual:?}"
+            );
+        }
+    }
+    assert!(eval::score_output_revision(b"id\nA\n", b"id\nA\n", &hidden, 3).is_err());
 }

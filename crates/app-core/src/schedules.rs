@@ -402,6 +402,16 @@ impl AppCore {
             .map(|v| serde_json::from_value(v).map_err(|e| CoreError::Storage(e.to_string())))
             .collect()
     }
+    pub(crate) fn expire_today(&self, now: i64) -> CoreResult<()> {
+        let _admission = self.admit_local()?;
+        let cutoff = now.saturating_sub(30 * 24 * 60 * 60 * 1_000);
+        for entry in self.today_entries()? {
+            if entry.status != "needs_you" && entry.started_at_ms < cutoff {
+                self.db().dismiss_today(&entry.id)?;
+            }
+        }
+        Ok(())
+    }
     fn put_today(&self, e: &TodayEntry) -> CoreResult<()> {
         self.db().put_today(&e.id, &json!(e))?;
         Ok(())
@@ -641,6 +651,7 @@ impl AppCore {
     pub async fn run_due_schedules(&self, now: i64) -> CoreResult<Vec<TodayEntry>> {
         let _evaluation = self.inner.schedule_eval.lock().await;
         self.ensure_active()?;
+        self.expire_today(now)?;
         // Publication can hold local admission through a slow external send.
         // Remember which tools were busy at evaluation, even if that send
         // finishes while this evaluator waits for admission.
@@ -827,6 +838,104 @@ impl AppCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn today_retention_deletes_rows_on_launch_and_schedule_evaluation() {
+        use macroscope_vault::MemoryStore;
+        use std::sync::atomic::{AtomicI64, Ordering};
+        const DAY: i64 = 86_400_000;
+        for on_launch in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let now = 1_800_000_000_000;
+            let clock = Arc::new(AtomicI64::new(now - 50 * DAY));
+            let vault = Arc::new(MemoryStore::default());
+            let cfg = || CoreConfig {
+                data_dir: tmp.path().join("data"),
+                vault: vault.clone(),
+                gateway_base_url: "http://127.0.0.1:9".into(),
+                home: tmp.path().join("home"),
+                muse: Arc::new(NativeMuse {
+                    home: tmp.path().join("home"),
+                }),
+                app_version: "test".into(),
+                platform: "macos".into(),
+                now_ms: {
+                    let c = clock.clone();
+                    Arc::new(move || c.load(Ordering::SeqCst))
+                },
+            };
+            let mut core = AppCore::new(cfg()).unwrap();
+            for (id, age, status) in [
+                ("kept", 29, "done"),
+                ("boundary", 30, "failed"),
+                ("expired", 31, "done"),
+                ("dismissed", 31, "failed"),
+                ("pending", 40, "needs_you"),
+            ] {
+                core.put_today(&TodayEntry {
+                    id: id.into(),
+                    tool_id: "test-tool".into(),
+                    tool_name: "Test".into(),
+                    trigger: "manual".into(),
+                    schedule_id: None,
+                    started_at_ms: now - age * DAY,
+                    finished_at_ms: Some(now - age * DAY),
+                    status: status.into(),
+                    body: "retained payload".into(),
+                    note: None,
+                    file_created: None,
+                    run_id: None,
+                    staged: None,
+                    notification: false,
+                    add_to_today: true,
+                    dismissed: id == "dismissed",
+                })
+                .unwrap();
+            }
+            clock.store(now, Ordering::SeqCst);
+            if on_launch {
+                drop(core);
+                core = AppCore::new(cfg()).unwrap();
+            } else {
+                assert!(core
+                    .run_due_schedules(clock.load(Ordering::SeqCst))
+                    .await
+                    .unwrap()
+                    .is_empty());
+            }
+            let mut ids: Vec<_> = core
+                .today_entries()
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
+            ids.sort();
+            assert_eq!(ids, ["boundary", "kept", "pending"], "launch={on_launch}");
+            assert_eq!(core.list_today().unwrap()[0].entries[0].id, "pending");
+            let overview = core.privacy_overview().await.unwrap();
+            let today = overview
+                .stored
+                .iter()
+                .find(|s| s.label == "Today entries")
+                .unwrap();
+            assert_eq!(today.count, 3);
+            assert_eq!(
+                today.expires,
+                "30 days; items needing you stay until handled"
+            );
+            // Once handled, the age exemption ends at the next evaluation.
+            let mut pending = core
+                .today_entries()
+                .unwrap()
+                .into_iter()
+                .find(|e| e.id == "pending")
+                .unwrap();
+            pending.status = "done".into();
+            core.put_today(&pending).unwrap();
+            core.run_due_schedules(now).await.unwrap();
+            assert_eq!(core.today_entries().unwrap().len(), 2);
+        }
+    }
+
     fn utc(s: &str) -> i64 {
         DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis()
     }

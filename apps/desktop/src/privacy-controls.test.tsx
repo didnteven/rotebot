@@ -18,6 +18,7 @@ it("previews history, defaults to keeping tools and credentials, and lets Keep c
   await screen.findByRole("button", { name: "Export…" });
   await user.click(button("Privacy"));
   await screen.findByRole("table", { name: "Local history to delete" });
+  expect(screen.getByText("30 days; items needing you stay until handled")).toBeVisible();
   expect(
     screen.getByText(/Your API key and connection tokens stay/),
   ).toBeVisible();

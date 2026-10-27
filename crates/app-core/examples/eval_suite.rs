@@ -135,6 +135,7 @@ async fn run_generation(
     route: ModelRoute,
     api_key: Option<&str>,
     real_home: Option<PathBuf>,
+    revision: u64,
 ) -> (Attempt, bool) {
     let started_at = std::time::Instant::now();
     let mut attempt = Attempt {
@@ -409,7 +410,7 @@ async fn run_generation(
     let hidden: HiddenChecks =
         serde_json::from_slice(&std::fs::read(task_dir.join("hidden.json")).unwrap_or_default())
             .expect("hidden.json parses");
-    match eval::score_output(&bytes, &expected, &hidden) {
+    match eval::score_output_revision(&bytes, &expected, &hidden, revision) {
         Ok(()) => {
             attempt.pass = true;
             attempt.duration_ms = started_at.elapsed().as_millis() as u64;
@@ -421,7 +422,7 @@ async fn run_generation(
     (attempt, usage_limited)
 }
 
-fn score_replay(task_id: &str, task_dir: &Path, rep: usize) -> Attempt {
+fn score_replay(task_id: &str, task_dir: &Path, rep: usize, revision: u64) -> Attempt {
     let started_at = std::time::Instant::now();
     let mut attempt = Attempt {
         task: task_id.into(),
@@ -460,7 +461,7 @@ fn score_replay(task_id: &str, task_dir: &Path, rep: usize) -> Attempt {
     let hidden: HiddenChecks =
         serde_json::from_slice(&std::fs::read(task_dir.join("hidden.json")).unwrap_or_default())
             .expect("hidden.json parses");
-    match eval::score_output(output.as_bytes(), &expected, &hidden) {
+    match eval::score_output_revision(output.as_bytes(), &expected, &hidden, revision) {
         Ok(()) => {
             attempt.pass = true;
             attempt.duration_ms = started_at.elapsed().as_millis() as u64;
@@ -485,6 +486,16 @@ async fn main() {
         std::process::exit(2);
     }
     let root = corpus_dir();
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("manifest.json")).expect("manifest.json is readable"),
+    )
+    .expect("manifest.json parses");
+    // Manifests predating revision 2 used exact byte scoring.
+    let revision = manifest
+        .get("revision")
+        .map(|v| v.as_u64().expect("integer manifest revision"))
+        .unwrap_or(1);
+    assert!(matches!(revision, 1 | 2), "unsupported manifest revision");
     let tasks = list_tasks(&root, &args.tasks);
     if tasks.is_empty() {
         eprintln!("no tasks match --tasks");
@@ -524,7 +535,7 @@ async fn main() {
     if args.route == "replay" {
         for (id, dir) in &tasks {
             for rep in 1..=args.reps {
-                let a = score_replay(id, dir, rep);
+                let a = score_replay(id, dir, rep, revision);
                 if a.pass {
                     println!("{id} rep{rep} PASS");
                 } else {
@@ -545,9 +556,16 @@ async fn main() {
         };
         'tasks: for (id, dir) in &tasks {
             for rep in 1..=args.reps {
-                let (a, limited) =
-                    run_generation(id, dir, rep, route, api_key.as_deref(), real_home.clone())
-                        .await;
+                let (a, limited) = run_generation(
+                    id,
+                    dir,
+                    rep,
+                    route,
+                    api_key.as_deref(),
+                    real_home.clone(),
+                    revision,
+                )
+                .await;
                 if a.pass {
                     println!("{id} rep{rep} PASS ({}ms)", a.duration_ms);
                 } else {
@@ -599,6 +617,7 @@ async fn main() {
         "reps": args.reps,
         "attempts": attempts,
         "per_task": per_task,
+        "manifest_revision": revision,
         "overall": {"passed": passed, "total": attempts.len(), "expected": expected_total, "missing": missing, "rate": rate, "infrastructure": infra},
         "threshold": 0.75,
         "verdict": verdict,

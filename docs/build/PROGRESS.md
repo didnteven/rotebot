@@ -689,3 +689,132 @@ gate is **INCOMPLETE**.
 was a Muse timeout. Task 22 differed only by a missing final newline. The weekly allowance
 guard (60%) stopped further runs. Repetitions 2 and 3 are pending (weekly reset 2026-11-02).
 Details are in `evals/csv-family/results/2026-10-28-muse-plan-frozen-rep1.md`.
+
+
+## Task 21 — RegExp, Today retention and eval revision 2 (2026-10-28)
+
+Implemented the owner's three decisions on `m4/regexp-retention` (base
+`m4/runtime-errors`):
+
+- Admitted RegExp and its compiler through the existing custom QuickJS context.
+  Task 21b removes the Oxc admission parser and its unused dependency graph;
+  QuickJS alone parses source in the confined child. Regex literals have no
+  separate length cap and run under the existing source, allocator and interrupt
+  bounds. The unchanged hardened constructor limits `RegExp(...)` construction
+  to 1,000 Unicode characters, including aliases, reflection and subclasses. Removed
+  `compile` and legacy statics and froze the constructor/prototype. Date,
+  Proxy, eval/Function and the existing OS exclusions remain. SDK.md feeds the
+  updated built-in/limit guidance directly into the builder packet; RegExp is
+  removed from diagnostic missing-global hints. [ADR 0005](../adr/0005-regexp-in-runtime.md)
+  records the task-22 eval evidence, decision, bounds and admission follow-up.
+- Today entries older than 30 elapsed days (by start timestamp) are physically
+  deleted at launch and every schedule evaluation. `needs_you` entries are
+  exempt until handled. Fake-clock coverage verifies 29 days kept, exactly 30
+  kept, 31 deleted (including dismissed rows), 40-day pending kept, then expired
+  after handling. Privacy overview, mock and legal policy agree on "30 days;
+  items needing you stay until handled". API shapes and Tauri adapters remain
+  aligned; final types are copied to `.dev/task21/backend-types.ts` because this
+  task confines all writes to this worktree.
+- CSV-family manifest revision 2 removes at most one trailing LF from each side
+  before exact comparison. The example driver selects scoring from the
+  manifest and records the revision in results. Revision 1 (also the default
+  for old manifests without a revision) preserves byte-exact scoring. Corpus
+  bytes and hashes are unchanged. Tests cover missing/extra final LF, further
+  LFs, CRLF, spaces, changed data and unsupported revisions.
+
+Task 21b canaries cover exact benign regex bytes, dynamic 5,000-character
+constructor rejection (`error:runtime`), a 200,000-character literal used once,
+legacy statics/compile absence and freezing, and ReDoS. The huge literal must
+complete or return `error:memory` within 12 s and below the unchanged
+83,886,080-byte RSS threshold. Runner tests retain the 1,000-character constructor
+boundary, accept longer literals, exercise reflection/subclasses and prove the
+huge literal fails cleanly under a smaller allocator cap. The ReDoS tests still
+exercise CPU and wall interruption separately. The bounded constructor,
+legacy-statics removal and `compile` removal are unchanged.
+
+Raw receipts are in `experiments/runtime-gate-v2/task17-synthetic-results.json`
+and the generated report is `docs/build/task17-runtime-canaries.md`.
+
+OS admission remains **UNKNOWN** here. Claude must rerun
+`bash experiments/runtime-gate-v2/run-canaries.sh --os` outside this sandbox;
+synthetic evidence does not replace the admitted OS boundary or signed release
+bundle gate. No live eval or Muse account/auth operation was performed.
+
+Task 21 originally passed both check runs (480 Rust + 127 UI tests each) and
+66/66 synthetic canaries. The following results supersede that earlier evidence.
+
+Task 21b verification: **PASS** (complete command transcripts in `.dev/task21b/`).
+The regenerated lockfile removes **34 unused packages**, including all **14
+`oxc_*` packages**, with no new packages. `harden.js` is byte-for-byte unchanged
+from Task 21.
+
+- `cargo tree -p macroscope-runner | grep -c oxc`: **0**, as required. Cargo
+  succeeds; grep's exit 1 is its standard no-match status.
+- `cargo build -p macroscope-runner --bins`: PASS (exit 0).
+- `bash scripts/check.sh`, run 1: PASS (exit 0), **481 Rust passed**, 0 failed,
+  5 existing opt-in ignored test invocations; **127 UI passed** in 17 files.
+- `bash scripts/check.sh`, run 2: PASS (exit 0), **481 Rust passed**, 0 failed,
+  5 existing opt-in ignored test invocations; **127 UI passed** in 17 files.
+- Both checks passed formatting, Clippy with warnings denied, both Rust
+  configurations, TypeScript and the production build.
+- `bash experiments/runtime-gate-v2/run-canaries.sh`: PASS (exit 0), **67/67**
+  synthetic expectations met: 5 successful probes and 62 explicit denials.
+  Admission remains UNKNOWN pending the outside `--os` rerun.
+
+The huge literal completed successfully in **0.0227 s**. All four dynamic
+constructor paths rejected with RangeError (`error:runtime`). ReDoS returned
+`error:cpu` in **10.0399 s** (10.001963 s process CPU). All memory/regex peaks
+were below the unchanged **83,886,080-byte** RSS cap:
+
+| Canary | Peak RSS bytes | Wall seconds |
+|---|---:|---:|
+| memory-objects | 74,334,208 | 0.1938 |
+| memory | 71,548,928 | 0.0149 |
+| regex-benign | 4,931,584 | 0.0089 |
+| regex-huge-literal | 6,602,752 | 0.0227 |
+| regex-huge-pattern | 5,210,112 | 0.0183 |
+| regex-legacy-statics | 4,800,512 | 0.0104 |
+| regex-redos | 6,094,848 | 10.0399 |
+
+No tests were weakened or deleted and no skips, ignores or test early returns
+were added. Existing Task 21 changes are preserved; all changes remain in the
+working tree. No branch change, commit or push was performed.
+
+Exact verification output tail excerpts:
+
+```text
+cargo tree -p macroscope-runner | grep -c oxc:
+0
+
+cargo build -p macroscope-runner --bins:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.90s
+
+bash scripts/check.sh (run 1):
+ Test Files  17 passed (17)
+      Tests  127 passed (127)
+✓ built in 100ms
+
+bash scripts/check.sh (run 2):
+ Test Files  17 passed (17)
+      Tests  127 passed (127)
+✓ built in 107ms
+
+bash experiments/runtime-gate-v2/run-canaries.sh:
+orders: synthetic=PASS, OS=UNKNOWN
+stdin-flood: synthetic=DENIED, OS=UNKNOWN
+Synthetic suite: PASS; admission verdict: UNKNOWN; evidence: docs/build/task17-runtime-canaries.md
+```
+
+Claude's review of task 21. The first version ran an `oxc` JavaScript parser (about 30 crates)
+on untrusted source inside the confined runner, only to cap regex-literal length. Claude sent
+it back (task 21b), and the parser is removed (`cargo tree` shows no `oxc`). Regex matching
+is bounded by the existing interrupt (ReDoS → `error:cpu`) and the 64 MiB allocator. A
+200,000-character literal completes in 0.02 s, and dynamic `RegExp(...)` patterns over 1,000
+characters are still rejected by harden.js. No skips or ignores were added and no test file
+lost assertions.
+
+Rerun by Claude: both `check.sh` runs passed with **481 Rust + 127 UI tests** each.
+`run-canaries.sh --os`: synthetic **PASS**, admission **PASS** (developer boundary).
+regex-benign and regex-huge-literal pass under the OS boundary. regex-redos,
+regex-huge-pattern and regex-legacy-statics are denied, and the memory canaries are still
+denied.

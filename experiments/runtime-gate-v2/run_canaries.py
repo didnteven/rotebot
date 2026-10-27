@@ -98,15 +98,24 @@ def main():
             passed = passed and response == {"ok": True, "log": ["rows: 18"], "planned_calls": [], "outputs": [{"name": "orders_ready.csv", "text": (ROOT / "fixtures/orders/expected.csv").read_text()}]}
         elif name == "ok":
             passed = passed and response == {"ok": True, "log": [], "planned_calls": [], "outputs": [{"name": "ok.csv", "text": "value\n42\n"}]}
+        elif name == "regex-benign":
+            passed = passed and response == {"ok": True, "log": [], "planned_calls": [], "outputs": [{"name": "regex.txt", "text": '{"parts":["alpha","beta","gamma"],"replaced":"one two three","valid":true,"invalid":false}\n'}]}
+        elif name == "regex-redos":
+            passed = passed and response.get("ok") is False and response.get("error", {}).get("kind") in ("cpu", "wall") and receipt["wall_seconds"] < 13
+        elif name == "regex-huge-literal":
+            passed = passed and (response == {"ok": True, "log": [], "planned_calls": [], "outputs": []} or
+                                 (response.get("ok") is False and response.get("error", {}).get("kind") == "memory")) and receipt["wall_seconds"] < 12
+        elif name == "regex-huge-pattern":
+            passed = passed and response.get("ok") is False and response.get("error", {}).get("kind") == "runtime" and "RangeError" in response.get("error", {}).get("message", "")
         elif name == "connection-planned":
             passed = passed and response == {"ok": True, "log": [], "outputs": [], "planned_calls": [{"connectorId":"gmail", "toolName":"create_draft", "args":{"body":"review me"}}]}
         elif expected.startswith("error:"):
             passed = passed and response.get("ok") is False and response.get("error", {}).get("kind") == expected.split(":")[1]
         else:
             passed = passed and response.get("ok") is True and response.get("planned_calls") == [] and not response.get("outputs") and len(response.get("log", [])) == 1 and response["log"][0].startswith("DENIED: ")
-        if name.startswith("memory"):
+        if name.startswith(("memory", "regex-")):
             passed = passed and stats is not None and stats["peak_rss_bytes"] <= CAP + SLACK
-        receipt["observed"] = ("PASS" if name in ("orders", "ok", "connection-planned") else "DENIED") if passed else "FAIL"
+        receipt["observed"] = ("PASS" if name in ("orders", "ok", "connection-planned", "regex-benign", "regex-huge-literal") and response.get("ok") else "DENIED") if passed else "FAIL"
         receipt["evidence"] = json.dumps(receipt["response"], ensure_ascii=True)[:220] + ("; peak RSS=" + str(stats["peak_rss_bytes"]) if stats else "")
         return receipt
 
@@ -161,6 +170,14 @@ def main():
 
 
 def expectation(name):
+    if name == "regex-redos":
+        return "error:cpu or error:wall"
+    if name == "regex-huge-pattern":
+        return "error:runtime"
+    if name == "regex-huge-literal":
+        return "success or error:memory; wall < 12 s; peak RSS <= 80 MiB"
+    if name == "regex-benign":
+        return "exact fixture"
     if name == "model-ask-limit":
         return "error:model_limit"
     if name in ("ok", "orders", "connection-planned"):
@@ -198,9 +215,9 @@ def write_markdown(report, evidence_name, results_name):
     for row in report["rows"]:
         evidence = row["synthetic"]["evidence"].replace("|", "\\|").replace("\n", " ")
         lines.append(f'| {row["canary"]} | {row["expected"]} | {row["synthetic"]["observed"]} | {row["os"]["observed"]} | {evidence} |')
-    lines += ["", "## Memory peak evidence", "", "Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. Each launcher has exactly one child. Memory canaries touch allocations so demand-zero pages do not hide resident growth. Unit tests independently use wait4 rusage. Admission threshold for these probes: 64 MiB + 16 MiB fixed slack.", "", "| Canary / layer | Peak RSS bytes | Above 64 MiB | Slack bytes |", "|---|---:|---:|---:|"]
+    lines += ["", "## Memory peak evidence", "", "Kernel `getrusage(RUSAGE_CHILDREN).ru_maxrss`, bytes on macOS; no RSS polling. Each launcher has exactly one child. Memory canaries touch allocations so demand-zero pages do not hide resident growth. Unit tests independently use wait4 rusage. Admission threshold for every memory and regex canary: 64 MiB + 16 MiB fixed slack. The huge literal must succeed or return error:memory within 12 s; other errors, crashes and parent timeouts fail.", "", "| Canary / layer | Peak RSS bytes | Above 64 MiB | Slack bytes |", "|---|---:|---:|---:|"]
     for row in report["rows"]:
-        if row["canary"].startswith("memory"):
+        if row["canary"].startswith(("memory", "regex-")):
             for layer in ("synthetic", "os"):
                 usage = row[layer].get("usage")
                 if usage:

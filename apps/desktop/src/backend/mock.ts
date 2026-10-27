@@ -210,7 +210,11 @@ export class MockBackend implements Backend {
   private schedules = new Map<string, import("./types").Schedule>();
   private today: import("./types").TodayDay[] = [];
   private login = false;
-  async listToday() { return clone(this.today); }
+  async listToday() {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    this.today = this.today.map(day => ({...day, entries: day.entries.filter(entry => entry.status === "needs_you" || entry.startedAtMs >= cutoff)})).filter(day => day.entries.length);
+    return clone(this.today);
+  }
   async dismissTodayEntry(id: string) { this.today = this.today.map(d => ({...d, entries: d.entries.filter(e=>e.id!==id)})).filter(d=>d.entries.length); }
   async listSchedules() { return clone([...this.schedules.values()].map(s=> ({...s, status: this.tools.get(s.toolId)?.versionHash === s.versionHash ? s.status : "needs_reapproval" as const}))); }
   async setSchedule(toolId: string, request: import("./types").ScheduleRequest) {
@@ -1352,10 +1356,11 @@ export class MockBackend implements Backend {
     return clone(this.receipts);
   }
   async privacyOverview() {
+    await this.listToday();
     return {
       egress: this.status.egress,
       stored: [
-        { label: "Today entries", count:this.today.reduce((n,d)=>n+d.entries.length,0), bytes:JSON.stringify(this.today).length, expires:"Until deleted" },
+        { label: "Today entries", count:this.today.reduce((n,d)=>n+d.entries.length,0), bytes:JSON.stringify(this.today).length, expires:"30 days; items needing you stay until handled" },
         {
           label: "Selected fixtures",
           count: this.files.size,

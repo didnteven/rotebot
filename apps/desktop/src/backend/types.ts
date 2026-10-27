@@ -402,6 +402,7 @@ export type Frequency = {kind: "daily"; time: string} | {kind: "weekly"; weekday
 export interface ScheduleOutputs { today: boolean; notification: boolean; folder: FileHandle | null; filename: string }
 export interface ScheduleRequest { frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; approved: boolean }
 export interface Schedule { id: string; toolId: string; frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; binding: string; folderIdentity: string | null; status: "enabled" | "paused" | "needs_reapproval" | "emergency_paused"; approvedAtMs: number; lastDueMs: number; nextRunMs: number | null }
+/** Entries expire after 30 days; needs_you stays until approved or discarded. */
 export interface TodayEntry { id: string; toolId: string; toolName: string; trigger: "schedule" | "manual"; scheduleId: string | null; startedAtMs: number; finishedAtMs: number | null; status: "done" | "needs_you" | "skipped" | "failed" | "staged"; body: string; note: string | null; fileCreated: string | null; runId: string | null; staged: StagedRun | null; notification: boolean; addToToday: boolean; dismissed: boolean }
 export interface TodayDay { day: string; entries: TodayEntry[] }
 

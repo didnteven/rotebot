@@ -353,6 +353,7 @@ impl AppCore {
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
         }
         core.recover()?;
+        core.expire_today(core.now())?;
         Ok(core)
     }
 
@@ -3267,7 +3268,7 @@ impl AppCore {
                     label: "Today entries".into(),
                     count: count("today"),
                     bytes: 0,
-                    expires: "Until you delete them".into(),
+                    expires: "30 days; items needing you stay until handled".into(),
                 },
                 StoredData {
                     label: "Tools and versions".into(),

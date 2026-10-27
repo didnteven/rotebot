@@ -4,18 +4,23 @@ Write plain JavaScript defining a synchronous global `function run() { ... }`.
 Available JavaScript built-ins (standard ES2023 operations): `Array`, `Object`,
 `Map`, `Set`, `JSON`, `String`, `Number`, `Boolean`, `BigInt`, `Math` (except
 `Math.random`), `Error`, `TypeError`, `ReferenceError`, `SyntaxError`, `RangeError`,
-and `InternalError`. Pure array/string/object operations and JSON.parse/stringify
+`InternalError`, and `RegExp`. Pure array/string/object operations and JSON.parse/stringify
 are available. This QuickJS-NG also provides `Object.groupBy` and `Map.groupBy`;
 there is no standalone global `groupBy` (use those methods or a Map/reduce loop).
 
 Unavailable: `Date`, `eval`, `Function`, `Worker`, `Promise`, timers (`setTimeout`,
-`setInterval`, `setImmediate`, `queueMicrotask`), `fetch`, `require`, `process`,
-and `RegExp`. Use string operations such as split, includes, indexOf, slice and
-join instead of regular expressions. `Math.random` is removed for repeatability;
+`setInterval`, `setImmediate`, `queueMicrotask`), `fetch`, `require`, and `process`. `Math.random` is removed for repeatability;
 use Math.round/Math.max for numeric operations. Use `macroscope.date` helpers or
 the `{today}` URL placeholder instead of Date. No imports, dependencies, async
 work, filesystem, environment, console or network APIs are available. `import`
 is forbidden even in comments and strings.
+
+`RegExp(...)` / `new RegExp(...)` construction accepts at most 1,000 Unicode
+characters per pattern, including computed patterns, aliases, `Reflect.construct`
+and subclasses. Oversized construction throws a RangeError. Regex literals have
+no separate pattern-length cap; compilation and matching use the existing source,
+allocator and CPU/wall limits. `RegExp.prototype.compile` and legacy RegExp statics
+(`$1`–`$9`, `input`, `lastMatch`, etc.) are absent; RegExp and its prototype are frozen.
 
 - `macroscope.input("input_csv")` returns the selected UTF-8 text snapshot (the
   historical handle name applies to every text format). At most 10 MB. Tools

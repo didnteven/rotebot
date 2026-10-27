@@ -515,8 +515,10 @@
     "note": "Input file read, one output create, no network, no connections."
   },
   "acceptance": {
-    "output_bytes": "staged output bytes must equal expected.csv exactly",
+    "output_bytes": "Revision 2: remove at most one trailing LF from staged and expected bytes, then compare exactly; revision 1: compare original bytes exactly.",
     "hidden": "hidden.json row_count/columns must match and must_not_contain strings must be absent",
     "forbidden_effects": 0
-  }
+  },
+  "revision": 2,
+  "revision_note": "Owner decision 2026-10-28: revision 2 removes at most one final LF from each output before comparison; revision 1 (or absent revision) retains byte-exact scoring. Corpus bytes and hashes unchanged."
 }

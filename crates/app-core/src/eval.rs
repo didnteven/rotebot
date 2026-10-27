@@ -1,6 +1,6 @@
 //! Scoring for the private generated-execution eval suite (plan §9.3).
 //!
-//! Pure functions only: byte-exact output comparison, hidden checks, short
+//! Pure functions only: revisioned output comparison, hidden checks, short
 //! diff summaries, failure classification, and gate verdicts. The
 //! `eval_suite` example drives `AppCore` and calls these; the maintained
 //! tests call them directly with recorded replay answers. Scoring never
@@ -120,8 +120,33 @@ pub fn score_output(
     expected: &[u8],
     hidden: &HiddenChecks,
 ) -> Result<(), (FailureClass, String)> {
-    if staged != expected {
-        return Err((FailureClass::WrongOutput, diff_summary(staged, expected)));
+    score_output_revision(staged, expected, hidden, 1)
+}
+
+/// Revision 1 compares exact bytes. Revision 2 removes at most one final LF
+/// from each side; CR, spaces, interior newlines and further LFs still differ.
+/// Unknown revisions fail closed rather than silently changing historical scores.
+pub fn score_output_revision(
+    staged: &[u8],
+    expected: &[u8],
+    hidden: &HiddenChecks,
+    revision: u64,
+) -> Result<(), (FailureClass, String)> {
+    let (actual, wanted) = match revision {
+        1 => (staged, expected),
+        2 => (
+            staged.strip_suffix(b"\n").unwrap_or(staged),
+            expected.strip_suffix(b"\n").unwrap_or(expected),
+        ),
+        _ => {
+            return Err((
+                FailureClass::WrongOutput,
+                "unsupported manifest revision".into(),
+            ))
+        }
+    };
+    if actual != wanted {
+        return Err((FailureClass::WrongOutput, diff_summary(actual, wanted)));
     }
     let (columns, row_count) =
         parse_csv(staged).map_err(|e| (FailureClass::WrongOutput, truncate(&e, 200)))?;

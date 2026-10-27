@@ -300,12 +300,14 @@ pub fn execute(request: Request) -> Response {
         }
         state.failure.is_some()
     })));
-    // No Date, RegExp, Proxy, shared buffers, weak refs or job executor.
+    // No Date, Proxy, shared buffers, weak refs or job executor.
     // Promise intrinsics are needed for correct async-function teardown; the
     // Promise global is removed and returned promises are refused.
     let context = match Context::custom::<(
         intrinsic::Eval,
         intrinsic::Json,
+        intrinsic::RegExpCompiler,
+        intrinsic::RegExp,
         intrinsic::MapSet,
         intrinsic::TypedArrays,
         intrinsic::Promise,

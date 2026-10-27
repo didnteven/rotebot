@@ -519,6 +519,7 @@ fn packet_builtin_claims_match_the_sandbox() {
         "SyntaxError",
         "RangeError",
         "InternalError",
+        "RegExp",
     ];
     let unavailable = [
         "Date",
@@ -533,7 +534,6 @@ fn packet_builtin_claims_match_the_sandbox() {
         "fetch",
         "require",
         "process",
-        "RegExp",
     ];
     let sdk = include_str!("../SDK.md");
     for name in available {
@@ -565,4 +565,153 @@ fn packet_builtin_claims_match_the_sandbox() {
         ));
     }
     success("function run(){if(typeof Math.random!=='undefined')throw 'random'; if(Object.groupBy([1,2,3],x=>x%2)[1].length!==2)throw 'object grouping'; if(Map.groupBy([1,2,3],x=>x%2).get(1).length!==2)throw 'map grouping';}");
+}
+
+#[test]
+fn regex_benign_output_and_legacy_surface() {
+    match run(
+        include_str!("../../../experiments/runtime-gate-v2/canaries/regex-benign.js"),
+        Limits::default(),
+    ) {
+        Response::Success { outputs, .. } => {
+            assert_eq!(outputs.len(), 1);
+            assert_eq!(outputs[0].name, "regex.txt");
+            assert_eq!(outputs[0].text, "{\"parts\":[\"alpha\",\"beta\",\"gamma\"],\"replaced\":\"one two three\",\"valid\":true,\"invalid\":false}\n");
+        }
+        other => panic!("{other:?}"),
+    }
+    success(include_str!(
+        "../../../experiments/runtime-gate-v2/canaries/regex-legacy-statics.js"
+    ));
+    success(
+        r#"function run(){
+        const r = /a/gi;
+        if (RegExp(r).flags !== "gi" || new RegExp(r, "m").flags !== "m") throw 1;
+        if (!(new RegExp("a") instanceof RegExp) || /a/.constructor !== RegExp) throw 2;
+        if ("ab ab".replace(/ab/g,"c") !== "c c") throw 3;
+    }"#,
+    );
+}
+
+#[test]
+fn regex_literals_are_accepted_and_constructor_strings_remain_bounded() {
+    for pattern in ["a".repeat(1001), "é".repeat(1001)] {
+        success(&format!(
+            "function run(){{if (!/{pattern}/.test('{pattern}')) throw 'literal';}}"
+        ));
+        for expr in [
+            format!("RegExp('{pattern}')"),
+            format!("new RegExp('{pattern}')"),
+            format!("RegExp(`{pattern}`)"),
+            format!("RegExp(/{pattern}/)"),
+        ] {
+            kind(
+                &format!("function run(){{{expr};}}"),
+                Limits::default(),
+                "runtime",
+            );
+        }
+    }
+    let escaped = "\\u0061".repeat(1001);
+    kind(
+        &format!("function run(){{RegExp('{escaped}');}}"),
+        Limits::default(),
+        "runtime",
+    );
+    kind(
+        &format!(
+            "function run(){{RegExp('{}'+'{}');}}",
+            "a".repeat(500),
+            "b".repeat(501)
+        ),
+        Limits::default(),
+        "runtime",
+    );
+    for code in [
+        format!("function run(){{/{}/;}}", "a".repeat(1000)),
+        format!("function run(){{new RegExp('{}');}}", "é".repeat(1000)),
+    ] {
+        success(&code);
+    }
+    // QuickJS handles literals in template substitutions without a second parser.
+    success(&format!(
+        r#"function run(){{const s = `prefix${{/{}/}}`; if (s.length !== 1009) throw 1;}}"#,
+        "a".repeat(1001)
+    ));
+    success(
+        r#"function run(){ const ratio = 10 / 2 / 5; const text = "/not a regex/"; const r = /[a/]+\//; }"#,
+    );
+}
+
+#[test]
+fn regex_huge_literal_uses_allocator_and_time_limits() {
+    let code = include_str!("../../../experiments/runtime-gate-v2/canaries/regex-huge-literal.js");
+    let started = std::time::Instant::now();
+    let limits = Limits::default();
+    let wall = std::time::Duration::from_millis(limits.wall_ms);
+    let response = run(code, limits);
+    assert!(
+        matches!(&response, Response::Success { .. })
+            || matches!(&response, Response::Error { error } if error.kind == "memory"),
+        "{response:?}"
+    );
+    assert!(started.elapsed() < wall);
+    // The same literal must fail cleanly under a smaller QuickJS allocator cap.
+    let started = std::time::Instant::now();
+    kind(
+        code,
+        Limits {
+            memory_bytes: 1024 * 1024,
+            ..Limits::default()
+        },
+        "memory",
+    );
+    assert!(started.elapsed() < wall);
+}
+
+#[test]
+fn regex_computed_patterns_are_bounded_before_compilation() {
+    kind(
+        include_str!("../../../experiments/runtime-gate-v2/canaries/regex-huge-pattern.js"),
+        Limits::default(),
+        "runtime",
+    );
+    for expr in [
+        "new RegExp('a'.repeat(1001))",
+        "RegExp('a'.repeat(1001))",
+        "(/a/).constructor('a'.repeat(1001))",
+        "globalThis['RegExp']('a'.repeat(1001))",
+        "Reflect.construct(RegExp, ['a'.repeat(1001)])",
+        "new (class extends RegExp {})('a'.repeat(1001))",
+    ] {
+        kind(
+            &format!("function run(){{{expr};}}"),
+            Limits::default(),
+            "runtime",
+        );
+    }
+}
+
+#[test]
+fn regex_backtracking_reaches_the_runtime_interrupt_handler() {
+    let started = std::time::Instant::now();
+    kind(
+        include_str!("../../../experiments/runtime-gate-v2/canaries/regex-redos.js"),
+        Limits {
+            cpu_ms: 50,
+            wall_ms: 2_000,
+            ..Limits::default()
+        },
+        "cpu",
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    kind(
+        include_str!("../../../experiments/runtime-gate-v2/canaries/regex-redos.js"),
+        Limits {
+            cpu_ms: 10_000,
+            wall_ms: 50,
+            ..Limits::default()
+        },
+        "wall",
+    );
 }

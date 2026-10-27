@@ -209,7 +209,6 @@ pub(crate) fn error_detail(
                 | "console"
                 | "window"
                 | "document"
-                | "RegExp"
                 | "SharedArrayBuffer"
                 | "Atomics"
         )

@@ -19,7 +19,7 @@ you set up or approve, and each one is recorded in the Privacy screen.
 | Tools you save (task description, generated program, settings) | Encrypted database (SQLCipher) in the app's data folder | Until you delete the tool |
 | Run receipts (what was created or done, when, plan hash) | Encrypted database | Until you delete the tool |
 | Staged outputs waiting for your approval | Encrypted staging files | Removed when you create or discard the output |
-| Today entries from scheduled and manual runs | Encrypted database | Until you dismiss or delete them. The Today screen shows the last 7 days |
+| Today entries from scheduled and manual runs | Encrypted database | 30 days; items needing you stay until handled. Deleted automatically at launch and schedule evaluation. The Today screen shows the last 7 days |
 | Outbound records (what was sent where) | Encrypted database | Payload bodies 7 days, records 30 days |
 | Connection detections from Show | Counts of which services were seen, no content | Until you delete them |
 | Keys and tokens (Meta API key, connection tokens, OAuth client details) | macOS Keychain in release builds; a private file (owner-only permissions) in developer builds | Until you remove them or disconnect |
@@ -71,5 +71,4 @@ at any time.
 - Legal review, the product name, a contact address and an effective date.
 - The Meta and Muse terms (retention and training) must be summarized accurately for end users
   (plan §8.3). `store:false` is not a zero-retention promise.
-- Decide whether Today entries should expire automatically. They currently stay until deleted.
 - Re-check this document against the code before each release.
