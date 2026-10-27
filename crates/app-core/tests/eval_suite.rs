@@ -160,4 +160,19 @@ fn sandbox_rejections_are_generation_failures_not_infrastructure() {
         classify_failure("Build produced no program", "build"),
         FailureClass::BuildFailed
     );
+    use macroscope_app_core::dto::BuildFailureKind;
+    use macroscope_app_core::eval::classify_build_failure;
+    for kind in [BuildFailureKind::Checks, BuildFailureKind::Internal] {
+        assert_eq!(
+            classify_build_failure(kind, sandbox),
+            FailureClass::ChecksFailed
+        );
+    }
+    assert_eq!(
+        classify_build_failure(
+            BuildFailureKind::Internal,
+            "The build failed: Muse deadline exceeded"
+        ),
+        FailureClass::Infrastructure
+    );
 }

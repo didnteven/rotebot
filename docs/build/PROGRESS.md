@@ -568,3 +568,10 @@ allowance (window 24%, weekly 20% used after this smoke).
 `evals/csv-family/results/2026-10-28-muse-plan-rep1.md`. A classifier bug labelled the one
 sandbox rejection as `infrastructure`; it is fixed and tested. The gate stays **INCOMPLETE**
 until repetitions 2 and 3 run, as plan allowance resets.
+
+§9.3 eval, repetition 2 (2026-10-28): **27/30**. Two failures were Muse "deadline exceeded"
+timeouts (infrastructure, still counted), and task 22 failed again. Running total **56/60
+(93.3%)**. The gate stays INCOMPLETE until repetition 3. Fixed the same mislabel in
+`classify_build_failure`. Found a product issue: the runner hides the real JavaScript
+exception behind a generic message, so the automatic correction round cannot fix a runtime
+error.

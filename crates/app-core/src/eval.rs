@@ -162,6 +162,20 @@ pub fn classify_build_failure(kind: BuildFailureKind, message: &str) -> FailureC
     if contains_any(message, &["forbidden"]) {
         return FailureClass::ForbiddenEffect;
     }
+    // Host checks rejected the generated program; the sandbox message can
+    // contain outage words ("unavailable") that must not relabel it.
+    if kind == BuildFailureKind::Checks
+        || contains_any(
+            message,
+            &[
+                "checks failed",
+                "generated runner failed",
+                "javascript execution failed",
+            ],
+        )
+    {
+        return FailureClass::ChecksFailed;
+    }
     if contains_any(
         message,
         &[
