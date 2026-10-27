@@ -60,9 +60,9 @@ it("exports and toggles Pause tool and Resume tool in the library", async () => 
   ).toBeVisible();
   expect(button(`Run ${tool.name}…`)).toBeDisabled();
   await user.click(button("Export…"));
-  expect(
-    await screen.findByText(/Tool exported to \/Demo\/Exports/),
-  ).toBeVisible();
+  const exported = await screen.findByRole("status");
+  expect(exported).toBeVisible();
+  expect(exported).toHaveTextContent(/Tool exported to \/Demo\/Exports/);
   await user.click(button("Resume tool"));
   await waitFor(() => expect(button(`Run ${tool.name}…`)).toBeEnabled());
 });

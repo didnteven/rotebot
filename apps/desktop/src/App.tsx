@@ -18,7 +18,7 @@ import { Settings } from "./Settings";
 import { Connections } from "./Connections";
 import { Activity, Privacy } from "./History";
 import { RecordingBar, ShowPanel, ShowStatus } from "./Show";
-import { Notice, Suggestions, useAction } from "./ui";
+import { FileText, Notice, Suggestions, useAction } from "./ui";
 
 const destinations = [
   "Tools",
@@ -207,7 +207,7 @@ export function App({ backend }: { backend: Backend }) {
             <h1 id="page-title">{destination}</h1>
           </header>
           <Notice error={error} />
-          {exported && <p role="status">Tool exported to {exported}</p>}
+          {exported && <p role="status">Tool exported to <FileText text={exported} /></p>}
           {error && (
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}

@@ -26,6 +26,11 @@ import type {
 import { sampleCsv } from "./sample";
 
 const clone = <T>(value: T): T => structuredClone(value);
+export interface MockBackendOptions {
+  /** Test-only responses at the backend boundary, including malformed server data.
+   * Omitted by the browser demo so its state machine stays unchanged. */
+  testOnlyOverrides?: Partial<Backend>;
+}
 const delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 const mapping = (): CsvMapping => ({
@@ -256,6 +261,7 @@ export class MockBackend implements Backend {
   constructor(
     seeds: (Pick<ToolSummary, "id" | "name" | "version"> &
       Partial<ToolSummary>)[] = [],
+    options: MockBackendOptions = {},
   ) {
     for (const seed of seeds)
       this.tools.set(seed.id, {
@@ -273,6 +279,7 @@ export class MockBackend implements Backend {
         versionHash: digest(seed),
         ...clone(seed),
       });
+    Object.assign(this, options.testOnlyOverrides);
   }
   private id(prefix: string) {
     return `${prefix}-${++this.serial}`;

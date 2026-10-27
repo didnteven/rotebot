@@ -62,6 +62,7 @@ Muse 1.4.13 echo tests, and the app bundle builds and launches.
 | Spend admission limits (§9.1: $2/build, $25/month) | passed | `unknown_charges_keep_the_monthly_build_reservation_and_block_admission` |
 | Local-only barrier during active work (§2.7) | passed | `local_only_during_a_request_cancels_and_acknowledges_the_barrier`, `local_only_refuses_api_key_network_checks` |
 | Outbound review shows the exact payload; synthetic only (P5) | passed | `a_correct_model_answer_becomes_ready_with_cost_and_a_synthetic_packet` |
+| Renderer safety on shipped text surfaces (§8.4, P11) | passed | `apps/desktop/src/renderer-adversarial.test.tsx`: each of 10 payloads across CSV cells/headers, file names/input/output/export paths, model mapping columns/sources/constants, outbound review/history, MCP names/URLs/authorization fields/tools/descriptions, errors (build/run/connection/Settings/Show), activity titles/details, receipt paths, Show app names and suggestions. Payloads: img/onerror, script, javascript URL (text and URL fields), SVG/onload, CSS resource URL, 10,000 characters, RTL override, zero-width controls, terminal ESC, Markdown javascript link. Literal text, computed wrapping/width, visible file/path control escapes in `bdi`, inert DOM, HTTPS-only/confirmed external opening, and network/navigation/clipboard/privileged-dispatch canaries. `renderer-safety.test.ts` pins local-resource/IPC CSP and object/base/form/ancestor denial; unsafe HTML API guard retained. Automated DOM/style evidence uses jsdom; packaged WebKit resource enforcement is not independently instrumented. |
 | Responses request shape (`text.format`, `store:false`) (§4.1) | passed | gateway and cloud-build tests against a local stand-in |
 | Real Meta API call with a real key, billing attribution (M0 day 5) | unverified | No key supplied yet |
 | Muse MSP transport against the installed binary (§4.3) | passed | echo conformance on Muse 1.4.13 (fingerprint changed from the plan's 1.4.11 pin; additive) |
@@ -101,3 +102,18 @@ passed**. `cargo test --workspace`, both final `bash scripts/check.sh` runs, and
 `npx tauri build --debug --no-bundle` all exited 0. Exact tails and the external
 contract-mirror scope clarification are recorded in
 [Task 07 verification](task-07-verification.md).
+
+## Renderer safety (Task 08)
+
+P11 coverage is recorded in the gates table. The new adversarial suite has 40
+surface/payload cases plus HTTPS documentation confirmation/cancel coverage.
+File/path display exposes hidden controls without changing backend values;
+long text wraps, external documentation requires confirmation, and CSP blocks
+object, base, form, and framing escape routes.
+
+Final verification: both `bash scripts/check.sh` runs exited 0, each with
+**185 Rust tests passed, 4 existing tests ignored, and 103 UI tests passed**.
+Their build tails were `✓ built in 664ms` and `✓ built in 89ms`.
+`cd apps/desktop && npx tauri build --debug --no-bundle` exited 0:
+`Finished dev profile [unoptimized + debuginfo] target(s) in 52.29s`.
+No Rust source changes were needed.

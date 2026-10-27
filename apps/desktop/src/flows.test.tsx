@@ -527,7 +527,10 @@ it("opens connector docs through the backend and copies the registered redirect 
   const external = vi.spyOn(backend, "openExternal").mockResolvedValue();
   await user.click(button("Connections"));
   await user.click(button("Connect Gmail"));
-  await user.click(screen.getByRole("link", { name: "Documentation" }));
+  await user.click(button("Documentation"));
+  expect(external).not.toHaveBeenCalled();
+  expect(screen.getByRole("region", { name: "Open documentation" })).toBeVisible();
+  await user.click(button("Open documentation in browser"));
   expect(external).toHaveBeenCalledExactlyOnceWith(
     "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
   );

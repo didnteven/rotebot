@@ -19,3 +19,22 @@ it("greps every source file for unsafe HTML rendering APIs", () => {
   );
   expect(violations).toEqual([]);
 });
+
+it("pins the product CSP to local resources and IPC with document escape routes denied", () => {
+  const config = JSON.parse(readFileSync(
+    resolve(process.cwd(), "src-tauri/tauri.conf.json"), "utf8",
+  ));
+  const directives = config.app.security.csp.split(";").map((part: string) => part.trim().split(/\s+/));
+  expect(directives).toEqual([
+    ["default-src", "'self'"],
+    ["script-src", "'self'"],
+    ["style-src", "'self'", "'unsafe-inline'"],
+    ["img-src", "'self'", "data:"],
+    ["connect-src", "ipc:", "http://ipc.localhost"],
+    ["object-src", "'none'"],
+    ["base-uri", "'none'"],
+    ["form-action", "'none'"],
+    ["frame-ancestors", "'none'"],
+  ]);
+  expect(config.app.security.capabilities).toEqual(["main"]);
+});

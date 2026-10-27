@@ -12,6 +12,8 @@ import {
   CsvView,
   DataTable,
   Field,
+  FileNameInput,
+  FileText,
   Notice,
   ReceiptCard,
   useAction,
@@ -99,12 +101,13 @@ export function RunFlow({
                 Choose output folder…
               </button>
             </div>
-            {folder && <p>Output folder: {folder.displayPath}</p>}
+            {folder && <p>Output folder: <FileText text={folder.displayPath} /></p>}
             <Field label="Output name">
-              <input
+              <FileNameInput
+                label="Output name"
                 value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
+                onChange={(value) => {
+                  setName(value);
                   setFailure(null);
                 }}
               />

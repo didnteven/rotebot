@@ -7,6 +7,39 @@ import type {
   Receipt,
 } from "./backend/types";
 
+// Presentation only: opaque handles and original file names still go to the
+// backend. Expose invisible controls so a suffix/path cannot impersonate another.
+function visibleFileText(text: string) {
+  return text.replace(
+    /[\u001b\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+export function FileText({ text }: { text: string }) {
+  return <bdi dir="ltr">{visibleFileText(text)}</bdi>;
+}
+export function FileNameInput({ value, onChange, label }: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  return (
+    <>
+      <input aria-label={label} dir="ltr" value={value} onChange={(e) => onChange(e.target.value)} />
+      {visibleFileText(value) !== value && <FileText text={value} />}
+    </>
+  );
+}
+export function isHttpsUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return /^https:\/\//i.test(value) && url.protocol === "https:" &&
+      !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 export function useAction() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -90,9 +123,12 @@ export function CsvView({ preview }: { preview: CsvPreview }) {
   return (
     <section>
       <p>
-        {preview.handle.displayName} · {preview.rowCount} rows ·{" "}
+        <FileText text={preview.handle.displayName} /> · {preview.rowCount} rows ·{" "}
         {preview.byteSize.toLocaleString()} bytes
       </p>
+      {preview.handle.displayPath !== preview.handle.displayName && (
+        <p className="muted"><FileText text={preview.handle.displayPath} /></p>
+      )}
       <DataTable
         columns={preview.columns}
         rows={preview.rows}
@@ -154,7 +190,7 @@ export function ReceiptCard({
         <dt>Committed digest</dt>
         <dd>{receipt.committedDigest.slice(0, 12)}</dd>
         <dt>Output path</dt>
-        <dd>{receipt.outputPath}</dd>
+        <dd><FileText text={receipt.outputPath} /></dd>
       </dl>
       <button
         disabled={busy}

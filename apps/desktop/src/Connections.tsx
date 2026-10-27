@@ -5,7 +5,7 @@ import type {
   ConnectorInfo,
   ConnectorTool,
 } from "./backend/types";
-import { Field, Notice, useAction } from "./ui";
+import { Field, isHttpsUrl, Notice, useAction } from "./ui";
 
 const stateName = (c: ConnectorInfo) =>
   c.state.kind === "connected"
@@ -133,6 +133,7 @@ function ConnectionDetail({
   changed: () => Promise<void>;
 }) {
   const [url, setUrl] = useState(connector.mcpUrl),
+    [confirmDocs, setConfirmDocs] = useState(false),
     [pending, setPending] = useState<ConnectStart | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const clientId = useRef<HTMLInputElement>(null),
@@ -194,18 +195,28 @@ function ConnectionDetail({
         </Field>
         <button disabled={busy || !!pending}>Save MCP URL</button>
       </form>
+      <p>Current MCP URL: <code>{connector.mcpUrl}</code></p>
       {connector.docsUrl && (
         <p>
-          <a
-            href={connector.docsUrl}
-            onClick={(event) => {
-              event.preventDefault();
-              void act(() => backend.openExternal(connector.docsUrl!));
-            }}
-          >
-            Documentation
-          </a>
+          {isHttpsUrl(connector.docsUrl) ? (
+            <button type="button" onClick={() => setConfirmDocs(true)}>
+              Documentation
+            </button>
+          ) : <>Documentation: <code>{connector.docsUrl}</code></>}
         </p>
+      )}
+      {confirmDocs && connector.docsUrl && isHttpsUrl(connector.docsUrl) && (
+        <div className="notice notice-info" role="region" aria-label="Open documentation">
+          <p>Open this address in your browser?</p>
+          <p><code>{connector.docsUrl}</code></p>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void act(async () => {
+              await backend.openExternal(connector.docsUrl!);
+              setConfirmDocs(false);
+            })}>Open documentation in browser</button>
+            <button onClick={() => setConfirmDocs(false)}>Keep here</button>
+          </div>
+        </div>
       )}
       {connector.registration === "preregistered" && (
         <form

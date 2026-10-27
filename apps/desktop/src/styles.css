@@ -23,6 +23,13 @@
 * {
   box-sizing: border-box;
 }
+/* Untrusted text must not set an intrinsic minimum larger than its surface. */
+:where(h1, h2, h3, p, li, dd, dt, code, pre, th, td, button, label, legend,
+  summary, span, strong, bdi, time, a, option) {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+}
 [hidden] {
   display: none !important;
 }
@@ -366,6 +373,7 @@ pre {
 }
 .tool-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 24px;

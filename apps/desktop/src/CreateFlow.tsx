@@ -11,7 +11,7 @@ import type {
   TaskDraft,
   Transform,
 } from "./backend/types";
-import { CsvView, DataTable, Field, Notice, useAction } from "./ui";
+import { CsvView, DataTable, Field, FileNameInput, Notice, useAction } from "./ui";
 
 const formats: DateFormat[] = [
   "mm_dd_yy",
@@ -476,9 +476,10 @@ export function CreateFlow({
             </table>
           </div>
           <Field label="Output file name">
-            <input
+            <FileNameInput
+              label="Output file name"
               value={outputName}
-              onChange={(e) => setOutputName(e.target.value)}
+              onChange={setOutputName}
             />
           </Field>
           {draft.blockers.length > 0 && (
