@@ -11,12 +11,15 @@ pub mod checks;
 pub mod connections;
 pub mod drafts;
 pub mod dto;
+#[cfg(feature = "generated-runtime")]
+mod model_step;
 mod privacy;
 #[cfg(feature = "generated-runtime")]
 pub mod runner;
 mod samples;
 pub mod schedules;
 pub mod show;
+mod source_reads;
 pub mod web;
 
 use dto::*;
@@ -153,6 +156,7 @@ struct BuildSlot {
     task: Option<JoinHandle<()>>,
     cancel: tokio::sync::watch::Sender<bool>,
     draft_revision: u32,
+    source_approval: tokio::sync::watch::Sender<bool>,
 }
 
 struct StagedSlot {
@@ -833,6 +837,7 @@ impl AppCore {
         );
         let mut packet: Value = serde_json::from_str(&packet).expect("host packet");
         packet["untrusted_task_data"]["selected_connections"] = json!(draft.required_connections);
+        packet["untrusted_task_data"]["connection_read_tools"] = json!(draft.required_connections.iter().map(|c| json!({"connectorId":c.connector_id,"displayName":c.name,"tools":c.tools.iter().filter(|t| t.read_only == Some(true) && t.destructive != Some(true)).map(|t| json!({"name":t.name,"description":t.description,"inputSchema":t.input_schema})).collect::<Vec<_>>()})).collect::<Vec<_>>());
         packet.to_string()
     }
 
@@ -1583,6 +1588,7 @@ impl AppCore {
                 task: None,
                 cancel,
                 draft_revision: draft.revision,
+                source_approval: tokio::sync::watch::channel(false).0,
             },
         );
         drop(builds);
@@ -1755,6 +1761,35 @@ impl AppCore {
             BuildPhase::Candidate,
             format!("Candidate received from {}", candidate.label),
         )?;
+        if let Some(program) = &candidate.program {
+            if let Err(message) =
+                connections::validate_sources(program, &draft.required_connections).and_then(|_| {
+                    macroscope_builder::program_hosts(program, self.allow_insecure_web())
+                        .map(|_| ())
+                })
+            {
+                self.fail_build(&build_id, BuildFailureKind::Checks, message)?;
+                return Ok(());
+            }
+            if !program.connection_sources.is_empty() || program.model_step.is_some() {
+                let mut approval = lock(&self.inner.builds)
+                    .get(&build_id)
+                    .unwrap()
+                    .source_approval
+                    .subscribe();
+                if !*approval.borrow() {
+                    tokio::select! {
+                        biased;
+                        _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
+                        _ = self.inner.policy.revoked(consent_epoch) => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
+                        _ = approval.changed() => {},
+                    }
+                }
+                if !*approval.borrow() {
+                    return Ok(());
+                }
+            }
+        }
         self.push_phase(
             &build_id,
             BuildPhase::Checking,
@@ -1809,6 +1844,49 @@ impl AppCore {
                 }
             }
         }
+        if let Some(p) = &candidate.program {
+            let read = self.fetch_connection_sources(p, &draft.required_connections);
+            let result = tokio::select! {
+                biased;
+                _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
+                result = read => result,
+            };
+            match result {
+                Ok(texts) => fetched.extend(texts),
+                Err(e) => {
+                    self.fail_build(&build_id, BuildFailureKind::Checks, e.to_string())?;
+                    return Ok(());
+                }
+            }
+        }
+        #[cfg(feature = "generated-runtime")]
+        let build_answers = if let Some(p) = candidate
+            .program
+            .as_ref()
+            .filter(|p| p.model_step.is_some())
+        {
+            let snapshot = input
+                .as_ref()
+                .map(|p| Self::read_limited(p))
+                .transpose()?
+                .unwrap_or_default();
+            let result = tokio::select! {
+                biased;
+                _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
+                result = self.resolve_model_answers(p, &snapshot, &fetched, !draft.no_input, None) => result,
+            };
+            match result {
+                Ok(a) => a,
+                Err(e) => {
+                    self.fail_build(&build_id, BuildFailureKind::Checks, e.to_string())?;
+                    return Ok(());
+                }
+            }
+        } else {
+            BTreeMap::new()
+        };
+        #[cfg(feature = "generated-runtime")]
+        let first_answers = build_answers.clone();
         #[cfg(feature = "generated-runtime")]
         let runtime = if draft.kind == TaskKind::Program {
             Some(self.runtime())
@@ -1839,12 +1917,13 @@ impl AppCore {
                             &read,
                             &|snapshot, sources, code| {
                                 engine
-                                    .execute_with_sources(
+                                    .execute_with_answers(
                                         snapshot,
                                         sources,
                                         !no_input,
                                         code,
                                         macroscope_runner::Limits::default(),
+                                        &first_answers,
                                     )
                                     .map_err(|e| e.to_string())
                             },
@@ -1968,6 +2047,18 @@ impl AppCore {
                     self.db()
                         .set_outbound_cost(&format!("out_{build_id}_correction"), Some(cost))?;
                 }
+                if candidate2
+                    .program
+                    .as_ref()
+                    .map(|p| (&p.connection_sources, &p.model_step))
+                    != candidate
+                        .program
+                        .as_ref()
+                        .map(|p| (&p.connection_sources, &p.model_step))
+                {
+                    self.fail_build(&build_id, BuildFailureKind::Checks, "Corrected reads or model step changed. Rebuild and review the new permissions.")?;
+                    return Ok(());
+                }
                 self.update_build(&build_id, |s| {
                     s.candidate = Some(candidate2.mapping.clone());
                     s.program = candidate2.program.clone();
@@ -2011,12 +2102,13 @@ impl AppCore {
                                     &read2,
                                     &|snapshot, sources, code| {
                                         engine
-                                            .execute_with_sources(
+                                            .execute_with_answers(
                                                 snapshot,
                                                 sources,
                                                 !no_input,
                                                 code,
                                                 macroscope_runner::Limits::default(),
+                                                &build_answers,
                                             )
                                             .map_err(|e| e.to_string())
                                     },
@@ -2074,6 +2166,25 @@ impl AppCore {
         Ok(())
     }
 
+    /// Review the exact current candidate before any build-time private reads/model step.
+    pub fn approve_build_sources(
+        &self,
+        build_id: &str,
+        program: &macroscope_builder::Program,
+    ) -> CoreResult<BuildState> {
+        let _admission = self.admit_local()?;
+        let builds = lock(&self.inner.builds);
+        let slot = builds.get(build_id).ok_or(CoreError::NotFound("build"))?;
+        if slot.state.phase != BuildPhase::Candidate || slot.state.program.as_ref() != Some(program)
+        {
+            return Err(CoreError::Invalid(
+                "Candidate changed; review its exact reads again".into(),
+            ));
+        }
+        slot.source_approval.send_replace(true);
+        Ok(slot.state.clone())
+    }
+
     pub fn stop_build(&self, build_id: &str) -> CoreResult<BuildState> {
         {
             let builds = lock(&self.inner.builds);
@@ -2126,6 +2237,7 @@ impl AppCore {
             access: strings("access"),
             version_hash: hash,
             no_input: d.get("noInput").and_then(Value::as_bool).unwrap_or(false),
+            model_step_cap: d.get("modelStepCap").and_then(Value::as_u64).unwrap_or(60) as u32,
         })
     }
 
@@ -2208,6 +2320,10 @@ impl AppCore {
             "integrity": {"treeHash": "", "approvalRef": ""}
         });
         if let Some(program) = program {
+            manifest["capabilities"]["modelCalls"] = json!(program.model_step.is_some());
+            if let Some(step) = &program.model_step {
+                manifest["model_step"] = json!(step);
+            }
             manifest["runtime"] = json!({"engine":"js-quickjs","pin":"rquickjs-0.14.0/runtime-v2","sdk":"1.0","entry":"program.json"});
             manifest["capabilities"]["fileCreate"][0]["namePattern"] = json!(program.output_name);
             manifest["limits"] =
@@ -2274,6 +2390,22 @@ impl AppCore {
         for host in &web_hosts {
             access.push(format!("Fetches from {host}"));
         }
+        if let Some(p) = program {
+            for source in &p.connection_sources {
+                let service = connections
+                    .iter()
+                    .find(|c| c.connector_id == source.connector_id)
+                    .map(|c| c.name.as_str())
+                    .unwrap_or(&source.connector_id);
+                access.push(format!(
+                    "Reads {} from {service} ({}) — arguments: {}",
+                    source.name, source.tool_name, source.args_json
+                ));
+            }
+            if let Some(m) = &p.model_step {
+                access.push(format!("Sends source data and the program prompt to your selected model route to {} on every run", m.purpose));
+            }
+        }
         for c in connections {
             access.push(format!(
                 "Use {} tools after staged action approval: {}",
@@ -2323,7 +2455,7 @@ impl AppCore {
             &tool_id.0,
             &version_hash,
             1,
-            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts, "mcp": mcp}),
+            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts, "mcp": mcp, "connectionSources": program.map(|p| &p.connection_sources), "modelStep": program.and_then(|p| p.model_step.as_ref())}),
         )?;
         self.activity("build", format!("Saved tool “{name}”"), None);
         self.tool_detail(&row)
@@ -2453,8 +2585,13 @@ impl AppCore {
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
-        self.stage_inner(tool_id, Some(input_handle), dir_handle, output_name, None)
-            .await
+        let result = self
+            .stage_inner(tool_id, Some(input_handle), dir_handle, output_name, None)
+            .await;
+        if let Err(e) = &result {
+            self.manual_today_failure(tool_id, &e.to_string())?;
+        }
+        result
     }
 
     /// Stages a run for a tool with no input file (ADR 0004): the program
@@ -2492,6 +2629,7 @@ impl AppCore {
         schedule: Option<&schedules::Schedule>,
     ) -> CoreResult<StageResult> {
         let started_at_ms = self.now();
+        let egress_epoch = self.inner.policy.epoch();
         let _active = self.claim_tool_run(tool_id)?;
         if let Some(s) = schedule {
             if !self.schedule_still_approved(s, true)? {
@@ -2598,6 +2736,43 @@ impl AppCore {
         // `await_holding_lock`). Deletion closes admission, so re-admitting
         // afterwards fails if a wipe started mid-fetch; the paused, grant
         // and limit checks are repeated there on fresh state.
+        let selected: Vec<SelectedConnection> = serde_json::from_value(
+            self.db()
+                .version(tool_id, &detail.version_hash)?
+                .ok_or(CoreError::NotFound("version"))?
+                .mapping
+                .get("connections")
+                .cloned()
+                .unwrap_or(json!([])),
+        )
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
+        self.validate_connection_authority(tool_id, &detail.version_hash, &selected)?;
+        if let Some(p) = &detail.program {
+            connections::validate_sources(p, &selected).map_err(CoreError::Invalid)?;
+            if !p.connection_sources.is_empty()
+                && scope["connectionSources"] != json!(p.connection_sources)
+            {
+                return Err(CoreError::Invalid(
+                    "Unapproved connection tool or changed args template; rebuild".into(),
+                ));
+            }
+            if p.model_step.is_some() && scope["modelStep"] != json!(p.model_step) {
+                return Err(CoreError::Invalid("Unapproved model step; rebuild".into()));
+            }
+            if (!p.connection_sources.is_empty() || p.model_step.is_some())
+                && self.web_fetch_blocked().is_some()
+            {
+                return Err(CoreError::Invalid(
+                    "Local only blocks connection reads and model steps".into(),
+                ));
+            }
+            #[cfg(feature = "generated-runtime")]
+            if p.model_step.is_some() && self.model_cap_reached(&detail)? {
+                return Err(CoreError::Invalid(
+                    "Skipped — monthly model-step cap reached".into(),
+                ));
+            }
+        }
         let fetch_plan = match detail.program.as_ref() {
             Some(program) if !program.web_sources.is_empty() => {
                 Some((program.web_sources.clone(), declared_hosts))
@@ -2605,7 +2780,7 @@ impl AppCore {
             _ => None,
         };
         drop(_admission);
-        let fetched = match fetch_plan {
+        let mut fetched = match fetch_plan {
             Some((sources, hosts)) => match self.fetch_for_stage(&sources, &hosts).await {
                 Ok(fetched) => Some(fetched),
                 Err(message) => {
@@ -2616,6 +2791,33 @@ impl AppCore {
             },
             None => None,
         };
+        if let Some(p) = &detail.program {
+            let reads = self.fetch_connection_sources(p, &selected).await?;
+            fetched.get_or_insert_with(BTreeMap::new).extend(reads);
+        }
+        #[cfg(feature = "generated-runtime")]
+        let model_answers =
+            if let Some(p) = detail.program.as_ref().filter(|p| p.model_step.is_some()) {
+                let snapshot = Self::read_limited(&input_path)?;
+                self.resolve_model_answers(
+                    p,
+                    &snapshot,
+                    fetched.as_ref().unwrap_or(&BTreeMap::new()),
+                    !detail.no_input,
+                    Some(&detail),
+                )
+                .await?
+            } else {
+                BTreeMap::new()
+            };
+        if detail.program.as_ref().is_some_and(|p| {
+            !p.web_sources.is_empty() || !p.connection_sources.is_empty() || p.model_step.is_some()
+        }) && self.inner.policy.epoch() != egress_epoch
+        {
+            return Err(CoreError::Invalid(
+                "Sources or model step cancelled by a privacy change".into(),
+            ));
+        }
         let _admission = self.admit_local()?;
         if let Some(s) = schedule {
             if !self.schedule_still_approved(s, true)? {
@@ -2654,17 +2856,6 @@ impl AppCore {
             // consent epochs do not revoke them; tool grant revisions do.
             policy_epoch: LOCAL_RUN_POLICY_EPOCH,
         };
-        let selected: Vec<SelectedConnection> = serde_json::from_value(
-            self.db()
-                .version(tool_id, &detail.version_hash)?
-                .ok_or(CoreError::NotFound("version"))?
-                .mapping
-                .get("connections")
-                .cloned()
-                .unwrap_or(json!([])),
-        )
-        .map_err(|e| CoreError::Internal(e.to_string()))?;
-        self.validate_connection_authority(tool_id, &detail.version_hash, &selected)?;
         let request = (|| -> Result<StageRequest, BrokerError> {
             Ok(StageRequest {
                 tool_id: ToolId(tool_id.into()),
@@ -2719,11 +2910,12 @@ impl AppCore {
                         .collect();
                     let stage_sources = runner::SourceStage {
                         sources: source_data,
+                        answers: &model_answers,
                         output_name: Some(&program.output_name),
                         create_file: schedule.is_none_or(|s| s.outputs.folder.is_some()),
                         has_input_file: !detail.no_input,
                         extra_binding: Some(
-                            json!({"source_urls": urls, "source_digests": web::digests(source_data), "schedule_grant": schedule}),
+                            json!({"source_urls": urls, "connection_sources":program.connection_sources,"source_digests": web::digests(source_data), "schedule_grant": schedule}),
                         ),
                     };
                     engine.stage_with_sources_and_connections(

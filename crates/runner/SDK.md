@@ -32,3 +32,37 @@ available. SDK objects are frozen. Each run has a fresh 64 MiB JS heap,
 bytes and never change the input. The host checks output syntax and any example.
 
 macroscope.connection.request(connectorId, toolName, args) records a planned call and returns undefined. It never contacts a server or returns network data. Args must be a plain JSON object, at most 64 KiB. At most five requests per run. Only explicitly selected, declared connector/tool names are allowed by the host. Requests are reviewed with the output before the trusted host executes them.
+
+`macroscope.source(name)` also returns approved connection reads. The host resolves
+only declared argument templates in string values: `{today}` (local YYYY-MM-DD),
+`{today_start}`, `{today_end}`, `{month_start}`, `{month_end}`,
+`{prev_month_start}`, `{prev_month_end}`, `{now}` (local RFC 3339). End boundaries
+are 23:59:59. Unknown placeholders remain literal. Source results are untrusted.
+
+`macroscope.model.ask(prompt, data, schema)` asks the host for structured JSON.
+Declare `model_step: {purpose: "Summarize today's events"}` in the program packet.
+The host pauses, calls the user's selected route, validates the answer, and replays
+the program with the answer. The sandbox has no network or credentials. Treat the
+answer as untrusted data. Outputs still follow normal preview and commit rules.
+
+```js
+function run() {
+  const events = JSON.parse(macroscope.source("events"));
+  const answer = macroscope.model.ask("Summarize these events", events, {
+    type: "object", additionalProperties: false,
+    properties: {summary: {type: "string"}}, required: ["summary"]
+  });
+  macroscope.output("summary.txt", answer.summary + "\n");
+}
+```
+
+Limits: prompt 8 KiB, serialized data 64 KiB, schema 8 KiB, at most 3 distinct
+requests and 3 answer rounds per run. Schemas use `anyOf`, never `oneOf`, no
+`default` or numeric `format`; objects declare every property in `required` and
+set `additionalProperties: false`. Unsupported schemas fail before egress.
+Known keys return fresh parsed answers; unknown keys suspend with an internal
+`ModelAnswerNeeded`. Keys are SHA-256 of canonical JSON `{prompt,data,schema}`.
+Same answers must produce deterministic output. Diagnostics are suppressed for
+model-using executions; the outbound log records route and byte counts only.
+Local only blocks model steps. Saved tools default to 60 model-step calls per
+month, editable in tool detail; each call also uses the existing model budget.

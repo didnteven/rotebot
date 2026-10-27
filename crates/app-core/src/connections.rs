@@ -506,6 +506,15 @@ impl Connections {
                 ));
             }
             let tools = self.preview_tools(id).await?;
+            if serde_json::to_vec(&tools).map_or(true, |v| v.len() > 65_536)
+                || tools
+                    .iter()
+                    .any(|t| t.input_schema.to_string().len() > 8192)
+            {
+                return Err(CoreError::Invalid(
+                    "Server tool schemas exceed the builder metadata limit".into(),
+                ));
+            }
             for tool in &tools {
                 jsonschema::validator_for(&tool.input_schema).map_err(|_| {
                     CoreError::Invalid("Server supplied an invalid input schema.".into())
@@ -749,13 +758,136 @@ impl AppCore {
                 s.mcp_url != c.resource || !matches!(s.state, LibState::Connected { .. })
             }) {
                 return Err(CoreError::Invalid(format!(
-                    "{} needs re-authentication. Nothing ran.",
+                    "Reconnect {}. Nothing ran.",
                     c.name
                 )));
             }
         }
         Ok(())
     }
+}
+
+/// Source declarations confer no authority until the exact templates are reviewed.
+pub fn validate_sources(
+    program: &macroscope_builder::Program,
+    selected: &[crate::dto::SelectedConnection],
+) -> Result<(), String> {
+    macroscope_builder::program_hosts(program, true)?;
+    for source in &program.connection_sources {
+        let c = selected
+            .iter()
+            .find(|c| c.connector_id == source.connector_id)
+            .ok_or("Unapproved connection source")?;
+        let mut tools = c.tools.iter().filter(|t| t.name == source.tool_name);
+        let t = tools
+            .next()
+            .ok_or("Reconnect or rebuild: source tool missing")?;
+        if tools.next().is_some() || t.read_only != Some(true) || t.destructive == Some(true) {
+            return Err(
+                "Connection source must be explicitly read-only and not destructive".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+impl Connections {
+    pub(crate) async fn read_sources(
+        &self,
+        sources: &[macroscope_builder::ConnectionSource],
+        selected: &[crate::dto::SelectedConnection],
+    ) -> CoreResult<BTreeMap<String, String>> {
+        let mut service = self.service.lock().await;
+        let mut prepared = HashMap::new();
+        // All connectors, tools and substituted arguments are checked before any read.
+        let mut calls = Vec::new();
+        for source in sources {
+            let c = selected
+                .iter()
+                .find(|c| c.connector_id == source.connector_id)
+                .ok_or_else(|| CoreError::Invalid("Unapproved connection source".into()))?;
+            if !prepared.contains_key(&c.connector_id) {
+                let result = service.prepare(&c.connector_id, &c.resource).await;
+                *lock(&self.snapshot) = service.list();
+                prepared.insert(
+                    c.connector_id.clone(),
+                    result.map_err(|_| {
+                        CoreError::Invalid(format!("Reconnect {}. Nothing ran.", c.name))
+                    })?,
+                );
+            }
+            let args = self.core.source_args(&source.args_json)?;
+            let mut tools = prepared[&c.connector_id]
+                .tools
+                .iter()
+                .filter(|t| t.name == source.tool_name);
+            let t = tools.next().ok_or_else(|| {
+                CoreError::Invalid("Reconnect or rebuild: source tool missing".into())
+            })?;
+            if tools.next().is_some()
+                || t.annotations.read_only_hint != Some(true)
+                || t.annotations.destructive_hint == Some(true)
+                || !jsonschema::validator_for(&t.input_schema).is_ok_and(|v| v.is_valid(&args))
+            {
+                return Err(CoreError::Invalid(
+                    "Reconnect or rebuild: source tool or schema changed".into(),
+                ));
+            }
+            calls.push((source, c, args));
+        }
+        let mut results = BTreeMap::new();
+        for (source, c, args) in calls {
+            self.core.db().insert_outbound(&macroscope_storage::db::OutboundRow {
+                id: crate::new_id("out"), at_ms: self.core.now(), purpose: "Connection read".into(), destination: c.name.clone(),
+                route: "connection".into(), synthetic_only: false, cost_micros: None,
+                payload_text: Some(serde_json::json!({"tool":source.tool_name,"argsTemplate":serde_json::from_str::<serde_json::Value>(&source.args_json).unwrap()}).to_string()),
+            })?;
+            let result = prepared
+                .get_mut(&c.connector_id)
+                .unwrap()
+                .read(&source.tool_name, args)
+                .await
+                .map_err(|e| {
+                    if matches!(
+                        e,
+                        macroscope_connections::mcp::McpError::AuthRequired { .. }
+                    ) {
+                        CoreError::Invalid(format!("Reconnect {}. Nothing ran.", c.name))
+                    } else if matches!(e, macroscope_connections::mcp::McpError::ToolNotReadOnly) {
+                        CoreError::Invalid("Reconnect or rebuild: source tool changed".into())
+                    } else {
+                        CoreError::Invalid(format!("Connection read failed: {e}"))
+                    }
+                })?;
+            results.insert(
+                source.name.clone(),
+                source_text(&result).map_err(CoreError::Invalid)?,
+            );
+        }
+        Ok(results)
+    }
+}
+
+pub fn source_text(result: &serde_json::Value) -> Result<String, String> {
+    if result["isError"] == true {
+        return Err("Connection read was rejected by the service".into());
+    }
+    let text = if let Some(v) = result.get("structuredContent") {
+        v.to_string()
+    } else {
+        result["content"]
+            .as_array()
+            .ok_or("Invalid connection read content")?
+            .iter()
+            .filter(|p| p["type"] == "text")
+            .map(|p| p["text"].as_str().ok_or("Invalid connection read text"))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n")
+    };
+    if text.len() > 2 * 1024 * 1024 {
+        return Err("Connection read exceeds 2 MB".into());
+    }
+    Ok(text)
 }
 
 #[cfg(test)]

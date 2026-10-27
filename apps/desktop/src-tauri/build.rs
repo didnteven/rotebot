@@ -39,6 +39,8 @@ fn main() {
         "build_state",
         "stop_build",
         "save_tool",
+        "approve_build_sources",
+        "set_model_step_cap",
         "list_tools",
         "get_tool",
         "install_sample_tool",

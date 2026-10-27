@@ -525,7 +525,7 @@ mod actions {
         } else {
             json!([])
         };
-        Mock::given(method("POST")).and(path("/responses")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json!({"summary":"Draft a message","output_name":"draft.txt","code":code,"web_sources":web_sources}).to_string()}]}],"usage":{"input_tokens":100,"output_tokens":100}}))).mount(&model).await;
+        Mock::given(method("POST")).and(path("/responses")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json!({"summary":"Draft a message","output_name":"draft.txt","code":code,"web_sources":web_sources,"connection_sources":[],"model_step":null}).to_string()}]}],"usage":{"input_tokens":100,"output_tokens":100}}))).mount(&model).await;
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().canonicalize().unwrap();
         let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());

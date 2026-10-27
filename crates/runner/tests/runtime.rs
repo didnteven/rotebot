@@ -6,6 +6,7 @@ use std::{
 };
 fn run(code: &str, limits: Limits) -> Response {
     macroscope_runner::execute(Request {
+        answers: BTreeMap::new(),
         code: code.into(),
         inputs: BTreeMap::new(),
         sources: BTreeMap::new(),
@@ -25,6 +26,7 @@ fn kind(code: &str, limits: Limits, expected: &str) {
 #[test]
 fn sdk_orders_matches_independent_fixture() {
     let request = Request {
+        answers: BTreeMap::new(),
         code: include_str!("../../../experiments/runtime-gate-v2/orders.js").into(),
         inputs: BTreeMap::from([(
             "input_csv".into(),
@@ -149,6 +151,7 @@ fn cpu_wall_stack_and_output_limits_are_sticky() {
 )]
 fn child_memory_limit_and_kernel_peak_rss() {
     let request = Request {
+        answers: BTreeMap::new(),
         code: "function run(){const a=[];for(;;)a.push(new Uint8Array(1024*1024).fill(1));}".into(),
         inputs: BTreeMap::new(),
         sources: BTreeMap::new(),
@@ -260,6 +263,7 @@ fn clock_and_randomness_are_unavailable_and_text_output_formats_work() {
 #[test]
 fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
     let request = Request {
+        answers: BTreeMap::new(),
         code:
             "function run(){macroscope.output(\"weather.txt\", macroscope.source(\"forecast\"));}"
                 .into(),
@@ -275,6 +279,7 @@ fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
         other => panic!("{other:?}"),
     }
     let bad = Request {
+        answers: BTreeMap::new(),
         code: "function run(){macroscope.output(\"weather.txt\", macroscope.source(\"nope\"));}"
             .into(),
         inputs: BTreeMap::new(),

@@ -9,6 +9,7 @@ use std::{
 struct Data {
     inputs: BTreeMap<String, String>,
     sources: BTreeMap<String, String>,
+    answers: BTreeMap<String, serde_json::Value>,
     limits: Limits,
     state: Shared,
 }
@@ -270,17 +271,25 @@ pub(crate) fn install(
     ctx: &Ctx<'_>,
     inputs: BTreeMap<String, String>,
     sources: BTreeMap<String, String>,
+    answers: BTreeMap<String, serde_json::Value>,
     limits: &Limits,
     state: Shared,
 ) -> Result<()> {
     ctx.store_userdata(Data {
         inputs,
         sources,
+        answers,
         limits: limits.clone(),
         state,
     })
     .map_err(|_| rquickjs::Error::Unknown)?;
     let sdk = Object::new(ctx.clone())?;
+    let model = Object::new(ctx.clone())?;
+    model.set_prototype(None)?;
+    let wrap_model: Function = ctx.eval(include_str!("model.js"))?;
+    let ask: Function = wrap_model.call((Function::new(ctx.clone(), model_ask)?,))?;
+    model.set("ask", ask)?;
+    sdk.set("model", model)?;
     sdk.set_prototype(None)?;
     let connection = Object::new(ctx.clone())?;
     connection.set_prototype(None)?;
@@ -306,4 +315,40 @@ pub(crate) fn install(
     money.set("decimal", Function::new(ctx.clone(), decimal)?)?;
     sdk.set("money", money)?;
     ctx.globals().set("macroscope", sdk)
+}
+
+fn model_ask(ctx: Ctx<'_>, json: String) -> Result<String> {
+    let request = crate::model::parse_request(&json).map_err(|_| {
+        fail(
+            &ctx,
+            "model_limit",
+            "Invalid model request: prompt <=8 KiB, data <=64 KiB, strict schema <=8 KiB",
+        )
+    })?;
+    let data = ctx.userdata::<Data>().unwrap();
+    let mut state = data.state.lock().unwrap();
+    state.model_used = true;
+    if let Some(answer) = data.answers.get(&request.key) {
+        if !jsonschema::validator_for(&request.schema).is_ok_and(|v| v.is_valid(answer)) {
+            drop(state);
+            return Err(fail(
+                &ctx,
+                "model_schema",
+                "Model answer does not match schema",
+            ));
+        }
+        return Ok(answer.to_string());
+    }
+    if state.model_requests.iter().any(|r| r.key == request.key)
+        || state.model_requests.len() + data.answers.len() >= 3
+    {
+        drop(state);
+        return Err(fail(
+            &ctx,
+            "model_limit",
+            "At most 3 model requests per run; repeated unanswered key",
+        ));
+    }
+    state.model_requests.push(request);
+    Err(Exception::throw_type(&ctx, "ModelAnswerNeeded"))
 }

@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 csv = "1"
 libc = "0.2"
+sha2 = "0.10"
+jsonschema = { version = "0.60", default-features = false }
 
 [dev-dependencies]
 macroscope-app-core = { path = "../app-core", features = ["synthetic-runtime-tests"] }

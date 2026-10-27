@@ -28,10 +28,20 @@ export function toBackendError(e: unknown): Error {
   return new BackendError("Something went wrong. Try again.", "unknown");
 }
 
+/** Normalize the program DTO only; never rename keys in untrusted schemas or call arguments. */
+export function normalizeWire(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeWire);
+  if (value && typeof value === "object" && "program" in value && value.program && typeof value.program === "object") {
+    const p=value.program as Record<string,unknown>;
+    const {web_sources,connection_sources,model_step,...rest}=p;
+    return {...value,program:{...rest,webSources:web_sources??p.webSources??[],connectionSources:connection_sources??p.connectionSources??[],modelStep:model_step??p.modelStep??null}};
+  }
+  return value;
+}
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const call =
     args === undefined ? tauriInvoke<T>(cmd) : tauriInvoke<T>(cmd, args);
-  return Promise.resolve(call).catch((e: unknown) => {
+  return Promise.resolve(call).then(v=>normalizeWire(v) as T).catch((e: unknown) => {
     throw toBackendError(e);
   });
 }
@@ -82,11 +92,16 @@ export class TauriBackend implements Backend {
   buildState: Backend["buildState"] = (buildId) =>
     invoke("build_state", { buildId });
   onBuildEvent: Backend["onBuildEvent"] = (buildId, cb) =>
-    listen<BuildState>("build://" + buildId, (event) => cb(event.payload));
+    listen<BuildState>("build://" + buildId, (event) => cb(normalizeWire(event.payload) as BuildState));
   buildTryInput: Backend["buildTryInput"] = (buildId, input) =>
     invoke("build_try_input", { buildId, input });
   stopBuild: Backend["stopBuild"] = (buildId) =>
     invoke("stop_build", { buildId });
+  approveBuildSources: Backend["approveBuildSources"] = (buildId, program) => {
+    const {webSources,connectionSources,modelStep,...rest}=program;
+    return invoke("approve_build_sources", {buildId,program:{...rest,web_sources:webSources,connection_sources:connectionSources??[],model_step:modelStep??null}});
+  };
+  setModelStepCap: Backend["setModelStepCap"] = (toolId,cap) => invoke("set_model_step_cap",{toolId,cap});
   saveTool: Backend["saveTool"] = (buildId, name) =>
     invoke("save_tool", { buildId, name });
   listTools: Backend["listTools"] = () => invoke("list_tools");

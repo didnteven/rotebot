@@ -1,3 +1,4 @@
+import { SourceReview } from "./SourceReview";
 import { useEffect, useState } from "react";
 import type {
   Backend,
@@ -705,6 +706,11 @@ export function CreateFlow({
               Stop build
             </button>
           )}
+          {build.phase === "candidate" && build.program && ((build.program.connectionSources?.length??0)>0 || build.program.modelStep) && <div className="card">
+            <h3>Review outbound reads for this build</h3>
+            <SourceReview program={build.program} route={build.route} build connections={draft?.requiredConnections}/>
+            <button disabled={busy} onClick={()=>void act(async()=>setBuild(await backend.approveBuildSources(build.buildId,build.program!)))}>Approve reads and test</button>
+          </div>}
           {build.phase === "stopped" && (
             <p role="status">
               Build stopped. Your task summary is saved. Go Back to review it
@@ -772,6 +778,7 @@ export function CreateFlow({
                   ? "No input file; create one new output in the folder you choose. Existing files are never replaced."
                   : "Read the selected file; create one new output in the folder you choose. Source unchanged; existing files are never replaced."}
               </p>
+              {build.program && <SourceReview program={build.program} route={build.route} connections={draft?.requiredConnections}/>}
               {build.program && build.program.webSources.length > 0 && (
                 <>
                   <h3>Outbound fetches</h3>

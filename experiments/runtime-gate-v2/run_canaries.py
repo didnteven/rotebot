@@ -151,8 +151,8 @@ def main():
               "canaries": {str(p.relative_to(ROOT)): sha(p) for p in sorted((EXP / "canaries").glob("*.js"))}}
     report["synthetic_suite"] = "FAIL" if any(row["synthetic"]["observed"] == "FAIL" for row in rows) else "PASS"
     # Synthetic reruns preserve the separately admitted OS-boundary evidence.
-    results_name = "results.json" if args.os else "task13-synthetic-results.json"
-    evidence_name = "runtime-lock-v2.md" if args.os else "task13-runtime-canaries.md"
+    results_name = "results.json" if args.os else "task17-synthetic-results.json"
+    evidence_name = "runtime-lock-v2.md" if args.os else "task17-runtime-canaries.md"
     (EXP / results_name).write_text(json.dumps(report, indent=2) + "\n")
     write_markdown(report, evidence_name, results_name)
     print("Synthetic suite: " + report["synthetic_suite"] + "; admission verdict: " + verdict + "; evidence: docs/build/" + evidence_name, flush=True)
@@ -161,6 +161,8 @@ def main():
 
 
 def expectation(name):
+    if name == "model-ask-limit":
+        return "error:model_limit"
     if name in ("ok", "orders", "connection-planned"):
         return "exact fixture"
     if name.startswith("memory"):

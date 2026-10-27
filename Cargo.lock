@@ -2633,6 +2633,7 @@ name = "macroscope-desktop"
 version = "0.1.0"
 dependencies = [
  "macroscope-app-core",
+ "macroscope-builder",
  "macroscope-domain",
  "macroscope-muse-client",
  "macroscope-vault",
@@ -2751,6 +2752,7 @@ name = "macroscope-runner"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "jsonschema",
  "libc",
  "macroscope-app-core",
  "macroscope-domain",
@@ -2759,6 +2761,7 @@ dependencies = [
  "rquickjs",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

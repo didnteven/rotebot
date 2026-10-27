@@ -1,6 +1,8 @@
 //! One-shot data-only QuickJS worker. No loader or OS bindings are registered.
 pub mod launch;
+pub mod model;
 mod sdk;
+pub use model::ModelRequest;
 
 use rquickjs::{context::intrinsic, Context, Function, Runtime};
 use serde::{Deserialize, Serialize};
@@ -75,6 +77,8 @@ pub struct Request {
     #[serde(default)]
     pub sources: BTreeMap<String, String>,
     #[serde(default)]
+    pub answers: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
     pub limits: Limits,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +103,9 @@ impl Failure {
 }
 #[derive(Debug, Clone)]
 pub enum Response {
+    ModelRequests {
+        model_requests: Vec<ModelRequest>,
+    },
     Success {
         outputs: Vec<Output>,
         planned_calls: Vec<PlannedCall>,
@@ -112,6 +119,12 @@ impl Serialize for Response {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         match self {
+            Self::ModelRequests { model_requests } => {
+                let mut wire = serializer.serialize_struct("Response", 2)?;
+                wire.serialize_field("ok", &false)?;
+                wire.serialize_field("model_requests", model_requests)?;
+                wire.end()
+            }
             Self::Success {
                 outputs,
                 planned_calls,
@@ -173,8 +186,21 @@ impl Response {
             log: Option<Vec<String>>,
             planned_calls: Option<Vec<PlannedCall>>,
             error: Option<Failure>,
+            model_requests: Option<Vec<ModelRequest>>,
         }
         let v: Wire = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        if !v.ok
+            && v.outputs.is_none()
+            && v.log.is_none()
+            && v.planned_calls.is_none()
+            && v.error.is_none()
+        {
+            if let Some(model_requests) = v.model_requests {
+                return Ok(Self::ModelRequests { model_requests });
+            }
+        } else if v.model_requests.is_some() {
+            return Err("invalid runner response".into());
+        }
         match (v.ok, v.outputs, v.log, v.planned_calls, v.error) {
             (true, Some(outputs), Some(log), Some(planned_calls), None) => Ok(Self::Success {
                 outputs,
@@ -194,6 +220,8 @@ struct State {
     log: Vec<String>,
     log_bytes: usize,
     failure: Option<Failure>,
+    model_requests: Vec<ModelRequest>,
+    model_used: bool,
 }
 type Shared = Arc<Mutex<State>>;
 
@@ -233,6 +261,11 @@ pub fn execute(request: Request) -> Response {
     // installed, and every string-code constructor is removed before user code.
     if request.code.contains("import") {
         return Response::failure("syntax", "imports are forbidden");
+    }
+    if request.answers.len() > 3
+        || serde_json::to_vec(&request.answers).map_or(true, |v| v.len() > 196_608)
+    {
+        return Response::failure("model_limit", "at most 3 bounded model answers");
     }
     let state: Shared = Arc::default();
     let rt = match Runtime::new() {
@@ -281,6 +314,7 @@ pub fn execute(request: Request) -> Response {
             &ctx,
             request.inputs,
             request.sources,
+            request.answers,
             &request.limits,
             state.clone(),
         )?;
@@ -315,6 +349,11 @@ pub fn execute(request: Request) -> Response {
     if let Some(error) = state.failure.take() {
         return Response::Error { error };
     }
+    if !state.model_requests.is_empty() {
+        return Response::ModelRequests {
+            model_requests: std::mem::take(&mut state.model_requests),
+        };
+    }
     match result {
         Ok(Some(error)) => return Response::Error { error },
         Err(_) => return Response::failure("memory", "runtime initialization failed"),
@@ -329,6 +368,10 @@ pub fn execute(request: Request) -> Response {
     Response::Success {
         outputs: std::mem::take(&mut state.outputs),
         planned_calls: std::mem::take(&mut state.planned_calls),
-        log: std::mem::take(&mut state.log),
+        log: if state.model_used {
+            vec![]
+        } else {
+            std::mem::take(&mut state.log)
+        },
     }
 }

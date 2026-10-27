@@ -24,6 +24,7 @@ the build.
 | 16 | `m4/connection-actions` | `m4/general-tasks` | Programs plan connection calls; the host runs only approved calls, with journal and receipts, never resending after a crash | M4 / ADR 0004 |
 | 17 | `m4/web-sources` | `m4/connection-actions` | Web sources ("check the weather"), no-input tasks (built by Muse Code as a trial); example-format check with one correction round; merges connection actions | M4 |
 | 18 | `m4/schedules` | `m4/web-sources` | Approved schedules, encrypted Today digest, held connection actions, macOS notifications and opt-in launch at login | M4 / ADR 0004 §4–5 |
+| 19 | `m4/model-step` | `m4/schedules` | Approved connection reads, bounded model replay, monthly caps, outbound review and scheduled calendar/bills summaries | ADR 0004 §1, §3 |
 
 To publish later:
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-approve-build-sources"
+description = "Enables the approve_build_sources command without any pre-configured scope."
+commands.allow = ["approve_build_sources"]
+
+[[permission]]
+identifier = "deny-approve-build-sources"
+description = "Denies the approve_build_sources command without any pre-configured scope."
+commands.deny = ["approve_build_sources"]

@@ -21,6 +21,16 @@
     "limits": {
       "$ref": "#/$defs/Limits"
     },
+    "model_step": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ModelStep"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "name": {
       "type": "string"
     },
@@ -278,6 +288,18 @@
       "required": [
         "connectorId",
         "toolNames"
+      ]
+    },
+    "ModelStep": {
+      "type": "object",
+      "properties": {
+        "purpose": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "purpose"
       ]
     },
     "Platform": {

@@ -104,6 +104,8 @@ it("forwards every command with the shared camelCase arguments and snake_case na
       { buildId: "b", input: { handleId: "f" } },
     ],
     ["buildState", ["b"], { buildId: "b" }],
+    ["setModelStepCap", ["t",24], {toolId:"t",cap:24}],
+    ["approveBuildSources", ["b",{summary:"s",output_name:"summary.txt",code:"function run(){}",webSources:[]}], {buildId:"b",program:{summary:"s",output_name:"summary.txt",code:"function run(){}",web_sources:[],connection_sources:[],model_step:null}}],
     ["stopBuild", ["b"], { buildId: "b" }],
     ["saveTool", ["b", "Name"], { buildId: "b", name: "Name" }],
     ["listTools", [], undefined],

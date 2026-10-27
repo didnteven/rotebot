@@ -30,6 +30,8 @@
     "allow-build-state",
     "allow-stop-build",
     "allow-save-tool",
+    "allow-approve-build-sources",
+    "allow-set-model-step-cap",
     "allow-list-tools",
     "allow-get-tool",
     "allow-install-sample-tool",

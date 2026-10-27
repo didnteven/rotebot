@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone)]
 pub struct RunnerEngine {
     runner: PathBuf,
     profile: PathBuf,
@@ -26,8 +27,10 @@ pub struct SourceStage<'a> {
     pub create_file: bool,
     pub has_input_file: bool,
     pub extra_binding: Option<serde_json::Value>,
+    pub answers: &'a BTreeMap<String, serde_json::Value>,
 }
 
+static EMPTY_ANSWERS: BTreeMap<String, serde_json::Value> = BTreeMap::new();
 static EMPTY_SOURCES: BTreeMap<String, String> = BTreeMap::new();
 
 impl Default for SourceStage<'static> {
@@ -38,6 +41,7 @@ impl Default for SourceStage<'static> {
             create_file: true,
             has_input_file: true,
             extra_binding: None,
+            answers: &EMPTY_ANSWERS,
         }
     }
 }
@@ -111,7 +115,14 @@ impl RunnerEngine {
         ),
         BrokerError,
     > {
-        self.execute_inner(input, sources, has_input_file, code, limits, self.synthetic)
+        self.execute_with_answers(
+            input,
+            sources,
+            has_input_file,
+            code,
+            limits,
+            &BTreeMap::new(),
+        )
     }
 
     pub fn execute_plan(
@@ -129,14 +140,15 @@ impl RunnerEngine {
         self.execute_with_sources(input, &BTreeMap::new(), true, code, limits)
     }
 
-    fn execute_inner(
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_with_answers(
         &self,
         input: &[u8],
         sources: &BTreeMap<String, String>,
         has_input_file: bool,
         code: &str,
         limits: Limits,
-        synthetic: bool,
+        answers: &BTreeMap<String, serde_json::Value>,
     ) -> Result<
         (
             Vec<macroscope_runner::Output>,
@@ -144,6 +156,29 @@ impl RunnerEngine {
         ),
         BrokerError,
     > {
+        match self.replay(input, sources, has_input_file, code, limits, answers)? {
+            Response::Success {
+                outputs,
+                planned_calls,
+                ..
+            } => Ok((outputs, planned_calls)),
+            Response::ModelRequests { .. } => Err(BrokerError::Runner("ModelAnswerNeeded".into())),
+            Response::Error { error } => Err(BrokerError::Runner(format!(
+                "{}: {}",
+                error.kind, error.message
+            ))),
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn replay(
+        &self,
+        input: &[u8],
+        sources: &BTreeMap<String, String>,
+        has_input_file: bool,
+        code: &str,
+        limits: Limits,
+        answers: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<Response, BrokerError> {
         if hash_file(&self.runner)? != self.runner_hash
             || hash_file(&self.profile)? != self.profile_hash
         {
@@ -160,8 +195,9 @@ impl RunnerEngine {
             inputs,
             sources: sources.clone(),
             limits,
+            answers: answers.clone(),
         };
-        let command = if synthetic {
+        let command = if self.synthetic {
             #[cfg(feature = "synthetic-runtime-tests")]
             {
                 launch::synthetic_command(&self.runner)
@@ -173,17 +209,7 @@ impl RunnerEngine {
         } else {
             launch::sandbox_command(&self.runner, &self.profile)?
         };
-        match launch::invoke(command, &request)? {
-            Response::Success {
-                outputs,
-                planned_calls,
-                ..
-            } => Ok((outputs, planned_calls)),
-            Response::Error { error } => Err(BrokerError::Runner(format!(
-                "{}: {}",
-                error.kind, error.message
-            ))),
-        }
+        Ok(launch::invoke(command, &request)?)
     }
 
     pub fn stage(
@@ -268,7 +294,7 @@ impl RunnerEngine {
         }
         let binding = serde_json::json!({"code":code,"runner":self.runner_hash,"profile":self.profile_hash,
             "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic,
-            "output_name":stage_sources.output_name,"create_file":stage_sources.create_file,"sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
+            "answers":stage_sources.answers,"output_name":stage_sources.output_name,"create_file":stage_sources.create_file,"sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
         let execution_hash = format!("{:x}", Sha256::digest(broker::canonical_json(&binding)?));
         let basename = stage_sources
             .output_name
@@ -276,18 +302,20 @@ impl RunnerEngine {
             .to_string();
         let sources = stage_sources.sources.clone();
         let has_input_file = stage_sources.has_input_file;
+        let mut execution_engine = self.clone();
+        execution_engine.synthetic = synthetic;
         broker::stage_generated_outputs(
             run,
             execution_hash,
             stage_sources.create_file,
             |snapshot| {
-                let (mut outputs, calls) = self.execute_inner(
+                let (mut outputs, calls) = execution_engine.execute_with_answers(
                     snapshot,
                     &sources,
                     has_input_file,
                     code,
                     limits,
-                    synthetic,
+                    stage_sources.answers,
                 )?;
                 if outputs.len() > 1
                     || outputs.first().is_some_and(|o| o.name != basename)

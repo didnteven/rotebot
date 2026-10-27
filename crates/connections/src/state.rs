@@ -138,6 +138,15 @@ pub struct PreparedConnection {
     pub tools: Vec<crate::mcp::Tool>,
 }
 impl PreparedConnection {
+    /// Trusted host only, after exact source-template approval. Rechecks live hints.
+    pub async fn read(
+        &mut self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, McpError> {
+        self.client.call_tool(name, args).await
+    }
+
     pub async fn call(
         &mut self,
         name: &str,

@@ -202,6 +202,8 @@ async fn wait(core: &AppCore, id: &str) -> BuildState {
 
 fn program_for(base: &str, route: &str) -> Program {
     Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "Summarize the Auckland forecast".into(),
         output_name: "weather.txt".into(),
         code: CODE.into(),
@@ -475,6 +477,8 @@ async fn local_only_blocks_fetches_with_a_clear_message() {
 async fn non_https_source_rejected() {
     let temp = tempfile::tempdir().unwrap();
     let program = Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "Summarize the Auckland forecast".into(),
         output_name: "weather.txt".into(),
         code: CODE.into(),

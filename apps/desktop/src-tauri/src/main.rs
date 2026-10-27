@@ -54,6 +54,19 @@ struct Consent {
     outbound_reviewed: bool,
 }
 
+#[tauri::command]
+fn approve_build_sources(
+    core: State<'_, Core>,
+    build_id: String,
+    program: macroscope_builder::Program,
+) -> Cmd<BuildState> {
+    Ok(core.0.approve_build_sources(&build_id, &program)?)
+}
+#[tauri::command]
+fn set_model_step_cap(core: State<'_, Core>, tool_id: String, cap: u32) -> Cmd<ToolDetail> {
+    Ok(core.0.set_model_step_cap(&tool_id, cap)?)
+}
+
 // ---------- app and model access ----------
 
 #[tauri::command]
@@ -997,6 +1010,8 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         build_state,
         stop_build,
         save_tool,
+        approve_build_sources,
+        set_model_step_cap,
         list_tools,
         get_tool,
         install_sample_tool,

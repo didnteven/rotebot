@@ -28,19 +28,23 @@ pub fn client() -> Result<Client, McpError> {
         .map_err(|_| McpError::Transport)
 }
 pub fn check_size(response: &Response) -> Result<(), McpError> {
-    if response
-        .content_length()
-        .is_some_and(|n| n > RESPONSE_LIMIT as u64)
-    {
+    check_size_limited(response, RESPONSE_LIMIT)
+}
+pub fn check_size_limited(response: &Response, limit: usize) -> Result<(), McpError> {
+    if response.content_length().is_some_and(|n| n > limit as u64) {
         return Err(McpError::ResponseTooLarge);
     }
     Ok(())
 }
-pub async fn bytes(mut response: Response) -> Result<Vec<u8>, McpError> {
+pub async fn bytes(response: Response) -> Result<Vec<u8>, McpError> {
     check_size(&response)?;
+    bytes_limited(response, RESPONSE_LIMIT).await
+}
+pub async fn bytes_limited(mut response: Response, limit: usize) -> Result<Vec<u8>, McpError> {
+    check_size_limited(&response, limit)?;
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| McpError::Transport)? {
-        if bytes.len() + chunk.len() > RESPONSE_LIMIT {
+        if bytes.len() + chunk.len() > limit {
             return Err(McpError::ResponseTooLarge);
         }
         bytes.extend_from_slice(&chunk);

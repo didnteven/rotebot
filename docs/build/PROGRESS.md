@@ -342,3 +342,63 @@ It now derives from the tool's output name (`datedFilename`, with a test).
 
 Rerun by Claude: both `check.sh` runs passed with **402 Rust + 121 UI tests** each. `run-canaries.sh --os`
 reported synthetic **PASS** and admission **PASS** (developer boundary).
+
+## Task 17 — connection sources and run-time model steps (2026-10-28)
+
+Branch `m4/model-step`, based on `m4/schedules`.
+
+Programs can declare up to five connection reads (eight sources combined), sharing
+`macroscope.source(name)` with web sources. The host preflights connected services,
+live tools/list hints and input schemas, substitutes only the documented local-time
+templates, caps result text at 2 MiB, and keeps credentials outside the worker. A
+candidate pauses for review before private build-time reads or model calls. Saving
+binds exact connector/tool/templates into the grant; the staged plan includes those
+identities and fetched-result digests. Missing tools request “Reconnect or rebuild”;
+auth failures create Needs you entries. Privacy records each read's service, tool
+and argument template, without credentials.
+
+`macroscope.model.ask` uses SHA-256 canonical request keys and host-owned replay.
+The host admits at most three requests/rounds, validates strict schemas and answers,
+and uses the selected Meta or Muse plan route. The demo route produces deterministic
+schema-valid answers. Checks replay with identical answers; staged output still
+uses normal preview/commit authority. Model logs contain route and byte counts only.
+The default per-tool monthly cap is 60 calls, editable in tool detail; durable budget
+reservations and counters precede dispatch. Local only blocks both kinds of egress;
+Emergency stop cancels in-flight reads/model requests.
+
+In-process fake calendar/Gmail/model coverage includes exact substituted arguments,
+review and grants, result caps, auth isolation, three-round replay, invalid requests
+and answers, caps, cancellation, and unattended daily/monthly local commits with
+Today and notifications. UI coverage checks source/model disclosures and cap editing.
+The SDK documents replay and limits; backend types and Tauri commands/adapters are
+synchronized. The contract copy is `.dev/task17/backend-types.ts`, within this task's
+required workspace boundary.
+
+Verification results and exact tails: [task17-verification.md](task17-verification.md).
+
+Final verification: **PASS**, exit **0** for the runner binaries, both full checks,
+all **62/62 synthetic canaries**, and the Tauri debug build (`--no-bundle`). Each
+check passed **431 Rust executions** (301 workspace + 130 synthetic core) and
+**126 UI tests across 17 files**, with **0 failures**. Five pre-existing ignored
+executions remain per check; no new tests skip or ignore. Exact tails and details
+are in [task17-verification.md](task17-verification.md).
+
+Claude's review of task 17: no added skips or ignores and no removed tests or assertions
+(23 tests added). Edits to existing tests only add the new schema fields.
+- The MCP read guard is unchanged. A tool result that echoes the access token is now rejected.
+- `tools/call` gets a 16 MB transport cap, so a 2 MB source survives JSON escaping.
+- Host checks on model replay:
+  - each key matches its request, with at most 3 requests and 3 rounds;
+  - Local only and emergency stop apply;
+  - the answer must match its schema;
+  - the outbound log holds byte counts only.
+
+Fix: the schedule consent sentence always said "each morning". It now states the real
+frequency and time ("every day at 7:00").
+
+Open nit: the monthly API-key budget window starts at 00:00 UTC on the 1st, not local
+midnight.
+
+Rerun by Claude: both `check.sh` runs passed with **431 Rust + 126 UI tests** each.
+`run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer
+boundary); the memory canaries are still denied at the OS layer.

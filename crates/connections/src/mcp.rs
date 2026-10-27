@@ -16,7 +16,7 @@ pub enum McpError {
     InvalidUrl,
     #[error("connection transport failed or timed out")]
     Transport,
-    #[error("response exceeds 1 MiB")]
+    #[error("connection response exceeds transport size limit")]
     ResponseTooLarge,
     #[error("invalid server response")]
     InvalidResponse,
@@ -178,7 +178,6 @@ impl McpClient {
             }
             self.session = Some(session.clone());
         }
-        http::check_size(&response)?;
         Ok(response)
     }
     async fn request(&mut self, method: &str, params: Value) -> Result<Value, McpError> {
@@ -187,6 +186,13 @@ impl McpClient {
         let response = self
             .send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
             .await?;
+        // Source text can expand sixfold when escaped on the JSON wire.
+        let response_limit = if method == "tools/call" {
+            16 * 1024 * 1024
+        } else {
+            http::RESPONSE_LIMIT
+        };
+        http::check_size_limited(&response, response_limit)?;
         let content_type = response
             .headers()
             .get("Content-Type")
@@ -194,8 +200,11 @@ impl McpClient {
             .unwrap_or("");
         let content_type = content_type.split(';').next().unwrap_or("").trim();
         let value = match content_type {
-            "application/json" => http::json::<Value>(response).await?,
-            "text/event-stream" => sse_response(response, id).await?,
+            "application/json" => serde_json::from_slice::<Value>(
+                &http::bytes_limited(response, response_limit).await?,
+            )
+            .map_err(|_| McpError::InvalidResponse)?,
+            "text/event-stream" => sse_response(response, id, response_limit).await?,
             _ => return Err(McpError::InvalidResponse),
         };
         if value["jsonrpc"] != "2.0" || value["id"] != id {
@@ -262,8 +271,15 @@ impl McpClient {
         if !safe || matches.next().is_some() {
             return Err(McpError::ToolNotReadOnly);
         }
-        self.request("tools/call", json!({"name":name,"arguments":args}))
-            .await
+        let result = self
+            .request("tools/call", json!({"name":name,"arguments":args}))
+            .await?;
+        if self.auth.as_ref().is_some_and(|token| {
+            !token.expose().is_empty() && result.to_string().contains(token.expose())
+        }) {
+            return Err(McpError::InvalidResponse);
+        }
+        Ok(result)
     }
 }
 fn clean(value: &str, limit: usize) -> String {
@@ -296,13 +312,13 @@ fn bearer_parameter(header: &str, parameter: &str) -> Option<String> {
     }
     None
 }
-async fn sse_response(mut response: Response, id: u64) -> Result<Value, McpError> {
+async fn sse_response(mut response: Response, id: u64, limit: usize) -> Result<Value, McpError> {
     let mut total = 0;
     let mut line = Vec::new();
     let mut data = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| McpError::Transport)? {
         total += chunk.len();
-        if total > http::RESPONSE_LIMIT {
+        if total > limit {
             return Err(McpError::ResponseTooLarge);
         }
         for byte in chunk {

@@ -244,6 +244,8 @@ export class MockBackend implements Backend {
   private files = new Map<string, { preview: CsvPreview; rows: string[][] }>();
   private drafts = new Map<string, TaskDraft>();
   private builds = new Map<string, BuildState>();
+  private readApprovals = new Map<string, () => void>();
+  private modelStepCounts = new Map<string, number>();
   private buildDrafts = new Map<string, TaskDraft>();
   private buildListeners = new Map<string, Set<(state: BuildState) => void>>();
   private staged = new Map<string, StagedRun>();
@@ -300,6 +302,7 @@ export class MockBackend implements Backend {
   ) {
     for (const seed of seeds)
       this.tools.set(seed.id, {
+        modelStepCap:60,
         engine: "csv-mapping",
         createdAtMs: Date.now(),
         lastRunAtMs: null,
@@ -752,8 +755,29 @@ export class MockBackend implements Backend {
       ] as const) {
         await delay(500);
         if (build.phase === "stopped" || build.phase === "failed") return;
-        if (phase === "candidate") build.candidate = clone(draft.mapping);
+        if (phase === "candidate") {
+          build.candidate = clone(draft.mapping);
+          const connection=draft.noInput?draft.requiredConnections?.find(c=>c.tools.some(t=>t.readOnly===true && t.destructive!==true)):undefined;
+          if(connection) {
+            const tool=connection.tools.find(t=>t.readOnly===true && t.destructive!==true)!;
+            const gmail=connection.connectorId==="gmail";
+            const source={name:gmail?"bills":"events",connectorId:connection.connectorId,toolName:tool.name,argsJson:JSON.stringify(gmail?{query:"after:{prev_month_start} before:{month_start} bills"}:{start:"{today_start}",end:"{today_end}"})};
+            build.program={summary:draft.goal,output_name:draft.outputName,webSources:[],connectionSources:[source],modelStep:{purpose:gmail?"Gather the bills info":"Write the summary"},code:`function run(){const a=macroscope.model.ask("Summarize",JSON.parse(macroscope.source(${JSON.stringify(source.name)})),{type:"object",properties:{summary:{type:"string"}},required:["summary"],additionalProperties:false});macroscope.output(${JSON.stringify(draft.outputName)},a.summary+"\\n");}`};
+            const approval=new Promise<void>(resolve=>this.readApprovals.set(build.buildId,resolve));
+            this.emitBuild(build,"candidate","Review the connection reads and model step");
+            await approval;
+            if(this.builds.get(build.buildId)?.phase==="stopped") return;
+            continue;
+          }
+        }
         if (phase === "ready") {
+          if (draft.noInput && build.program?.connectionSources?.length) {
+            const output="Demo summary: review the events and bills.\n";
+            build.checks=[{id:"deterministic",label:"Two fresh runs produce identical bytes",passed:true,detail:null}];
+            build.comparison={inputColumns:[],inputRows:[],outputColumns:[],outputRows:[],inputText:"No input file",outputText:output.trimEnd(),rowsIn:0,rowsOut:1};
+            this.emitBuild(build,"ready","Ready to compare");
+            return;
+          }
           if (draft.noInput) {
             // Simulated weather tool: one declared web source, fixed summary output.
             const output = "Auckland: fine, high 21C, low 14C.\n";
@@ -951,8 +975,25 @@ export class MockBackend implements Backend {
     if (!["ready", "failed", "stopped"].includes(build.phase)) {
       this.emitBuild(build, "stopped", "Build stopped before saving");
       this.log("build", "Build stopped");
+      this.readApprovals.get(buildId)?.();
+      this.readApprovals.delete(buildId);
     }
     return clone(build);
+  }
+  async approveBuildSources(buildId: string, program: import("./types").Program) {
+    const build=this.builds.get(buildId);
+    if(!build || build.phase!=="candidate" || JSON.stringify(build.program)!==JSON.stringify(program)) throw new Error("Candidate changed; review again");
+    if(this.status.egress!=="cloud_allowed") throw new Error("Local only blocks connection reads and model steps");
+    this.readApprovals.get(buildId)?.();
+    this.readApprovals.delete(buildId);
+    this.emitBuild(build,"checking","Checking approved sources");
+    return clone(build);
+  }
+  async setModelStepCap(toolId:string,cap:number) {
+    const tool=this.tools.get(toolId);
+    if(!tool || !Number.isInteger(cap) || cap<0 || cap>10000) throw new Error("Invalid monthly cap");
+    tool.modelStepCap=cap;
+    return clone(tool);
   }
   async saveTool(buildId: string, name: string) {
     const build = await this.buildState(buildId);
@@ -964,6 +1005,7 @@ export class MockBackend implements Backend {
       throw new Error("The task changed after this build. Build it again.");
     const hosts = (build.program?.webSources ?? []).map((s) => new URL(s.url.replace("{today}", "2026-01-01")).hostname);
     const tool: ToolDetail = {
+      modelStepCap:60,
       id: this.id("tool"),
       name: name.trim(),
       version: 1,
@@ -1002,6 +1044,7 @@ export class MockBackend implements Backend {
     const draft = await this.draftTask(input.handle, "Sample orders cleanup");
     await this.answerQuestion(draft.draftId, "date-format", "mm_dd_yy");
     const tool: ToolDetail = {
+      modelStepCap:60,
       id: this.id("tool"),
       name: "Clean import CSV",
       version: 1,
@@ -1174,7 +1217,18 @@ export class MockBackend implements Backend {
         } as RunFailure,
       };
     const hosts = this.webHosts.get(toolId) ?? [];
-    const output = "Auckland: fine, high 21C, low 14C.\n";
+    const countKey=`${toolId}:${new Date().toISOString().slice(0,7)}`;
+    if(tool.program?.modelStep && (this.modelStepCounts.get(countKey)??0)>=tool.modelStepCap) return {failure:{kind:"internal",message:"Skipped — monthly model-step cap reached"} as RunFailure};
+    const output = tool.program?.connectionSources?.length?"Demo summary: review the events and bills.\n":"Auckland: fine, high 21C, low 14C.\n";
+    for(const source of tool.program?.connectionSources??[]) {
+      const connector=this.connector(source.connectorId);
+      if(connector.state.kind!=="connected") return {failure:{kind:"internal",message:`Reconnect ${connector.name}. Nothing ran.`} as RunFailure};
+      this.outbound.unshift({id:this.id("outbound"),atMs:Date.now(),purpose:"Connection read",destination:connector.name,route:"offline_demo",syntheticOnly:false,costMicros:null,payloadText:JSON.stringify({tool:source.toolName,argsTemplate:JSON.parse(source.argsJson)})});
+    }
+    if(tool.program?.modelStep) {
+      this.modelStepCounts.set(countKey,(this.modelStepCounts.get(countKey)??0)+1);
+      this.outbound.unshift({id:this.id("outbound"),atMs:Date.now(),purpose:"Model step",destination:routeLabel(this.status.effectiveRoute),route:this.status.effectiveRoute??"offline_demo",syntheticOnly:true,costMicros:0,payloadText:JSON.stringify({promptBytes:9,dataBytes:2,schemaBytes:130})});
+    }
     for (const host of hosts)
       this.outbound.unshift({
         id: this.id("outbound"),
@@ -1414,6 +1468,7 @@ export class MockBackend implements Backend {
   }
   async previewConnectorTools(connectorId: string): Promise<ConnectorTool[]> {
     this.connector(connectorId);
+    if(connectorId==="google-calendar") return [{name:"list_events",description:"Read calendar events",inputSchema:{type:"object",properties:{start:{type:"string"},end:{type:"string"}},required:["start","end"],additionalProperties:false},readOnly:true,destructive:false}];
     return connectorId === "gmail"
       ? [
           {

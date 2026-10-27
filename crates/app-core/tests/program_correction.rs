@@ -82,6 +82,8 @@ fn responses_body(program: &Program) -> serde_json::Value {
 
 fn program_for(fetch_base: &str, code: &str) -> Program {
     Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "Gisborne weather".into(),
         output_name: "weather.txt".into(),
         code: code.into(),

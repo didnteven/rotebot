@@ -59,6 +59,8 @@ async fn wait(core: &AppCore, id: &str) -> BuildState {
 async fn endpoint(code: &str) -> MockServer {
     let server = MockServer::start().await;
     let program = Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "Extract ERROR lines".into(),
         output_name: "errors.txt".into(),
         code: code.into(),
@@ -135,6 +137,8 @@ async fn model_program_ready_save_stage_approve_commit_exact_bytes_and_no_privat
     let temp = tempfile::tempdir().unwrap();
     let server = MockServer::start().await;
     let program = Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "Extract ERROR lines".into(),
         output_name: "errors.txt".into(),
         code: CODE.into(),
@@ -453,6 +457,8 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
         ("function run(){macroscope.output('wrong.txt','wrong')}", ""),
     ] {
         let candidate = Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "test".into(),
             output_name: "errors.txt".into(),
             code: code.into(),
@@ -469,6 +475,8 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
         );
     }
     let candidate = Program {
+        connection_sources: vec![],
+        model_step: None,
         summary: "errors".into(),
         output_name: "errors.txt".into(),
         code: CODE.into(),
@@ -510,6 +518,8 @@ async fn program_checks_reject_forbidden_code_limits_bad_names_and_wrong_example
     ] {
         draft.output_name = name.into();
         let candidate = Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "format test".into(),
             output_name: name.into(),
             code: format!(

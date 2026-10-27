@@ -5,6 +5,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolManifest {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "model_step"
+    )]
+    pub model_step: Option<ModelStep>,
     pub schema: ToolSchema,
     pub id: ToolId,
     pub name: String,
@@ -148,4 +154,10 @@ pub struct Provenance {
 pub struct Integrity {
     pub tree_hash: String,
     pub approval_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelStep {
+    pub purpose: String,
 }

@@ -199,7 +199,7 @@ impl AppCore {
     pub fn set_schedule_timezone(&self, timezone: Tz) {
         *lock(&self.inner.timezone) = Some(timezone);
     }
-    fn schedule_timezone(&self) -> Tz {
+    pub(crate) fn schedule_timezone(&self) -> Tz {
         lock(&self.inner.timezone).unwrap_or_else(|| {
             iana_time_zone::get_timezone()
                 .ok()
@@ -441,7 +441,12 @@ impl AppCore {
     pub(crate) fn manual_today_failure(&self, tool_id: &str, message: &str) -> CoreResult<()> {
         let _admission = self.admit_local()?;
         let tool = self.get_tool(tool_id)?;
-        if tool.no_input {
+        if tool.no_input
+            || tool
+                .program
+                .as_ref()
+                .is_some_and(|p| p.model_step.is_some())
+        {
             self.put_today(&TodayEntry {
                 id: new_id("today"),
                 tool_id: tool_id.into(),
@@ -450,7 +455,14 @@ impl AppCore {
                 schedule_id: None,
                 started_at_ms: self.now(),
                 finished_at_ms: Some(self.now()),
-                status: "failed".into(),
+                status: if message.contains("Skipped") {
+                    "skipped"
+                } else if message.contains("Reconnect") {
+                    "needs_you"
+                } else {
+                    "failed"
+                }
+                .into(),
                 body: message.chars().take(20_000).collect(),
                 note: None,
                 file_created: None,
@@ -672,13 +684,22 @@ impl AppCore {
                 || lock(&self.inner.staged)
                     .values()
                     .any(|r| r.dto.tool_id == s.tool_id);
-            let network = tool
-                .program
-                .as_ref()
-                .is_some_and(|p| !p.web_sources.is_empty());
+            let network = tool.program.as_ref().is_some_and(|p| {
+                !p.web_sources.is_empty()
+                    || !p.connection_sources.is_empty()
+                    || p.model_step.is_some()
+            });
             if active {
                 entry.status = "skipped".into();
                 entry.body = format!("Skipped at {time} — a run is already active");
+            } else if tool
+                .program
+                .as_ref()
+                .is_some_and(|p| p.model_step.is_some())
+                && self.model_cap_reached(&tool)?
+            {
+                entry.status = "skipped".into();
+                entry.body = "Skipped — monthly model-step cap reached".into();
             } else if network && self.db().setting("local_only")? == Some(json!(true)) {
                 entry.status = "skipped".into();
                 entry.body = format!("Skipped at {time} — Local only is on");
@@ -720,6 +741,12 @@ impl AppCore {
                     Ok(StageResult::Failed(f)) => entry.body = f.failure.message(),
                     Err(e) => entry.body = e.to_string(),
                 }
+            }
+            if entry.body.contains("Reconnect") {
+                entry.status = "needs_you".into();
+            }
+            if entry.body.contains("Skipped") {
+                entry.status = "skipped".into();
             }
             let _admission = self.admit_local()?;
             self.put_today(&entry)?;

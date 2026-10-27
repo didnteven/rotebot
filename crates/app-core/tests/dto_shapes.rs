@@ -107,6 +107,7 @@ fn run_results_are_untagged_with_a_failure_envelope() {
 #[test]
 fn tool_detail_flattens_the_summary_fields() {
     let detail = ToolDetail {
+        model_step_cap: 60,
         program: None,
         summary_row: ToolSummary {
             id: "t".into(),

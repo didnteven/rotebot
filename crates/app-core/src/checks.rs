@@ -809,6 +809,8 @@ mod tests {
         use std::collections::BTreeMap;
         let draft = web_draft();
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -880,6 +882,8 @@ mod tests {
         draft.example_output =
             Some("Gisborne high : 20, low : 12\nRain 1,240.50 mm, wind -3 m/s".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -922,6 +926,8 @@ mod tests {
         let mut draft = web_draft();
         draft.example_output = Some("Gisborne high : 20, low : 12".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -975,6 +981,8 @@ mod tests {
         let mut draft = web_draft();
         draft.example_output = Some("alpha 1\nbeta 2".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -1049,6 +1057,8 @@ mod tests {
         draft.no_input = false;
         draft.example_output = Some("Gisborne high : 20, low : 12".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -1115,6 +1125,8 @@ mod tests {
         let mut draft = web_draft();
         draft.example_output = Some("Gisborne high : 20, low : 12".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -1162,6 +1174,8 @@ mod tests {
         let mut draft = web_draft();
         draft.example_output = Some("alpha 1\nbeta 2\ngamma 3".into());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -1209,6 +1223,8 @@ mod tests {
         file_draft.no_input = false;
         file_draft.example_output = Some("Gisborne high : 20, low : 12".into());
         let file_program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),
@@ -1263,6 +1279,8 @@ mod tests {
         let mut draft = web_draft();
         draft.example_output = Some(long_expected.clone());
         let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
             summary: "weather".into(),
             output_name: "weather.txt".into(),
             code: "source".into(),

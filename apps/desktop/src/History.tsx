@@ -253,13 +253,13 @@ export function Privacy({
                   : "Contains selected data"}
               </p>
               <p>
-                {r.costMicros === null
+                {r.purpose === "Connection read" ? "Connection read; no model call" : r.costMicros === null
                   ? "Counts against your Muse plan"
                   : `$${(r.costMicros / 1e6).toFixed(2)}`}
               </p>
               <details>
                 <summary>
-                  {r.route === "muse_plan"
+                  {r.purpose === "Connection read" ? "Tool and approved argument template" : r.purpose === "Model step" ? "Route and byte counts (content is not logged)" : r.route === "muse_plan"
                     ? "Inputs supplied to Muse"
                     : "Exact outbound payload"}
                 </summary>

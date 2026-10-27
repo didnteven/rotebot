@@ -1,3 +1,4 @@
+import { SourceReview } from "./SourceReview";
 import { ScheduleSection } from "./Schedule";
 import { useEffect, useState } from "react";
 import type {
@@ -34,6 +35,8 @@ export function RunFlow({
   changed: () => Promise<void>;
   openSettings?: () => void;
 }) {
+  const [modelRoute,setModelRoute]=useState<import("./backend/types").ModelRoute>("offline_demo");
+  useEffect(()=>{void backend.modelAccess().then(a=>setModelRoute(a.effectiveRoute??"offline_demo"));},[backend]);
   const [detail, setDetail] = useState<ToolDetail | null>(null);
   useEffect(() => { void backend.getTool(tool.id).then(next => { setDetail(next); if (next.program) setName(next.program.output_name); }); }, [backend, tool.id]);
   const [input, setInput] = useState<CsvPreview | null>(null),
@@ -65,6 +68,8 @@ export function RunFlow({
       </button>
       {detail?.program && <><p>Program (sandboxed)</p><details><summary>Advanced details</summary><pre>{detail?.program.code}</pre></details></>}
       <h2>Run {tool.name}</h2>
+      {detail?.program?.modelStep && <label>Monthly model-step cap<input aria-label="Monthly model-step cap" type="number" min={0} max={10000} value={detail.modelStepCap} onChange={e=>{const cap=Number(e.target.value);void act(async()=>setDetail(await backend.setModelStepCap(tool.id,cap)));}}/></label>}
+      {detail?.program && <SourceReview program={detail.program} route={modelRoute}/>}
       {detail?.noInput && <ScheduleSection backend={backend} tool={detail} openSettings={openSettings} />}
       <p>
         Version {tool.version} · Every new input needs a fresh staged output and

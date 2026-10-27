@@ -115,7 +115,9 @@ export interface RuleQuestion {
 export type TaskKind = "csv-mapping" | "program";
 /** A web source the host fetches and passes to the program as data (ADR 0004). */
 export interface WebSource { name: string; url: string; }
-export interface Program { summary: string; output_name: string; code: string; webSources: WebSource[]; }
+export interface ConnectionSource {name:string;connectorId:string;toolName:string;argsJson:string;}
+export interface ModelStep {purpose:string;}
+export interface Program { connectionSources?:ConnectionSource[]; modelStep?:ModelStep|null; summary: string; output_name: string; code: string; webSources: WebSource[]; }
 export interface TaskDraft {
   requiredConnections?: SelectedConnection[];
   kind?: TaskKind;
@@ -230,6 +232,7 @@ export interface ToolSummary {
 }
 
 export interface ToolDetail extends ToolSummary {
+  modelStepCap: number;
   program?: Program | null;
   summary: string[];
   mapping: CsvMapping;
@@ -457,6 +460,8 @@ export interface Backend {
     cb: (state: BuildState) => void,
   ): Promise<() => void>;
   buildTryInput(buildId: string, input: FileHandle): Promise<BuildState>;
+  approveBuildSources(buildId: string, program: Program): Promise<BuildState>;
+  setModelStepCap(toolId: string, cap: number): Promise<ToolDetail>;
   stopBuild(buildId: string): Promise<BuildState>;
   saveTool(buildId: string, name: string): Promise<ToolDetail>;
 

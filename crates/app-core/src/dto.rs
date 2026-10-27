@@ -336,6 +336,8 @@ pub struct ToolSummary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDetail {
+    #[serde(default = "default_model_cap")]
+    pub model_step_cap: u32,
     #[serde(default)]
     pub program: Option<macroscope_builder::Program>,
     #[serde(flatten)]
@@ -636,4 +638,8 @@ impl RunFailure {
             | Self::Internal { message } => message.clone(),
         }
     }
+}
+
+fn default_model_cap() -> u32 {
+    60
 }
