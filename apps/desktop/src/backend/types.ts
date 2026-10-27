@@ -116,7 +116,7 @@ export type TaskKind = "csv-mapping" | "program";
 /** A web source the host fetches and passes to the program as data (ADR 0004). */
 export interface WebSource { name: string; url: string; }
 export interface ConnectionSource {name:string;connectorId:string;toolName:string;argsJson:string;}
-export interface ModelStep {purpose:string;}
+export interface ModelStep {purpose:string;prompt:string;}
 export interface Program { connectionSources?:ConnectionSource[]; modelStep?:ModelStep|null; summary: string; output_name: string; code: string; webSources: WebSource[]; }
 export interface TaskDraft {
   requiredConnections?: SelectedConnection[];

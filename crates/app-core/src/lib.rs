@@ -1535,13 +1535,7 @@ impl AppCore {
             ));
         }
         if route != ModelRoute::OfflineDemo {
-            let month_start =
-                time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(self.now()) * 1_000_000)
-                    .and_then(|now| now.replace_day(1))
-                    .map(|now| now.replace_time(time::Time::MIDNIGHT).unix_timestamp() * 1000)
-                    .map_err(|_| {
-                        CoreError::Internal("The current month could not be determined.".into())
-                    })?;
+            let month_start = self.month_window()?.1;
             let reserved = self.db().reserved_micros_since(month_start)?;
             if reserved
                 .checked_add(BUILD_BUDGET_MICROS)
@@ -1924,6 +1918,11 @@ impl AppCore {
                                         code,
                                         macroscope_runner::Limits::default(),
                                         &first_answers,
+                                        candidate_for_check
+                                            .program
+                                            .as_ref()
+                                            .and_then(|p| p.model_step.as_ref())
+                                            .map(|m| m.prompt.as_str()),
                                     )
                                     .map_err(|e| e.to_string())
                             },
@@ -2109,6 +2108,11 @@ impl AppCore {
                                                 code,
                                                 macroscope_runner::Limits::default(),
                                                 &build_answers,
+                                                candidate2_for_check
+                                                    .program
+                                                    .as_ref()
+                                                    .and_then(|p| p.model_step.as_ref())
+                                                    .map(|m| m.prompt.as_str()),
                                             )
                                             .map_err(|e| e.to_string())
                                     },
@@ -2403,7 +2407,7 @@ impl AppCore {
                 ));
             }
             if let Some(m) = &p.model_step {
-                access.push(format!("Sends source data and the program prompt to your selected model route to {} on every run", m.purpose));
+                access.push(format!("Sends this instruction: \"{}\" to your selected model route to {} on every run", m.prompt, m.purpose));
             }
         }
         for c in connections {
@@ -2917,6 +2921,10 @@ impl AppCore {
                         extra_binding: Some(
                             json!({"source_urls": urls, "connection_sources":program.connection_sources,"source_digests": web::digests(source_data), "schedule_grant": schedule}),
                         ),
+                        declared_model_prompt: program
+                            .model_step
+                            .as_ref()
+                            .map(|m| m.prompt.as_str()),
                     };
                     engine.stage_with_sources_and_connections(
                         request,

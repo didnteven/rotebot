@@ -214,11 +214,20 @@ impl ExecClient {
             }
             args.extend(["--provider".into(), "echo".into()]);
         }
+        // NamedTempFile is created with mode 0600 and unlinks on every exit,
+        // including when this future is dropped during cancellation.
+        use std::io::Write;
+        let mut prompt_file = tempfile::Builder::new()
+            .prefix("model-prompt-")
+            .tempfile_in(workspace)?;
+        prompt_file.write_all(prompt.as_bytes())?;
+        prompt_file.flush()?;
         self.validate()?;
         let mut cmd = Command::new(&self.binary);
         env.apply(&mut cmd, false)?;
         cmd.args(args)
-            .arg(prompt)
+            .arg("--prompt-file")
+            .arg(prompt_file.path())
             .current_dir(workspace)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -310,6 +319,7 @@ pub fn exec_args(
         "--approval-mode",
         "--output-schema",
         "--workspace",
+        "--prompt-file",
     ] {
         if !supports(flag) {
             return Err(MuseError::UnsupportedExecFlags);
@@ -374,7 +384,7 @@ mod tests {
     }
     #[test]
     fn flags_are_runtime_gated() {
-        let help="--json --model --contributor-mode --approval-mode --output-schema --workspace --api-key-stdin";
+        let help="--json --model --contributor-mode --approval-mode --output-schema --workspace --prompt-file --api-key-stdin";
         let args = exec_args(
             help,
             Path::new("schema"),
@@ -407,11 +417,16 @@ mod process_tests {
 import sys,os,json
 if '--help' in sys.argv:
     with open('help-count','a') as f: f.write('checked\n')
-    print('--json --model --contributor-mode --approval-mode --output-schema --workspace --max-model-steps --disable-web-tools --disable-shell --disable-reminders --api-key-stdin')
+    print('--json --model --contributor-mode --approval-mode --output-schema --workspace --prompt-file --max-model-steps --disable-web-tools --disable-shell --disable-reminders --api-key-stdin')
     sys.exit(0)
 key=sys.stdin.readline().strip()
 assert key
 assert key not in ' '.join(sys.argv)
+assert 'PRIVATE-MODEL-DATA-CANARY' not in ' '.join(sys.argv)
+path=sys.argv[sys.argv.index('--prompt-file')+1]
+assert os.stat(path).st_mode & 0o777 == 0o600
+with open(path) as f: assert 'PRIVATE-MODEL-DATA-CANARY' in f.read()
+with open('prompt-path','w') as f: f.write(path)
 assert 'META_API_KEY' not in os.environ
 assert 'MACROSCOPE_PARENT_CANARY' not in os.environ
 print(json.dumps({'payload_type':'run.terminal.completed','payload':{'terminal':'completed','text':'{}'},'argv':sys.argv,'reflected':key}))
@@ -432,7 +447,7 @@ print(key,file=sys.stderr)
             let client = ExecClient::new(&script);
             let out = client
                 .exec_structured(
-                    "synthetic prompt",
+                    "synthetic prompt PRIVATE-MODEL-DATA-CANARY",
                     &schema,
                     root.path(),
                     CredentialRoute::ApiKey,
@@ -440,6 +455,13 @@ print(key,file=sys.stderr)
                 )
                 .await
                 .unwrap();
+            assert!(!std::path::Path::new(
+                &std::fs::read_to_string(root.path().join("prompt-path")).unwrap()
+            )
+            .exists());
+            assert!(!out.events[0]["argv"]
+                .to_string()
+                .contains("PRIVATE-MODEL-DATA-CANARY"));
             assert_eq!(out.exit_code, Some(0));
             assert_eq!(out.terminal.as_deref(), Some("completed"));
             assert!(!format!("{out:?}").contains("bogus-exec-secret-canary"));
@@ -457,7 +479,7 @@ print(key,file=sys.stderr)
         assert_eq!(
             client
                 .exec_structured(
-                    "synthetic prompt",
+                    "synthetic prompt PRIVATE-MODEL-DATA-CANARY",
                     &schema,
                     root.path(),
                     CredentialRoute::ApiKey,

@@ -160,4 +160,6 @@ pub struct Integrity {
 #[serde(deny_unknown_fields)]
 pub struct ModelStep {
     pub purpose: String,
+    /// Exact instruction text approved for every model request.
+    pub prompt: String,
 }

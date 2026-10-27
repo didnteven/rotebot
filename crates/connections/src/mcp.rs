@@ -20,6 +20,8 @@ pub enum McpError {
     ResponseTooLarge,
     #[error("invalid server response")]
     InvalidResponse,
+    #[error("invalid server response")]
+    TokenEcho,
     #[error("unsupported MCP protocol version")]
     UnsupportedVersion,
     #[error("HTTP request failed ({0})")]
@@ -255,8 +257,11 @@ impl McpClient {
         name: &str,
         args: Value,
     ) -> Result<Value, McpError> {
-        self.request("tools/call", json!({"name": name, "arguments": args}))
-            .await
+        let result = self
+            .request("tools/call", json!({"name": name, "arguments": args}))
+            .await?;
+        self.reject_token_echo(&result)?;
+        Ok(result)
     }
     /// Host diagnostics only. Hints are untrusted claims, not a broker permission.
     /// The ConnectionsService verifies using initialize/list only; no generated-code API.
@@ -274,12 +279,16 @@ impl McpClient {
         let result = self
             .request("tools/call", json!({"name":name,"arguments":args}))
             .await?;
+        self.reject_token_echo(&result)?;
+        Ok(result)
+    }
+    fn reject_token_echo(&self, result: &Value) -> Result<(), McpError> {
         if self.auth.as_ref().is_some_and(|token| {
             !token.expose().is_empty() && result.to_string().contains(token.expose())
         }) {
-            return Err(McpError::InvalidResponse);
+            return Err(McpError::TokenEcho);
         }
-        Ok(result)
+        Ok(())
     }
 }
 fn clean(value: &str, limit: usize) -> String {

@@ -293,13 +293,18 @@
     "ModelStep": {
       "type": "object",
       "properties": {
+        "prompt": {
+          "description": "Exact instruction text approved for every model request.",
+          "type": "string"
+        },
         "purpose": {
           "type": "string"
         }
       },
       "additionalProperties": false,
       "required": [
-        "purpose"
+        "purpose",
+        "prompt"
       ]
     },
     "Platform": {

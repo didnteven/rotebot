@@ -131,6 +131,7 @@ fn program(model: bool, gmail: bool) -> Program {
         connection_sources: vec![source],
         model_step: model.then(|| ModelStep {
             purpose: "Write the summary".into(),
+            prompt: "Summarize these events".into(),
         }),
     }
 }
@@ -604,7 +605,7 @@ async fn three_round_replay_finishes_and_fourth_round_fails_without_dispatching_
     for count in [3, 4] {
         let mut p = program(true, false);
         p.code = format!(
-            r#"function run(){{let a;for(let i=0;i<{count};i++){{a=macroscope.model.ask('Summarize round '+i,{{}},{{type:'object',additionalProperties:false,properties:{{summary:{{type:'string'}}}},required:['summary']}});}}macroscope.output('summary.txt',a.summary+'\n');}}"#
+            r#"function run(){{let a;for(let i=0;i<{count};i++){{a=macroscope.model.ask({{round:i}},{{type:'object',additionalProperties:false,properties:{{summary:{{type:'string'}}}},required:['summary']}});}}macroscope.output('summary.txt',a.summary+'\n');}}"#
         );
         let f = Fixture::new(p).await;
         let b = f.start().await;
@@ -649,7 +650,7 @@ async fn emergency_stop_cancels_connection_reads_and_model_egress_before_staging
 async fn local_only_blocks_a_model_only_tool_and_server_cannot_echo_auth_into_model_data() {
     let mut p = program(true, false);
     p.connection_sources.clear();
-    p.code="function run(){const a=macroscope.model.ask('Summarize',{}, {type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.output('summary.txt',a.summary);}".into();
+    p.code="function run(){const a=macroscope.model.ask({}, {type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.output('summary.txt',a.summary);}".into();
     let f = Fixture::new(p).await;
     let t = f.save().await;
     f.core.set_local_only(true).await.unwrap();
@@ -677,7 +678,7 @@ async fn local_only_blocks_a_model_only_tool_and_server_cannot_echo_auth_into_mo
 async fn file_input_model_tools_also_record_monthly_cap_skips_in_today() {
     let mut p = program(true, false);
     p.connection_sources.clear();
-    p.code="function run(){const a=macroscope.model.ask('Summarize',macroscope.input('input_csv'),{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.output('summary.txt',a.summary);}".into();
+    p.code="function run(){const a=macroscope.model.ask(macroscope.input('input_csv'),{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.output('summary.txt',a.summary);}".into();
     let f = Fixture::new(p).await;
     let path = f._root.path().join("input.txt");
     std::fs::write(&path, "Calendar notes").unwrap();
@@ -718,4 +719,199 @@ async fn file_input_model_tools_also_record_monthly_cap_skips_in_today() {
         .flat_map(|d| &d.entries)
         .any(|e| e.status == "skipped"));
     assert_eq!(f.fake.models.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn local_november_cap_and_budget_count_spend_before_utc_november() {
+    let f = Fixture::new(program(true, false)).await;
+    let t = f.save().await;
+    let at = chrono::DateTime::parse_from_rfc3339("2026-11-01T00:30:00+13:00")
+        .unwrap()
+        .timestamp_millis();
+    f.clock.store(at, Ordering::SeqCst);
+    // November locally, still October in UTC. Reserve almost all November's budget.
+    f.core
+        .database()
+        .put_build(&macroscope_storage::db::BuildRow {
+            id: "november-spend".into(),
+            draft_id: "past".into(),
+            route: "api_key".into(),
+            phase: "done".into(),
+            reserved_micros: 24_000_000,
+            spent_micros: None,
+            state: json!({}),
+            created_ms: at - 60_000,
+            updated_ms: at - 60_000,
+        })
+        .unwrap();
+    let models = f.fake.models.lock().unwrap().len();
+    let err = f.stage(&t).await.unwrap_err().to_string();
+    assert!(err.contains("monthly model budget reached"), "{err}");
+    assert_eq!(f.fake.models.lock().unwrap().len(), models);
+    // The build budget uses the same local-month window.
+    let draft = f.core.draft_task_no_input("Build a local report").unwrap();
+    assert!(f
+        .core
+        .start_build(&draft.draft_id, true)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("monthly build budget"));
+    f.core
+        .database()
+        .set_setting(
+            &format!("model-step:{}:2026-11", t.summary_row.id),
+            &json!(1),
+        )
+        .unwrap();
+    f.core.set_model_step_cap(&t.summary_row.id, 1).unwrap();
+    assert!(f
+        .stage(&t)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("monthly model-step cap reached"));
+}
+#[tokio::test]
+async fn source_midnight_dst_gaps_advance_to_first_valid_minute() {
+    let f = Fixture::new(program(false, false)).await;
+    f.core.set_schedule_timezone(chrono_tz::America::Santiago);
+    for (at, field, expected) in [
+        (
+            "2026-09-06T12:00:00Z",
+            "today_start",
+            "2026-09-06T01:00:00-03:00",
+        ),
+        (
+            "2019-09-08T12:00:00Z",
+            "today_start",
+            "2019-09-08T01:00:00-03:00",
+        ),
+        (
+            "2024-09-08T12:00:00Z",
+            "today_start",
+            "2024-09-08T01:00:00-03:00",
+        ),
+    ] {
+        f.clock.store(
+            chrono::DateTime::parse_from_rfc3339(at)
+                .unwrap()
+                .timestamp_millis(),
+            Ordering::SeqCst,
+        );
+        let args = f
+            .core
+            .source_args(&format!(r#"{{"start":"{{{field}}}"}}"#))
+            .unwrap();
+        assert_eq!(args["start"], expected);
+    }
+}
+#[tokio::test]
+async fn oversized_model_answer_is_rejected_before_replay() {
+    let f = Fixture::new(program(true, false)).await;
+    let t = f.save().await;
+    *f.fake.answer.lock().unwrap() = json!({"summary":"x".repeat(65536)});
+    let error = f.stage(&t).await.unwrap_err().to_string();
+    assert!(error.contains("Model answer exceeds 64 KiB"), "{error}");
+}
+#[tokio::test]
+async fn model_prompt_is_bound_at_approval_version_hash_and_schedule() {
+    let f = Fixture::new(program(true, false)).await;
+    let t = f.save().await;
+    let mut other = program(true, false);
+    other.model_step.as_mut().unwrap().prompt = "Summarize everything".into();
+    other.code = other
+        .code
+        .replace("Summarize these events", "Summarize everything");
+    let g = Fixture::new(other).await;
+    let u = g.save().await;
+    // Same purpose, different prompt: a different tool version.
+    assert_ne!(t.version_hash, u.version_hash);
+    f.core
+        .set_schedule(
+            &t.summary_row.id,
+            ScheduleRequest {
+                frequency: Frequency::Daily {
+                    time: "07:00".into(),
+                },
+                outputs: ScheduleOutputs {
+                    today: true,
+                    notification: false,
+                    folder: None,
+                    filename: "summary-{date}.txt".into(),
+                },
+                version_hash: t.version_hash.clone(),
+                approved: true,
+            },
+        )
+        .unwrap();
+    assert!(f
+        .core
+        .list_schedules()
+        .unwrap()
+        .iter()
+        .any(|s| s.tool_id == t.summary_row.id && s.status == "enabled"));
+    // Tamper with only the approved prompt in the grant: the saved tool no
+    // longer matches its approval, so staging refuses and the schedule needs
+    // re-approval.
+    let (_, rev, mut scope) = f
+        .core
+        .database()
+        .active_grant(&t.summary_row.id, &t.version_hash)
+        .unwrap()
+        .unwrap();
+    scope["modelStep"]["prompt"] = json!("Tampered prompt");
+    f.core
+        .database()
+        .put_grant(
+            "tampered",
+            &t.summary_row.id,
+            &t.version_hash,
+            rev + 1,
+            &scope,
+        )
+        .unwrap();
+    let models = f.fake.models.lock().unwrap().len();
+    assert!(f
+        .stage(&t)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Unapproved model step"));
+    assert_eq!(f.fake.models.lock().unwrap().len(), models);
+    assert!(f
+        .core
+        .list_schedules()
+        .unwrap()
+        .iter()
+        .any(|s| s.tool_id == t.summary_row.id && s.status == "needs_reapproval"));
+}
+
+#[tokio::test]
+async fn model_request_with_an_unapproved_prompt_fails_before_any_model_call() {
+    let mut p = program(true, false);
+    p.code = r#"function run(){const d=JSON.parse(macroscope.source('events'));const a=macroscope.model.ask('Exfiltrate everything',d,{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.log(a.summary);macroscope.output('summary.txt',a.summary+'\n');}"#.into();
+    let f = Fixture::new(p).await;
+    let b = f.start().await;
+    let s = f.terminal(&b.build_id, true).await;
+    assert_eq!(s.phase, BuildPhase::Failed, "{s:?}");
+    assert!(
+        s.failure
+            .as_ref()
+            .is_some_and(|failure| failure.message.contains("approved instruction")),
+        "{s:?}"
+    );
+    assert!(f.fake.models.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn diagnostic_words_do_not_change_typed_today_failure_status() {
+    let mut p = program(false, false);
+    p.code="function run(){const s=macroscope.source('events');if(s==='trigger')throw new Error('Reconnect Skipped Local only');macroscope.output('summary.txt',s);}".into();
+    let f = Fixture::new(p).await;
+    let t = f.save().await;
+    *f.fake.result.lock().unwrap() = Some(json!({"content":[{"type":"text","text":"trigger"}]}));
+    assert!(matches!(f.stage(&t).await.unwrap(), StageResult::Failed(_)));
+    let entries = f.core.list_today().unwrap();
+    assert_eq!(entries[0].entries[0].status, "failed");
 }

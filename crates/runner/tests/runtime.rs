@@ -11,6 +11,7 @@ fn run(code: &str, limits: Limits) -> Response {
         inputs: BTreeMap::new(),
         sources: BTreeMap::new(),
         limits,
+        declared_model_prompt: None,
     })
 }
 fn success(code: &str) {
@@ -34,6 +35,7 @@ fn sdk_orders_matches_independent_fixture() {
         )]),
         sources: BTreeMap::new(),
         limits: Limits::default(),
+        declared_model_prompt: None,
     };
     match macroscope_runner::execute(request) {
         Response::Success { outputs, log, .. } => {
@@ -156,6 +158,7 @@ fn child_memory_limit_and_kernel_peak_rss() {
         inputs: BTreeMap::new(),
         sources: BTreeMap::new(),
         limits: Limits::default(),
+        declared_model_prompt: None,
     };
     let mut child = Command::new(env!("CARGO_BIN_EXE_macroscope-runner"))
         .env_clear()
@@ -270,6 +273,7 @@ fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
         inputs: BTreeMap::new(),
         sources: BTreeMap::from([("forecast".into(), "sunny".into())]),
         limits: Limits::default(),
+        declared_model_prompt: None,
     };
     match macroscope_runner::execute(request) {
         Response::Success { outputs, .. } => {
@@ -285,6 +289,7 @@ fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
         inputs: BTreeMap::new(),
         sources: BTreeMap::new(),
         limits: Limits::default(),
+        declared_model_prompt: None,
     };
     match macroscope_runner::execute(bad) {
         Response::Error { error } => assert_eq!(error.kind, "forbidden"),

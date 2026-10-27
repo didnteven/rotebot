@@ -762,7 +762,7 @@ export class MockBackend implements Backend {
             const tool=connection.tools.find(t=>t.readOnly===true && t.destructive!==true)!;
             const gmail=connection.connectorId==="gmail";
             const source={name:gmail?"bills":"events",connectorId:connection.connectorId,toolName:tool.name,argsJson:JSON.stringify(gmail?{query:"after:{prev_month_start} before:{month_start} bills"}:{start:"{today_start}",end:"{today_end}"})};
-            build.program={summary:draft.goal,output_name:draft.outputName,webSources:[],connectionSources:[source],modelStep:{purpose:gmail?"Gather the bills info":"Write the summary"},code:`function run(){const a=macroscope.model.ask("Summarize",JSON.parse(macroscope.source(${JSON.stringify(source.name)})),{type:"object",properties:{summary:{type:"string"}},required:["summary"],additionalProperties:false});macroscope.output(${JSON.stringify(draft.outputName)},a.summary+"\\n");}`};
+            build.program={summary:draft.goal,output_name:draft.outputName,webSources:[],connectionSources:[source],modelStep:{purpose:gmail?"Gather the bills info":"Write the summary",prompt:"Summarize these events"},code:`function run(){const a=macroscope.model.ask("Summarize these events",JSON.parse(macroscope.source(${JSON.stringify(source.name)})),{type:"object",properties:{summary:{type:"string"}},required:["summary"],additionalProperties:false});macroscope.output(${JSON.stringify(draft.outputName)},a.summary+"\\n");}`};
             const approval=new Promise<void>(resolve=>this.readApprovals.set(build.buildId,resolve));
             this.emitBuild(build,"candidate","Review the connection reads and model step");
             await approval;

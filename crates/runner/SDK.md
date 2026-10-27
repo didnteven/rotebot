@@ -39,16 +39,23 @@ only declared argument templates in string values: `{today}` (local YYYY-MM-DD),
 `{prev_month_start}`, `{prev_month_end}`, `{now}` (local RFC 3339). End boundaries
 are 23:59:59. Unknown placeholders remain literal. Source results are untrusted.
 
-`macroscope.model.ask(prompt, data, schema)` asks the host for structured JSON.
-Declare `model_step: {purpose: "Summarize today's events"}` in the program packet.
-The host pauses, calls the user's selected route, validates the answer, and replays
-the program with the answer. The sandbox has no network or credentials. Treat the
-answer as untrusted data. Outputs still follow normal preview and commit rules.
+`macroscope.model.ask(data, schema)` asks the host for structured JSON using the
+exact instruction declared in the program packet: `model_step: {purpose:
+"Summarize today's events", prompt: "Summarize these events"}` (at most 2000
+characters). The host pauses, calls the user's selected route, validates the
+answer, and replays the program with the answer. The sandbox has no network or
+credentials. Treat the answer as untrusted data. Outputs still follow normal
+preview and commit rules. A three-argument form
+`macroscope.model.ask(prompt, data, schema)` still works, but only when `prompt`
+is exactly the declared prompt; any other prompt fails the run, and the host
+re-checks every request's prompt against the declared one before calling the
+model. The declared instruction is shown at review and changing it requires
+re-approval.
 
 ```js
 function run() {
   const events = JSON.parse(macroscope.source("events"));
-  const answer = macroscope.model.ask("Summarize these events", events, {
+  const answer = macroscope.model.ask(events, {
     type: "object", additionalProperties: false,
     properties: {summary: {type: "string"}}, required: ["summary"]
   });
@@ -56,10 +63,11 @@ function run() {
 }
 ```
 
-Limits: prompt 8 KiB, serialized data 64 KiB, schema 8 KiB, at most 3 distinct
-requests and 3 answer rounds per run. Schemas use `anyOf`, never `oneOf`, no
-`default` or numeric `format`; objects declare every property in `required` and
-set `additionalProperties: false`. Unsupported schemas fail before egress.
+Limits: declared prompt 2000 chars, serialized data 64 KiB, schema 8 KiB, at most
+3 distinct requests and 3 answer rounds per run. Schemas use `anyOf`, never
+`oneOf`, no `default` or numeric `format`; objects declare every property in
+`required` and set `additionalProperties: false`. Unsupported schemas fail before
+egress.
 Known keys return fresh parsed answers; unknown keys suspend with an internal
 `ModelAnswerNeeded`. Keys are SHA-256 of canonical JSON `{prompt,data,schema}`.
 Same answers must produce deterministic output. Diagnostics are suppressed for

@@ -79,6 +79,9 @@ async fn mcp(State(f): State<Fake>, headers: HeaderMap, Json(body): Json<Value>)
             if let Some(path) = body["params"]["arguments"]["body"].as_str().and_then(|s| s.strip_prefix("collision:")) {
                 std::fs::write(path, b"created by another process").unwrap();
             }
+            if body["params"]["arguments"]["body"] == "echo token" {
+                return Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":ACCESS}]}})).into_response();
+            }
             let is_error = body["params"]["arguments"]["body"] == "fail";
             Json(json!({"jsonrpc":"2.0","id":id,"result":{"isError":is_error,"content":[{"type":"text","text":"<script>alert('server')</script><b>draft created</b>"}]}})).into_response()
         }
@@ -710,6 +713,50 @@ mod actions {
             .await
             .is_err());
         assert_eq!(calls.lock().unwrap().len(), 1);
+    }
+    #[tokio::test]
+    async fn action_token_echo_fails_without_persisting_or_exposing_token() {
+        let (_tmp, core, conns, tool, input, folder, calls, _vault) = setup(CODE).await;
+        std::fs::write(&input.display_path, "echo token").unwrap();
+        let plan = stage(&core, &tool, &input, &folder).await;
+        let result = conns
+            .commit_run(&plan.run_id, &plan.plan_hash, true)
+            .await
+            .unwrap();
+        let CommitResult::Committed(receipt) = result else {
+            panic!("{result:?}")
+        };
+        assert_eq!(
+            receipt.actions[0].status,
+            macroscope_effect_broker::ActionStatus::Failed
+        );
+        assert!(receipt.actions[0].summary.contains("Server rejected"));
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        for value in [
+            json!(receipt),
+            json!(core.list_receipts().unwrap()),
+            json!(core.list_activity().unwrap()),
+            json!(core.list_today().unwrap()),
+            json!(core.list_outbound().unwrap()),
+            json!(core.get_tool(&tool.summary_row.id).unwrap()),
+        ] {
+            assert!(!value.to_string().contains(ACCESS), "token leaked into DTO");
+        }
+        // The journal and encrypted stores must not retain the response token, either.
+        fn check(dir: &Path) {
+            for e in std::fs::read_dir(dir).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    check(&p)
+                } else {
+                    assert!(!std::fs::read(p)
+                        .unwrap()
+                        .windows(ACCESS.len())
+                        .any(|w| w == ACCESS.as_bytes()));
+                }
+            }
+        }
+        check(&_tmp.path().join("data"));
     }
     #[tokio::test]
     async fn no_input_web_source_and_connection_action_stage_approve_and_receipt() {

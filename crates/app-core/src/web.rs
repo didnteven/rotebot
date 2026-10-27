@@ -43,11 +43,10 @@ pub fn substitute_today(template: &str, today: &str) -> String {
     template.replace("{today}", today)
 }
 
-/// URL recorded in the outbound log: the fetched URL without any fragment.
-/// Declared sources cannot contain credentials (the host rejects them), so
-/// the remaining query is the substituted date and API parameters.
+/// Only the origin and path enter outbound history or Privacy. Query values
+/// are data even when the parameter name passed validation.
 pub fn log_url(url: &str) -> String {
-    url.split('#').next().unwrap_or(url).to_string()
+    url.split(['?', '#']).next().unwrap_or(url).to_string()
 }
 
 /// Lowercase host (without port) of a substituted URL, for the outbound log.
@@ -155,10 +154,7 @@ mod tests {
             "api.open-meteo.com"
         );
         assert_eq!(host_of_url("http://127.0.0.1:9/forecast"), "127.0.0.1");
-        assert_eq!(
-            log_url("https://x.test/v1?a=1#frag"),
-            "https://x.test/v1?a=1"
-        );
+        assert_eq!(log_url("https://x.test/v1?a=1#frag"), "https://x.test/v1");
         let today = today_local();
         assert_eq!(today.len(), 10);
         assert!(today.as_bytes()[4] == b'-' && today.as_bytes()[7] == b'-');

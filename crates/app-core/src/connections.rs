@@ -594,7 +594,7 @@ impl Connections {
                 use macroscope_effect_broker::ActionStatus as S;
                 match result {
                     Ok(value) => (if value["isError"] == true { S::Failed } else { S::Succeeded }, value.to_string()),
-                    Err(macroscope_connections::mcp::McpError::AuthRequired { .. } | macroscope_connections::mcp::McpError::Rpc) => (S::Failed, "Server rejected the action. No retry was attempted.".into()),
+                    Err(macroscope_connections::mcp::McpError::AuthRequired { .. } | macroscope_connections::mcp::McpError::Rpc | macroscope_connections::mcp::McpError::TokenEcho) => (S::Failed, "Server rejected the action. No retry was attempted.".into()),
                     Err(_) => (S::OutcomeUnknown, "The request may have been sent but its response was lost. Check the service; Macroscope will never retry this call.".into()),
                 }
             })

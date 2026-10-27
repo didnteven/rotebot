@@ -1,4 +1,4 @@
-(native => {
+(native, declared) => {
   const stringify = JSON.stringify;
   const parse = JSON.parse;
   const keys = Object.keys;
@@ -7,7 +7,19 @@
   const plain = Object.prototype;
   const array = Array.isArray;
   const finite = Number.isFinite;
-  return (prompt, data, schema) => {
+  return (...args) => {
+    let prompt;
+    let data;
+    let schema;
+    if (args.length === 2) {
+      if (typeof declared !== "string" || declared === "") throw new TypeError("Model step not declared; rebuild and approve what is sent");
+      [data, schema] = args;
+      prompt = declared;
+    } else if (args.length === 3) {
+      [prompt, data, schema] = args;
+    } else {
+      throw new TypeError("Model ask needs (data, schema) or (prompt, data, schema)");
+    }
     if (typeof prompt !== "string") throw new TypeError("Prompt must be text");
     let nodes = 0;
     const seen = new Set();
@@ -30,4 +42,4 @@
     validate(schema, 0);
     return parse(native(stringify({prompt, data, schema})));
   };
-})
+}

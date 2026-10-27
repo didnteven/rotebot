@@ -12,6 +12,7 @@ struct Data {
     answers: BTreeMap<String, serde_json::Value>,
     limits: Limits,
     state: Shared,
+    declared_model_prompt: Option<String>,
 }
 // SAFETY: Data contains only owned Rust values, with no JavaScript lifetimes.
 unsafe impl<'js> rquickjs::JsLifetime<'js> for Data {
@@ -274,6 +275,7 @@ pub(crate) fn install(
     answers: BTreeMap<String, serde_json::Value>,
     limits: &Limits,
     state: Shared,
+    declared_model_prompt: Option<String>,
 ) -> Result<()> {
     ctx.store_userdata(Data {
         inputs,
@@ -281,13 +283,17 @@ pub(crate) fn install(
         answers,
         limits: limits.clone(),
         state,
+        declared_model_prompt: declared_model_prompt.clone(),
     })
     .map_err(|_| rquickjs::Error::Unknown)?;
     let sdk = Object::new(ctx.clone())?;
     let model = Object::new(ctx.clone())?;
     model.set_prototype(None)?;
     let wrap_model: Function = ctx.eval(include_str!("model.js"))?;
-    let ask: Function = wrap_model.call((Function::new(ctx.clone(), model_ask)?,))?;
+    let ask: Function = wrap_model.call((
+        Function::new(ctx.clone(), model_ask)?,
+        declared_model_prompt.unwrap_or_default(),
+    ))?;
     model.set("ask", ask)?;
     sdk.set("model", model)?;
     sdk.set_prototype(None)?;
@@ -326,6 +332,16 @@ fn model_ask(ctx: Ctx<'_>, json: String) -> Result<String> {
         )
     })?;
     let data = ctx.userdata::<Data>().unwrap();
+    if let Some(declared) = data.declared_model_prompt.clone() {
+        if request.prompt != declared {
+            drop(data);
+            return Err(fail(
+                &ctx,
+                "model_limit",
+                "Model prompt does not match the approved instruction; rebuild and approve the change",
+            ));
+        }
+    }
     let mut state = data.state.lock().unwrap();
     state.model_used = true;
     if let Some(answer) = data.answers.get(&request.key) {

@@ -38,7 +38,7 @@ pub fn parse_request(text: &str) -> Result<ModelRequest, String> {
 }
 pub fn validate_schema(s: &Value) -> Result<(), String> {
     fn visit(s: &Value, depth: usize) -> Result<(), String> {
-        if depth > 32 {
+        if depth > 8 {
             return Err("Schema too deep".into());
         }
         let m = s.as_object().ok_or("Schema must be an object")?;
@@ -62,6 +62,18 @@ pub fn validate_schema(s: &Value) -> Result<(), String> {
         ];
         if m.keys().any(|k| !ALLOWED.contains(&k.as_str())) {
             return Err("Unsupported strict schema keyword".into());
+        }
+        for (keyword, cap) in [
+            ("maxLength", 20_000),
+            ("minLength", 20_000),
+            ("maxItems", 500),
+            ("minItems", 500),
+        ] {
+            if m.get(keyword)
+                .is_some_and(|v| v.as_u64().is_none_or(|n| n > cap))
+            {
+                return Err(format!("Schema {keyword} exceeds {cap}"));
+            }
         }
         if let Some(variants) = m.get("anyOf") {
             for v in variants.as_array().ok_or("anyOf must be an array")? {
@@ -95,7 +107,7 @@ pub fn validate_schema(s: &Value) -> Result<(), String> {
         }
         Ok(())
     }
-    visit(s, 0)?;
+    visit(s, 1)?;
     jsonschema::validator_for(s).map_err(|_| "Invalid model schema".to_string())?;
     Ok(())
 }

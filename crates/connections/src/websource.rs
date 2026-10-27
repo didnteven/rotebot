@@ -27,7 +27,9 @@ pub enum FetchError {
     UnapprovedHost,
     #[error("web source URL must not contain credentials")]
     Credentials,
-    #[error("redirect to another host is not allowed")]
+    #[error("Web sources can't include keys or tokens in the URL")]
+    QueryCredentials,
+    #[error("redirect to another origin is not allowed")]
     CrossHostRedirect,
     #[error("web source response exceeds 2 MB")]
     TooLarge,
@@ -42,6 +44,26 @@ fn parse_url(raw: &str, allow_insecure: bool) -> Result<Url, FetchError> {
     if !url.username().is_empty() || url.password().is_some() {
         return Err(FetchError::Credentials);
     }
+    if url.query_pairs().any(|(name, _)| {
+        let name = name.to_ascii_lowercase();
+        [
+            "key",
+            "token",
+            "secret",
+            "password",
+            "passwd",
+            "auth",
+            "signature",
+            "sig",
+            "session",
+            "credential",
+            "apikey",
+        ]
+        .iter()
+        .any(|part| name.contains(part))
+    }) {
+        return Err(FetchError::QueryCredentials);
+    }
     let insecure_local =
         allow_insecure && url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1"));
     if url.scheme() != "https" && !insecure_local {
@@ -53,20 +75,30 @@ fn parse_url(raw: &str, allow_insecure: bool) -> Result<Url, FetchError> {
     Ok(url)
 }
 
-fn client() -> Result<reqwest::Client, FetchError> {
+fn same_origin(from: &Url, to: &Url) -> bool {
+    from.scheme() == to.scheme()
+        && from.host_str() == to.host_str()
+        && from.port_or_known_default() == to.port_or_known_default()
+}
+
+fn redirect_allowed(from: &Url, to: &Url, allow_insecure: bool) -> bool {
+    parse_url(to.as_str(), allow_insecure).is_ok() && same_origin(from, to)
+}
+
+fn client(allow_insecure: bool) -> Result<reqwest::Client, FetchError> {
     reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
+        .https_only(!allow_insecure)
         // Follow redirects only back to the host that issued them; anything
         // else stops and is reported as a cross-host redirect below.
-        .redirect(Policy::custom(|attempt| {
+        .redirect(Policy::custom(move |attempt| {
             if attempt.previous().len() > MAX_REDIRECTS {
                 return attempt.stop();
             }
             let same = attempt
                 .previous()
                 .last()
-                .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
-                == attempt.url().host_str().map(str::to_ascii_lowercase);
+                .is_some_and(|from| redirect_allowed(from, attempt.url(), allow_insecure));
             if same {
                 attempt.follow()
             } else {
@@ -89,7 +121,7 @@ pub async fn fetch_all(
         .iter()
         .map(|h| h.to_ascii_lowercase())
         .collect();
-    let client = client()?;
+    let client = client(allow_insecure)?;
     let mut out = BTreeMap::new();
     for (name, raw_url) in sources {
         if name.trim().is_empty() || out.contains_key(name) {
@@ -122,12 +154,7 @@ pub async fn fetch_all(
         {
             return Err(FetchError::TooLarge);
         }
-        let final_host = response
-            .url()
-            .host_str()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if final_host != host {
+        if !redirect_allowed(&url, response.url(), allow_insecure) {
             return Err(FetchError::CrossHostRedirect);
         }
         let mut bytes = Vec::new();
@@ -181,6 +208,39 @@ mod tests {
         assert_eq!(
             parse_url("https://", false).unwrap_err(),
             FetchError::UnparseableHost
+        );
+    }
+}
+
+#[cfg(test)]
+mod review_regressions {
+    use super::*;
+    #[test]
+    fn redirects_require_https_same_host_and_effective_port() {
+        let approved = Url::parse("https://same.test/start").unwrap();
+        for target in [
+            "http://same.test/next",
+            "https://same.test:8443/next",
+            "https://other.test/next",
+        ] {
+            let target = Url::parse(target).unwrap();
+            assert!(!redirect_allowed(&approved, &target, false), "{target}");
+            assert!(!same_origin(&approved, &target), "final URL: {target}");
+        }
+        for target in ["https://same.test/next", "https://same.test:443/next"] {
+            assert!(redirect_allowed(
+                &approved,
+                &Url::parse(target).unwrap(),
+                false
+            ));
+        }
+        let local = Url::parse("http://127.0.0.1:1234/start").unwrap();
+        let next = Url::parse("http://127.0.0.1:1234/next").unwrap();
+        assert!(redirect_allowed(&local, &next, true));
+        assert!(!redirect_allowed(&local, &next, false));
+        assert_eq!(
+            parse_url("https://same.test/path?Api_%4Bey=hidden", false).unwrap_err(),
+            FetchError::QueryCredentials
         );
     }
 }

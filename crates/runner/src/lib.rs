@@ -80,6 +80,11 @@ pub struct Request {
     pub answers: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub limits: Limits,
+    /// Exact model instruction approved at save time. The two-argument
+    /// `macroscope.model.ask(data, schema)` uses it; a three-argument call
+    /// whose prompt differs fails the run.
+    #[serde(default)]
+    pub declared_model_prompt: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -317,6 +322,7 @@ pub fn execute(request: Request) -> Response {
             request.answers,
             &request.limits,
             state.clone(),
+            request.declared_model_prompt,
         )?;
         ctx.eval::<(), _>(include_str!("harden.js"))?;
         let user_result = (|| {

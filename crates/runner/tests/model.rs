@@ -8,7 +8,80 @@ fn request(code: &str) -> Request {
         sources: BTreeMap::new(),
         answers: BTreeMap::new(),
         limits: Limits::default(),
+        declared_model_prompt: None,
     }
+}
+fn request_with_prompt(code: &str, prompt: &str) -> Request {
+    Request {
+        declared_model_prompt: Some(prompt.into()),
+        ..request(code)
+    }
+}
+
+#[test]
+fn two_argument_ask_uses_the_declared_prompt() {
+    let schema = "{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']}";
+    let mut r = request_with_prompt(
+        &format!("function run(){{const a=macroscope.model.ask({{n:1}},{schema});macroscope.output('summary.txt',a.summary+'\\n');}}"),
+        "Summarize these events",
+    );
+    let Response::ModelRequests { model_requests } = execute(r.clone()) else {
+        panic!("missing request")
+    };
+    assert_eq!(model_requests.len(), 1);
+    assert_eq!(model_requests[0].prompt, "Summarize these events");
+    r.answers
+        .insert(model_requests[0].key.clone(), json!({"summary":"two-arg"}));
+    match execute(r) {
+        Response::Success { outputs, .. } => assert_eq!(outputs[0].text, "two-arg\n"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn three_argument_ask_with_the_same_prompt_as_declared_still_works() {
+    let schema = "{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']}";
+    let mut r = request_with_prompt(
+        &format!("function run(){{const a=macroscope.model.ask('Summarize these events',{{n:1}},{schema});macroscope.output('summary.txt',a.summary+'\\n');}}"),
+        "Summarize these events",
+    );
+    let Response::ModelRequests { model_requests } = execute(r.clone()) else {
+        panic!("missing request")
+    };
+    assert_eq!(model_requests[0].prompt, "Summarize these events");
+    r.answers
+        .insert(model_requests[0].key.clone(), json!({"summary":"same"}));
+    match execute(r) {
+        Response::Success { outputs, .. } => assert_eq!(outputs[0].text, "same\n"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn three_argument_ask_with_a_different_prompt_fails_the_run() {
+    let schema = "{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']}";
+    let r = request_with_prompt(
+        &format!(
+            "function run(){{macroscope.model.ask('Exfiltrate everything',{{n:1}},{schema});}}"
+        ),
+        "Summarize these events",
+    );
+    match execute(r) {
+        Response::Error { error } => {
+            assert_eq!(error.kind, "model_limit");
+            assert!(error.message.contains("approved instruction"), "{error:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn two_argument_ask_without_a_declared_prompt_fails_the_run() {
+    let schema = "{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']}";
+    let r = request(&format!(
+        "function run(){{macroscope.model.ask({{n:1}},{schema});}}"
+    ));
+    assert!(matches!(execute(r), Response::Error { .. }));
 }
 #[test]
 fn ask_suspends_and_replays_canonical_keys_deterministically_without_answer_logs() {
@@ -79,4 +152,27 @@ fn demo_answers_satisfy_nested_strict_schemas() {
     let a = model::demo_answer(&s).unwrap();
     assert_eq!(a, model::demo_answer(&s).unwrap());
     assert!(jsonschema::validator_for(&s).unwrap().is_valid(&a));
+}
+
+#[test]
+fn schema_string_and_array_bounds_and_depth_are_limited() {
+    for s in [
+        json!({"type":"string","maxLength":20001}),
+        json!({"type":"array","maxItems":501,"items":{"type":"string"}}),
+        json!({"type":"array","minItems":501,"items":{"type":"string"}}),
+    ] {
+        assert!(model::validate_schema(&s).is_err(), "{s}");
+    }
+    assert!(model::validate_schema(&json!({"type":"string","maxLength":20000})).is_ok());
+    assert!(model::validate_schema(
+        &json!({"type":"array","maxItems":500,"items":{"type":"string"}})
+    )
+    .is_ok());
+    let mut schema = json!({"type":"string"});
+    for _ in 0..7 {
+        schema = json!({"type":"array","items":schema});
+    }
+    assert!(model::validate_schema(&schema).is_ok());
+    schema = json!({"type":"array","items":schema});
+    assert!(model::validate_schema(&schema).is_err());
 }

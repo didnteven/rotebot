@@ -402,3 +402,90 @@ midnight.
 Rerun by Claude: both `check.sh` runs passed with **431 Rust + 126 UI tests** each.
 `run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer
 boundary); the memory canaries are still denied at the OS layer.
+
+
+## Task 18: Muse Code's second review (`m4/muse-findings-2`)
+
+Branch `m4/muse-findings-2`, based on `m4/model-step`. Muse Code reviewed the
+schedules/connection/model-step paths read-only; its report is
+[muse-review-2.md](muse-review-2.md). Findings 1–4 and 6–9 were fixed by the
+previous worker (staged changes in this tree, kept as-is); finding 5 (bound
+model prompt) is fixed on top (unstaged changes). Each fix has a regression
+test that fails before the fix. No test was skipped, weakened, or deleted.
+
+- Finding 1 (query-string secrets in web sources): save validation rejects
+  credential-like query parameter names with "Web sources can't include keys or
+  tokens in the URL", and the outbound log/Privacy keep only `https://host/path`.
+  Tests: `query_secret_names_are_rejected_case_insensitively_after_decoding`
+  (builder), `QueryCredentials` assertion inside
+  `redirects_require_https_same_host_and_effective_port` (websource), updated
+  `today_substitution_and_log_shape` (web log strips the query).
+- Finding 2 (redirect downgrade/port change): the redirect policy and final-URL
+  check require the same scheme (`https`), host, and effective port; release
+  clients set `https_only(true)` while the `http://127.0.0.1` test stand-in keeps
+  working. Test: `redirects_require_https_same_host_and_effective_port`.
+- Finding 3 (month boundaries in local time): the model budget window and every
+  other monthly window share one `month_window()` helper using local midnight on
+  the 1st in the injected schedule timezone. Test:
+  `local_november_cap_and_budget_count_spend_before_utc_november` (Pacific/Auckland,
+  2026-11-01 00:30 local counts in November for cap and budget).
+- Finding 4 (DST gap in source boundaries): `{today_start}`/`{month_start}` and
+  similar resolve gaps by advancing to the first valid minute, reusing
+  `schedules::local_boundary`. Test:
+  `source_midnight_dst_gaps_advance_to_first_valid_minute` (America/Santiago).
+- Finding 5 (bind the model prompt at approval): the program schema's
+  `model_step` gains `prompt` (exact text, strict dialect, ≤2,000 chars, length
+  validated at build). `macroscope.model.ask(data, schema)` uses the declared
+  prompt; the 3-argument form works only when `prompt === declared`, otherwise
+  the run fails with "Model prompt does not match the approved instruction".
+  The runner takes the declared prompt with the request (`Request`,
+  `model.js`, `sdk.rs`, `lib.rs`); the host re-checks every request before any
+  model call (`model_step.rs`). The prompt is part of the tool version hash and
+  the schedule binding, so changing it requires re-approval, and every review
+  surface shows `Sends this instruction: "<prompt>"` (`SourceReview`, save
+  screen, schedule approval, tool access list). SDK.md, the builder packet, the
+  desktop mock, and existing `model_step` fixtures use the new form. Tests:
+  `model_step_needs_an_exact_prompt_of_at_most_2000_chars` (builder),
+  `two_argument_ask_uses_the_declared_prompt`,
+  `three_argument_ask_with_the_same_prompt_as_declared_still_works`,
+  `three_argument_ask_with_a_different_prompt_fails_the_run`,
+  `two_argument_ask_without_a_declared_prompt_fails_the_run` (runner),
+  `model_prompt_is_bound_at_approval_version_hash_and_schedule` and
+  `model_request_with_an_unapproved_prompt_fails_before_any_model_call` (host:
+  the fake model endpoint received 0 requests),
+  `Sends this instruction: "Summarize these events"` assertion in the outbound
+  review UI test (`model-sources.test.tsx`).
+- Finding 6 (no model input in argv): the Muse exec passes the prompt via
+  `--prompt-file` (0600 file in the private workspace, deleted after the run).
+  Test: extended `exec_canary_is_stdin_only_env_is_allowlisted_outputs_scrubbed_and_help_cached`
+  (neither the key nor `PRIVATE-MODEL-DATA-CANARY` appears in argv).
+- Finding 7 (bound model answers): `validate_schema` rejects `maxLength` over
+  20,000, `maxItems`/`minItems` over 500, and depth over 8; the host rejects
+  answers over 64 KiB serialized. Tests:
+  `schema_string_and_array_bounds_and_depth_are_limited` (runner),
+  `oversized_model_answer_is_rejected_before_replay` (host).
+- Finding 8 (token echo on the action path): `call_approved_tool` applies the
+  same bearer-token echo rejection; the action fails safely with no token in
+  receipts, journal, Today, logs, or UI DTOs. Test:
+  `action_token_echo_fails_without_persisting_or_exposing_token`.
+- Finding 9 (typed run status): staging returns a typed status/reason instead of
+  substring-matching messages (`contains("Reconnect")`, …); wording and behavior
+  are unchanged. Test:
+  `diagnostic_words_do_not_change_typed_today_failure_status`.
+
+Final verification: **PASS** — `cargo build -p macroscope-runner --bins` and
+`bash scripts/check.sh` both exited 0. The gate passed **453 Rust tests
+(316 workspace + 137 synthetic core; 0 failed)** with 5 pre-existing
+environment-gated ignores (Swift observer, live MCP, real-Muse echo, and one
+synthetic observer test), and **126 UI tests across 17 files**, plus
+formatting, clippy, typechecking, and the production desktop build. No new
+skips or ignores; no existing test was weakened or deleted.
+
+Claude's review of task 18. Codex fixed findings 1–4 and 6–9 before hitting its usage limit,
+and Muse Code fixed finding 5 and wrote the docs. No skips or ignores were added. No tests
+were removed, and the assertion count only grew in every changed test file. Muse's edits to
+Codex's files were rustfmt reflows only. The host checks a model request's prompt against the
+approved instruction before any model call, in addition to the runner's check.
+
+Rerun by Claude: both `check.sh` runs passed with **453 Rust + 126 UI tests** each.
+`run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer boundary).

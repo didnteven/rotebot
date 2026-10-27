@@ -1,11 +1,21 @@
 //! Approved host reads with local-time templates. No credentials cross the runner boundary.
 use crate::*;
-use chrono::{Datelike, TimeZone};
+use chrono::Datelike;
 
 impl AppCore {
-    pub(crate) fn model_counter_key(&self, tool: &str) -> String {
-        let date = self.local_date(self.now());
-        format!("model-step:{tool}:{}", &date[..7])
+    /// One local calendar month for caps, model spend and build spend alike.
+    pub(crate) fn month_window(&self) -> CoreResult<(String, i64)> {
+        let tz = self.schedule_timezone();
+        let now = chrono::DateTime::from_timestamp_millis(self.now())
+            .ok_or_else(|| CoreError::Invalid("Invalid clock".into()))?
+            .with_timezone(&tz);
+        let day = now.date_naive().with_day(1).unwrap();
+        let start = schedules::local_boundary(tz, day.and_hms_opt(0, 0, 0).unwrap())
+            .ok_or_else(|| CoreError::Invalid("Invalid local month".into()))?;
+        Ok((day.format("%Y-%m").to_string(), start.timestamp_millis()))
+    }
+    pub(crate) fn model_counter_key(&self, tool: &str) -> CoreResult<String> {
+        Ok(format!("model-step:{tool}:{}", self.month_window()?.0))
     }
     pub fn set_model_step_cap(&self, tool: &str, cap: u32) -> CoreResult<ToolDetail> {
         let _admission = self.admit_local()?;
@@ -20,7 +30,7 @@ impl AppCore {
     pub(crate) fn model_cap_reached(&self, tool: &ToolDetail) -> CoreResult<bool> {
         let n = self
             .db()
-            .setting(&self.model_counter_key(&tool.summary_row.id))?
+            .setting(&self.model_counter_key(&tool.summary_row.id)?)?
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         let cap = self
@@ -52,8 +62,7 @@ impl AppCore {
                     if end { 59 } else { 0 },
                 )
                 .unwrap();
-            tz.from_local_datetime(&time)
-                .earliest()
+            schedules::local_boundary(tz, time)
                 .map(|d| d.to_rfc3339())
                 .ok_or_else(|| CoreError::Invalid("Source boundary falls in a timezone gap".into()))
         };

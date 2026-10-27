@@ -28,6 +28,9 @@ pub struct SourceStage<'a> {
     pub has_input_file: bool,
     pub extra_binding: Option<serde_json::Value>,
     pub answers: &'a BTreeMap<String, serde_json::Value>,
+    /// Exact model instruction approved at save time. The runner and the host
+    /// both reject any model request whose prompt differs.
+    pub declared_model_prompt: Option<&'a str>,
 }
 
 static EMPTY_ANSWERS: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -42,6 +45,7 @@ impl Default for SourceStage<'static> {
             has_input_file: true,
             extra_binding: None,
             answers: &EMPTY_ANSWERS,
+            declared_model_prompt: None,
         }
     }
 }
@@ -122,6 +126,7 @@ impl RunnerEngine {
             code,
             limits,
             &BTreeMap::new(),
+            None,
         )
     }
 
@@ -141,6 +146,7 @@ impl RunnerEngine {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_with_answers(
         &self,
         input: &[u8],
@@ -149,6 +155,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         answers: &BTreeMap<String, serde_json::Value>,
+        declared_model_prompt: Option<&str>,
     ) -> Result<
         (
             Vec<macroscope_runner::Output>,
@@ -156,7 +163,15 @@ impl RunnerEngine {
         ),
         BrokerError,
     > {
-        match self.replay(input, sources, has_input_file, code, limits, answers)? {
+        match self.replay(
+            input,
+            sources,
+            has_input_file,
+            code,
+            limits,
+            answers,
+            declared_model_prompt,
+        )? {
             Response::Success {
                 outputs,
                 planned_calls,
@@ -178,6 +193,7 @@ impl RunnerEngine {
         code: &str,
         limits: Limits,
         answers: &BTreeMap<String, serde_json::Value>,
+        declared_model_prompt: Option<&str>,
     ) -> Result<Response, BrokerError> {
         if hash_file(&self.runner)? != self.runner_hash
             || hash_file(&self.profile)? != self.profile_hash
@@ -196,6 +212,7 @@ impl RunnerEngine {
             sources: sources.clone(),
             limits,
             answers: answers.clone(),
+            declared_model_prompt: declared_model_prompt.map(str::to_string),
         };
         let command = if self.synthetic {
             #[cfg(feature = "synthetic-runtime-tests")]
@@ -294,7 +311,7 @@ impl RunnerEngine {
         }
         let binding = serde_json::json!({"code":code,"runner":self.runner_hash,"profile":self.profile_hash,
             "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic,
-            "answers":stage_sources.answers,"output_name":stage_sources.output_name,"create_file":stage_sources.create_file,"sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
+            "answers":stage_sources.answers,"model_prompt":stage_sources.declared_model_prompt,"output_name":stage_sources.output_name,"create_file":stage_sources.create_file,"sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
         let execution_hash = format!("{:x}", Sha256::digest(broker::canonical_json(&binding)?));
         let basename = stage_sources
             .output_name
@@ -316,6 +333,7 @@ impl RunnerEngine {
                     code,
                     limits,
                     stage_sources.answers,
+                    stage_sources.declared_model_prompt,
                 )?;
                 if outputs.len() > 1
                     || outputs.first().is_some_and(|o| o.name != basename)

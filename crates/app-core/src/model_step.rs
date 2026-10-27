@@ -15,6 +15,7 @@ impl AppCore {
         let engine = self.runtime()?;
         let mut answers = BTreeMap::new();
         let epoch = self.inner.policy.epoch();
+        let declared = p.model_step.as_ref().map(|m| m.prompt.as_str());
         for round in 0..=3 {
             let response = engine
                 .replay(
@@ -24,6 +25,7 @@ impl AppCore {
                     &p.code,
                     macroscope_runner::Limits::default(),
                     &answers,
+                    declared,
                 )
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;
             match response {
@@ -35,10 +37,20 @@ impl AppCore {
                     )))
                 }
                 Response::ModelRequests { model_requests } => {
-                    if p.model_step.is_none() {
+                    let Some(approved) = declared else {
                         return Err(CoreError::Invalid(
                             "Undeclared model step; rebuild and approve what is sent".into(),
                         ));
+                    };
+                    // The runner already enforces the same binding; check again
+                    // before any model call so a mismatched request can never
+                    // reach the route even if the sandbox boundary is bypassed.
+                    for request in &model_requests {
+                        if request.prompt != approved {
+                            return Err(CoreError::Invalid(
+                                "Model prompt does not match the approved instruction; rebuild and approve the change".into(),
+                            ));
+                        }
                     }
                     if round == 3
                         || model_requests.is_empty()
@@ -65,6 +77,9 @@ impl AppCore {
                             _ = self.inner.policy.revoked(epoch) => return Err(CoreError::Invalid("Model step cancelled".into())),
                             result = self.model_answer(&request, tool) => result?,
                         };
+                        if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > 65_536) {
+                            return Err(CoreError::Invalid("Model answer exceeds 64 KiB".into()));
+                        }
                         if !jsonschema::validator_for(&request.schema)
                             .is_ok_and(|v| v.is_valid(&value))
                         {
@@ -103,11 +118,7 @@ impl AppCore {
                     ));
                 }
             }
-            let date = self.local_date(self.now());
-            let first = format!("{}-01T00:00:00Z", &date[..7]);
-            let month = chrono::DateTime::parse_from_rfc3339(&first)
-                .map_err(|_| CoreError::Internal("Invalid month".into()))?
-                .timestamp_millis();
+            let month = self.month_window()?.1;
             if route == ModelRoute::ApiKey
                 && self.db().reserved_micros_since(month)? + BUILD_BUDGET_MICROS > 25_000_000
             {
@@ -134,7 +145,7 @@ impl AppCore {
                 updated_ms: self.now(),
             })?;
             if let Some(t) = tool {
-                let key = self.model_counter_key(&t.summary_row.id);
+                let key = self.model_counter_key(&t.summary_row.id)?;
                 let count = self
                     .db()
                     .setting(&key)?

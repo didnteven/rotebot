@@ -119,16 +119,18 @@ pub struct TodayDay {
 
 // A fall-back occurrence resolves to the earlier instant. A gap advances to the
 // first representable local minute. Both are stable across repeated evaluations.
-fn occurrence(tz: Tz, day: NaiveDate, time: NaiveTime) -> Option<i64> {
-    let mut local = day.and_time(time);
+pub(crate) fn local_boundary(tz: Tz, mut local: chrono::NaiveDateTime) -> Option<DateTime<Tz>> {
     for _ in 0..=1440 {
         match tz.from_local_datetime(&local) {
-            LocalResult::Single(d) => return Some(d.timestamp_millis()),
-            LocalResult::Ambiguous(a, b) => return Some(a.min(b).timestamp_millis()),
+            LocalResult::Single(d) => return Some(d),
+            LocalResult::Ambiguous(a, b) => return Some(a.min(b)),
             LocalResult::None => local += chrono::Duration::minutes(1),
         }
     }
     None
+}
+fn occurrence(tz: Tz, day: NaiveDate, time: NaiveTime) -> Option<i64> {
+    local_boundary(tz, day.and_time(time)).map(|d| d.timestamp_millis())
 }
 fn instant(now: i64, tz: Tz) -> DateTime<Tz> {
     Utc.timestamp_millis_opt(now)

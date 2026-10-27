@@ -5,11 +5,12 @@ import {RunFlow} from "./RunFlow";
 import {ScheduleSection} from "./Schedule";
 import {MockBackend} from "./backend/mock";
 import type {Program} from "./backend/types";
-const program:Program={summary:"Calendar summary",output_name:"summary.txt",code:"function run(){}",webSources:[],connectionSources:[{name:"events",connectorId:"google-calendar",toolName:"list_events",argsJson:'{"start":"{today_start}","end":"{today_end}"}'}],modelStep:{purpose:"Write the summary"}};
+const program:Program={summary:"Calendar summary",output_name:"summary.txt",code:"function run(){}",webSources:[],connectionSources:[{name:"events",connectorId:"google-calendar",toolName:"list_events",argsJson:'{"start":"{today_start}","end":"{today_end}"}'}],modelStep:{purpose:"Write the summary",prompt:"Summarize these events"}};
 it("outbound review names each connection read, its exact template and the model destination and frequency",()=>{
   render(<SourceReview program={program} route="muse_plan" frequency="each morning" build/>);
   expect(screen.getByText("Reads today's events from Google Calendar (list_events)")).toBeVisible();
   expect(screen.getByText("Today's events from Google Calendar are sent to Muse (plan) each morning to write the summary.")).toBeVisible();
+  expect(screen.getByText('Sends this instruction: "Summarize these events"')).toBeVisible();
   expect(screen.getByText("This build will read your Google Calendar events for today once to test the tool.")).toBeVisible();
   expect(screen.getByText(program.connectionSources![0].argsJson)).toBeVisible();
 });
@@ -44,5 +45,5 @@ it("mock calendar builds pause for exact read consent and persist the model decl
   await expect(backend.approveBuildSources(initial.buildId,{...candidate.program!,code:"changed"})).rejects.toThrow("Candidate changed");
   await backend.approveBuildSources(initial.buildId,candidate.program!);
   await waitFor(async()=>expect((await backend.buildState(initial.buildId)).phase).toBe("ready"),{timeout:5000});
-  const tool=await backend.saveTool(initial.buildId,"Calendar");expect(tool.modelStepCap).toBe(60);expect(tool.program?.modelStep).toEqual({purpose:"Write the summary"});
+  const tool=await backend.saveTool(initial.buildId,"Calendar");expect(tool.modelStepCap).toBe(60);expect(tool.program?.modelStep).toEqual({purpose:"Write the summary",prompt:"Summarize these events"});
 });
