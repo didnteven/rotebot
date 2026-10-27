@@ -235,6 +235,10 @@ fn protocol_limits_syntax_and_hostile_exception_values() {
 }
 
 #[test]
+fn math_helpers_are_available_but_random_is_removed() {
+    success("function run(){ if(Math.round(19.7) !== 20) throw 1; if(Math.max(1, 2) !== 2) throw 2; if(typeof Math.random !== 'undefined') throw 3; }");
+}
+#[test]
 fn clock_and_randomness_are_unavailable_and_text_output_formats_work() {
     success("function run(){ if(typeof Date !== 'undefined' || typeof Math.random !== 'undefined') throw 1; }");
     for ext in ["csv", "tsv", "txt", "md", "json"] {

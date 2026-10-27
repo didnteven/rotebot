@@ -3,6 +3,7 @@
 Write plain JavaScript defining a synchronous global `function run() { ... }`.
 No imports, dependencies, eval, Function, Worker, async work, Date, Math.random,
 filesystem, process, environment, console or network APIs are available.
+`Math` is available (e.g. `Math.round`, `Math.max`), except `Math.random`, which is removed so runs are repeatable. `Date` is not available; use `macroscope.date` helpers or the `{today}` URL placeholder.
 `import` is forbidden even in comments and strings. RegExp is unavailable; use
 string operations such as split, includes, indexOf, slice and join.
 

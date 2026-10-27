@@ -89,6 +89,58 @@ pub fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+/// Normalizes one line to its shape for live-data example checks: every
+/// number (integers, decimals, optional leading sign, thousands separators,
+/// e.g. `-3`, `19.7`, `1,240.50`) becomes `#`, then whitespace runs collapse
+/// and the line is trimmed.
+fn normalize_shape_line(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let sign_starts_number =
+            (c == '+' || c == '-') && i + 1 < chars.len() && chars[i + 1].is_ascii_digit();
+        if c.is_ascii_digit() || sign_starts_number {
+            if sign_starts_number {
+                i += 1;
+            }
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            loop {
+                if i < chars.len()
+                    && chars[i] == ','
+                    && i + 1 < chars.len()
+                    && chars[i + 1].is_ascii_digit()
+                {
+                    i += 1;
+                    while i < chars.len() && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                } else if i < chars.len()
+                    && chars[i] == '.'
+                    && i + 1 < chars.len()
+                    && chars[i + 1].is_ascii_digit()
+                {
+                    i += 1;
+                    while i < chars.len() && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    break;
+                } else {
+                    break;
+                }
+            }
+            out.push('#');
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Runs every check. `read_input` re-reads the selected file so the source-unchanged
 /// check compares digests from before and after the candidate ran.
 pub fn run(
@@ -408,20 +460,50 @@ pub fn run_program_with_sources(
         valid.err().map(|e| e.to_string()),
     ));
     if let Some(example) = &draft.example_output {
-        let mut lines = output.lines();
-        let matches = example
-            .lines()
-            .all(|expected| lines.by_ref().any(|line| line == expected));
-        checks.push(check(
-            "example",
-            "Every example line appears in order",
-            matches,
-            if matches {
-                None
-            } else {
-                Some("The output does not contain every expected example line in order.".into())
-            },
-        ));
+        // Live-data tasks (web sources) and no-input tasks produce numbers
+        // that legitimately differ from the pasted example, so compare line
+        // shapes: every number becomes a placeholder and whitespace runs
+        // collapse. File-input tasks stay exact (deterministic data).
+        let shape_mode = !program.web_sources.is_empty() || no_input;
+        if shape_mode {
+            let expected: Vec<String> = example.lines().map(normalize_shape_line).collect();
+            let actual: Vec<String> = output.lines().map(normalize_shape_line).collect();
+            let mut need = 0;
+            for line in &actual {
+                if need < expected.len() && *line == expected[need] {
+                    need += 1;
+                }
+            }
+            let matches = need == expected.len();
+            checks.push(check(
+                "example",
+                "Output follows the example's format",
+                matches,
+                if matches {
+                    None
+                } else {
+                    Some(
+                        "The output doesn't follow the example's format (numbers may differ; the wording and layout must match)."
+                            .into(),
+                    )
+                },
+            ));
+        } else {
+            let mut lines = output.lines();
+            let matches = example
+                .lines()
+                .all(|expected| lines.by_ref().any(|line| line == expected));
+            checks.push(check(
+                "example",
+                "Every example line appears in order",
+                matches,
+                if matches {
+                    None
+                } else {
+                    Some("The output does not contain every expected example line in order.".into())
+                },
+            ));
+        }
     }
     // With no input file there is no source snapshot to re-read; the run plan
     // hash covers the source URLs and fetched-response digests instead.
@@ -666,5 +748,218 @@ mod tests {
             .checks
             .iter()
             .any(|c| c.id == "web_sources" && !c.passed));
+    }
+
+    /// Live-data example checks compare line shapes so differing weather
+    /// numbers still pass when the wording and layout match.
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn web_source_example_check_passes_with_different_numbers() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.example_output =
+            Some("Gisborne high : 20, low : 12\nRain 1,240.50 mm, wind -3 m/s".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne   high : 19.7,  low : 8\nRain 987.25 mm, wind +4 m/s".into(),
+            }])
+        };
+        let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &sources,
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        let example = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check");
+        assert!(example.passed, "{:#?}", outcome.checks);
+        assert_eq!(example.label, "Output follows the example's format");
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn web_source_example_check_rejects_wrong_wording() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.example_output = Some("Gisborne high : 20, low : 12".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let execute = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne low : 20, high : 12".into(),
+            }])
+        };
+        let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &sources,
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &execute,
+        );
+        let example = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check");
+        assert!(!example.passed);
+        assert_eq!(example.label, "Output follows the example's format");
+        assert_eq!(
+            example.detail.as_deref(),
+            Some("The output doesn't follow the example's format (numbers may differ; the wording and layout must match).")
+        );
+    }
+
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn web_source_example_check_requires_line_order() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.example_output = Some("alpha 1\nbeta 2".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
+        let swapped = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "beta 9\nalpha 8".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &sources,
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &swapped,
+        );
+        assert!(
+            !outcome
+                .checks
+                .iter()
+                .find(|c| c.id == "example")
+                .expect("example check")
+                .passed
+        );
+        let ordered = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "header\nbeta 9\nalpha 8\nbeta 7".into(),
+            }])
+        };
+        draft.example_output = Some("beta 2\nalpha 3".into());
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &sources,
+            None,
+            &|| panic!("no input file must not be re-read"),
+            &ordered,
+        );
+        assert!(
+            outcome
+                .checks
+                .iter()
+                .find(|c| c.id == "example")
+                .expect("example check")
+                .passed,
+            "{:#?}",
+            outcome.checks
+        );
+    }
+
+    /// File-input tasks keep the exact example comparison: different numbers
+    /// fail, identical lines pass.
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn file_input_example_check_stays_exact() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.no_input = false;
+        draft.example_output = Some("Gisborne high : 20, low : 12".into());
+        let program = macroscope_builder::Program {
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![],
+        };
+        let read = || Ok(b"selected input".to_vec());
+        let different = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne high : 21, low : 12".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::new(),
+            None,
+            &read,
+            &different,
+        );
+        let example = outcome
+            .checks
+            .iter()
+            .find(|c| c.id == "example")
+            .expect("example check");
+        assert!(!example.passed);
+        assert_eq!(example.label, "Every example line appears in order");
+        let exact = |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+            Ok(vec![macroscope_runner::Output {
+                name: "weather.txt".into(),
+                text: "Gisborne high : 20, low : 12".into(),
+            }])
+        };
+        let outcome = super::run_program_with_sources(
+            &draft,
+            &program,
+            &BTreeMap::new(),
+            None,
+            &read,
+            &exact,
+        );
+        assert!(
+            outcome
+                .checks
+                .iter()
+                .find(|c| c.id == "example")
+                .expect("example check")
+                .passed,
+            "{:#?}",
+            outcome.checks
+        );
     }
 }
