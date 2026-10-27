@@ -430,6 +430,10 @@ pub enum ReceiptStatus {
 #[serde(rename_all = "camelCase")]
 pub struct Receipt {
     #[serde(default)]
+    pub trigger: RunTrigger,
+    #[serde(default)]
+    pub schedule_id: Option<String>,
+    #[serde(default)]
     pub actions: Vec<macroscope_effect_broker::ActionResult>,
     pub run_id: String,
     pub tool_id: String,
@@ -612,4 +616,24 @@ pub struct DeletePreview {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteOptions {
     pub include_tools: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    #[default]
+    Manual,
+    Schedule,
+}
+impl RunFailure {
+    pub fn message(&self) -> String {
+        match self {
+            Self::InputInvalid { message, .. }
+            | Self::InputChanged { message }
+            | Self::DestinationExists { message }
+            | Self::DestinationChanged { message }
+            | Self::Revoked { message }
+            | Self::Internal { message } => message.clone(),
+        }
+    }
 }

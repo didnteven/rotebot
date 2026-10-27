@@ -207,6 +207,38 @@ function digest(value: unknown): string {
 
 /** Fresh, isolated in-memory product state. No credentials or files persist. */
 export class MockBackend implements Backend {
+  private schedules = new Map<string, import("./types").Schedule>();
+  private today: import("./types").TodayDay[] = [];
+  private login = false;
+  async listToday() { return clone(this.today); }
+  async dismissTodayEntry(id: string) { this.today = this.today.map(d => ({...d, entries: d.entries.filter(e=>e.id!==id)})).filter(d=>d.entries.length); }
+  async listSchedules() { return clone([...this.schedules.values()].map(s=> ({...s, status: this.tools.get(s.toolId)?.versionHash === s.versionHash ? s.status : "needs_reapproval" as const}))); }
+  async setSchedule(toolId: string, request: import("./types").ScheduleRequest) {
+    const tool = await this.getTool(toolId);
+    if (!request.approved || request.versionHash !== tool.versionHash) throw new Error("Review and approve this tool version running unattended");
+    if (!tool.noInput) throw new Error("Schedules require a tool without a selected input file");
+    if (!request.outputs.today && !request.outputs.notification && !request.outputs.folder) throw new Error("Choose at least one output");
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(request.frequency.time)) throw new Error("Time must be HH:MM");
+    if (request.frequency.kind === "weekly" && (request.frequency.weekday < 1 || request.frequency.weekday > 7)) throw new Error("Choose a valid weekday");
+    if (request.frequency.kind === "monthly" && (request.frequency.day < 1 || request.frequency.day > 31)) throw new Error("Choose day 1–31");
+    const next = new Date(); const [h,m] = request.frequency.time.split(":").map(Number); next.setHours(h,m,0,0);
+    for (let i=0;i<370;i++) {
+      const f=request.frequency;
+      const matches=f.kind === "daily" || (f.kind === "weekly" ? ((next.getDay()+6)%7)+1===f.weekday : next.getDate()===Math.min(f.day,new Date(next.getFullYear(),next.getMonth()+1,0).getDate()));
+      if (+next>Date.now() && matches) break;
+      next.setDate(next.getDate()+1);
+    }
+    const schedule: import("./types").Schedule = {...clone(request),id:`schedule-${toolId}`,toolId,binding:tool.versionHash,folderIdentity:null,status:"enabled",approvedAtMs:Date.now(),lastDueMs:Date.now(),nextRunMs:+next};
+    this.schedules.set(toolId,schedule); return clone(schedule);
+  }
+  async scheduleStatus(toolId: string, status: "enabled" | "paused" | "remove") {
+    if(status==="remove") {this.schedules.delete(toolId);return;}
+    const s=this.schedules.get(toolId); if(!s) throw new Error("Schedule not found");
+    if(status==="enabled" && (s.status==="needs_reapproval" || this.tools.get(toolId)?.versionHash!==s.versionHash)) throw new Error("Schedule needs re-approval");
+    s.status=status;
+  }
+  async loginEnabled() {return this.login;}
+  async setLoginEnabled(enabled: boolean) {this.login=enabled;}
   private serial = 0;
   private tools = new Map<string, ToolDetail>();
   private files = new Map<string, { preview: CsvPreview; rows: string[][] }>();
@@ -1176,6 +1208,9 @@ export class MockBackend implements Backend {
       inputDigest: "no-input",
       outputDigest: digest(output),
     });
+    const day=new Date().toLocaleDateString("en-CA");
+    const entry: import("./types").TodayEntry={id:this.id("today"),toolId,toolName:tool.name,trigger:"manual",scheduleId:null,startedAtMs:Date.now(),finishedAtMs:null,status:run.plannedCalls?.length?"needs_you":"staged",body:output.slice(0,20000),note:null,fileCreated:null,runId:run.runId,staged:clone(run),notification:false,addToToday:true,dismissed:false};
+    const group=this.today.find(d=>d.day===day);if(group)group.entries.unshift(entry);else this.today.unshift({day,entries:[entry]});
     return run;
   }
   async commitRun(runId: string, planHash: string) {
@@ -1241,12 +1276,14 @@ export class MockBackend implements Backend {
     this.staged.delete(runId);
     this.stagedData.delete(runId);
     this.receipts.unshift(receipt);
+    this.today = this.today.map(d=>({...d,entries:d.entries.map(e=>e.runId===runId?{...e,status:"done",staged:null,fileCreated:path,finishedAtMs:Date.now()}:e)}));
     tool.lastRunAtMs = receipt.atMs;
     tool.runCount++;
     this.log("run", `Created ${run.outputName}`, path);
     return clone(receipt);
   }
   async discardRun(runId: string) {
+    this.today = this.today.map(d=>({...d,entries:d.entries.map(e=>e.runId===runId?{...e,status:"skipped",body:"Discarded",staged:null,finishedAtMs:Date.now()}:e)}));
     this.staged.delete(runId);
     this.stagedData.delete(runId);
   }
@@ -1264,6 +1301,7 @@ export class MockBackend implements Backend {
     return {
       egress: this.status.egress,
       stored: [
+        { label: "Today entries", count:this.today.reduce((n,d)=>n+d.entries.length,0), bytes:JSON.stringify(this.today).length, expires:"Until deleted" },
         {
           label: "Selected fixtures",
           count: this.files.size,
@@ -1306,6 +1344,8 @@ export class MockBackend implements Backend {
         { label: "Connection detections", count: this.suggestions.length },
         { label: "Suggestion dismissals", count: this.dismissed.size },
         { label: "Activity", count: this.activity.length },
+        { label: "Today entries", count:this.today.reduce((n,d)=>n+d.entries.length,0) },
+        { label: "Schedules", count:this.schedules.size },
         { label: "Staging directories", count: this.staged.size },
         { label: "Sample copies", count: this.sampleInputs.size },
         { label: "Build workspaces", count: 0 },
@@ -1313,6 +1353,7 @@ export class MockBackend implements Backend {
     };
   }
   async deleteData(options: { includeTools: boolean }) {
+    this.today=[]; this.schedules.clear();
     await this.emergencyStop();
     await this.setLocalOnly(true);
     this.drafts.clear();
@@ -1342,6 +1383,7 @@ export class MockBackend implements Backend {
     this.log("settings", "Outbound history deleted");
   }
   async emergencyStop() {
+    for(const s of this.schedules.values()) s.status="emergency_paused";
     for (const b of this.builds.values()) await this.stopBuild(b.buildId);
     this.staged.clear();
     this.stagedData.clear();

@@ -138,6 +138,8 @@ impl AppCore {
             ("Connection detections", "detections"),
             ("Suggestion dismissals", "suggestion_dismissals"),
             ("Activity", "activity"),
+            ("Today entries", "today"),
+            ("Schedules", "schedules"),
         ]
         .into_iter()
         .map(|(label, table)| DeleteItem {

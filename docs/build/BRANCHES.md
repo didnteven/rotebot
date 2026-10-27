@@ -23,6 +23,7 @@ the build.
 | 15 | `m4/general-tasks` | `m4/dev-file-vault` | Tasks beyond CSV: model-written programs in the sandbox, checked, previewed, approved, committed; ADR 0004 | M4 |
 | 16 | `m4/connection-actions` | `m4/general-tasks` | Programs plan connection calls; the host runs only approved calls, with journal and receipts, never resending after a crash | M4 / ADR 0004 |
 | 17 | `m4/web-sources` | `m4/connection-actions` | Web sources ("check the weather"), no-input tasks (built by Muse Code as a trial); example-format check with one correction round; merges connection actions | M4 |
+| 18 | `m4/schedules` | `m4/web-sources` | Approved schedules, encrypted Today digest, held connection actions, macOS notifications and opt-in launch at login | M4 / ADR 0004 §4–5 |
 
 To publish later:
 

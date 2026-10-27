@@ -67,6 +67,18 @@
     "allow-delete-preview",
     "allow-delete-data",
     "core:event:allow-listen",
-    "core:event:allow-unlisten"
+    "core:event:allow-unlisten",
+    "allow-list-today",
+    "allow-dismiss-today-entry",
+    "allow-list-schedules",
+    "allow-set-schedule",
+    "allow-schedule-status",
+    "allow-login-enabled",
+    "allow-set-login-enabled",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "autostart:allow-is-enabled",
+    "autostart:allow-enable",
+    "autostart:allow-disable"
   ]
 }

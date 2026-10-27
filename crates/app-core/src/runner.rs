@@ -22,6 +22,8 @@ fn hash_file(path: &Path) -> Result<String, BrokerError> {
 /// covers the exact fetched bytes.
 pub struct SourceStage<'a> {
     pub sources: &'a BTreeMap<String, String>,
+    pub output_name: Option<&'a str>,
+    pub create_file: bool,
     pub has_input_file: bool,
     pub extra_binding: Option<serde_json::Value>,
 }
@@ -32,6 +34,8 @@ impl Default for SourceStage<'static> {
     fn default() -> Self {
         Self {
             sources: &EMPTY_SOURCES,
+            output_name: None,
+            create_file: true,
             has_input_file: true,
             extra_binding: None,
         }
@@ -264,31 +268,45 @@ impl RunnerEngine {
         }
         let binding = serde_json::json!({"code":code,"runner":self.runner_hash,"profile":self.profile_hash,
             "rquickjs":macroscope_runner::RQUICKJS_VERSION,"sdk":"1","limits":limits,"synthetic":synthetic,
-            "sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
+            "output_name":stage_sources.output_name,"create_file":stage_sources.create_file,"sources": stage_sources.extra_binding.clone().unwrap_or(serde_json::Value::Null)});
         let execution_hash = format!("{:x}", Sha256::digest(broker::canonical_json(&binding)?));
-        let basename = run.basename.clone();
+        let basename = stage_sources
+            .output_name
+            .unwrap_or(&run.basename)
+            .to_string();
         let sources = stage_sources.sources.clone();
         let has_input_file = stage_sources.has_input_file;
-        broker::stage_generated_actions(run, execution_hash, |snapshot| {
-            let (mut outputs, calls) =
-                self.execute_inner(snapshot, &sources, has_input_file, code, limits, synthetic)?;
-            if outputs.len() > 1
-                || outputs.first().is_some_and(|o| o.name != basename)
-                || (outputs.is_empty() && calls.is_empty())
-            {
-                return Err(BrokerError::Runner(
-                    "expected one output with the approved basename".into(),
-                ));
-            }
-            Ok((
-                if outputs.is_empty() {
-                    vec![]
-                } else {
-                    outputs.remove(0).text.into_bytes()
-                },
-                crate::connections::validate_calls(&calls, selected)
-                    .map_err(BrokerError::Runner)?,
-            ))
-        })
+        broker::stage_generated_outputs(
+            run,
+            execution_hash,
+            stage_sources.create_file,
+            |snapshot| {
+                let (mut outputs, calls) = self.execute_inner(
+                    snapshot,
+                    &sources,
+                    has_input_file,
+                    code,
+                    limits,
+                    synthetic,
+                )?;
+                if outputs.len() > 1
+                    || outputs.first().is_some_and(|o| o.name != basename)
+                    || (outputs.is_empty() && calls.is_empty())
+                {
+                    return Err(BrokerError::Runner(
+                        "expected one output with the approved basename".into(),
+                    ));
+                }
+                Ok((
+                    if outputs.is_empty() {
+                        vec![]
+                    } else {
+                        outputs.remove(0).text.into_bytes()
+                    },
+                    crate::connections::validate_calls(&calls, selected)
+                        .map_err(BrokerError::Runner)?,
+                ))
+            },
+        )
     }
 }

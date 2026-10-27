@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AppInfo,
   Backend,
@@ -25,6 +25,8 @@ export function Settings({
   const [entering, setEntering] = useState(false),
     [signingIn, setSigningIn] = useState(false),
     [docs, setDocs] = useState(false);
+  const [login, setLogin] = useState(false);
+  useEffect(() => { void backend.loginEnabled().then(setLogin).catch(() => {}); }, [backend]);
   const key = useRef<HTMLInputElement>(null);
   const { act, error, busy } = useAction();
   const muse = status.muse;
@@ -55,6 +57,8 @@ export function Settings({
   ];
   return (
     <section>
+      <h2>Schedules</h2>
+      <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
       <h2>Model access</h2>
       {info.debugBuild && info.secretStore === "file" && (
         <p className="muted">

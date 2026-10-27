@@ -794,6 +794,89 @@ mod actions {
     }
 
     #[tokio::test]
+    async fn schedule_waits_for_exact_actions_and_local_outputs_approve_once_or_discard() {
+        use macroscope_app_core::schedules::*;
+        let code = r#"function run(){
+            const forecast=JSON.parse(macroscope.source('forecast'));
+            const body='Auckland high '+forecast.high+'C\n';
+            macroscope.output('draft.txt',body);
+            macroscope.connection.request('custom','create_draft',{to:'test@example.invalid',body:body});
+        }"#;
+        let (_tmp, core, conns, tool, _input, folder, calls, _vault) =
+            setup_program(code, true).await;
+        let schedule = core
+            .set_schedule(
+                &tool.summary_row.id,
+                ScheduleRequest {
+                    frequency: Frequency::Daily {
+                        time: "00:00".into(),
+                    },
+                    outputs: ScheduleOutputs {
+                        today: true,
+                        notification: true,
+                        folder: Some(folder.clone()),
+                        filename: "draft-{date}.txt".into(),
+                    },
+                    version_hash: tool.version_hash.clone(),
+                    approved: true,
+                },
+            )
+            .unwrap();
+        let now = core.now_ms() + 3 * 86_400_000;
+        let entries = core.run_due_schedules(now).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, "needs_you");
+        let plan = entries[0].staged.as_ref().unwrap();
+        let expected = json!({"to":"test@example.invalid","body":"Auckland high 21.5C\n"});
+        assert_eq!(plan.planned_calls[0].call.args, expected);
+        assert!(calls.lock().unwrap().is_empty());
+        assert!(
+            !Path::new(&folder.display_path)
+                .join(&plan.output_name)
+                .exists(),
+            "local output waits with external action"
+        );
+        assert!(conns
+            .commit_run(&plan.run_id, &plan.plan_hash, false)
+            .await
+            .is_err());
+        let CommitResult::Committed(receipt) = conns
+            .commit_run(&plan.run_id, &plan.plan_hash, true)
+            .await
+            .unwrap()
+        else {
+            panic!("approval failed")
+        };
+        assert_eq!(receipt.trigger, RunTrigger::Schedule);
+        assert_eq!(receipt.schedule_id, Some(schedule.id));
+        assert_eq!(
+            std::fs::read(&receipt.output_path).unwrap(),
+            b"Auckland high 21.5C\n"
+        );
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[json!({"name":"create_draft","arguments":expected})]
+        );
+        assert!(conns
+            .commit_run(&plan.run_id, &plan.plan_hash, true)
+            .await
+            .is_err());
+        assert!(core
+            .list_today()
+            .unwrap()
+            .iter()
+            .flat_map(|d| &d.entries)
+            .any(|e| e.run_id.as_deref() == Some(&plan.run_id) && e.status == "done"));
+        let entries = core.run_due_schedules(now + 86_400_000).await.unwrap();
+        let pending = entries[0].staged.as_ref().unwrap();
+        core.discard_run(&pending.run_id).unwrap();
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        assert!(!Path::new(&folder.display_path)
+            .join(&pending.output_name)
+            .exists());
+    }
+
+    #[tokio::test]
     async fn bad_hash_or_reauth_prevents_every_action() {
         let (_tmp, core, conns, tool, input, folder, calls, vault) = setup(CODE).await;
         let plan = stage(&core, &tool, &input, &folder).await;

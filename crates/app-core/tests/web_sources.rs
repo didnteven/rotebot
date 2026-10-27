@@ -135,9 +135,24 @@ fn runner_path() -> std::path::PathBuf {
 }
 
 fn core_at(root: &Path, endpoint: String) -> AppCore {
+    core_at_clock(root, endpoint, CoreConfig::system_clock())
+}
+fn core_at_clock(
+    root: &Path,
+    endpoint: String,
+    clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+) -> AppCore {
+    core_at_clock_vault(root, endpoint, clock, Arc::new(MemoryStore::default()))
+}
+fn core_at_clock_vault(
+    root: &Path,
+    endpoint: String,
+    clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    vault: Arc<MemoryStore>,
+) -> AppCore {
     let core = AppCore::new(CoreConfig {
         data_dir: root.join("data"),
-        vault: Arc::new(MemoryStore::default()),
+        vault,
         gateway_base_url: endpoint,
         home: root.join("empty-home"),
         muse: Arc::new(NativeMuse {
@@ -145,7 +160,7 @@ fn core_at(root: &Path, endpoint: String) -> AppCore {
         }),
         app_version: "test".into(),
         platform: "macos".into(),
-        now_ms: CoreConfig::system_clock(),
+        now_ms: clock,
     })
     .unwrap();
     // Explicit synthetic worker launches for tests (same pattern as
@@ -561,5 +576,439 @@ async fn web_fetch_and_stage_work_on_a_multi_thread_runtime() {
             assert_eq!((staged.rows_in, staged.rows_out), (18, 18));
         }
         result => panic!("{result:?}"),
+    }
+}
+
+#[cfg(feature = "synthetic-runtime-tests")]
+mod schedules {
+    use super::*;
+    use macroscope_app_core::schedules::*;
+    use std::sync::atomic::{AtomicI64, Ordering};
+    #[derive(Default)]
+    struct Notifications(Mutex<Vec<(String, String)>>);
+    impl Notifier for Notifications {
+        fn notify(&self, title: &str, body: &str) -> Result<(), String> {
+            self.0.lock().unwrap().push((title.into(), body.into()));
+            Ok(())
+        }
+    }
+    fn at(s: &str) -> i64 {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .timestamp_millis()
+    }
+    struct Fixture {
+        _tmp: tempfile::TempDir,
+        core: AppCore,
+        tool: ToolDetail,
+        folder: FileHandle,
+        clock: Arc<AtomicI64>,
+        notifications: Arc<Notifications>,
+        vault: Arc<MemoryStore>,
+    }
+    impl Fixture {
+        async fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let state = Arc::new(Mutex::new(StandInState {
+                forecast: br#"{"hourly":{"temperature_2m":[21.5]}}"#.to_vec(),
+                redirect_to: String::new(),
+                model: Vec::new(),
+            }));
+            let server = start_stand_in(state.clone());
+            state.lock().unwrap().model = model_body_for(&program_for(&server.base, "/forecast"));
+            let clock = Arc::new(AtomicI64::new(at("2026-10-28T06:00:00+13:00")));
+            let c = clock.clone();
+            let vault = Arc::new(MemoryStore::default());
+            let core = core_at_clock_vault(
+                tmp.path(),
+                server.base,
+                Arc::new(move || c.load(Ordering::SeqCst)),
+                vault.clone(),
+            );
+            core.set_schedule_timezone(chrono_tz::Pacific::Auckland);
+            let notifications = Arc::new(Notifications::default());
+            core.set_notifier(notifications.clone());
+            let tool = build_weather(&core).await;
+            let folder = out_dir(&core, tmp.path(), "Reports");
+            Self {
+                _tmp: tmp,
+                core,
+                tool,
+                folder,
+                clock,
+                notifications,
+                vault,
+            }
+        }
+        fn enable(&self, file: bool) -> Schedule {
+            self.core
+                .set_schedule(
+                    &self.tool.summary_row.id,
+                    ScheduleRequest {
+                        frequency: Frequency::Daily {
+                            time: "07:00".into(),
+                        },
+                        outputs: ScheduleOutputs {
+                            today: true,
+                            notification: true,
+                            folder: if file {
+                                Some(self.folder.clone())
+                            } else {
+                                None
+                            },
+                            filename: "weather-{date}.txt".into(),
+                        },
+                        version_hash: self.tool.version_hash.clone(),
+                        approved: true,
+                    },
+                )
+                .unwrap()
+        }
+        async fn run(&self, s: &str) -> Vec<TodayEntry> {
+            let now = at(s);
+            self.clock.store(now, Ordering::SeqCst);
+            self.core.run_due_schedules(now).await.unwrap()
+        }
+    }
+    #[tokio::test]
+    async fn scheduled_weather_uses_normal_stage_receipt_outbound_and_exact_notification() {
+        let f = Fixture::new().await;
+        let schedule = f.enable(true);
+        assert!(f.run("2026-10-28T06:59:00+13:00").await.is_empty());
+        let before = f.core.list_outbound().unwrap().len();
+        let entries = f.run("2026-10-28T07:00:00+13:00").await;
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.status, "done");
+        assert_eq!(e.body, "Auckland high 21.5C\n");
+        let path = Path::new(&f.folder.display_path).join("weather-2026-10-28.txt");
+        assert_eq!(std::fs::read(&path).unwrap(), b"Auckland high 21.5C\n");
+        assert_eq!(e.file_created.as_deref(), path.to_str());
+        assert_eq!(f.core.list_today().unwrap()[0].entries.len(), 1);
+        assert_eq!(
+            *f.notifications.0.lock().unwrap(),
+            vec![("Auckland weather".into(), "Auckland high 21.5C".into())]
+        );
+        let receipt = &f.core.list_receipts().unwrap()[0];
+        assert_eq!(receipt.trigger, RunTrigger::Schedule);
+        assert_eq!(receipt.schedule_id.as_deref(), Some(schedule.id.as_str()));
+        assert_eq!(receipt.run_id, e.run_id.as_deref().unwrap());
+        assert_eq!(receipt.status, ReceiptStatus::Committed);
+        assert_eq!(f.core.list_outbound().unwrap().len(), before + 1);
+        assert_eq!(f.core.list_outbound().unwrap()[0].purpose, "Web source");
+        assert!(f.run("2026-10-28T23:59:00+13:00").await.is_empty());
+    }
+    #[tokio::test]
+    async fn missed_three_days_coalesces_once_and_digest_only_creates_no_file() {
+        let f = Fixture::new().await;
+        f.enable(false);
+        let entries = f.run("2026-10-31T09:14:00+13:00").await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, "done");
+        assert_eq!(entries[0].file_created, None);
+        assert_eq!(
+            entries[0].note.as_deref(),
+            Some("Missed at 7:00 (Macroscope was closed); ran at 9:14")
+        );
+        assert!(std::fs::read_dir(&f.folder.display_path)
+            .unwrap()
+            .next()
+            .is_none());
+        assert!(f.run("2026-10-31T10:00:00+13:00").await.is_empty());
+    }
+    #[tokio::test]
+    async fn launch_after_three_days_uses_persisted_grant_and_runs_once() {
+        let f = Fixture::new().await;
+        f.enable(true);
+        let Fixture {
+            _tmp,
+            core,
+            clock,
+            notifications,
+            vault,
+            ..
+        } = f;
+        drop(core);
+        let now = at("2026-10-31T09:14:00+13:00");
+        clock.store(now, Ordering::SeqCst);
+        let c = clock.clone();
+        let reopened = core_at_clock_vault(
+            _tmp.path(),
+            "http://127.0.0.1:9".into(),
+            Arc::new(move || c.load(Ordering::SeqCst)),
+            vault,
+        );
+        reopened.set_schedule_timezone(chrono_tz::Pacific::Auckland);
+        reopened.set_notifier(notifications);
+        let entries = reopened.run_due_schedules(now).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, "done");
+        assert_eq!(
+            entries[0].note.as_deref(),
+            Some("Missed at 7:00 (Macroscope was closed); ran at 9:14")
+        );
+        assert!(reopened
+            .run_due_schedules(now + 30_000)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+    #[tokio::test]
+    async fn schedule_rejects_stale_unapproved_empty_outputs_and_replaced_folder() {
+        let f = Fixture::new().await;
+        let original = f.enable(true);
+        let mut request = ScheduleRequest {
+            frequency: original.frequency,
+            outputs: original.outputs,
+            version_hash: f.tool.version_hash.clone(),
+            approved: false,
+        };
+        assert!(f
+            .core
+            .set_schedule(&f.tool.summary_row.id, request.clone())
+            .is_err());
+        request.approved = true;
+        request.version_hash = "old-version".into();
+        assert!(f
+            .core
+            .set_schedule(&f.tool.summary_row.id, request.clone())
+            .is_err());
+        request.version_hash = f.tool.version_hash.clone();
+        request.outputs = ScheduleOutputs {
+            today: false,
+            notification: false,
+            folder: None,
+            filename: "weather.txt".into(),
+        };
+        assert!(f
+            .core
+            .set_schedule(&f.tool.summary_row.id, request)
+            .is_err());
+        let path = Path::new(&f.folder.display_path);
+        std::fs::rename(path, path.with_file_name("OldReports")).unwrap();
+        std::fs::create_dir(path).unwrap();
+        assert_eq!(
+            f.core.list_schedules().unwrap()[0].status,
+            "needs_reapproval"
+        );
+        assert!(f.run("2026-10-28T07:00:00+13:00").await.is_empty());
+    }
+    #[tokio::test]
+    async fn evaluator_runs_weekly_monthly_and_each_dst_day_once() {
+        for (before, frequency, due, later) in [
+            (
+                "2026-10-27T06:00:00+13:00",
+                Frequency::Weekly {
+                    weekday: 3,
+                    time: "07:00".into(),
+                },
+                "2026-10-28T07:00:00+13:00",
+                "2026-10-29T07:00:00+13:00",
+            ),
+            (
+                "2026-11-29T06:00:00+13:00",
+                Frequency::Monthly {
+                    day: 31,
+                    time: "07:00".into(),
+                },
+                "2026-11-30T07:00:00+13:00",
+                "2026-11-30T08:00:00+13:00",
+            ),
+            (
+                "2026-02-27T06:00:00+13:00",
+                Frequency::Monthly {
+                    day: 31,
+                    time: "07:00".into(),
+                },
+                "2026-02-28T07:00:00+13:00",
+                "2026-02-28T08:00:00+13:00",
+            ),
+            (
+                "2026-09-26T06:00:00+12:00",
+                Frequency::Daily {
+                    time: "02:30".into(),
+                },
+                "2026-09-27T03:00:00+13:00",
+                "2026-09-27T03:30:00+13:00",
+            ),
+            (
+                "2026-04-04T06:00:00+13:00",
+                Frequency::Daily {
+                    time: "02:30".into(),
+                },
+                "2026-04-05T02:30:00+13:00",
+                "2026-04-05T02:30:00+12:00",
+            ),
+        ] {
+            let f = Fixture::new().await;
+            f.clock.store(at(before), Ordering::SeqCst);
+            f.core
+                .set_schedule(
+                    &f.tool.summary_row.id,
+                    ScheduleRequest {
+                        frequency,
+                        outputs: ScheduleOutputs {
+                            today: true,
+                            notification: true,
+                            folder: None,
+                            filename: "weather.txt".into(),
+                        },
+                        version_hash: f.tool.version_hash.clone(),
+                        approved: true,
+                    },
+                )
+                .unwrap();
+            assert!(f
+                .core
+                .run_due_schedules(at(due) - 1)
+                .await
+                .unwrap()
+                .is_empty());
+            let entries = f.run(due).await;
+            assert_eq!(entries.len(), 1, "{due}");
+            assert_eq!(entries[0].status, "done");
+            assert!(f.run(later).await.is_empty(), "{later}");
+        }
+    }
+    #[tokio::test]
+    async fn local_only_skips_without_fetch_or_outbound_and_emergency_pauses() {
+        let f = Fixture::new().await;
+        f.enable(true);
+        f.core.set_local_only(true).await.unwrap();
+        let before = f.core.list_outbound().unwrap().len();
+        let entries = f.run("2026-10-28T07:00:00+13:00").await;
+        assert_eq!(entries[0].status, "skipped");
+        assert_eq!(entries[0].body, "Skipped at 7:00 — Local only is on");
+        assert_eq!(f.core.list_outbound().unwrap().len(), before);
+        assert_eq!(
+            f.notifications.0.lock().unwrap()[0].1,
+            "Skipped: Local only is on"
+        );
+        f.core.emergency_stop().await.unwrap();
+        assert_eq!(
+            f.core.list_schedules().unwrap()[0].status,
+            "emergency_paused"
+        );
+        assert!(f.run("2026-10-29T07:00:00+13:00").await.is_empty());
+    }
+    #[tokio::test]
+    async fn changed_version_source_or_grant_needs_reapproval() {
+        for change in ["version", "source", "grant"] {
+            let f = Fixture::new().await;
+            f.enable(true);
+            if change == "grant" {
+                f.core
+                    .database()
+                    .put_grant(
+                        "changed",
+                        &f.tool.summary_row.id,
+                        &f.tool.version_hash,
+                        99,
+                        &json!({"webHosts":["other.test"]}),
+                    )
+                    .unwrap();
+            } else {
+                let mut row = f
+                    .core
+                    .database()
+                    .tool(&f.tool.summary_row.id)
+                    .unwrap()
+                    .unwrap();
+                if change == "version" {
+                    row.active_version = Some("replacement".into());
+                } else {
+                    let mut version = f
+                        .core
+                        .database()
+                        .version(&f.tool.summary_row.id, &f.tool.version_hash)
+                        .unwrap()
+                        .unwrap();
+                    version.hash = "rebuilt-with-changed-source".into();
+                    version.mapping["program"]["web_sources"][0]["url"] =
+                        json!("https://other.test/forecast");
+                    row.active_version = Some(version.hash.clone());
+                    f.core.database().insert_version(&version).unwrap();
+                }
+                f.core.database().put_tool(&row).unwrap();
+            }
+            let schedules = f.core.list_schedules().unwrap();
+            assert_eq!(schedules[0].status, "needs_reapproval", "{change}");
+            assert!(f.run("2026-10-28T07:00:00+13:00").await.is_empty());
+            assert!(f
+                .core
+                .schedule_status(&f.tool.summary_row.id, "enabled")
+                .is_err());
+        }
+    }
+    #[tokio::test]
+    async fn collision_suffix_never_overwrites_and_exhaustion_fails_clearly() {
+        let f = Fixture::new().await;
+        f.enable(true);
+        let root = Path::new(&f.folder.display_path);
+        std::fs::write(root.join("weather-2026-10-28.txt"), b"keep").unwrap();
+        let entries = f.run("2026-10-28T07:00:00+13:00").await;
+        assert_eq!(entries[0].status, "done");
+        assert_eq!(
+            std::fs::read(root.join("weather-2026-10-28 (2).txt")).unwrap(),
+            b"Auckland high 21.5C\n"
+        );
+        assert_eq!(
+            std::fs::read(root.join("weather-2026-10-28.txt")).unwrap(),
+            b"keep"
+        );
+        for n in 1..=9 {
+            let name = if n == 1 {
+                "weather-2026-10-29.txt".into()
+            } else {
+                format!("weather-2026-10-29 ({n}).txt")
+            };
+            std::fs::write(root.join(name), b"keep").unwrap();
+        }
+        let entries = f.run("2026-10-29T07:00:00+13:00").await;
+        assert_eq!(entries[0].status, "failed");
+        assert!(entries[0].body.contains("(9)"));
+        assert_eq!(
+            f.notifications.0.lock().unwrap().last().unwrap().1,
+            "Failed: Open Today for details"
+        );
+    }
+    #[tokio::test]
+    async fn active_manual_run_skips_schedule_then_commit_adds_manual_today_and_privacy_deletes() {
+        let f = Fixture::new().await;
+        f.enable(true);
+        let StageResult::Staged(staged) = f
+            .core
+            .stage_run_no_input(&f.tool.summary_row.id, &f.folder.handle_id, "weather.txt")
+            .await
+            .unwrap()
+        else {
+            panic!("stage failed")
+        };
+        let entries = f.run("2026-10-28T07:00:00+13:00").await;
+        assert_eq!(entries[0].status, "skipped");
+        assert!(entries[0].body.contains("already active"));
+        f.core
+            .commit_run(&staged.run_id, &staged.plan_hash)
+            .unwrap();
+        assert!(f.core.list_today().unwrap()[0]
+            .entries
+            .iter()
+            .any(|e| e.trigger == "manual" && e.status == "done"));
+        assert!(f
+            .core
+            .privacy_overview()
+            .await
+            .unwrap()
+            .stored
+            .iter()
+            .any(|r| r.label == "Today entries" && r.count == 2));
+        f.core
+            .delete_data(DeleteOptions {
+                include_tools: true,
+            })
+            .await
+            .unwrap();
+        assert!(f.core.list_today().unwrap().is_empty());
+        assert!(f.core.list_schedules().unwrap().is_empty());
     }
 }

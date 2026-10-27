@@ -280,3 +280,65 @@ Verification (Claude, rerun): `cargo build -p macroscope-runner --bins` and both
 and admission **PASS** (developer boundary; release admission is still pending a signed
 bundle).
 
+## m4/schedules — Task 16 (2026-10-28)
+
+Added encrypted schedule grants and Today entries (ADR 0004 §4–5). Daily, weekly,
+and month-end-clamped monthly triggers use the local IANA timezone and injected
+clock, resolve DST gaps to the first valid minute and overlaps to one occurrence,
+and coalesce missed occurrences at launch. The shell evaluates on launch and every
+30 seconds, including after wake. Grants bind the tool version, program/sources,
+exact host grant and picked folder identity; changes require explicit re-approval.
+Emergency stop pauses every schedule; Local only records a skipped network run.
+Admission also prevents overlapping runs for one tool during asynchronous fetching.
+
+Scheduled runs use the normal sandbox, source fetch/outbound log, frozen plan and
+broker commit. Date-named files remain create-only, using suffixes (2) through (9).
+Digest-only runs commit authenticated staged bytes without publishing a file.
+Any planned connection calls hold all outputs in Needs you until exact-call review
+and approval, or discard. Receipts retain the schedule trigger and schedule id.
+Today includes manual no-input runs, bounded output text, output paths, run ids,
+dismissal and seven previous days, and participates in Privacy counts and deletion.
+
+The desktop adds Today first in navigation, exact planned-call review, a Schedule
+section with frequency/output controls and explicit unattended consent, and an
+opt-in login setting. Tauri notification/autostart v2 plugins are registered;
+notification permission is requested only on the first explicit notification
+schedule approval. Notification bodies contain at most the first output line
+(120 characters) or status; clicks focus the app and open Today. A notifier trait
+keeps native notification delivery outside core tests. Every added command is
+registered in handlers, build COMMANDS, capabilities and generated permissions.
+Backend types, mock and Tauri adapters are synchronized; the contract copy uses
+`.dev/task16/backend-types.ts` to keep all writes inside this worktree.
+
+Regression coverage includes fake-clock weather runs with exact bytes, receipts,
+outbound logs and notifications; weekly/monthly/DST evaluation; persistent missed
+runs after reopening; re-approval after tool/source/host/folder changes; Local only
+and emergency pause; approved-once/discarded fake MCP calls; collisions and Privacy
+wipe. UI tests cover Today, Needs you, unattended approval, next-run/re-approval
+states and the login toggle. Verification results are recorded in
+[task16-verification.md](task16-verification.md).
+
+Final verification: **PASS**, exit **0** for the runner binaries build, both
+`bash scripts/check.sh` runs, all **60/60 synthetic canaries**, and the Tauri debug
+build (`--no-bundle`). Each check passed **402 Rust test executions** (283 workspace
++ 119 synthetic app-core) and **120 UI tests across 16 files**, with **0 failures**.
+Four pre-existing opt-in tests account for five ignored executions per check;
+all new tests run without skips or ignores. `git diff --check` and the backend
+contract copy comparison pass. Exact output tails and ignored-test details are
+in [task16-verification.md](task16-verification.md).
+
+Claude's review of task 16: no added skips or ignores and no removed tests (17 Rust/UI tests
+added). The `navigation.test.tsx` listener count rose from 2 to 3 because of the new
+`navigate://today` listener. Checked by reading the code:
+- A new schedule's watermark is set to the approval time, so turning a schedule on never
+  fires it at once.
+- Each occurrence is persisted before any fetch, so a crash cannot replay it.
+- Approval, outputs and binding are rechecked after the async fetch and before the unattended
+  commit.
+- `create_file` is part of the hashed plan.
+
+Fix: the schedule file name template was hard-coded to `weather-{date}.txt` for every tool.
+It now derives from the tool's output name (`datedFilename`, with a test).
+
+Rerun by Claude: both `check.sh` runs passed with **402 Rust + 121 UI tests** each. `run-canaries.sh --os`
+reported synthetic **PASS** and admission **PASS** (developer boundary).

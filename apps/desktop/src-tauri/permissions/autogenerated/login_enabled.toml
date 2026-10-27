@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-login-enabled"
+description = "Enables the login_enabled command without any pre-configured scope."
+commands.allow = ["login_enabled"]
+
+[[permission]]
+identifier = "deny-login-enabled"
+description = "Denies the login_enabled command without any pre-configured scope."
+commands.deny = ["login_enabled"]

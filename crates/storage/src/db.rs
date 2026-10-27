@@ -86,6 +86,10 @@ ALTER TABLE runs ADD COLUMN run_dir TEXT;
     r#"
 CREATE TABLE deletion_journal (id INTEGER PRIMARY KEY CHECK (id = 1), include_tools INTEGER NOT NULL);
 "#,
+    r#"
+CREATE TABLE schedules (id TEXT PRIMARY KEY, tool_id TEXT NOT NULL UNIQUE REFERENCES tools(id) ON DELETE CASCADE, data_json TEXT NOT NULL);
+CREATE TABLE today (id TEXT PRIMARY KEY, data_json TEXT NOT NULL);
+"#,
 ];
 
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
@@ -496,7 +500,7 @@ impl Db {
             tx.execute_batch(
                 "DELETE FROM model_usage; DELETE FROM builds; DELETE FROM drafts;
                 DELETE FROM outbound; DELETE FROM detections; DELETE FROM suggestion_dismissals;
-                DELETE FROM activity;",
+                DELETE FROM activity; DELETE FROM today; DELETE FROM schedules;",
             )?;
             if include_tools {
                 tx.execute_batch("DELETE FROM runs; DELETE FROM tools;")?;
@@ -518,6 +522,44 @@ impl Db {
         })
     }
 
+    pub fn put_schedule(&self, id: &str, tool_id: &str, data: &Value) -> Result<(), DbError> {
+        self.with(|c| { c.execute("INSERT INTO schedules VALUES (?1,?2,?3) ON CONFLICT(tool_id) DO UPDATE SET data_json=excluded.data_json", params![id,tool_id,data.to_string()])?; Ok(()) })
+    }
+    pub fn schedule_rows(&self) -> Result<Vec<Value>, DbError> {
+        self.with(|c| {
+            let mut s = c.prepare("SELECT data_json FROM schedules ORDER BY id")?;
+            let rows = s.query_map([], |r| r.get::<_, String>(0))?;
+            rows.map(|r| json(r?)).collect()
+        })
+    }
+    pub fn remove_schedule(&self, tool_id: &str) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute("DELETE FROM schedules WHERE tool_id=?1", [tool_id])?;
+            Ok(())
+        })
+    }
+    pub fn put_today(&self, id: &str, data: &Value) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute(
+                "INSERT OR REPLACE INTO today VALUES (?1,?2)",
+                params![id, data.to_string()],
+            )?;
+            Ok(())
+        })
+    }
+    pub fn today_rows(&self) -> Result<Vec<Value>, DbError> {
+        self.with(|c| {
+            let mut s = c.prepare("SELECT data_json FROM today")?;
+            let rows = s.query_map([], |r| r.get::<_, String>(0))?;
+            rows.map(|r| json(r?)).collect()
+        })
+    }
+    pub fn dismiss_today(&self, id: &str) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute("DELETE FROM today WHERE id=?1", [id])?;
+            Ok(())
+        })
+    }
     // ---------- runs ----------
 
     pub fn put_run(&self, r: &RunRow) -> Result<(), DbError> {
@@ -1015,7 +1057,7 @@ impl Db {
 
     /// Row counts for the Privacy page.
     pub fn stats(&self) -> Result<Vec<TableStats>, DbError> {
-        const TABLES: [&str; 11] = [
+        const TABLES: [&str; 13] = [
             "tools",
             "versions",
             "runs",
@@ -1027,6 +1069,8 @@ impl Db {
             "model_usage",
             "suggestion_dismissals",
             "grants",
+            "today",
+            "schedules",
         ];
         self.with(|c| {
             TABLES

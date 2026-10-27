@@ -13,6 +13,7 @@ import type {
 } from "./backend/types";
 import { routeLabel } from "./backend/mock";
 import { CreateFlow } from "./CreateFlow";
+import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
@@ -21,6 +22,7 @@ import { RecordingBar, ShowPanel, ShowStatus } from "./Show";
 import { FileText, Notice, Suggestions, useAction } from "./ui";
 
 const destinations = [
+  "Today",
   "Tools",
   "Activity",
   "Connections",
@@ -112,6 +114,7 @@ export function App({ backend }: { backend: Backend }) {
           }
         });
       }),
+      listen("navigate://today", () => { if (active) setDestination("Today"); }),
       listen("navigate://create", () => {
         if (active) {
           setRunning(null);
@@ -212,6 +215,7 @@ export function App({ backend }: { backend: Backend }) {
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}
           {!status && !error && <p role="status">Loading Macroscope…</p>}
+          {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} />}
           <div hidden={destination !== "Tools"}>
             {destination === "Tools" && commonSuggestions}
             {showPanel && show && (
@@ -243,6 +247,7 @@ export function App({ backend }: { backend: Backend }) {
                   tool={running}
                   close={() => setRunning(null)}
                   changed={refreshTools}
+                  openSettings={openSettings}
                 />
               ) : libraryFailed ? (
                 <div role="alert">

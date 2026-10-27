@@ -275,6 +275,8 @@ export type RunFailure =
   | { kind: "internal"; message: string };
 
 export interface Receipt {
+  trigger?: "manual" | "schedule";
+  scheduleId?: string | null;
   actions?: ActionResult[];
   runId: string;
   toolId: string;
@@ -393,7 +395,21 @@ export type ShowState =
 
 // ---------- The seam ----------
 
+export type Frequency = {kind: "daily"; time: string} | {kind: "weekly"; weekday: number; time: string} | {kind: "monthly"; day: number; time: string};
+export interface ScheduleOutputs { today: boolean; notification: boolean; folder: FileHandle | null; filename: string }
+export interface ScheduleRequest { frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; approved: boolean }
+export interface Schedule { id: string; toolId: string; frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; binding: string; folderIdentity: string | null; status: "enabled" | "paused" | "needs_reapproval" | "emergency_paused"; approvedAtMs: number; lastDueMs: number; nextRunMs: number | null }
+export interface TodayEntry { id: string; toolId: string; toolName: string; trigger: "schedule" | "manual"; scheduleId: string | null; startedAtMs: number; finishedAtMs: number | null; status: "done" | "needs_you" | "skipped" | "failed" | "staged"; body: string; note: string | null; fileCreated: string | null; runId: string | null; staged: StagedRun | null; notification: boolean; addToToday: boolean; dismissed: boolean }
+export interface TodayDay { day: string; entries: TodayEntry[] }
+
 export interface Backend {
+  listToday(): Promise<TodayDay[]>;
+  dismissTodayEntry(id: string): Promise<void>;
+  listSchedules(): Promise<Schedule[]>;
+  setSchedule(toolId: string, request: ScheduleRequest): Promise<Schedule>;
+  scheduleStatus(toolId: string, status: "enabled" | "paused" | "remove"): Promise<void>;
+  loginEnabled(): Promise<boolean>;
+  setLoginEnabled(enabled: boolean): Promise<void>;
   appInfo(): Promise<AppInfo>;
 
   // Model access

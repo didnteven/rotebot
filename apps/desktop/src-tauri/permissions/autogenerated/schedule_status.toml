@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-schedule-status"
+description = "Enables the schedule_status command without any pre-configured scope."
+commands.allow = ["schedule_status"]
+
+[[permission]]
+identifier = "deny-schedule-status"
+description = "Denies the schedule_status command without any pre-configured scope."
+commands.deny = ["schedule_status"]

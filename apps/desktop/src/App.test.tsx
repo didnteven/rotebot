@@ -27,6 +27,10 @@ describe("desktop shell", () => {
     render(<App backend={new MockBackend()} />);
     await screen.findByRole("button", { name: "Try a sample" });
     await user.tab();
+    expect(screen.getByRole("button", { name: "Today" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
+    await user.tab();
     expect(screen.getByRole("button", { name: "Tools" })).toHaveFocus();
     for (const destination of [
       "Activity",

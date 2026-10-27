@@ -38,6 +38,13 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
+  listToday: Backend["listToday"] = () => invoke("list_today");
+  dismissTodayEntry: Backend["dismissTodayEntry"] = (id) => invoke("dismiss_today_entry", {id});
+  listSchedules: Backend["listSchedules"] = () => invoke("list_schedules");
+  setSchedule: Backend["setSchedule"] = (toolId, request) => invoke("set_schedule", {toolId, request});
+  scheduleStatus: Backend["scheduleStatus"] = (toolId, status) => invoke("schedule_status", {toolId, status});
+  loginEnabled: Backend["loginEnabled"] = () => invoke("login_enabled");
+  setLoginEnabled: Backend["setLoginEnabled"] = (enabled) => invoke("set_login_enabled", {enabled});
   appInfo: Backend["appInfo"] = () => invoke("app_info");
   modelAccess: Backend["modelAccess"] = () => invoke("model_access");
   enterApiKeyNative: Backend["enterApiKeyNative"] = () =>

@@ -4,6 +4,7 @@
 
 use macroscope_app_core::connections::Connections;
 use macroscope_app_core::dto::*;
+use macroscope_app_core::schedules::{Schedule, ScheduleRequest, TodayDay};
 use macroscope_app_core::show::ShowController;
 use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
 use macroscope_domain::CsvMapping;
@@ -13,7 +14,9 @@ use std::sync::Arc;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 /// Errors cross IPC as `{code, message}`; messages are already safe to display.
@@ -876,8 +879,94 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 /// Every product command. Shared by the app and the IPC tests so the lists cannot drift.
+#[tauri::command]
+fn list_today(core: State<'_, Core>) -> Result<Vec<TodayDay>, CommandError> {
+    Ok(core.0.list_today()?)
+}
+#[tauri::command]
+fn dismiss_today_entry(core: State<'_, Core>, id: String) -> Result<(), CommandError> {
+    Ok(core.0.dismiss_today_entry(&id)?)
+}
+#[tauri::command]
+fn list_schedules(core: State<'_, Core>) -> Result<Vec<Schedule>, CommandError> {
+    Ok(core.0.list_schedules()?)
+}
+#[tauri::command]
+fn set_schedule<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+    request: ScheduleRequest,
+) -> Result<Schedule, CommandError> {
+    let notifications = request.outputs.notification;
+    let schedule = core.0.set_schedule(&tool_id, request)?;
+    if notifications
+        && core
+            .0
+            .database()
+            .setting("notification_permission_requested")
+            .map_err(CoreError::from)?
+            != Some(serde_json::json!(true))
+    {
+        if let Err(e) = app.notification().request_permission() {
+            core.0.schedule_status(&tool_id, "paused")?;
+            return Err(invalid(e.to_string()));
+        }
+        core.0
+            .database()
+            .set_setting(
+                "notification_permission_requested",
+                &serde_json::json!(true),
+            )
+            .map_err(CoreError::from)?;
+    }
+    Ok(schedule)
+}
+#[tauri::command]
+fn schedule_status(
+    core: State<'_, Core>,
+    tool_id: String,
+    status: String,
+) -> Result<(), CommandError> {
+    Ok(core.0.schedule_status(&tool_id, &status)?)
+}
+#[tauri::command]
+fn login_enabled<R: Runtime>(app: AppHandle<R>) -> Result<bool, CommandError> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| invalid(e.to_string()))
+}
+#[tauri::command]
+fn set_login_enabled<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result<(), CommandError> {
+    if enabled {
+        app.autolaunch().enable()
+    } else {
+        app.autolaunch().disable()
+    }
+    .map_err(|e| invalid(e.to_string()))
+}
+struct DesktopNotifier(AppHandle);
+impl macroscope_app_core::schedules::Notifier for DesktopNotifier {
+    fn notify(&self, title: &str, body: &str) -> Result<(), String> {
+        self.0
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|e| e.to_string())
+    }
+}
+
 fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        list_today,
+        dismiss_today_entry,
+        list_schedules,
+        set_schedule,
+        schedule_status,
+        login_enabled,
+        set_login_enabled,
         build_try_input,
         export_tool,
         revoke_tool,
@@ -950,6 +1039,12 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
+                .build(),
+        )
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let data_dir_for_backup = data_dir.clone();
@@ -1012,6 +1107,34 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            core.set_notifier(Arc::new(DesktopNotifier(app.handle().clone())));
+            let notification_app = app.handle().clone();
+            app.notification().on_action(move |_| {
+                if let Some(window) = notification_app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                let _ = notification_app.emit("navigate://today", ());
+            })?;
+            let scheduled_core = core.clone();
+            let digest_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tick.tick().await;
+                    match scheduled_core
+                        .run_due_schedules(scheduled_core.now_ms())
+                        .await
+                    {
+                        Ok(entries) if !entries.is_empty() => {
+                            let _ = digest_app.emit("today://updated", ());
+                        }
+                        Err(_) => eprintln!("Macroscope: schedule evaluation failed"),
+                        _ => {}
+                    }
+                }
+            });
             let show = ShowController::new(observer_path(), core.clone());
             let mut updates = show.subscribe();
             let handle = app.handle().clone();

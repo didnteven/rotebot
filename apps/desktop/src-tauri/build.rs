@@ -2,6 +2,13 @@ fn main() {
     // Every command is enrolled in the app manifest and granted to the main window only
     // (capabilities/main.json). Keep this list identical to generate_handler! in main.rs.
     const COMMANDS: &[&str] = &[
+        "list_today",
+        "dismiss_today_entry",
+        "list_schedules",
+        "set_schedule",
+        "schedule_status",
+        "login_enabled",
+        "set_login_enabled",
         "build_try_input",
         "export_tool",
         "revoke_tool",

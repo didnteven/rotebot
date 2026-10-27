@@ -1,3 +1,4 @@
+import { ScheduleSection } from "./Schedule";
 import { useEffect, useState } from "react";
 import type {
   Backend,
@@ -25,11 +26,13 @@ export function RunFlow({
   tool,
   close,
   changed,
+  openSettings,
 }: {
   backend: Backend;
   tool: ToolSummary;
   close: () => void;
   changed: () => Promise<void>;
+  openSettings?: () => void;
 }) {
   const [detail, setDetail] = useState<ToolDetail | null>(null);
   useEffect(() => { void backend.getTool(tool.id).then(next => { setDetail(next); if (next.program) setName(next.program.output_name); }); }, [backend, tool.id]);
@@ -62,6 +65,7 @@ export function RunFlow({
       </button>
       {detail?.program && <><p>Program (sandboxed)</p><details><summary>Advanced details</summary><pre>{detail?.program.code}</pre></details></>}
       <h2>Run {tool.name}</h2>
+      {detail?.noInput && <ScheduleSection backend={backend} tool={detail} openSettings={openSettings} />}
       <p>
         Version {tool.version} · Every new input needs a fresh staged output and
         approval.

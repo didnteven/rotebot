@@ -15,6 +15,7 @@ mod privacy;
 #[cfg(feature = "generated-runtime")]
 pub mod runner;
 mod samples;
+pub mod schedules;
 pub mod show;
 pub mod web;
 
@@ -158,6 +159,7 @@ struct StagedSlot {
     staged: StagedPlan,
     dto: StagedRun,
     tool_name: String,
+    schedule: Option<schedules::Schedule>,
 }
 
 struct Inner {
@@ -178,6 +180,10 @@ struct Inner {
     /// Test-only stand-in switch for web sources. See
     /// `set_allow_insecure_web_sources_for_tests`.
     allow_insecure_web: Mutex<bool>,
+    schedule_eval: tokio::sync::Mutex<()>,
+    notifier: Mutex<Option<Arc<dyn schedules::Notifier>>>,
+    timezone: Mutex<Option<chrono_tz::Tz>>,
+    running_tools: Mutex<std::collections::HashSet<String>>,
 }
 
 #[derive(Clone)]
@@ -323,6 +329,10 @@ impl AppCore {
                 runtime: Mutex::new(None),
                 deleting: std::sync::atomic::AtomicBool::new(false),
                 allow_insecure_web: Mutex::new(false),
+                schedule_eval: tokio::sync::Mutex::new(()),
+                notifier: Mutex::new(None),
+                timezone: Mutex::new(None),
+                running_tools: Mutex::new(std::collections::HashSet::new()),
             }),
         };
         // Resume tombstones before reopening admission or recovering any jobs.
@@ -429,6 +439,8 @@ impl AppCore {
                 ) {
                     if !actions.is_empty() {
                         let receipt = Receipt {
+                            trigger: self.run_trigger(&run.id)?.0,
+                            schedule_id: self.run_trigger(&run.id)?.1,
                             run_id: run.id.clone(),
                             tool_id: run.tool_id.clone(),
                             tool_name: self
@@ -937,7 +949,7 @@ impl AppCore {
         consent_epoch: u64,
         cancelled: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Option<(BTreeMap<String, String>, Option<String>)> {
-        let today = web::today_local();
+        let today = self.local_date(self.now());
         let mut fetched = BTreeMap::new();
         let mut fetch_error = None;
         for source in sources {
@@ -990,7 +1002,7 @@ impl AppCore {
         if let Some(blocked) = self.web_fetch_blocked() {
             return Err(blocked);
         }
-        let today = web::today_local();
+        let today = self.local_date(self.now());
         let mut fetched = BTreeMap::new();
         for source in sources {
             let url = web::substitute_today(&source.url, &today);
@@ -2441,7 +2453,7 @@ impl AppCore {
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
-        self.stage_inner(tool_id, Some(input_handle), dir_handle, output_name)
+        self.stage_inner(tool_id, Some(input_handle), dir_handle, output_name, None)
             .await
     }
 
@@ -2457,17 +2469,37 @@ impl AppCore {
         dir_handle: &str,
         output_name: &str,
     ) -> CoreResult<StageResult> {
-        self.stage_inner(tool_id, None, dir_handle, output_name)
-            .await
+        let result = self
+            .stage_inner(tool_id, None, dir_handle, output_name, None)
+            .await;
+        let failure = match &result {
+            Ok(StageResult::Failed(f)) => Some(f.failure.message()),
+            Err(e) => Some(e.to_string()),
+            _ => None,
+        };
+        if let Some(message) = failure {
+            self.manual_today_failure(tool_id, &message)?;
+        }
+        result
     }
 
-    async fn stage_inner(
+    pub(crate) async fn stage_inner(
         &self,
         tool_id: &str,
         input_handle: Option<&str>,
         dir_handle: &str,
         output_name: &str,
+        schedule: Option<&schedules::Schedule>,
     ) -> CoreResult<StageResult> {
+        let started_at_ms = self.now();
+        let _active = self.claim_tool_run(tool_id)?;
+        if let Some(s) = schedule {
+            if !self.schedule_still_approved(s, true)? {
+                return Err(CoreError::Invalid(
+                    "Schedule needs re-approval or is paused".into(),
+                ));
+            }
+        }
         let _admission = self.admit_local()?;
         let row = self
             .db()
@@ -2585,6 +2617,13 @@ impl AppCore {
             None => None,
         };
         let _admission = self.admit_local()?;
+        if let Some(s) = schedule {
+            if !self.schedule_still_approved(s, true)? {
+                return Err(CoreError::Invalid(
+                    "Schedule needs re-approval or is paused".into(),
+                ));
+            }
+        }
         {
             let row = self
                 .db()
@@ -2650,7 +2689,7 @@ impl AppCore {
             }
         };
         let staged: Result<StagedPlan, BrokerError> = if let Some(program) = &detail.program {
-            if output_name != program.output_name {
+            if schedule.is_none() && output_name != program.output_name {
                 Err(BrokerError::Runner(
                     "Use the confirmed output name for this program.".into(),
                 ))
@@ -2672,7 +2711,7 @@ impl AppCore {
                     };
                     let empty_sources = BTreeMap::new();
                     let source_data = fetched.as_ref().unwrap_or(&empty_sources);
-                    let today = web::today_local();
+                    let today = self.local_date(self.now());
                     let urls: BTreeMap<String, String> = program
                         .web_sources
                         .iter()
@@ -2680,9 +2719,11 @@ impl AppCore {
                         .collect();
                     let stage_sources = runner::SourceStage {
                         sources: source_data,
+                        output_name: Some(&program.output_name),
+                        create_file: schedule.is_none_or(|s| s.outputs.folder.is_some()),
                         has_input_file: !detail.no_input,
                         extra_binding: Some(
-                            json!({"source_urls": urls, "source_digests": web::digests(source_data)}),
+                            json!({"source_urls": urls, "source_digests": web::digests(source_data), "schedule_grant": schedule}),
                         ),
                     };
                     engine.stage_with_sources_and_connections(
@@ -2726,7 +2767,7 @@ impl AppCore {
         };
         let run_id = staged.plan().run_id.0.clone();
         let dto = StagedRun {
-            creates_output: !staged.plan().effects.is_empty(),
+            creates_output: staged.plan().create_file && !staged.plan().effects.is_empty(),
             planned_calls: staged.plan().planned_calls.clone(),
             preview_text,
             run_id: run_id.clone(),
@@ -2764,8 +2805,12 @@ impl AppCore {
                     staged,
                     dto: dto.clone(),
                     tool_name: row.name,
+                    schedule: schedule.cloned(),
                 },
             );
+        }
+        if detail.no_input {
+            self.stage_today(&dto, &detail, &bytes, schedule, started_at_ms)?;
         }
         Ok(StageResult::Staged(Box::new(dto)))
     }
@@ -2786,6 +2831,12 @@ impl AppCore {
         reviewed: bool,
         execute: impl FnMut(&broker::PlannedAction) -> (broker::ActionStatus, String),
     ) -> CoreResult<CommitResult> {
+        let tool_id = self
+            .db()
+            .run(run_id)?
+            .ok_or(CoreError::NotFound("run"))?
+            .tool_id;
+        let _active = self.claim_tool_run(&tool_id)?;
         let _admission = self.admit_local()?;
         // Keep run admission closed through publication, not just while staging.
         let mut staged_runs = lock(&self.inner.staged);
@@ -2799,6 +2850,13 @@ impl AppCore {
             return Err(CoreError::Invalid(
                 "Tick ‘I reviewed these actions’ before approval.".into(),
             ));
+        }
+        if let Some(s) = staged_runs.get(run_id).and_then(|s| s.schedule.as_ref()) {
+            if !self.schedule_still_approved(s, false)? {
+                return Err(CoreError::Invalid(
+                    "Schedule needs re-approval. Discard this run.".into(),
+                ));
+            }
         }
         let slot = staged_runs
             .remove(run_id)
@@ -2818,6 +2876,7 @@ impl AppCore {
             mut staged,
             dto,
             tool_name,
+            schedule: _,
         } = slot;
         let approval = Approval {
             plan_hash: plan_hash.into(),
@@ -2847,6 +2906,8 @@ impl AppCore {
             Ok(receipt) => {
                 let out = Receipt {
                     actions: receipt.actions,
+                    trigger: self.run_trigger(run_id)?.0,
+                    schedule_id: self.run_trigger(run_id)?.1,
                     run_id: run_id.into(),
                     tool_id: dto.tool_id.clone(),
                     tool_name: tool_name.clone(),
@@ -2888,6 +2949,7 @@ impl AppCore {
                         )
                     }),
                 );
+                self.finish_today(run_id, Some(&out), None)?;
                 Ok(CommitResult::Committed(out))
             }
             Err(e) => {
@@ -2902,6 +2964,8 @@ impl AppCore {
                     .any(|a| a.status != broker::ActionStatus::NotRun)
                 {
                     let receipt = Receipt {
+                        trigger: self.run_trigger(run_id)?.0,
+                        schedule_id: self.run_trigger(run_id)?.1,
                         run_id: run_id.into(),
                         tool_id: dto.tool_id.clone(),
                         tool_name,
@@ -2918,11 +2982,13 @@ impl AppCore {
                     run.receipt = Some(json!(receipt));
                     run.failure = Some(json!(failure));
                     self.db().put_run(&run)?;
+                    self.finish_today(run_id, Some(&receipt), None)?;
                     return Ok(CommitResult::Committed(receipt));
                 }
                 run.state = "failed".into();
                 run.failure = Some(json!(failure));
                 self.db().put_run(&run)?;
+                self.finish_today(run_id, None, Some(&failure.message()))?;
                 Ok(CommitResult::Failed(FailureEnvelope { failure }))
             }
         }
@@ -2930,6 +2996,7 @@ impl AppCore {
 
     pub fn discard_run(&self, run_id: &str) -> CoreResult<()> {
         let _admission = self.admit_local()?;
+        self.finish_today(run_id, None, Some("Discarded"))?;
         if let Some(slot) = lock(&self.inner.staged).remove(run_id) {
             let _ = std::fs::remove_dir_all(slot.staged.run_dir());
         }
@@ -2992,6 +3059,12 @@ impl AppCore {
         Ok(PrivacyOverview {
             egress,
             stored: vec![
+                StoredData {
+                    label: "Today entries".into(),
+                    count: count("today"),
+                    bytes: 0,
+                    expires: "Until you delete them".into(),
+                },
                 StoredData {
                     label: "Tools and versions".into(),
                     count: count("tools"),
@@ -3056,6 +3129,7 @@ impl AppCore {
     /// Stops builds and staged runs and turns on Local only. Show stop lives in the
     /// shell's Show controller and is invoked alongside this.
     pub async fn emergency_stop(&self) -> CoreResult<()> {
+        self.pause_all_schedules()?;
         let ids: Vec<String> = lock(&self.inner.builds)
             .iter()
             .filter(|(_, s)| !s.state.phase.is_terminal())

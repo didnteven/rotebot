@@ -186,6 +186,8 @@ pub struct Plan {
     pub destination: Destination,
     /// At most one create effect, alongside the ordered connection calls.
     pub effects: Vec<CreateEffect>,
+    #[serde(default = "default_create_file")]
+    pub create_file: bool,
     pub limits: Limits,
     pub grant_revision: u64,
     pub policy_epoch: u64,
@@ -261,6 +263,10 @@ pub struct Receipt {
 /// Sorted JSON object keys recursively; arrays retain effect order. Compact
 /// serde JSON escaping/UTF-8 is part of this encoding. Plans contain integers,
 /// strings, arrays and objects, with no floating-point fields.
+fn default_create_file() -> bool {
+    true
+}
+
 pub fn canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>, BrokerError> {
     fn encode(value: &serde_json::Value, out: &mut Vec<u8>) -> Result<(), serde_json::Error> {
         match value {
@@ -423,7 +429,7 @@ pub fn stage(run: StageRequest) -> Result<StagedPlan, BrokerError> {
         &run.contract.input_schema,
     )?;
     let output = apply_mapping(&run.mapping, &input, &run.limits)?;
-    freeze_output(run, snapshot, output, "csv-mapping", None, vec![])
+    freeze_output(run, snapshot, output, "csv-mapping", None, vec![], true)
 }
 
 /// Host-only seam: execute against the broker's exact bounded snapshot and reap
@@ -442,13 +448,22 @@ pub fn stage_generated_actions(
     execution_hash: String,
     execute: impl FnOnce(&[u8]) -> Result<(Vec<u8>, Vec<PlannedAction>), BrokerError>,
 ) -> Result<StagedPlan, BrokerError> {
+    stage_generated_outputs(run, execution_hash, true, execute)
+}
+
+pub fn stage_generated_outputs(
+    run: StageRequest,
+    execution_hash: String,
+    create_file: bool,
+    execute: impl FnOnce(&[u8]) -> Result<(Vec<u8>, Vec<PlannedAction>), BrokerError>,
+) -> Result<StagedPlan, BrokerError> {
     validate_basename(&run.basename)?;
     validate_selected_path(&run.destination.path)?;
     let root = platform::open(&run.destination.path, true)?;
     if platform::identity(&root)? != run.destination.identity {
         return Err(BrokerError::DestinationChanged);
     }
-    if platform::destination_exists(&root, &run.basename)? {
+    if create_file && platform::destination_exists(&root, &run.basename)? {
         return Err(BrokerError::DestinationExists);
     }
     let (input, snapshot) = read_snapshot(&run.input, run.limits.max_input_bytes)?;
@@ -495,6 +510,7 @@ pub fn stage_generated_actions(
         "js-quickjs",
         Some(execution_hash),
         planned_calls,
+        create_file,
     )
 }
 
@@ -533,6 +549,7 @@ fn freeze_output(
     engine: &str,
     execution_hash: Option<String>,
     planned_calls: Vec<PlannedAction>,
+    create_file: bool,
 ) -> Result<StagedPlan, BrokerError> {
     let key = Zeroizing::new(run.key);
     let plan = Plan {
@@ -547,6 +564,7 @@ fn freeze_output(
             parent: run.destination.identity.clone(),
             basename: run.basename,
         },
+        create_file,
         effects: if output.bytes.is_empty() {
             vec![]
         } else {
@@ -755,7 +773,7 @@ pub fn commit_with_actions(
         return Err(BrokerError::Revoked);
     }
     let name = &staged.plan.destination.basename;
-    if platform::destination_exists(&root, name)? {
+    if staged.plan.create_file && platform::destination_exists(&root, name)? {
         return Err(BrokerError::DestinationExists);
     }
     let mut actions = Vec::new();
@@ -792,7 +810,7 @@ pub fn commit_with_actions(
             summary,
         });
     }
-    if stopped || staged.plan.effects.is_empty() {
+    if stopped || staged.plan.effects.is_empty() || !staged.plan.create_file {
         let status = if actions
             .iter()
             .any(|a| a.status == ActionStatus::OutcomeUnknown)
@@ -809,7 +827,11 @@ pub fn commit_with_actions(
             version_hash: staged.plan.version_hash.clone(),
             plan_hash: staged.plan_hash.clone(),
             input_digest: staged.plan.input.digest.clone(),
-            committed_digest: String::new(),
+            committed_digest: if stopped {
+                String::new()
+            } else {
+                digest(&bytes)
+            },
             output_path: PathBuf::new(),
             actions,
             status,

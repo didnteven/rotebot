@@ -33,5 +33,5 @@ it("tray navigation opens a tool Run screen or Create and releases listeners", a
     await screen.findByRole("button", { name: "Review task summary" }),
   ).toBeVisible();
   view.unmount();
-  await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(stop).toHaveBeenCalledTimes(3));
 });
