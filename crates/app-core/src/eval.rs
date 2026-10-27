@@ -229,6 +229,54 @@ pub fn verdict(passed: usize, total: usize, missing: usize, threshold: f64) -> &
     }
 }
 
+fn infra_keywords(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    [
+        "quota",
+        "usage limit",
+        "rate limit",
+        "timed out",
+        "timeout",
+        "unavailable",
+        "not signed in",
+        "not installed",
+        "sign in",
+        "local only",
+        "stopping",
+        "transport",
+        "billing",
+        "budget",
+        "no model",
+    ]
+    .iter()
+    .any(|k| lower.contains(k))
+}
+
+/// Classify a failed attempt. A program that the sandbox or the host checks
+/// reject is a generation failure, even when the sandbox's message happens to
+/// contain an outage word such as "unavailable".
+pub fn classify_failure(message: &str, stage: &str) -> FailureClass {
+    if message.to_lowercase().contains("forbidden") {
+        return FailureClass::ForbiddenEffect;
+    }
+    let lower = message.to_lowercase();
+    let generated = [
+        "checks failed",
+        "generated runner failed",
+        "javascript execution failed",
+    ]
+    .iter()
+    .any(|k| lower.contains(k));
+    if !generated && infra_keywords(message) {
+        return FailureClass::Infrastructure;
+    }
+    if stage == "run" {
+        FailureClass::ChecksFailed
+    } else {
+        FailureClass::BuildFailed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

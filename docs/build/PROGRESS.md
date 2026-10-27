@@ -562,3 +562,9 @@ output matched `expected.csv` byte for byte. This shows the runner works end to 
 a real model. It is not the §9.3 gate. The full gate is 30 tasks × 3 reps = 90 builds, about
 3–4 hours on the plan route, and is held for the owner's go-ahead because it uses Muse plan
 allowance (window 24%, weekly 20% used after this smoke).
+
+§9.3 eval, repetition 1 on the Muse plan route (2026-10-28): **29/30 passed (96.7%)**, with
+0 infrastructure failures and 0 missing attempts. Details are in
+`evals/csv-family/results/2026-10-28-muse-plan-rep1.md`. A classifier bug labelled the one
+sandbox rejection as `infrastructure`; it is fixed and tested. The gate stays **INCOMPLETE**
+until repetitions 2 and 3 run, as plan allowance resets.

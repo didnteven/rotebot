@@ -138,3 +138,26 @@ fn replay_scoring_passes_correct_rejects_wrong_and_marks_missing_incomplete() {
     assert_eq!(eval::verdict(1, 2, 0, 0.75), "FAIL");
     assert_eq!(eval::verdict(3, 4, 0, 0.75), "PASS");
 }
+
+#[test]
+fn sandbox_rejections_are_generation_failures_not_infrastructure() {
+    use macroscope_app_core::eval::{classify_failure, FailureClass};
+    let sandbox = "Checks failed: generated runner failed: runtime: JavaScript execution failed: use synchronous SDK code only; eval, Function, Worker, Date, Math.random and OS APIs are unavailable.";
+    assert_eq!(classify_failure(sandbox, "run"), FailureClass::ChecksFailed);
+    assert_eq!(
+        classify_failure("Muse usage limit reached; try again later", "build"),
+        FailureClass::Infrastructure
+    );
+    assert_eq!(
+        classify_failure("The model route is unavailable", "build"),
+        FailureClass::Infrastructure
+    );
+    assert_eq!(
+        classify_failure("forbidden: output path escapes the folder", "run"),
+        FailureClass::ForbiddenEffect
+    );
+    assert_eq!(
+        classify_failure("Build produced no program", "build"),
+        FailureClass::BuildFailed
+    );
+}

@@ -113,43 +113,6 @@ struct Attempt {
     cost_micros: Option<i64>,
 }
 
-fn infra_keywords(message: &str) -> bool {
-    let lower = message.to_lowercase();
-    [
-        "quota",
-        "usage limit",
-        "rate limit",
-        "timed out",
-        "timeout",
-        "unavailable",
-        "not signed in",
-        "not installed",
-        "sign in",
-        "local only",
-        "stopping",
-        "transport",
-        "billing",
-        "budget",
-        "no model",
-    ]
-    .iter()
-    .any(|k| lower.contains(k))
-}
-
-fn core_error_class(message: &str, stage: &str) -> FailureClass {
-    if message.to_lowercase().contains("forbidden") {
-        return FailureClass::ForbiddenEffect;
-    }
-    if infra_keywords(message) {
-        return FailureClass::Infrastructure;
-    }
-    if stage == "run" {
-        FailureClass::ChecksFailed
-    } else {
-        FailureClass::BuildFailed
-    }
-}
-
 async fn wait_terminal(
     core: &AppCore,
     build_id: &str,
@@ -307,7 +270,7 @@ async fn run_generation(
         Ok(s) => s,
         Err(e) => {
             let m = e.to_string();
-            fail(&mut attempt, core_error_class(&m, "build"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "build"), &m);
             return (attempt, false);
         }
     };
@@ -354,7 +317,11 @@ async fn run_generation(
             .find(|c| !c.passed)
             .and_then(|c| c.detail.clone())
             .unwrap_or_else(|| "host checks failed".to_string());
-        fail(&mut attempt, core_error_class(&detail, "run"), &detail);
+        fail(
+            &mut attempt,
+            eval::classify_failure(&detail, "run"),
+            &detail,
+        );
         return (attempt, false);
     }
     let tool = match core
@@ -364,7 +331,7 @@ async fn run_generation(
         Ok(t) => t,
         Err(e) => {
             let m = e.to_string();
-            fail(&mut attempt, core_error_class(&m, "run"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "run"), &m);
             return (attempt, false);
         }
     };
@@ -396,12 +363,12 @@ async fn run_generation(
         Ok(StageResult::Staged(s)) => s,
         Ok(StageResult::Failed(f)) => {
             let m = f.failure.message().to_string();
-            fail(&mut attempt, core_error_class(&m, "run"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "run"), &m);
             return (attempt, false);
         }
         Err(e) => {
             let m = e.to_string();
-            fail(&mut attempt, core_error_class(&m, "run"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "run"), &m);
             return (attempt, false);
         }
     };
@@ -417,12 +384,12 @@ async fn run_generation(
         Ok(macroscope_app_core::dto::CommitResult::Committed(r)) => r,
         Ok(macroscope_app_core::dto::CommitResult::Failed(f)) => {
             let m = f.failure.message().to_string();
-            fail(&mut attempt, core_error_class(&m, "run"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "run"), &m);
             return (attempt, false);
         }
         Err(e) => {
             let m = e.to_string();
-            fail(&mut attempt, core_error_class(&m, "run"), &m);
+            fail(&mut attempt, eval::classify_failure(&m, "run"), &m);
             return (attempt, false);
         }
     };
