@@ -204,6 +204,8 @@ pub struct MappingBuilder<'a> {
     pub policy: &'a EgressPolicy,
     pub consent_epoch: u64,
     pub muse: Option<MuseConfig>,
+    /// Receives the once-per-call waiting message from Muse exec.
+    pub muse_progress: Option<&'a (dyn Fn(&str) + Send + Sync)>,
 }
 impl MappingBuilder<'_> {
     pub async fn propose(
@@ -551,7 +553,14 @@ impl MappingBuilder<'_> {
                 let path = ws.path().join("mapping.schema.json");
                 std::fs::write(&path, schema.to_string()).map_err(|_| BuildError::Workspace)?;
                 let output = ExecClient::pinned(binary)
-                    .exec_structured(prompt, &path, ws.path(), route, &env)
+                    .exec_structured_with_progress(
+                        prompt,
+                        &path,
+                        ws.path(),
+                        route,
+                        &env,
+                        self.muse_progress.unwrap_or(&|_| {}),
+                    )
                     .await?;
                 if output.exit_code != Some(0) || output.terminal.as_deref() != Some("completed") {
                     return Err(BuildError::Muse(

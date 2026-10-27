@@ -18,3 +18,6 @@ zeroize = "1"
 sha2 = { version = "0.10", features = ["asm"] }
 tempfile = "3"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+

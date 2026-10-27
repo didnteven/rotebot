@@ -17,6 +17,29 @@ use tokio::{
     sync::OnceCell,
 };
 
+/// Shared by build generation and runtime model steps through Muse exec.
+pub const MUSE_EXEC_DEADLINE: Duration = Duration::from_secs(300);
+pub const MUSE_WAITING_INTERVAL: Duration = Duration::from_secs(60);
+pub const MUSE_WAITING_MESSAGE: &str = "Still waiting for Muse (this can take a few minutes)";
+
+/// Keep one deadline and one notification for the whole call, even if stdout
+/// continues producing frames. Dropping this future still cancels immediately.
+async fn read_with_progress(
+    read: impl std::future::Future<Output = Result<(), MuseError>>,
+    progress: &(dyn Fn(&str) + Send + Sync),
+) -> Result<(), MuseError> {
+    let read = tokio::time::timeout(MUSE_EXEC_DEADLINE, read);
+    tokio::pin!(read);
+    tokio::select! {
+        biased;
+        result = &mut read => result.map_err(|_| MuseError::Timeout)?,
+        _ = tokio::time::sleep(MUSE_WAITING_INTERVAL) => {
+            progress(MUSE_WAITING_MESSAGE);
+            read.await.map_err(|_| MuseError::Timeout)?
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ExecClient {
     binary: PathBuf,
@@ -166,7 +189,19 @@ impl ExecClient {
         route: CredentialRoute,
         env: &ChildEnv,
     ) -> Result<ExecOutput, MuseError> {
-        self.exec_with_provider(prompt, schema_path, workspace, Some(route), env)
+        self.exec_structured_with_progress(prompt, schema_path, workspace, route, env, &|_| {})
+            .await
+    }
+    pub async fn exec_structured_with_progress(
+        &self,
+        prompt: &str,
+        schema_path: &Path,
+        workspace: &Path,
+        route: CredentialRoute,
+        env: &ChildEnv,
+        progress: &(dyn Fn(&str) + Send + Sync),
+    ) -> Result<ExecOutput, MuseError> {
+        self.exec_with_provider(prompt, schema_path, workspace, Some(route), env, progress)
             .await
     }
     /// Real-binary parser check; echo uses a private environment and no provider credentials.
@@ -177,7 +212,7 @@ impl ExecClient {
         workspace: &Path,
         env: &ChildEnv,
     ) -> Result<ExecOutput, MuseError> {
-        self.exec_with_provider(prompt, schema_path, workspace, None, env)
+        self.exec_with_provider(prompt, schema_path, workspace, None, env, &|_| {})
             .await
     }
     async fn exec_with_provider(
@@ -187,6 +222,7 @@ impl ExecClient {
         workspace: &Path,
         credential_route: Option<CredentialRoute>,
         env: &ChildEnv,
+        progress: &(dyn Fn(&str) + Send + Sync),
     ) -> Result<ExecOutput, MuseError> {
         self.validate()?;
         let route = credential_route.unwrap_or(CredentialRoute::PlanSignIn);
@@ -259,30 +295,30 @@ impl ExecClient {
                 diagnostic(&String::from_utf8_lossy(&prefix))
             });
             let mut result = ExecOutput::parse("", None, "")?;
-            let read = tokio::time::timeout(Duration::from_secs(120), async {
-                let mut reader = BufReader::new(stdout);
-                loop {
-                    // Distinguish clean EOF (including fresh-home pre-JSONL exit)
-                    // from a partial/malformed frame.
-                    use tokio::io::AsyncBufReadExt;
-                    if reader.fill_buf().await?.is_empty() {
-                        break;
+            let read = read_with_progress(
+                async {
+                    let mut reader = BufReader::new(stdout);
+                    loop {
+                        // Distinguish clean EOF (including fresh-home pre-JSONL exit)
+                        // from a partial/malformed frame.
+                        use tokio::io::AsyncBufReadExt;
+                        if reader.fill_buf().await?.is_empty() {
+                            break;
+                        }
+                        let mut value = read_frame(&mut reader).await?;
+                        redact_value(&mut value, env.key());
+                        result.push(value)?;
                     }
-                    let mut value = read_frame(&mut reader).await?;
-                    redact_value(&mut value, env.key());
-                    result.push(value)?;
-                }
-                Ok::<(), MuseError>(())
-            })
+                    Ok::<(), MuseError>(())
+                },
+                progress,
+            )
             .await;
-            if !matches!(read, Ok(Ok(()))) {
+            if let Err(error) = read {
                 stderr_task.abort();
                 child.kill_group();
                 let _ = child.finish(Duration::from_secs(2)).await;
-                return Err(match read {
-                    Ok(Err(e)) => e,
-                    _ => MuseError::Timeout,
-                });
+                return Err(error);
             }
             result.exit_code = child.finish(Duration::from_secs(5)).await?.code();
             self.validate()?;
@@ -365,6 +401,75 @@ pub fn exec_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{future::Future, pin::Pin, sync::Mutex, task::Poll};
+
+    async fn poll_pending(future: Pin<&mut impl Future>) {
+        let mut future = future;
+        std::future::poll_fn(|cx| {
+            assert!(future.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waiting_event_at_sixty_seconds_once_per_call_and_137_second_success() {
+        let messages = Mutex::new(Vec::new());
+        let progress = |message: &str| messages.lock().unwrap().push(message.to_owned());
+        for call in 1..=2 {
+            let read = read_with_progress(
+                async {
+                    tokio::time::sleep(Duration::from_secs(137)).await;
+                    Ok(())
+                },
+                &progress,
+            );
+            tokio::pin!(read);
+            // Register both timers before advancing time, and explicitly poll
+            // the read after Tokio's millisecond timer wheel processes the tick.
+            poll_pending(read.as_mut()).await;
+            tokio::time::advance(Duration::from_millis(59_999)).await;
+            poll_pending(read.as_mut()).await;
+            assert_eq!(messages.lock().unwrap().len(), call - 1);
+            tokio::time::advance(Duration::from_millis(1)).await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            poll_pending(read.as_mut()).await;
+            assert_eq!(messages.lock().unwrap().len(), call);
+            assert_eq!(read.await, Ok(()));
+            assert_eq!(messages.lock().unwrap().len(), call);
+        }
+        assert_eq!(*messages.lock().unwrap(), vec![MUSE_WAITING_MESSAGE; 2]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deadline_is_300_seconds_with_unchanged_error_and_one_waiting_event() {
+        let messages = Mutex::new(Vec::new());
+        let progress = |message: &str| messages.lock().unwrap().push(message.to_owned());
+        let start = tokio::time::Instant::now();
+        let error = read_with_progress(std::future::pending(), &progress)
+            .await
+            .unwrap_err();
+        assert_eq!(start.elapsed(), Duration::from_secs(300));
+        assert_eq!(error, MuseError::Timeout);
+        assert_eq!(error.to_string(), "Muse deadline exceeded");
+        assert_eq!(*messages.lock().unwrap(), vec![MUSE_WAITING_MESSAGE]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fast_calls_emit_no_waiting_event() {
+        let start = tokio::time::Instant::now();
+        read_with_progress(
+            async {
+                tokio::time::sleep(Duration::from_secs(59)).await;
+                Ok(())
+            },
+            &|_| panic!("fast call must not emit a waiting event"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(start.elapsed(), Duration::from_secs(59));
+    }
+
     #[test]
     fn replay_exec_empty_and_badkey_terminals() {
         let empty=ExecOutput::parse(include_str!("../../../plan/probes/transcripts/05-exec-envkey-badkey.stdout.jsonl"),Some(1),"failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected").unwrap();

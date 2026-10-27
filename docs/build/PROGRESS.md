@@ -825,3 +825,28 @@ exceeded" infrastructure failures (counted) and 2 generation failures (task 22),
 forbidden effects. Details are in
 `evals/csv-family/results/2026-10-28-muse-plan-frozen-gate.md`. The Meta API-key route is
 still unmeasured.
+
+## Task 22 — Muse exec deadline and build liveness (2026-10-28)
+
+`MUSE_EXEC_DEADLINE` is now **300 s** for builds and runtime Muse model steps
+(the runtime path has no stricter outer timeout). Each build exec call emits one
+persisted/published build event at **60 s**: “Still waiting for Muse (this can
+take a few minutes)”. Correction calls get their own notification. The deadline
+error remains `Muse deadline exceeded`, classified as `BuildFailureKind::Internal`.
+Seven new tests use a fake clock and fake Muse/echo binary to cover 137 s
+success, the 300 s deadline, event timing/publication/persistence, and immediate
+Stop/Emergency stop cancellation with process reaping and temporary-file cleanup.
+No tests were weakened and no skips or ignores were added.
+
+Verification: `cargo build -p macroscope-runner --bins` **PASS** (exit 0;
+tail: `Finished dev profile … in 0.17s`). Both final `bash scripts/check.sh`
+runs **PASS** (exit 0): **342 workspace + 150 synthetic = 492 Rust passes**,
+**127 UI passes in 17 files**, **0 failures**, **5 existing ignored tests**
+per run. Build tails: `✓ built in 100ms` / `✓ built in 107ms`. A new-test
+timer-wheel scheduling race found on an earlier run was fixed by explicit
+timer polling; its timing regression passed **10/10** repeated runs.
+Changes remain uncommitted.
+
+Claude's review of task 22: no added skips or ignores, and no test file lost assertions. The
+new dependency is test-only (`tokio` `test-util`). Rerun by Claude: both `check.sh` runs passed
+with **492 Rust + 127 UI tests** each, and OS canaries **PASS**.

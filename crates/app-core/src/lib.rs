@@ -1473,6 +1473,19 @@ impl AppCore {
         })
     }
 
+    fn push_build_progress(&self, build_id: &str, message: &str) -> CoreResult<()> {
+        let now = self.now();
+        self.update_build(build_id, |s| {
+            s.events.push(BuildEvent {
+                build_id: s.build_id.clone(),
+                seq: s.events.len() as u32 + 1,
+                phase: s.phase,
+                message: message.into(),
+                at_ms: now,
+            });
+        })
+    }
+
     fn fail_build(
         &self,
         build_id: &str,
@@ -1704,6 +1717,9 @@ impl AppCore {
         } else {
             None
         };
+        let muse_progress = |message: &str| {
+            let _ = self.push_build_progress(&build_id, message);
+        };
         let builder = MappingBuilder {
             route: builder_route,
             vault: &*self.inner.cfg.vault,
@@ -1711,6 +1727,7 @@ impl AppCore {
             policy: &self.inner.policy,
             consent_epoch,
             muse,
+            muse_progress: Some(&muse_progress),
         };
         let samples = SyntheticSamples::from_contract(&contract, 5);
         let budget = BuildBudget {
@@ -3492,3 +3509,6 @@ mod summary_tests {
         );
     }
 }
+
+#[cfg(all(test, unix))]
+mod muse_build_tests;
