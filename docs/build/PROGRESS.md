@@ -1141,3 +1141,12 @@ Rerun by Claude: both `check.sh` runs passed with **542 Rust + 140 UI tests** ea
 `run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer
 boundary). The app bundle passes `verify-bundle.sh`, with the runner and the byte-identical
 profile in `Contents/MacOS`.
+
+**First real Meta API-key build (owner, 2026-10-28, in the app).** The owner saved a Meta key
+through the native dialog and built the Gisborne weather task on the "Meta API key" route.
+The build events show "Candidate received from Meta API key (direct)" twice (first answer and
+correction). That shows key entry, the direct Responses call with structured output, and
+billing work end to end on the real service (plan §8.3 P6, successful API call). The build
+itself failed a host check (an undeclared web source), which is a generation-quality issue
+under investigation, not a route failure. A paid Meta-route eval still needs the owner's
+budget approval (planning estimate about $1.22 per build).
