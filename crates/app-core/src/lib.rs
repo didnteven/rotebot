@@ -16,6 +16,7 @@ pub mod eval;
 #[cfg(feature = "generated-runtime")]
 mod model_step;
 mod privacy;
+pub mod recording;
 #[cfg(feature = "generated-runtime")]
 pub mod runner;
 mod samples;

@@ -29,6 +29,8 @@ thiserror.workspace = true
 uuid.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "process", "io-util"] }
 sha2 = "0.10"
+png = "0.18.1"
+regex = "1.13.1"
 hex = "0.4"
 csv = "1"
 time = "0.3"

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:macroscope:task-draft:v2",
+  "title": "Task Draft v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "goal", "steps", "variables", "constants", "output_description", "trigger", "unsupported_steps", "ambiguities", "questions"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "goal": {"$ref": "#/$defs/text"},
+    "steps": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/step"}},
+    "variables": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/variable"}},
+    "constants": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/constant"}},
+    "output_description": {"$ref": "#/$defs/text"},
+    "example_output": {"type": ["string", "null"], "maxLength": 8000},
+    "trigger": {"$ref": "#/$defs/text"},
+    "unsupported_steps": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/unsupported"}},
+    "ambiguities": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/text"}},
+    "questions": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"$ref": "#/$defs/question"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"},
+    "evidence": {"type": "array", "minItems": 1, "maxItems": 150, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+    "step": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "order", "app", "action", "capability", "evidence_frames"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "order": {"type": "integer", "minimum": 1, "maximum": 50},
+        "app": {"$ref": "#/$defs/text"},
+        "action": {"$ref": "#/$defs/text"},
+        "capability": {"enum": ["file_read", "web_source", "connection", "model_step", "output_file", "manual"]},
+        "evidence_frames": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "variable": {
+      "type": "object", "additionalProperties": false, "required": ["name", "description"],
+      "properties": {"name": {"$ref": "#/$defs/text"}, "description": {"$ref": "#/$defs/text"}}
+    },
+    "constant": {
+      "type": "object", "additionalProperties": false, "required": ["name", "value"],
+      "properties": {"name": {"$ref": "#/$defs/text"}, "value": {"$ref": "#/$defs/text"}}
+    },
+    "unsupported": {
+      "type": "object", "additionalProperties": false, "required": ["step_id", "reason"],
+      "properties": {"step_id": {"$ref": "#/$defs/text"}, "reason": {"$ref": "#/$defs/text"}}
+    },
+    "option": {
+      "type": "object", "additionalProperties": false, "required": ["id", "label", "any_is_fine"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "label": {"$ref": "#/$defs/text"}, "any_is_fine": {"type": "boolean"}}
+    },
+    "question": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "prompt", "evidence_frames", "options", "default"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "prompt": {"$ref": "#/$defs/text"},
+        "evidence_frames": {"$ref": "#/$defs/evidence"},
+        "options": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"$ref": "#/$defs/option"}},
+        "default": {"$ref": "#/$defs/text"}
+      }
+    }
+  }
+}
