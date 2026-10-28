@@ -102,7 +102,11 @@ async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessSta
     let script = format!(
         r#"text returned of (display dialog "Paste your {credential}. Macroscope stores it in {storage}." default answer "" with hidden answer with title "Macroscope" buttons {{"Cancel", "Save key"}} default button "Save key")"#
     );
+    // A dialog from a background osascript process opens without keyboard
+    // focus, so typing goes to the window behind it. Activate it first.
     let output = tokio::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg("activate")
         .arg("-e")
         .arg(script)
         .env_clear()
