@@ -332,7 +332,7 @@ export function CreateFlow({
           </Field>
           {draft.kind === "program" && <Field label="Example of the expected result (optional)">
             <textarea aria-label="Example of the expected result (optional)" rows={4} maxLength={16000} value={example} onChange={(e) => setExample(e.target.value)} />
-            <span>This is your real text. It will be included in the outbound review.</span>
+            <span>Write values that change in {"{braces}"}, for example Hottest: {"{city}"} {"{temp}"}. This is your real text. It will be included in the outbound review.</span>
           </Field>}
           <ul>
             {draft.summary.map((line) => (
@@ -688,6 +688,7 @@ export function CreateFlow({
           </p>
           <p>Building with: {build.routeLabel} <button onClick={openSettings}>Change</button></p>
           {build.events.some(e=>/to review the output/i.test(e.message)) && !build.events.some(e=>/Checks failed/i.test(e.message)) ? <p role="status">The checks passed, so Macroscope had the model double-check the output against the page it read.</p> : build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
+          {build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id)) && <p role="status">Tip: write values that change in {"{braces}"}, like {"{city}"} or {"{temp}"}.</p>}
           {activeBuild && (
             <button
               disabled={busy}

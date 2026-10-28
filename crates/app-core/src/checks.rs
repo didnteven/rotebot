@@ -179,14 +179,62 @@ fn template_literals(line: &str) -> Option<Vec<&str>> {
     Some(parts)
 }
 
+/// Words an example line may use in place of a value (`Hottest name, temp`).
+const PLACEHOLDER_WORDS: &[&str] = &[
+    "name",
+    "city",
+    "place",
+    "temp",
+    "temperature",
+    "value",
+    "date",
+    "time",
+];
+
+/// Rewrites bare placeholder words outside braces as `{}` so they match like
+/// `{name}` does. Matching is case-insensitive and whole-word only.
+fn expand_placeholder_words(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut word = String::new();
+    let mut in_braces = false;
+    let mut flush = |word: &mut String, out: &mut String, in_braces: bool| {
+        if !in_braces && PLACEHOLDER_WORDS.contains(&word.to_lowercase().as_str()) {
+            out.push_str("{}");
+        } else {
+            out.push_str(word);
+        }
+        word.clear();
+    };
+    for c in line.chars() {
+        if c.is_alphabetic() {
+            word.push(c);
+            continue;
+        }
+        flush(&mut word, &mut out, in_braces);
+        match c {
+            '{' => in_braces = true,
+            '}' => in_braces = false,
+            _ => {}
+        }
+        out.push(c);
+    }
+    flush(&mut word, &mut out, in_braces);
+    out
+}
+
 /// Template match: an example line with `{name}`-style placeholders matches
 /// an output line whose text around them is identical and where each
 /// placeholder stands for at least one character (it may span several words,
 /// e.g. `{temp}` is `18.5 °C`).
 fn template_line_matches(expected: &str, actual: &str) -> bool {
-    let Some(parts) = template_literals(expected) else {
+    let expanded = expand_placeholder_words(expected);
+    let Some(parts) = template_literals(&expanded) else {
         return false;
     };
+    // Without fixed wording left, any line would match.
+    if !parts.iter().any(|p| p.chars().any(char::is_alphanumeric)) {
+        return false;
+    }
     let (first, last) = (parts[0], parts[parts.len() - 1]);
     let Some(mut rest) = actual.strip_prefix(first) else {
         return false;
@@ -1002,6 +1050,12 @@ mod tests {
         ));
         assert!(!m("Hottest: {name} {temp}", "Hottest: Auckland"));
         assert!(!m("Hottest: {name}", "Hottest: "));
+        // Bare placeholder words work too, whole-word and case-insensitive.
+        assert!(m("Hottest name, temp", "Hottest Auckland, 18.5\u{b0}C"));
+        assert!(m("Hottest Name, Temp", "Hottest Auckland, 18.5\u{b0}C"));
+        assert!(!m("Hottest name, temp", "Coldest Auckland, 18.5\u{b0}C"));
+        assert!(!m("Hottest names", "Hottest Auckland"));
+        assert!(!m("name temp", "Auckland 18"));
     }
 
     /// A bare label line (`High:`) in the example means "label, then a value".
