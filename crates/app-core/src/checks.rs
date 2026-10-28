@@ -389,6 +389,54 @@ pub fn program_failure(message: String) -> CheckOutcome {
     }
 }
 
+#[cfg(feature = "generated-runtime")]
+fn program_execution_failure(
+    program: &macroscope_builder::Program,
+    message: String,
+) -> CheckOutcome {
+    // RunnerEngine preserves the SDK's host-owned failure, even if user code
+    // catches the JavaScript exception. Arbitrary thrown errors cannot spoof it.
+    let prefix = "generated runner failed: forbidden: unknown source name";
+    let unknown = message.strip_prefix(prefix);
+    if let Some(suffix) = unknown {
+        let names: Vec<&str> = program
+            .web_sources
+            .iter()
+            .map(|s| s.name.as_str())
+            .chain(program.connection_sources.iter().map(|s| s.name.as_str()))
+            .collect();
+        let name = suffix
+            .strip_prefix(": ")
+            .and_then(|encoded| serde_json::from_str::<String>(encoded).ok());
+        if name
+            .as_ref()
+            .is_none_or(|name| !names.contains(&name.as_str()))
+        {
+            let read = name.map_or_else(
+                || "an undeclared source".into(),
+                |n| format!("source '{n}'"),
+            );
+            return CheckOutcome {
+                checks: vec![check(
+                    "source_names",
+                    "Every source read is declared",
+                    false,
+                    format!(
+                        "The program reads {read} but declares only: {}",
+                        if names.is_empty() {
+                            "(none)".into()
+                        } else {
+                            names.join(", ")
+                        }
+                    ),
+                )],
+                comparison: None,
+            };
+        }
+    }
+    program_failure(message)
+}
+
 /// Host-owned program checks against the same bounded source snapshot, in two
 /// separate fresh worker processes. No candidate-authored tests certify a tool.
 #[cfg(feature = "generated-runtime")]
@@ -486,11 +534,11 @@ pub fn run_program_with_sources(
     }
     let (first, first_calls) = match execute(&before, sources, &program.code) {
         Ok(out) => out,
-        Err(e) => return program_failure(e),
+        Err(e) => return program_execution_failure(program, e),
     };
     let (second, second_calls) = match execute(&before, sources, &program.code) {
         Ok(out) => out,
-        Err(e) => return program_failure(e),
+        Err(e) => return program_execution_failure(program, e),
     };
     checks.push(check(
         "sandbox",

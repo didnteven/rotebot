@@ -381,7 +381,20 @@ pub fn execute(request: Request) -> Response {
         Ok::<_, rquickjs::Error>(None)
     });
     let mut state = state.lock().unwrap();
-    if let Some(error) = state.failure.take() {
+    if let Some(mut error) = state.failure.take() {
+        // Source names can be computed from fetched data. Only retain bounded
+        // names already present in program text, like other safe diagnostics.
+        // Detection comes from the SDK failure, never from parsing the code.
+        if let Some(encoded) = error.message.strip_prefix("unknown source name: ") {
+            let safe = serde_json::from_str::<String>(encoded).is_ok_and(|name| {
+                name.len() <= 64
+                    && !name.chars().any(char::is_control)
+                    && request.code.contains(&name)
+            });
+            if !safe {
+                error.message = "unknown source name".into();
+            }
+        }
         return Response::Error { error };
     }
     if !state.model_requests.is_empty() {

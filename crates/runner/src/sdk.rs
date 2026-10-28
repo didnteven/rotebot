@@ -47,7 +47,16 @@ fn source(ctx: Ctx<'_>, name: String) -> Result<String> {
         .sources
         .get(&name)
         .cloned()
-        .ok_or_else(|| fail(&ctx, "forbidden", "unknown source name"))
+        .ok_or_else(|| {
+            fail(
+                &ctx,
+                "forbidden",
+                &format!(
+                    "unknown source name: {}",
+                    serde_json::to_string(&name).unwrap()
+                ),
+            )
+        })
 }
 fn output(ctx: Ctx<'_>, name: String, text: String) -> Result<()> {
     if name.len() > 255

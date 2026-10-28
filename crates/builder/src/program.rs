@@ -56,7 +56,7 @@ pub const EXAMPLE_FORMAT_INSTRUCTION: &str = "The output must follow the example
 pub const SDK_REFERENCE: &str = include_str!("../../runner/SDK.md");
 /// Web sources the model may declare: https GET only, fetched by the host and
 /// read through `macroscope.source(name)`. The host rejects anything else.
-pub const WEB_SOURCE_POLICY: &str = "You may declare at most 5 web_sources, each {name, url}. Declare a web source only when the task needs live web data; file-only tasks use []. Every url must be a single https URL you could type into a browser (GET only, no cookies, credentials, custom headers or methods); query parameters may use {today} for the host's local YYYY-MM-DD date. Read each declared source exactly with macroscope.source(name) in run(); never fetch from the sandbox (no network exists there) and never invent response data.";
+pub const WEB_SOURCE_POLICY: &str = "You may declare at most 5 web_sources, each {name, url}. Declare a web source only when the task needs live web data; file-only tasks use []. Every url must be a single https URL you could type into a browser (GET only, no cookies, credentials, custom headers or methods); query parameters may use {today} for the host's local YYYY-MM-DD date. Every name passed to macroscope.source(name) must exactly equal a declared web_sources[].name (or connection_sources[].name for a connection result). Read each declared source with macroscope.source(name) in run(); never fetch from the sandbox (no network exists there) and never invent response data.";
 pub fn program_schema() -> Value {
     json!({"type":"object","additionalProperties":false,
         "properties":{

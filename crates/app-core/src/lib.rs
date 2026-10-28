@@ -2095,6 +2095,62 @@ impl AppCore {
                     BuildPhase::Checking,
                     "Checking the corrected program",
                 )?;
+                if let Some(program) = &candidate2.program {
+                    let hosts =
+                        match connections::validate_sources(program, &draft.required_connections)
+                            .and_then(|_| {
+                                macroscope_builder::program_hosts(
+                                    program,
+                                    self.allow_insecure_web(),
+                                )
+                            }) {
+                            Ok(hosts) => hosts,
+                            Err(message) => {
+                                self.fail_build(&build_id, BuildFailureKind::Checks, message)?;
+                                return Ok(());
+                            }
+                        };
+                    if program.web_sources != declared_sources {
+                        // Keep the approved connection results, but never check a
+                        // corrected declaration against the previous web snapshot.
+                        for source in &declared_sources {
+                            fetched.remove(&source.name);
+                        }
+                        fetch_error = None;
+                        if !program.web_sources.is_empty() {
+                            if let Some(blocked) = self.web_fetch_blocked() {
+                                self.fail_build(
+                                    &build_id,
+                                    BuildFailureKind::NoModelAccess,
+                                    blocked,
+                                )?;
+                                return Ok(());
+                            }
+                            match self
+                                .fetch_for_build(
+                                    &program.web_sources,
+                                    &hosts,
+                                    consent_epoch,
+                                    cancelled,
+                                )
+                                .await
+                            {
+                                Some((texts, error)) => {
+                                    fetched.extend(texts);
+                                    fetch_error = error;
+                                }
+                                None => {
+                                    self.push_phase(
+                                        &build_id,
+                                        BuildPhase::Stopped,
+                                        "Stopped by you",
+                                    )?;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
                 #[cfg(feature = "generated-runtime")]
                 let runtime2 = if draft.kind == TaskKind::Program {
                     Some(self.runtime())

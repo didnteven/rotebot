@@ -424,3 +424,231 @@ async fn runtime_correction_contains_safe_detail_without_fixture_values_in_store
         }
     }
 }
+
+struct SourceCorrection {
+    _temp: tempfile::TempDir,
+    core: AppCore,
+    model: MockServer,
+    web: MockServer,
+}
+
+impl SourceCorrection {
+    async fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let model = MockServer::start().await;
+        let web = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "high": 21, "low": 13, "private": FETCHED_CANARY,
+            })))
+            .mount(&web)
+            .await;
+        let core = core_at(temp.path(), model.uri());
+        Self {
+            _temp: temp,
+            core,
+            model,
+            web,
+        }
+    }
+
+    fn program(&self, declared: &str, read: &str) -> Program {
+        let mut program = program_for(&self.web.uri(), "");
+        program.web_sources[0] = WebSource {
+            name: declared.into(),
+            url: format!("{}/{declared}", self.web.uri()),
+        };
+        program.code = format!(
+            r#"function run() {{
+                const data = JSON.parse(macroscope.source("{read}"));
+                macroscope.output("weather.txt", "Gisborne high : " + data.high + ", low : " + data.low);
+            }}"#
+        );
+        program
+    }
+
+    async fn build(&self, first: Program, corrected: Program) -> BuildState {
+        let count = mount_model(&self.model, first, corrected).await;
+        self.core
+            .save_api_key("mk-source-correction-test-1234567890")
+            .await
+            .unwrap();
+        let draft = self
+            .core
+            .draft_task_no_input("Gisborne weather summary to weather.txt")
+            .unwrap();
+        let draft = self
+            .core
+            .update_task(
+                &draft.draft_id,
+                TaskKind::Program,
+                "weather.txt",
+                Some(EXAMPLE.into()),
+            )
+            .unwrap();
+        let started = self.core.start_build(&draft.draft_id, true).await.unwrap();
+        let state = wait(&self.core, &started.build_id).await;
+        assert_eq!(count.load(Ordering::SeqCst), 2, "one correction round");
+        state
+    }
+
+    fn web_outbound(&self) -> Vec<OutboundRecord> {
+        self.core
+            .list_outbound()
+            .unwrap()
+            .into_iter()
+            .filter(|o| o.purpose == "Web source")
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn correction_fetches_renamed_source_and_reports_unknown_read_without_fetched_data() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "gisborne_weather");
+    let corrected = f.program("gisborne_weather", "gisborne_weather");
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert!(state.checks.iter().all(|c| c.passed), "{state:?}");
+    assert_eq!(
+        state.program.unwrap().web_sources[0].name,
+        "gisborne_weather"
+    );
+    let outbound = f.web_outbound();
+    assert_eq!(
+        outbound.len(),
+        2,
+        "a second outbound record for the new source"
+    );
+    for name in ["weather", "gisborne_weather"] {
+        assert!(outbound.iter().any(|o| o
+            .payload_text
+            .as_deref()
+            .unwrap()
+            .contains(&format!("/{name}"))));
+    }
+    let requests = f.web.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].url.path(), "/weather");
+    assert_eq!(requests[1].url.path(), "/gisborne_weather");
+    let requests = f.model.received_requests().await.unwrap();
+    let calls = model_requests(&requests);
+    let packet: serde_json::Value = serde_json::from_slice(&calls[1].body).unwrap();
+    let correction: serde_json::Value =
+        serde_json::from_str(packet["input"][1]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(correction["failed_checks"][0]["id"], "source_names");
+    assert_eq!(
+        correction["failed_checks"][0]["detail"],
+        "The program reads source 'gisborne_weather' but declares only: weather"
+    );
+    let raw = String::from_utf8_lossy(&calls[1].body);
+    assert!(!raw.contains(FETCHED_CANARY), "{raw}");
+    assert!(!raw.contains("\"high\":21"), "{raw}");
+    let initial: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
+    assert!(initial["input"][1]["content"].as_str().unwrap().contains(
+        "Every name passed to macroscope.source(name) must exactly equal a declared web_sources[].name"
+    ));
+}
+
+#[tokio::test]
+async fn correction_reuses_identical_sources_without_second_fetch() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "gisborne_weather");
+    let corrected = f.program("weather", "weather");
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert_eq!(f.web_outbound().len(), 1);
+    assert_eq!(f.web.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn correction_rejects_unsafe_sources_before_any_corrected_fetch() {
+    for (url, expected) in [
+        ("http://example.invalid/weather", "URL must use https."),
+        (
+            "https://example.invalid/weather?api_key=SECRET_CANARY",
+            "Web sources can't include keys or tokens in the URL",
+        ),
+    ] {
+        let f = SourceCorrection::new().await;
+        let first = f.program("weather", "gisborne_weather");
+        let mut corrected = f.program("gisborne_weather", "gisborne_weather");
+        // A valid new source comes first: validate the entire list before
+        // fetching anything, even when only a later source is invalid.
+        corrected.web_sources.push(WebSource {
+            name: "unsafe".into(),
+            url: url.into(),
+        });
+        let state = f.build(first, corrected).await;
+        assert_eq!(state.phase, BuildPhase::Failed, "{state:?}");
+        let failure = state.failure.unwrap();
+        assert_eq!(failure.kind, BuildFailureKind::Checks);
+        assert!(failure.message.contains(expected), "{}", failure.message);
+        assert!(!failure.message.contains("SECRET_CANARY"));
+        assert_eq!(
+            f.web_outbound().len(),
+            1,
+            "only the initial fetch is logged"
+        );
+        let requests = f.web.received_requests().await.unwrap();
+        assert_eq!(
+            requests.len(),
+            1,
+            "nothing fetched for the corrected program"
+        );
+        assert_eq!(requests[0].url.path(), "/weather");
+    }
+}
+
+#[tokio::test]
+async fn correction_fetches_changed_url_even_when_source_name_is_unchanged() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "gisborne_weather");
+    let mut corrected = f.program("weather", "weather");
+    corrected.web_sources[0].url = format!("{}/updated-weather", f.web.uri());
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert_eq!(f.web_outbound().len(), 2);
+    let requests = f.web.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1].url.path(), "/updated-weather");
+}
+
+#[tokio::test]
+async fn correction_cannot_read_a_removed_source_from_the_previous_snapshot() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "gisborne_weather");
+    let mut corrected = f.program("weather", "weather");
+    corrected.web_sources.clear();
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Failed, "{state:?}");
+    assert!(state.checks.iter().any(|c| c.id == "source_names"
+        && !c.passed
+        && c.detail.as_deref()
+            == Some("The program reads source 'weather' but declares only: (none)")));
+    assert_eq!(f.web_outbound().len(), 1);
+    assert_eq!(f.web.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn unknown_source_diagnostic_redacts_a_name_computed_from_fetched_data() {
+    let f = SourceCorrection::new().await;
+    let mut first = f.program("weather", "weather");
+    first.code = r#"function run() {
+        const data = JSON.parse(macroscope.source('weather'));
+        macroscope.source(data.private);
+    }"#
+    .into();
+    let corrected = f.program("weather", "weather");
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    let requests = f.model.received_requests().await.unwrap();
+    let calls = model_requests(&requests);
+    let raw = String::from_utf8_lossy(&calls[1].body);
+    assert!(raw.contains("The program reads an undeclared source but declares only: weather"));
+    assert!(!raw.contains(FETCHED_CANARY), "{raw}");
+    assert!(!serde_json::to_string(&f.core.list_outbound().unwrap())
+        .unwrap()
+        .contains(FETCHED_CANARY));
+    assert_eq!(f.web_outbound().len(), 1);
+}
