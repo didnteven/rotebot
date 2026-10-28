@@ -74,6 +74,14 @@ impl Respond for Fake {
             mapping()
         };
         let mut result = answer(value);
+        if name == "endpoint_test" {
+            // Reasoning models think before answering; a tiny limit truncates.
+            assert!(body["max_tokens"].as_u64().unwrap() >= 1024);
+            if mode == 10 {
+                result["choices"][0]["finish_reason"] = json!("length");
+                result["choices"][0]["message"]["content"] = json!("");
+            }
+        }
         if name != "endpoint_test" {
             if mode == 3 {
                 result["choices"][0]["finish_reason"] = json!("length");
@@ -365,7 +373,12 @@ async fn local_only_blocks_endpoint_testing_and_selected_custom_builds() {
 #[tokio::test]
 async fn endpoint_test_reports_rejected_unsupported_and_unreachable_with_latency() {
     let f = Fixture::new().await;
-    for (mode, expected) in [(1, "token rejected"), (2, "schema unsupported"), (0, "ok")] {
+    for (mode, expected) in [
+        (1, "token rejected"),
+        (2, "request rejected: check the URL and model name"),
+        (10, "reply did not match the JSON schema or was cut off"),
+        (0, "ok"),
+    ] {
         f.fake.mode.store(mode, Ordering::SeqCst);
         let status = f.core.test_custom_endpoint().await.unwrap();
         let test = status.custom_endpoint.last_test.unwrap();

@@ -178,7 +178,7 @@ impl AppCore {
         let start = std::time::Instant::now();
         let result = tokio::select! { biased;
             _ = self.inner.policy.revoked(admission.epoch) => Err(GatewayError::Unavailable),
-            r = client.generate_structured(StructuredRequest { key:&key, model:None, system:"Return the requested JSON object.", user:"Return ok: true.", max_output_tokens:128, reasoning_effort:"medium", schema_name:"endpoint_test", schema:&schema }) => r,
+            r = client.generate_structured(StructuredRequest { key:&key, model:None, system:"Return the requested JSON object.", user:"Return ok: true.", max_output_tokens:2048, reasoning_effort:"medium", schema_name:"endpoint_test", schema:&schema }) => r,
         };
         if self
             .inner
@@ -196,9 +196,10 @@ impl AppCore {
         let status = match result {
             Ok(_) => "ok",
             Err(GatewayError::AuthRejected) => "token rejected",
-            Err(
-                GatewayError::Rejected | GatewayError::MalformedOutput | GatewayError::Truncated,
-            ) => "schema unsupported",
+            Err(GatewayError::Rejected) => "request rejected: check the URL and model name",
+            Err(GatewayError::MalformedOutput | GatewayError::Truncated) => {
+                "reply did not match the JSON schema or was cut off"
+            }
             _ => "unreachable",
         };
         let mut c = self.custom_endpoint_status();

@@ -868,9 +868,10 @@ impl AppCore {
     /// details are shapes (`#` for numbers) or sanitized runtime diagnostics.
     fn program_correction_packet(
         draft: &TaskDraft,
-        previous_code: &str,
+        previous: Option<&macroscope_builder::Program>,
         failed: &[CheckResult],
     ) -> String {
+        let previous_code = previous.map(|p| p.code.as_str()).unwrap_or_default();
         let failed_checks: Vec<Value> = failed
             .iter()
             .map(|c| {
@@ -887,8 +888,10 @@ impl AppCore {
             "task_description": draft.goal,
             "synthetic_text_shape": draft.synthetic_shape,
             "previous_program_code": previous_code,
+            "approved_connection_sources": previous.map(|p| &p.connection_sources),
+            "approved_model_step": previous.and_then(|p| p.model_step.as_ref()),
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code and web_sources). The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
         })
         .to_string()
     }
@@ -2163,13 +2166,11 @@ impl AppCore {
                         "Checks failed; asking the model to correct the program"
                     },
                 )?;
-                let previous_code = candidate
-                    .program
-                    .as_ref()
-                    .map(|p| p.code.as_str())
-                    .unwrap_or_default();
-                let correction =
-                    Self::program_correction_packet(&draft, previous_code, &failed_checks);
+                let correction = Self::program_correction_packet(
+                    &draft,
+                    candidate.program.as_ref(),
+                    &failed_checks,
+                );
                 let correction_text = Self::correction_packet_text(&correction);
                 if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
                     let now = self.now();
