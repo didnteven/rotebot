@@ -88,6 +88,8 @@ fn redirect_allowed(from: &Url, to: &Url, allow_insecure: bool) -> bool {
 fn client(allow_insecure: bool) -> Result<reqwest::Client, FetchError> {
     reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
+        // Many public APIs refuse requests that do not name their client.
+        .user_agent(concat!("Macroscope/", env!("CARGO_PKG_VERSION")))
         .https_only(!allow_insecure)
         // Follow redirects only back to the host that issued them; anything
         // else stops and is reported as a cross-host redirect below.
@@ -133,7 +135,7 @@ pub async fn fetch_all(
             return Err(FetchError::UnapprovedHost);
         }
         // The host issues a bare GET: no cookies, credentials or custom
-        // headers are ever attached.
+        // headers are ever attached (the client name above is the only one).
         let response = client
             .get(url.clone())
             .send()

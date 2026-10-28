@@ -901,7 +901,7 @@ impl AppCore {
             "approved_connection_sources": previous.map(|p| &p.connection_sources),
             "approved_model_step": previous.and_then(|p| p.model_step.as_ref()),
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. If a failed check says a web source could not be fetched (for example HTTP 401, 403 or 429), the site needs an account, key or cookies: replace it with a different site that answers a plain GET without them. current_output must be a real answer: if it apologises, says it could not determine something, or fills in a detail the task never gave (for example a city), fix the program or make it throw an Error that says what is missing. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
         })
         .to_string()
     }
@@ -933,6 +933,12 @@ impl AppCore {
             summary["largest_list"] = json!({ "json_path": path, "length": length });
         }
         summary
+    }
+
+    /// Trims the trailing period of a failed-check message so the sentence the
+    /// caller adds around it does not end in "..".
+    fn plain_check_failure(detail: &str) -> String {
+        detail.trim_end_matches('.').to_string()
     }
 
     fn correction_packet_text(correction: &str) -> String {
@@ -2200,7 +2206,7 @@ impl AppCore {
                             BuildFailureKind::Checks,
                             format!(
                                 "Checks failed: {}. Edit the rules and build again.",
-                                failed.join(", ")
+                                Self::plain_check_failure(&failed.join(", "))
                             ),
                         )?;
                     }
@@ -2484,7 +2490,7 @@ impl AppCore {
                                 BuildFailureKind::Checks,
                                 format!(
                                     "Checks failed: {}. Edit the rules and build again.",
-                                    failed2.join(", ")
+                                    Self::plain_check_failure(&failed2.join(", "))
                                 ),
                             )?;
                         }
@@ -3845,3 +3851,16 @@ mod summary_tests {
 
 #[cfg(all(test, unix))]
 mod muse_build_tests;
+
+#[cfg(test)]
+mod plain_failure_tests {
+    use super::AppCore;
+
+    #[test]
+    fn check_failure_has_no_doubled_period() {
+        assert_eq!(
+            AppCore::plain_check_failure("Web source 'a' could not be fetched: HTTP 401."),
+            "Web source 'a' could not be fetched: HTTP 401"
+        );
+    }
+}
