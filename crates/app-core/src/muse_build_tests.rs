@@ -26,6 +26,7 @@ else:
     assert sys.argv[1] == 'exec'
     prompt = sys.argv[sys.argv.index('--prompt-file') + 1]
     (root/'prompt').write_text(prompt)
+    (root/'prompt-text').write_text(open(prompt).read())
     (root/'running').write_text(str(os.getpid()))
     while not (root/'release').exists(): time.sleep(0.01)
     print(json.dumps(dict(payload_type='run.terminal.completed', payload=dict(terminal='completed', text=(root/'answer').read_text()))), flush=True)
@@ -145,6 +146,10 @@ async fn exercise_long_call(stop_mode: u8) {
             let before = messages();
             let prompt = std::fs::read_to_string(root.path().join("prompt")).unwrap();
             assert!(Path::new(&prompt).exists());
+            // Muse gets the same system instructions the direct route sends.
+            let text = std::fs::read_to_string(root.path().join("prompt-text")).unwrap();
+            assert!(text.starts_with("System instructions:\n"));
+            assert!(text.contains(macroscope_builder::SYSTEM_INSTRUCTIONS));
             tokio::time::pause();
             tokio::time::advance(Duration::from_secs(59)).await;
             assert_eq!(messages(), before);

@@ -850,7 +850,11 @@ impl AppCore {
         if draft.kind == TaskKind::Program {
             format!("System instructions:\n{}\n\nMessage (synthetic shape; example is real user data):\n{}", macroscope_builder::PROGRAM_SYSTEM, Self::program_packet(draft))
         } else {
-            Self::packet_text(&drafts::contract_for(draft))
+            // Both routes send the system instructions with the packet.
+            macroscope_builder::muse_prompt_text(
+                macroscope_builder::SYSTEM_INSTRUCTIONS,
+                &Self::packet_text(&drafts::contract_for(draft)),
+            )
         }
     }
 
