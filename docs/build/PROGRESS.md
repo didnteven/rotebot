@@ -850,3 +850,83 @@ Changes remain uncommitted.
 Claude's review of task 22: no added skips or ignores, and no test file lost assertions. The
 new dependency is test-only (`tokio` `test-util`). Rerun by Claude: both `check.sh` runs passed
 with **492 Rust + 127 UI tests** each, and OS canaries **PASS**.
+
+## Task 23 — Bundle the sandbox runtime (2026-10-28)
+
+Tauri's build and dev hooks run `apps/desktop/scripts/prepare-runner.mjs`.
+It builds `macroscope-runner` for the hook's target and debug/release mode,
+then uses Cargo's reported executable path (respecting `CARGO_TARGET_DIR`)
+to copy it to the ignored
+`apps/desktop/src-tauri/binaries/macroscope-runner-<target-triple>` input.
+The host triple comes from `rustc -vV` when no Tauri target is set.
+`scripts/check.sh` prepares the debug sidecar too, so workspace checks work
+from a clean checkout.
+
+`bundle.externalBin` includes the runner in Tauri's binary bundling/signing
+flow. `bundle.macOS.files` copies `crates/runner/profile.sb` to
+`Macroscope.app/Contents/MacOS/macroscope-runner.sb`, beside the runner.
+Discovery inside `*.app/Contents/MacOS` requires both bundled files and
+reports “The sandbox runner is missing from this app; reinstall Macroscope”
+if either is absent. Only non-bundle development/test runs retain the source
+profile fallback. Four unit tests cover complete bundles, missing files,
+and development/test discovery.
+
+Build and verify from the workspace root:
+
+```sh
+(cd apps/desktop && npx tauri build --debug --bundles app)
+bash apps/desktop/scripts/verify-bundle.sh '<cargo-target-dir>/debug/bundle/macos/Macroscope.app'
+```
+
+The verifier requires both regular files, an executable runner, and a profile
+that matches `crates/runner/profile.sb` byte-for-byte, then lists `Contents/MacOS`.
+The bundle path is printed by Tauri; it uses the configured Cargo target directory.
+
+Verification: **PASS** for every required command (exit 0). Full transcripts
+are in `.dev/task23/`.
+
+- `cargo build -p macroscope-runner --bins`: PASS.
+- `bash scripts/check.sh`, run 1: **346 workspace + 154 synthetic = 500 Rust
+  passes**, **127 UI passes in 17 files**, **0 failures**, **5 existing ignored
+  test invocations**. Formatting, Clippy with warnings denied, TypeScript,
+  and the production frontend build all passed.
+- `bash scripts/check.sh`, run 2: identical counts and checks, all PASS.
+- `cd apps/desktop && npx tauri build --debug --bundles app`: PASS, **1 bundle**.
+- `bash apps/desktop/scripts/verify-bundle.sh <built-app>`: PASS. All six
+  verifier fixture checks also passed (five invalid bundles rejected and one
+  complete bundle accepted).
+
+Built bundle:
+`/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-23/debug/bundle/macos/Macroscope.app`
+
+Exact output tail excerpts:
+
+```text
+cargo build -p macroscope-runner --bins:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.57s
+
+bash scripts/check.sh (run 1):
+ Test Files  17 passed (17)
+      Tests  127 passed (127)
+✓ built in 105ms
+
+bash scripts/check.sh (run 2):
+ Test Files  17 passed (17)
+      Tests  127 passed (127)
+✓ built in 109ms
+
+npx tauri build --debug --bundles app:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 12s
+    Finished 1 bundle at:
+        /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-23/debug/bundle/macos/Macroscope.app (113.26 MiB)
+
+verify-bundle.sh:
+PASS: sandbox runner and byte-identical profile present in /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-23/debug/bundle/macos/Macroscope.app
+total 231664
+-rwxr-xr-x@ 1 todd  staff  97407584 Oct 28 18:43 macroscope-desktop
+-rwxr-xr-x@ 1 todd  staff  21194576 Oct 28 18:42 macroscope-runner
+-rw-r--r--@ 1 todd  staff       782 Oct 28 08:50 macroscope-runner.sb
+```
+
+No tests were weakened or deleted, and no skips or ignores were added.
+Changes remain uncommitted.

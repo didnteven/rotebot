@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.macroscope.desktop",
   "build": {
-    "beforeDevCommand": "cargo build --manifest-path ../../Cargo.toml -p macroscope-runner --bins && npm run dev",
-    "beforeBuildCommand": "cargo build --manifest-path ../../Cargo.toml -p macroscope-runner --bins && npm run build",
+    "beforeDevCommand": "node scripts/prepare-runner.mjs && npm run dev",
+    "beforeBuildCommand": "node scripts/prepare-runner.mjs && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -33,6 +33,7 @@
       "app"
     ],
     "category": "Productivity",
+    "externalBin": ["binaries/macroscope-runner"],
     "shortDescription": "Turn a repetitive task into a tool you can check and keep.",
     "icon": [
       "icons/32x32.png",
@@ -42,7 +43,10 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "15.0",
+      "files": {
+        "MacOS/macroscope-runner.sb": "../../../crates/runner/profile.sb"
+      }
     }
   }
 }

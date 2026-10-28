@@ -63,9 +63,21 @@ impl RunnerEngine {
     }
     pub fn discover() -> Result<Self, BrokerError> {
         let exe = std::env::current_exe()?;
+        Self::discover_at(&exe)
+    }
+
+    fn discover_at(exe: &Path) -> Result<Self, BrokerError> {
         let parent = exe
             .parent()
             .ok_or_else(|| BrokerError::Runner("executable directory missing".into()))?;
+        let in_bundle = parent.file_name().is_some_and(|name| name == "MacOS")
+            && parent.parent().is_some_and(|contents| {
+                contents.file_name().is_some_and(|name| name == "Contents")
+            })
+            && parent
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|app| app.extension().is_some_and(|ext| ext == "app"));
         let target = if parent
             .file_name()
             .is_some_and(|n| n == "deps" || n == "examples")
@@ -76,7 +88,12 @@ impl RunnerEngine {
         };
         let runner = target.join("macroscope-runner");
         let bundled = target.join("macroscope-runner.sb");
-        let profile = if bundled.exists() {
+        if in_bundle && (!runner.is_file() || !bundled.is_file()) {
+            return Err(BrokerError::Runner(
+                "The sandbox runner is missing from this app; reinstall Macroscope".into(),
+            ));
+        }
+        let profile = if in_bundle || bundled.exists() {
             bundled
         } else {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runner/profile.sb")
@@ -354,5 +371,77 @@ impl RunnerEngine {
                 ))
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+
+    fn bundle_exe(root: &Path) -> PathBuf {
+        let macos = root.join("X.app/Contents/MacOS");
+        std::fs::create_dir_all(&macos).unwrap();
+        macos.join("macroscope-desktop")
+    }
+
+    fn assert_missing_bundle(exe: &Path) {
+        let error = RunnerEngine::discover_at(exe)
+            .err()
+            .expect("incomplete bundle must fail");
+        assert!(matches!(error, BrokerError::Runner(message)
+            if message == "The sandbox runner is missing from this app; reinstall Macroscope"));
+    }
+
+    #[test]
+    fn bundle_discovers_adjacent_runner_and_profile() {
+        let temp = tempfile::tempdir().unwrap();
+        let exe = bundle_exe(temp.path());
+        let macos = exe.parent().unwrap();
+        let runner = macos.join("macroscope-runner");
+        let profile = macos.join("macroscope-runner.sb");
+        std::fs::write(&runner, b"test runner").unwrap();
+        std::fs::write(&profile, b"bundled profile").unwrap();
+
+        let engine = RunnerEngine::discover_at(&exe).unwrap();
+        assert_eq!(engine.runner, runner.canonicalize().unwrap());
+        assert_eq!(engine.profile, profile.canonicalize().unwrap());
+        assert_eq!(engine.profile_hash, hash_file(&profile).unwrap());
+    }
+
+    #[test]
+    fn bundle_missing_runner_reports_reinstall() {
+        let temp = tempfile::tempdir().unwrap();
+        let exe = bundle_exe(temp.path());
+        assert_missing_bundle(&exe);
+        std::fs::write(exe.with_file_name("macroscope-runner.sb"), b"profile").unwrap();
+        assert_missing_bundle(&exe);
+    }
+
+    #[test]
+    fn bundle_missing_profile_never_uses_source_tree_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let exe = bundle_exe(temp.path());
+        std::fs::write(exe.with_file_name("macroscope-runner"), b"test runner").unwrap();
+        assert_missing_bundle(&exe);
+    }
+
+    #[test]
+    fn non_bundle_discovery_keeps_source_profile_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("debug");
+        std::fs::create_dir_all(&target).unwrap();
+        let runner = target.join("macroscope-runner");
+        std::fs::write(&runner, b"test runner").unwrap();
+        let source_profile = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../runner/profile.sb")
+            .canonicalize()
+            .unwrap();
+        for directory in ["", "deps", "examples"] {
+            let parent = target.join(directory);
+            std::fs::create_dir_all(&parent).unwrap();
+            let engine = RunnerEngine::discover_at(&parent.join("app")).unwrap();
+            assert_eq!(engine.runner, runner.canonicalize().unwrap());
+            assert_eq!(engine.profile, source_profile);
+        }
     }
 }
