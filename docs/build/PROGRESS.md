@@ -1129,3 +1129,15 @@ total 232488
 Changes remain in the worktree on `m4/custom-endpoint`; no commits, pushes,
 branch changes, real account operations, or reads of Muse configuration or the
 Keychain were performed.
+
+Claude's review of tasks 25 and 26, plus the merge of `m4/regexp-retention`:
+- No added skips or ignores, no test file lost assertions, and no new dependencies.
+- Custom-endpoint tests assert the token never appears in request bodies other than the
+  header, build state, events, outbound rows, DTOs or captured output.
+- The Meta key and the custom token share the native dialog, which now activates before
+  asking.
+
+Rerun by Claude: both `check.sh` runs passed with **542 Rust + 140 UI tests** each.
+`run-canaries.sh --os` reported synthetic **PASS** and admission **PASS** (developer
+boundary). The app bundle passes `verify-bundle.sh`, with the runner and the byte-identical
+profile in `Contents/MacOS`.
