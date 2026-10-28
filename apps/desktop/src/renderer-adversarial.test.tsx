@@ -96,7 +96,7 @@ function fixture(payload: string) {
       refreshMuseStatus: async () => { throw new Error(v("settings error")); },
       pickCsv: async () => csv,
       pickOutputDir: async () => folder,
-      draftTask: async () => draft,
+      draftTask: async (_input, description) => ({...draft, goal: description}),
       updateMapping: async (_id, mapping, outputName) => ({ ...draft, mapping, outputName }),
       outboundPreview: async () => ({ ...outbound, summary:{recipient:v("destination"),model:v("model"),includes:[],laterRuns:[],cost:"Free"}, draftId: "draft", model: v("model"), containsRealRows: false, estimatedCostMicros: 0, budgetMicros: 1, webHosts: [] }),
       startBuild: async () => build,
@@ -149,14 +149,15 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const update = vi.spyOn(backend, "updateMapping");
     const { user, root, inert } = await open(backend);
     await user.click(button("Describe a task"));
-    fireEvent.change(screen.getByLabelText("What do you want to do with this file?"), { target: { value: "Map this CSV" } });
-    await user.click(button("Choose text file…"));
+    fireEvent.change(screen.getByLabelText("What should the tool do?"), { target: { value: "Map this CSV" } });
+    await user.click(button("Choose file"));
     literal(root, v("file name"), true);
     literal(root, v("input path"), true);
     literal(screen.getByRole("region", { name: "Selected CSV · first 8 rows" }), v("CSV header"));
     literal(screen.getByRole("region", { name: "Selected CSV · first 8 rows" }), payload);
     inert();
-    await user.click(button("Review task summary"));
+    await user.click(button("Check the plan"));
+    await user.click(screen.getByText("Details"));
     literal(root, v("summary"));
     inputLiteral("Output column 1", v("mapping column"));
     inputLiteral("Constant value 1", v("constant"));
@@ -164,20 +165,20 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     if (pathDisplay(v("output name")) !== v("output name")) literal(root, v("output name"), true);
     literal(screen.getByRole("region", { name: "Column mapping" }), v("mapping source"));
     inert();
-    await user.click(button("Review what leaves this Mac"));
+    await waitFor(() => expect(button("Send and build")).toBeEnabled());
+    await user.click(screen.getByText(/What leaves this Mac ·/));
     expect(update).toHaveBeenCalledWith("draft", expect.any(Object), v("output name"));
-    await screen.findByLabelText("Exact outbound payload");
-    await user.click(screen.getByText("Advanced: exact data sent"));
+    await screen.findByLabelText("Exact data sent");
+    await user.click(screen.getByText("Exact data sent"));
     literal(root, v("outbound payload"));
     literal(root, v("model"));
     literal(root, v("destination"));
     inert();
-    await user.click(screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }));
-    await user.click(button("Build tool"));
-    const result = screen.getByRole("region", { name: "Staged output · first 8 rows" });
+    await user.click(button("Send and build"));
+    const result = screen.getByRole("region", { name: "Result · first 8 rows" });
     literal(result, v("mapping column"));
     literal(result, v("constant"));
-    await user.click(screen.getByText("Advanced details"));
+    await user.click(screen.getByText("Details"));
     // These are plain strings embedded in host-owned rule/check/event text.
     for (const label of ["mapping column", "mapping source", "check label", "check detail"]) {
       const lines = screen.getAllByText((text, node) => node?.tagName === "LI" && text.includes(v(label)), textOptions);
@@ -188,7 +189,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     }
     expect(screen.getByText((text, node) => node?.tagName === "LI" && text.includes(v("build event")), textOptions)).toBeVisible();
     inert({ startBuild: 1 });
-    await user.click(button("Try another sample…"));
+    await user.click(button("Try another sample"));
     literal(root, v("build error"));
     inert({ startBuild: 1, buildTryInput: 1 });
   });
@@ -226,7 +227,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const { backend, v } = fixture(payload);
     const { user, root, inert } = await open(backend);
     literal(root, v("saved tool"));
-    await user.click(button("Export…"));
+    await user.click(button("Export"));
     literal(root, v("export path"), true);
     await user.click(button("Activity"));
     await screen.findByText(v("activity title"), textOptions);
@@ -238,7 +239,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     await screen.findByRole("alert");
     literal(root, v("action error"));
     inert({ exportTool: 1, revealOutput: 1 });
-    await user.click(button("Show a task"));
+    await user.click(button("Record a task"));
     expect(screen.getByText(`Apps seen: ${v("app")}`, textOptions)).toBeVisible();
     assertBounded(screen.getByText(`Apps seen: ${v("app")}`, textOptions));
     inert({ exportTool: 1, revealOutput: 1 });
@@ -250,13 +251,13 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     literal(root, v("stored label"));
     literal(root, v("expiry"));
     literal(root, v("outbound purpose"));
-    await user.click(screen.getByText("Exact outbound payload"));
+    await user.click(screen.getByText("Exact data sent"));
     literal(root, v("outbound payload"));
     inert({ exportTool: 1, revealOutput: 1, startShow: 1 });
     await user.click(button("Settings"));
     literal(root, v("route blocker"));
     literal(root, `Unknown: ${v("model error")}`);
-    literal(root, `Show: ${v("show error")}`);
+    literal(root, `Record a task: ${v("show error")}`);
     await user.click(button("Check again"));
     literal(root, v("settings error"));
     inert({ exportTool: 1, revealOutput: 1, startShow: 1 });
@@ -266,16 +267,16 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const { backend, v } = fixture(payload);
     const stage = vi.spyOn(backend, "stageRun");
     const { user, root, inert } = await open(backend);
-    await user.click(button(`Run ${v("saved tool")}…`));
-    await user.click(button("Choose input file…"));
+    await user.click(button(`Run now: ${v("saved tool")}`));
+    await user.click(button("Choose input file"));
     literal(root, v("file name"), true);
-    await user.click(button("Choose output folder…"));
+    await user.click(button("Choose output folder"));
     literal(root, v("folder path"), true);
     fireEvent.change(screen.getByLabelText("Output name"), { target: { value: v("run output name") } });
     inputLiteral("Output name", v("run output name"));
     if (pathDisplay(v("run output name")) !== v("run output name")) literal(root, v("run output name"), true);
     inert();
-    await user.click(button("Stage and compare"));
+    await user.click(button("Preview result"));
     expect(stage).toHaveBeenCalledWith("tool", expect.objectContaining({ displayPath: v("input path") }), expect.objectContaining({ displayPath: v("folder path") }), v("run output name"));
     const preview = screen.getByRole("region", { name: "Previewed CSV · first 8 rows" });
     literal(preview, v("run header"));
@@ -286,8 +287,11 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     inert({ stageRun: 1, commitRun: 1 });
     stage.mockResolvedValueOnce({ failure: { kind: "input_invalid", message: v("run error"), row: 1, column: v("error column") } });
     await user.click(button("Run again"));
-    await user.click(button("Stage and compare"));
+    await user.click(button("Preview result"));
+    const alert = screen.getByRole("alert");
+    await user.click(alert.nextElementSibling!.querySelector("summary")!);
     literal(root, v("run error"));
+    await user.click(screen.getByText("File details"));
     literal(root, `Row: 1 · Column: ${v("error column")}`);
     inert({ stageRun: 2, commitRun: 1 });
   });
@@ -310,7 +314,8 @@ it("opens HTTPS documentation only after reviewing the address and confirming", 
   await user.click(button("Documentation"));
   await user.click(button("Open documentation in browser"));
   expect(backend.openExternal).toHaveBeenCalledExactlyOnceWith(address);
-  expect(root.querySelector("a")).toBeNull();
+  expect(root.querySelectorAll("a")).toHaveLength(1);
+  expect(root.querySelector("a")).toHaveAttribute("href", "#main-content");
   inert({ openExternal: 1 });
 });
 
@@ -329,7 +334,8 @@ async function open(backend: Backend) {
     );
     expect(handlers).toEqual([]);
     for (const link of root.querySelectorAll("a")) {
-      expect(new URL(link.href).protocol).toBe("https:");
+      if (link.classList.contains("skip-link")) expect(link.getAttribute("href")).toBe("#main-content");
+      else expect(new URL(link.href).protocol).toBe("https:");
     }
     expect(fetch).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();

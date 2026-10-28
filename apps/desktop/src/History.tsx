@@ -96,7 +96,7 @@ export function Privacy({
       {error && <button onClick={() => void act(load)}>Reload privacy</button>}
       <h2>Your data</h2>
       <p>
-        Deleting history stops builds, Show, and runs, then removes the local
+        Deleting history stops builds, recording, and runs, then removes the local
         items listed below. Your API key and connection tokens stay until you
         use Remove key or Disconnect. Files you selected and exported outputs
         stay in their own folders. Provider copies cannot be recalled.
@@ -127,8 +127,8 @@ export function Privacy({
           </label>
           <p>
             {includeTools
-              ? "All tools, versions, grants, runs and receipts, and version folders will also be deleted."
-              : "Your saved tools, versions, grants, and run receipts will be kept."}
+              ? "All tools, versions, permissions, runs and receipts, and their folders will also be deleted."
+              : "Your saved tools, versions, permissions, and run receipts will be kept."}
           </p>
           <div className="actions">
             <button
@@ -219,9 +219,9 @@ export function Privacy({
         <dt>Stop builds</dt>
         <dd>Cancels active and queued builds; recording continues.</dd>
         <dt>Local only</dt>
-        <dd>Stops all cloud model work; deterministic tools continue.</dd>
+        <dd>Stops all cloud model work; tools that run on this Mac continue.</dd>
         <dt>Emergency stop</dt>
-        <dd>Stops builds, tools, and Show.</dd>
+        <dd>Stops builds, tools, and recording.</dd>
         <dt>Delete</dt>
         <dd>
           Removes the selected local history; provider copies cannot be
@@ -241,15 +241,15 @@ export function Privacy({
               s.expires,
             ])}
           />
-          <h2>Outbound records</h2>
-          {overview.outbound.length === 0 && <p>No outbound records.</p>}
+          <h2>Sent data history</h2>
+          {overview.outbound.length === 0 && <p>No sent data history.</p>}
           {overview.outbound.map((r) => (
             <article className="card" key={r.id}>
               <h3>{r.purpose}</h3>
               <p>
                 {r.destination} · {new Date(r.atMs).toLocaleString()} ·{" "}
                 {r.syntheticOnly
-                  ? "Synthetic rows only"
+                  ? "Made-up example data only"
                   : "Contains selected data"}
               </p>
               <p>
@@ -261,17 +261,17 @@ export function Privacy({
                 <summary>
                   {r.purpose === "Connection read" ? "Tool and approved argument template" : r.route === "custom_endpoint" ? "Byte counts and token usage (content is not logged)" : r.purpose === "Model step" ? "Route and byte counts (content is not logged)" : r.route === "muse_plan"
                     ? "Inputs supplied to Muse"
-                    : "Exact outbound payload"}
+                    : "Exact data sent"}
                 </summary>
                 <pre tabIndex={0}>
-                  {r.payloadText ?? "Payload expired; record retained."}
+                  {r.payloadText ?? "Sent text expired; history retained."}
                 </pre>
               </details>
             </article>
           ))}
           <p>
-            Delete outbound history removes {overview.outbound.length} local
-            records and their saved payload text. Tools and exported CSVs
+            Delete sent data history removes {overview.outbound.length} local
+            records and their saved text. Tools and exported CSVs
             remain.
           </p>
           <button
@@ -283,7 +283,7 @@ export function Privacy({
               })
             }
           >
-            Delete outbound history
+            Delete sent data history
           </button>
         </>
       )}

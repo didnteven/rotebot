@@ -24,13 +24,13 @@ it("tray navigation opens a tool Run screen or Create and releases listeners", a
     run({ event: "navigate://run", id: 1, payload: tool.id }),
   );
   expect(
-    await screen.findByRole("button", { name: "Stage and compare" }),
+    await screen.findByRole("button", { name: "Preview result" }),
   ).toBeVisible();
   await act(async () =>
     create({ event: "navigate://create", id: 2, payload: null }),
   );
   expect(
-    await screen.findByRole("button", { name: "Review task summary" }),
+    await screen.findByRole("button", { name: "Check the plan" }),
   ).toBeVisible();
   view.unmount();
   await waitFor(() => expect(stop).toHaveBeenCalledTimes(3));

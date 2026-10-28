@@ -14,53 +14,42 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   await waitFor(() => expect(button("Describe a task")).toBeEnabled());
 
   await user.click(button("Describe a task"));
-  await user.click(button("No input file"));
+  await user.click(button("No file"));
   expect(
-    screen.getByText(/No input file — the program will read approved web sources/),
+    screen.getByText(/No file selected/),
   ).toBeVisible();
   const description = screen.getByLabelText(
-    "What do you want to do with this file?",
+    "What should the tool do?",
   );
   await user.clear(description);
   await user.type(
     description,
     "Get today's forecast for Auckland from https://api.open-meteo.com and write a short summary to weather.txt",
   );
-  await user.click(button("Review task summary"));
+  await user.click(button("Check the plan"));
 
-  expect(
-    await screen.findByText(/No input file: only a sandboxed program/),
-  ).toBeVisible();
-  await user.click(button("Review what leaves this Mac"));
+  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  await user.click(screen.getByText(/What leaves this Mac ·/));
 
   // Before generation, requested hosts are named; exact sources need approval.
   expect(
     await screen.findByText(/Requested site: api.open-meteo.com on each run/),
   ).toBeVisible();
-  expect(button("Build tool")).toBeDisabled();
-  await user.click(
-    screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }),
-  );
-  await user.click(button("Build tool"));
+  expect(button("Send and build")).toBeEnabled();
+  await user.click(button("Send and build"));
 
   // The build-and-compare review lists the declared hosts; saving requires approval.
-  await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+  await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 5000,
   });
   expect(
-    screen.getByText(/This tool fetches from api.open-meteo.com/),
+    screen.getByText(/This tool will read data from api.open-meteo.com/),
   ).toBeVisible();
-  expect(button("Save tool")).toBeDisabled();
-  await user.click(
-    screen.getByRole("checkbox", {
-      name: "I approve fetching from these sites",
-    }),
-  );
-  expect(button("Save tool")).toBeEnabled();
+  expect(button("Yes, save this tool")).toBeEnabled();
   const toolName = screen.getByLabelText("Tool name");
   await user.clear(toolName);
   await user.type(toolName, "Weather");
-  await user.click(button("Save tool"));
+  await user.click(button("Yes, save this tool"));
 
   await screen.findByRole("heading", { name: "Weather" });
   const tool = (await backend.listTools()).find((t) => t.name === "Weather")!;
@@ -70,18 +59,18 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   expect(detail.program?.webSources).toHaveLength(1);
 
   // The run screen says which sites will be fetched; no input file is asked for.
-  await user.click(button("Run Weather…"));
+  await user.click(button("Run now: Weather"));
   expect(
-    await screen.findByText(/This run fetches from api.open-meteo.com/),
+    await screen.findByText(/This run reads data from api.open-meteo.com/),
   ).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: "Choose input file…" }),
+    screen.queryByRole("button", { name: "Choose input file" }),
   ).not.toBeInTheDocument();
-  await user.click(button("Choose output folder…"));
-  await user.click(button("Stage and compare"));
-  await screen.findByRole("heading", { name: "Staged preview" });
+  await user.click(button("Choose output folder"));
+  await user.click(button("Preview result"));
+  await screen.findByRole("heading", { name: "Result preview" });
   expect(
-    screen.getByLabelText("Staged output first lines"),
+    screen.getByLabelText("Answer"),
   ).toHaveTextContent("Auckland: fine, high 21C, low 14C.");
   await user.click(button("Create previewed output"));
   expect(

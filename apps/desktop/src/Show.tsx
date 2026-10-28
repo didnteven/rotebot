@@ -17,7 +17,7 @@ export function ShowPanel({
   return (
     <section className="card">
       <button onClick={close}>Back</button>
-      <h2>Show a task</h2>
+      <h2>Record a task</h2>
       <Notice error={error} />
       {state.kind === "unavailable" ? (
         <p>{state.reason}</p>
@@ -64,7 +64,7 @@ export function ShowPanel({
           {state.accessibility !== "granted" && (
             <p>
               Enable Accessibility for Macroscope in macOS System Settings, then
-              check again. Tell works without it.
+              check again. You can describe a task without recording.
             </p>
           )}
           <div className="actions">
@@ -159,7 +159,7 @@ export function ShowStatus({ state }: { state: ShowState | null }) {
       : 0;
   return (
     <span>
-      Show:{" "}
+      Record a task:{" "}
       {state === null
         ? "Checking…"
         : state.kind === "recording"

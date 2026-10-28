@@ -35,18 +35,17 @@ it("Change in Create reaches the chooser, switches immediately, and preserves th
   const select = vi.spyOn(backend,"selectRoute");
   render(<App backend={backend}/>);
   await user.click(await screen.findByRole("button",{name:"Describe a task"}));
-  await user.type(screen.getByLabelText("What do you want to do with this file?"),"Keep this task description");
-  await user.click(screen.getByRole("button",{name:"Change"}));
+  await user.type(screen.getByLabelText("What should the tool do?"),"Keep this task description");
+  await user.click(screen.getByRole("button",{name:"Settings for model access"}));
   const chooser = await screen.findByRole("group",{name:"Which model builds your tools"});
   expect(chooser).toHaveFocus();
   await user.click(within(chooser).getByRole("radio",{name:/Meta API key/}));
   await screen.findByText("Builds now use Meta API key");
   expect(select).toHaveBeenCalledExactlyOnceWith("api_key");
   expect(within(chooser).getByRole("radio",{name:/Meta API key/})).toBeChecked();
-  await user.click(screen.getByRole("button",{name:"Tools"}));
-  expect(screen.getByLabelText("What do you want to do with this file?")).toHaveValue("Keep this task description");
-  expect(screen.getByRole("button",{name:"Change"}).closest("p")).toHaveTextContent("Building with: Meta API key");
-  await waitFor(()=>expect(screen.getByRole("region",{name:"App status"})).toHaveTextContent("Building with: Meta API key"));
+  await user.click(screen.getByRole("button",{name:"My tools"}));
+  expect(screen.getByLabelText("What should the tool do?")).toHaveValue("Keep this task description");
+  await waitFor(()=>expect(screen.getByRole("region",{name:"App status"})).toHaveTextContent("Using Meta API key"));
 });
 
 it("a tested custom endpoint can be selected from the chooser",async()=>{

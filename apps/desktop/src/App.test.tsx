@@ -8,7 +8,7 @@ describe("desktop shell", () => {
   it("opens Tools with the sample and describe actions", async () => {
     render(<App backend={new MockBackend()} />);
     expect(
-      screen.getByRole("heading", { name: "Tools", level: 1 }),
+      screen.getByRole("heading", { name: "My tools", level: 1 }),
     ).toBeVisible();
     expect(
       await screen.findByRole("button", { name: "Try a sample" }),
@@ -16,7 +16,7 @@ describe("desktop shell", () => {
     expect(
       screen.getByRole("button", { name: "Describe a task" }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Tools" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "My tools" })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -27,11 +27,13 @@ describe("desktop shell", () => {
     render(<App backend={new MockBackend()} />);
     await screen.findByRole("button", { name: "Try a sample" });
     await user.tab();
+    expect(screen.getByRole("link", {name:"Skip to main content"})).toHaveFocus();
+    await user.tab();
     expect(screen.getByRole("button", { name: "Today" })).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
     await user.tab();
-    expect(screen.getByRole("button", { name: "Tools" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "My tools" })).toHaveFocus();
     for (const destination of [
       "Activity",
       "Connections",
@@ -48,7 +50,7 @@ describe("desktop shell", () => {
         "page",
       );
     }
-    await user.click(screen.getByRole("button", { name: "Tools" }));
+    await user.click(screen.getByRole("button", { name: "My tools" }));
     expect(screen.getByRole("button", { name: "Try a sample" })).toBeVisible();
   });
 
@@ -63,7 +65,7 @@ describe("desktop shell", () => {
       />,
     );
     expect(
-      await screen.findByText("<script>fabricated</script>"),
+      await screen.findByRole("heading", {name:"<script>fabricated</script>"}),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Try a sample" }),
@@ -89,17 +91,16 @@ describe("desktop shell", () => {
 
 it("shows a single Show action with independent plain-language status facts", async () => {
   render(<App backend={new MockBackend()} />);
-  expect(await screen.findByText("Cloud models: On")).toBeVisible();
-  expect(screen.getByText("Show: Off")).toBeVisible();
-  expect(screen.getAllByRole("button", { name: "Show a task" })).toHaveLength(
+  expect(await screen.findByText(/Using .* - cloud models on/)).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Record a task" })).toHaveLength(
     1,
   );
 });
 
 it.each([
-  ["stopping", "Stopping…"],
-  ["local_only", "Off (local only)"],
-  ["key_unavailable", "Key unavailable"],
+  ["stopping", "stopping"],
+  ["local_only", "off (local only)"],
+  ["key_unavailable", "unavailable (check your key)"],
 ] as const)(
   "labels %s cloud models and hides unavailable Show",
   async (egress, label) => {
@@ -111,10 +112,9 @@ it.each([
       reason: "Unavailable on this platform",
     });
     render(<App backend={backend} />);
-    expect(await screen.findByText(`Cloud models: ${label}`)).toBeVisible();
-    expect(screen.getByText("Show: Off")).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: "Show a task" }),
+    expect(await screen.findByText((text, el) => el?.tagName === "SPAN" && text.endsWith(`cloud models ${label}`))).toBeVisible();
+      expect(
+      screen.queryByRole("button", { name: "Record a task" }),
     ).not.toBeInTheDocument();
   },
 );
@@ -134,7 +134,7 @@ it.each([false, true])(
     });
     render(<App backend={backend} />);
     expect(
-      await screen.findByText(paused ? "Show: Paused" : "Show: Recording 1:23"),
+      await screen.findByText(paused ? "Paused" : "Recording"),
     ).toBeVisible();
   },
 );

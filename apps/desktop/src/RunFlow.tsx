@@ -18,7 +18,9 @@ import {
   Field,
   FileNameInput,
   FileText,
-  Notice,
+  FailureNotice,
+  rowCount,
+  useScreenFocus,
   ReceiptCard,
   useAction,
 } from "./ui";
@@ -48,12 +50,21 @@ export function RunFlow({
     [receipt, setReceipt] = useState<Receipt | null>(null),
     [failure, setFailure] = useState<RunFailure | null>(null);
   const [actionsReviewed, setActionsReviewed] = useState(false);
-  const { act, busy, error } = useAction();
+  const { act, busy, error, retry } = useAction();
+  const headingRef = useScreenFocus<HTMLHeadingElement>(receipt ? "receipt" : staged ? "preview" : "input");
   async function clearStage() {
     if (staged) await backend.discardRun(staged.runId);
     setStaged(null);
     setActionsReviewed(false);
     setFailure(null);
+  }
+  async function stage() {
+    setFailure(null);
+    const result = detail?.noInput
+      ? await backend.stageRunNoInput(tool.id, folder!, name)
+      : await backend.stageRun(tool.id, input!.handle, folder!, name);
+    if ("failure" in result) setFailure(result.failure);
+    else { setStaged(result); setActionsReviewed(false); }
   }
   return (
     <section>
@@ -68,34 +79,21 @@ export function RunFlow({
       >
         Back to tools
       </button>
-      {detail?.program && <p>Program (sandboxed)</p>}
-      <h2>Run {tool.name}</h2>
-      {detail?.program?.modelStep && <label>Monthly model-step cap<input aria-label="Monthly model-step cap" type="number" min={0} max={10000} value={detail.modelStepCap} onChange={e=>{const cap=Number(e.target.value);void act(async()=>setDetail(await backend.setModelStepCap(tool.id,cap)));}}/></label>}
+      <h2 ref={headingRef} tabIndex={-1}>{receipt ? "Run finished" : staged ? "Result preview" : `Run ${tool.name}`}</h2>
       {detail?.program && <SourceReview advanced={false} program={detail.program} route={modelRoute} routeDetails={routeDetails}/>}
-      {detail?.noInput && <ScheduleSection advanced={false} backend={backend} tool={detail} openSettings={openSettings} />}
-      <p>
-        Version {tool.version} · Every new input needs a fresh staged output and
-        approval.
-      </p>
+      {detail?.noInput && <details><summary>Schedule this tool</summary><ScheduleSection advanced={false} backend={backend} tool={detail} openSettings={openSettings} /></details>}
+      <p>Check the result before creating the output file.</p>
       {detail?.noInput && detail?.program && detail.program.webSources.length > 0 && (
         <p role="note" className="notice notice-info">
-          This run fetches from{" "}
-          {detail.program.webSources
-            .map((s) => {
-              try {
-                return new URL(s.url.replace("{today}", "2026-01-01")).hostname;
-              } catch {
-                return s.url;
-              }
-            })
-            .join(", ")}{" "}
-          — the approved sites for this tool. Every fetch is recorded under Privacy.
+          This run reads data from{" "}
+          {[...new Set(detail.program.webSources.map(s => { try { return new URL(s.url.replace("{today}", "2026-01-01")).hostname; } catch { return s.url; } }))].join(", ")}
+          . These are the sites you approved for this tool. Reads are recorded under Privacy.
         </p>
       )}
       {detail?.noInput && (
-        <p>No input file: this tool reads its approved web sources.</p>
+        <p>No input file: this tool reads the sites you approved.</p>
       )}
-      <Notice error={error} />
+      {error && <FailureNotice message={error} retry={() => void act(retry)} change={() => void act(clearStage)} />}
       {busy && <p role="status">Working…</p>}
       {!receipt && (
         <>
@@ -115,7 +113,7 @@ export function RunFlow({
                       })
                     }
                   >
-                    Choose input file…
+                    Choose input file
                   </button>
                   <button
                     onClick={() =>
@@ -137,7 +135,7 @@ export function RunFlow({
                   })
                 }
               >
-                Choose output folder…
+                Choose output folder
               </button>
             </div>
             {folder && <p>Output folder: <FileText text={folder.displayPath} /></p>}
@@ -154,37 +152,24 @@ export function RunFlow({
           </fieldset>
           {input && !staged && !detail?.noInput && <CsvView preview={input} />}
           {!staged && (
+            <>
+            {(busy || !detail || (!detail?.noInput && !input) || !folder || !name.trim()) && <p id="run-reason">{busy ? "Working…" : !detail ? "Loading your tool…" : !detail?.noInput && !input ? "Choose an input file and output folder to continue." : !folder ? "Choose an output folder to continue." : "Give the output file a name."}</p>}
             <button
               className="primary"
-              disabled={busy || (!detail?.noInput && !input) || !folder || !name.trim()}
-              onClick={() =>
-                void act(async () => {
-                  setFailure(null);
-                  const result = detail?.noInput
-                    ? await backend.stageRunNoInput(tool.id, folder!, name)
-                    : await backend.stageRun(
-                        tool.id,
-                        input!.handle,
-                        folder!,
-                        name,
-                      );
-                  if ("failure" in result) setFailure(result.failure);
-                  else { setStaged(result); setActionsReviewed(false); }
-                })
-              }
+              aria-describedby="run-reason"
+              disabled={busy || !detail || (!detail?.noInput && !input) || !folder || !name.trim()}
+              onClick={() => void act(stage)}
             >
-              Stage and compare
+              Preview result
             </button>
+            </>
           )}
           {staged && (
             <section className="card">
-              <h3>Staged preview</h3>
-              {staged.createsOutput === false ? <p>Connection actions only</p> : <p>
-                {staged.rowsIn} rows → {staged.rowsOut} rows ·{" "}
-                {staged.outputColumns.length} columns
-              </p>}
-              <p>Source unchanged; existing files are never replaced</p>
-              {staged.createsOutput === false ? null : staged.previewText !== undefined ? <pre aria-label="Staged output first lines">{staged.previewText}</pre> : <DataTable
+
+              {staged.createsOutput === false ? <p>Connection actions only</p> : !detail?.noInput && !detail?.program?.webSources.length && <p>{rowCount(staged.rowsIn)} → {rowCount(staged.rowsOut)} · {staged.outputColumns.length} {staged.outputColumns.length === 1 ? "column" : "columns"}</p>}
+              <p>Your input stays unchanged; existing files are never replaced</p>
+              {staged.createsOutput === false ? null : staged.previewText !== undefined ? <div className="result-answer preserve-lines" aria-label="Answer">{staged.previewText}</div> : <DataTable
                 columns={staged.outputColumns}
                 rows={staged.previewRows}
                 caption="Previewed CSV · first 8 rows"
@@ -201,6 +186,8 @@ export function RunFlow({
                   creating the output.
                 </p>
               )}
+              {!!staged.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true) && !actionsReviewed && <p>Review and approve the actions above to continue.</p>}
+              {busy && <p role="status">Working…</p>}
               <div className="actions">
                 <button disabled={busy} onClick={() => void act(clearStage)}>
                   Cancel
@@ -230,24 +217,14 @@ export function RunFlow({
               </div>
             </section>
           )}
-          {failure && (
-            <div className="notice notice-warning" role="alert">
-              <p>{failure.message}</p>
-              {failure.kind === "input_invalid" && (
-                <p>
-                  Row: {failure.row ?? "unknown"} · Column:{" "}
-                  {failure.column ?? "unknown"}
-                </p>
-              )}
-              <button disabled={busy} onClick={() => void act(clearStage)}>
-                {failure.kind === "destination_exists"
-                  ? "Choose another name"
-                  : failure.kind === "input_invalid"
-                    ? "Choose another input"
-                    : "Stage again"}
-              </button>
-            </div>
-          )}
+          {failure && <FailureNotice message={failure.message} kind={failure.kind} retry={() => void act(async () => {
+            if (staged) {
+              const result = await backend.commitRun(staged.runId, staged.planHash, actionsReviewed);
+              if ("failure" in result) setFailure(result.failure);
+              else { setReceipt(result); setStaged(null); setFailure(null); await changed(); }
+            } else await stage();
+          })} change={() => void act(clearStage)} />}
+          {failure?.kind === "input_invalid" && <details><summary>File details</summary><p>Row: {failure.row ?? "unknown"} · Column: {failure.column ?? "unknown"}</p></details>}
         </>
       )}
       {receipt && (
@@ -263,10 +240,12 @@ export function RunFlow({
           </button>
         </>
       )}
-      {(detail?.program || staged) && <details><summary>Advanced details</summary>
+      <details><summary>Details</summary>
+        <p>{detail?.program ? "Program (sandboxed) · " : ""}Version {tool.version}</p>
+        {detail?.program?.modelStep && <label>Monthly model-step cap<input aria-label="Monthly model-step cap" type="number" min={0} max={10000} value={detail.modelStepCap} onChange={e=>{const cap=Number(e.target.value);void act(async()=>setDetail(await backend.setModelStepCap(tool.id,cap)));}}/></label>}
         {detail?.program && <><pre>{detail.program.code}</pre><SourceTechnicalDetails program={detail.program}/></>}
         {staged && <><p>Plan hash: <code>{staged.planHash}</code></p><ActionTechnicalDetails actions={staged.plannedCalls??[]}/></>}
-      </details>}
+      </details>
     </section>
   );
 }

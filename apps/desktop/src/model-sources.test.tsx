@@ -14,7 +14,7 @@ it("outbound review names each connection read, its exact template and the model
   expect(screen.getByText("This build will read your Google Calendar events for today once to test the tool.")).toBeVisible();
   expect(screen.getByText(program.connectionSources![0].argsJson)).not.toBeVisible();
   expect(screen.getByText(/up to 64 KB/)).not.toBeVisible();
-  fireEvent.click(screen.getByText("Advanced details"));
+  fireEvent.click(screen.getByText("Details"));
   expect(screen.getByText(program.connectionSources![0].argsJson)).toBeVisible();
   expect(screen.getByText("list_events")).toBeVisible();
   expect(screen.getByText(/up to 64 KB/)).toBeVisible();
@@ -25,6 +25,8 @@ it("tool detail shows the monthly cap and edits it through the backend",async()=
   vi.spyOn(backend,"getTool").mockResolvedValue(tool);
   const cap=vi.spyOn(backend,"setModelStepCap").mockImplementation(async(_id,cap)=>({...tool,modelStepCap:cap}));
   render(<RunFlow backend={backend} tool={tool} close={vi.fn()} changed={async()=>{}}/>);
+  await waitFor(()=>expect(screen.getByLabelText("Monthly model-step cap")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("Details"));
   const field=await screen.findByRole("spinbutton",{name:"Monthly model-step cap"});expect(field).toHaveValue(60);
   fireEvent.change(field,{target:{value:"24"}});
   await waitFor(()=>expect(cap).toHaveBeenCalledWith(tool.id,24));

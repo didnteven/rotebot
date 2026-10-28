@@ -18,7 +18,7 @@ export function CustomEndpointCard({backend,status,update}:{backend:Backend;stat
     <Field label="Endpoint model"><input value={model} onChange={e=>setModel(e.target.value)}/></Field>
     <Field label="Endpoint display name"><input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/></Field>
     <Field label="Monthly endpoint call cap"><input type="number" min="0" step="1" value={cap} onChange={e=>setCap(e.target.value)}/></Field>
-    <p>{status.callsThisMonth} calls this month · {status.host??"No host configured"} · {status.model??"No model"}</p>
+    <p>{status.callsThisMonth} calls this month · {status.host??"No service configured"} · {status.model??"No model"}</p>
     <p>Token: {status.tokenPresent?"Set":"Not set"}. Entered in a native hidden-input dialog.</p>
     <p role="status">Last endpoint test: {status.lastTest?`${status.lastTest.status === "ok" ? "OK" : status.lastTest.status} · ${status.lastTest.latencyMs} ms`:"Not tested"}</p>
     <div className="actions">

@@ -15,7 +15,7 @@ it("previews history, defaults to keeping tools and credentials, and lets Keep c
   const remove = vi.spyOn(backend, "deleteData");
   const user = userEvent.setup();
   render(<App backend={backend} />);
-  await screen.findByRole("button", { name: "Export…" });
+  await screen.findByRole("button", { name: "Export" });
   await user.click(button("Privacy"));
   await screen.findByRole("table", { name: "Local history to delete" });
   expect(screen.getByText("30 days; items needing you stay until handled")).toBeVisible();
@@ -44,7 +44,7 @@ it("previews history, defaults to keeping tools and credentials, and lets Keep c
   await user.click(button("Delete history"));
   await screen.findByText("Local history deleted.");
   expect(remove).toHaveBeenLastCalledWith({ includeTools: true });
-  await user.click(button("Tools"));
+  await user.click(button("My tools"));
   expect(
     await screen.findByRole("button", { name: "Try a sample" }),
   ).toBeVisible();
@@ -59,13 +59,13 @@ it("exports and toggles Pause tool and Resume tool in the library", async () => 
   expect(
     await screen.findByRole("button", { name: "Resume tool" }),
   ).toBeVisible();
-  expect(button(`Run ${tool.name}…`)).toBeDisabled();
-  await user.click(button("Export…"));
+  expect(button(`Run now: ${tool.name}`)).toBeDisabled();
+  await user.click(button("Export"));
   const exported = await screen.findByRole("status");
   expect(exported).toBeVisible();
   expect(exported).toHaveTextContent(/Tool exported to \/Demo\/Exports/);
   await user.click(button("Resume tool"));
-  await waitFor(() => expect(button(`Run ${tool.name}…`)).toBeEnabled());
+  await waitFor(() => expect(button(`Run now: ${tool.name}`)).toBeEnabled());
 });
 
 it("Try another sample opens the picker and displays failing row and column detail", async () => {
@@ -79,21 +79,21 @@ it("Try another sample opens the picker and displays failing row and column deta
   const user = userEvent.setup();
   render(<App backend={backend} />);
   await user.click(await screen.findByRole("button", { name: "Try a sample" }));
-  await user.click(button("Review task summary"));
+  await user.click(button("Check the plan"));
   await user.click(screen.getByRole("radio", { name: "March 4 (MM/DD/YY)" }));
-  await user.click(button("Review what leaves this Mac"));
-  await user.click(button("Build tool"));
-  await waitFor(() => expect(button("Try another sample…")).toBeVisible(), {
+  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  await user.click(button("Send and build"));
+  await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 4500,
   });
-  await user.click(button("Try another sample…"));
+  await user.click(screen.getByText("Details"));
+  await user.click(button("Try another sample"));
   expect(pick).toHaveBeenCalledOnce();
   expect(check).toHaveBeenCalledWith(expect.any(String), bad.handle);
-  expect(await screen.findByRole("alert")).toHaveTextContent("The tool did not pass its checks.");
-  await user.click(screen.getByText("Advanced details"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("The result didn't pass its checks.");
   expect(screen.getByText(/row 1.*created/i, {selector:"details p"})).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: "Save tool" }),
+    screen.queryByRole("button", { name: "Yes, save this tool" }),
   ).not.toBeInTheDocument();
 });
 

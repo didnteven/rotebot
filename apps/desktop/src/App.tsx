@@ -18,7 +18,7 @@ import { RunFlow } from "./RunFlow";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
 import { Activity, Privacy } from "./History";
-import { RecordingBar, ShowPanel, ShowStatus } from "./Show";
+import { RecordingBar, ShowPanel } from "./Show";
 import { FileText, Notice, Suggestions, useAction } from "./ui";
 
 const destinations = [
@@ -133,6 +133,19 @@ export function App({ backend }: { backend: Backend }) {
       );
     };
   }, [backend]);
+  const [toolDescriptions, setToolDescriptions] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    void Promise.all((tools ?? []).map(async tool => {
+      try {
+        const detail = await backend.getTool(tool.id);
+        const summary = detail.summary?.find(line => line.trim() && !line.includes("recurrence unmeasured") && !line.startsWith("Program (sandboxed)"));
+        return [tool.id, summary || detail.program?.summary || tool.name];
+      }
+      catch { return [tool.id, tool.name]; }
+    })).then(entries => { if (active) setToolDescriptions(Object.fromEntries(entries)); });
+    return () => { active = false; };
+  }, [backend, tools]);
   const [exported, setExported] = useState<string | null>(null);
   function connect(id: string) {
     setSelectedConnector(id);
@@ -157,16 +170,18 @@ export function App({ backend }: { backend: Backend }) {
   );
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="sidebar">
         <div className="brand">Macroscope</div>
         <nav aria-label="Main navigation">
-          {destinations.map((item) => (
+          {destinations.map((item, index) => (
             <button
+              className={index === 3 ? "secondary-start" : index > 3 ? "secondary-nav" : undefined}
               key={item}
               aria-current={destination === item ? "page" : undefined}
               onClick={() => setDestination(item)}
             >
-              {item}
+              {item === "Tools" ? "My tools" : item}
             </button>
           ))}
         </nav>
@@ -177,23 +192,8 @@ export function App({ backend }: { backend: Backend }) {
           <RecordingBar backend={backend} state={show} update={updateShow} />
         )}
         <div className="status-strip" role="region" aria-label="App status">
-          <span>
-            Building with:{" "}
-            {status ? `${routeLabel(status.effectiveRoute)}${status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.model?.split("/").pop()} · ${status.customEndpoint.host}` : ""}` : "Checking…"}
-          </span>
-          <span>
-            Cloud models:{" "}
-            {status?.egress === "stopping"
-              ? "Stopping…"
-              : status?.egress === "local_only"
-                ? "Off (local only)"
-                : status?.egress === "key_unavailable"
-                  ? "Key unavailable"
-                  : status
-                    ? "On"
-                    : "Checking…"}
-          </span>
-          <ShowStatus state={show} />
+          <span>{status ? `Using ${routeLabel(status.effectiveRoute)} - cloud models ${status.egress === "cloud_allowed" ? "on" : status.egress === "stopping" ? "stopping" : status.egress === "key_unavailable" ? "unavailable (check your key)" : "off (local only)"}` : "Checking model access…"}</span>
+          <button className="quiet" aria-label="Settings for model access" onClick={openSettings}>Settings</button>
           {show && show.kind !== "unavailable" && (
             <button
               onClick={() => {
@@ -201,13 +201,13 @@ export function App({ backend }: { backend: Backend }) {
                 setShowPanel(true);
               }}
             >
-              Show a task
+              Record a task
             </button>
           )}
         </div>
-        <main id="main-content" aria-labelledby="page-title">
+        <main id="main-content" tabIndex={-1} aria-labelledby="page-title">
           <header>
-            <h1 id="page-title">{destination}</h1>
+            <h1 id="page-title">{destination === "Tools" ? "My tools" : destination}</h1>
           </header>
           <Notice error={error} />
           {exported && <p role="status">Tool exported to <FileText text={exported} /></p>}
@@ -215,7 +215,7 @@ export function App({ backend }: { backend: Backend }) {
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}
           {!status && !error && <p role="status">Loading Macroscope…</p>}
-          {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} />}
+          {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} run={id => void act(async () => { const tool = await backend.getTool(id); setCreating(false); setShowPanel(false); setRunning(tool); setDestination("Tools"); })} create={() => { setDestination("Tools"); setInitialInput(null); setCreating(true); }} />}
           <div hidden={destination !== "Tools"}>
             {destination === "Tools" && commonSuggestions}
             {showPanel && show && (
@@ -301,8 +301,7 @@ export function App({ backend }: { backend: Backend }) {
                         </p>
                       </div>
                       <p>
-                        Selected data reaches Meta only after an outbound
-                        review. No observation is needed to make this tool.
+                        You choose what to send before building. Check the result before saving your tool.
                       </p>
                     </section>
                   ) : (
@@ -319,23 +318,24 @@ export function App({ backend }: { backend: Backend }) {
                         </button>
                       </div>
                       <ul className="plain-list">
-                        {tools.map((tool) => (
+                        {tools.map((tool, index) => {
+                          const duplicate = tools.filter(t => t.name === tool.name).length > 1;
+                          const displayName = duplicate ? `${tool.name} (${tools.slice(0, index + 1).filter(t => t.name === tool.name).length})` : tool.name;
+                          return (
                           <li key={tool.id} className="tool-row">
                             <div>
                               <h2>
-                                {tool.name}{" "}
+                                {displayName}{" "}
                                 {tool.sample && (
                                   <span className="badge">Sample</span>
                                 )}
                               </h2>
-                              <p>
-                                {tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version} · Last run:{" "}
-                                {tool.lastRunAtMs
-                                  ? new Date(tool.lastRunAtMs).toLocaleString()
-                                  : "Never"}
-                              </p>
+                              <p>{toolDescriptions[tool.id] || tool.name}</p>
+                              <p className="muted">{friendlyLastRun(tool.lastRunAtMs)}{tool.state === "paused" ? " · Paused. Resume this tool before running it." : ""}</p>
+                              <details><summary>Details</summary><p>{tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version}</p></details>
                             </div>
                             <button
+                              className="quiet"
                               disabled={busy}
                               onClick={() =>
                                 void act(async () => {
@@ -345,9 +345,10 @@ export function App({ backend }: { backend: Backend }) {
                                 })
                               }
                             >
-                              Export…
+                              Export
                             </button>
                             <button
+                              className="quiet"
                               disabled={busy}
                               onClick={() =>
                                 void act(async () => {
@@ -364,13 +365,13 @@ export function App({ backend }: { backend: Backend }) {
                             </button>
                             <button
                               disabled={tool.state === "paused"}
-                              aria-label={`Run ${tool.name}…`}
+                              aria-label={`Run now: ${displayName}`}
                               onClick={() => setRunning(tool)}
                             >
-                              Run…
+                              Run now
                             </button>
                           </li>
-                        ))}
+                        ); })}
                       </ul>
                     </>
                   )}
@@ -418,4 +419,14 @@ export function App({ backend }: { backend: Backend }) {
       </div>
     </div>
   );
+}
+
+function friendlyLastRun(at: number | null) {
+  if (at === null) return "Never run";
+  const date = new Date(at), now = new Date();
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) return `Ran today at ${time}`;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return `Ran yesterday at ${time}`;
+  return `Ran on ${date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })} at ${time}`;
 }

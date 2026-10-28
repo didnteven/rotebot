@@ -28,7 +28,7 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true}: {back
   const frequency:Frequency=kind==="daily"?{kind,time}:kind==="weekly"?{kind,time,weekday}:{kind,time,day};
   const hosts=[...new Set(tool.program?.webSources.map(s=>{try{return new URL(s.url).hostname;}catch{return s.url;}})??[])];
   const recurrence=kind==="daily"?"Every day":kind==="weekly"?`Every ${weekdays[weekday-1]}`:`Every month on day ${day} (or the last day)`;
-  const actions=[...(hosts.length?[`fetch ${hosts.join(", ")}`]:[]),`run ${tool.name}`,...(outputs.today?["add the result to Today"]:[]),...(outputs.notification?["notify you"]:[]),...(file?[`create ${outputs.filename} in ${outputs.folder?.displayPath??"<folder>"}`]:[])];
+  const actions=[...(hosts.length?[`read data from ${hosts.join(", ")}`]:[]),`run ${tool.name}`,...(outputs.today?["add the result to Today"]:[]),...(outputs.notification?["notify you"]:[]),...(file?[`create ${outputs.filename} in ${outputs.folder?.displayPath??"<folder>"}`]:[])];
   const approvedOutputs={...outputs,folder:file?outputs.folder:null};
   return <section className="card" aria-label="Schedule"><h3>Schedule</h3><Notice error={error}/>
     {schedule && <><p role="status">{schedule.status==="needs_reapproval"?"Needs re-approval":schedule.status==="emergency_paused"?"Paused by emergency stop":schedule.status==="paused"?"Paused":schedule.nextRunMs?nextRunText(schedule.nextRunMs):"Enabled"}</p>
@@ -42,11 +42,12 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true}: {back
       <label><input type="checkbox" checked={outputs.today} onChange={e=>setOutputs({...outputs,today:e.target.checked})}/>Add to Today</label>
       <label><input type="checkbox" checked={outputs.notification} onChange={e=>setOutputs({...outputs,notification:e.target.checked})}/>Notification</label>
       <label><input type="checkbox" checked={file} onChange={e=>setFile(e.target.checked)}/>Create a file</label>
-      {file && <><button onClick={()=>void act(async()=>{const folder=await backend.pickOutputDir();if(folder)setOutputs({...outputs,folder});})}>Choose schedule folder…</button><p>{outputs.folder?.displayPath}</p><label>File name template<input value={outputs.filename} onChange={e=>setOutputs({...outputs,filename:e.target.value})}/></label><p>Example: {outputs.filename.replaceAll("{date}",new Date().toLocaleDateString("en-CA"))}</p></>}
+      {file && <><button onClick={()=>void act(async()=>{const folder=await backend.pickOutputDir();if(folder)setOutputs({...outputs,folder});})}>Choose schedule folder</button><p>{outputs.folder?.displayPath}</p><label>File name template<input value={outputs.filename} onChange={e=>setOutputs({...outputs,filename:e.target.value})}/></label><p>Example: {outputs.filename.replaceAll("{date}",new Date().toLocaleDateString("en-CA"))}</p></>}
       <p>{recurrence} at {time.replace(/^0/,"")} Macroscope will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.</p>
       <p>Connection actions wait in Needs you for approval of the exact calls. Macroscope runs schedules while open; missed runs happen once when it opens again.</p>
       {tool.program && <SourceReview advanced={advanced} program={tool.program} route={modelRoute} routeDetails={routeDetails} frequency={`${kind==="daily"?"every day":kind==="weekly"?`every ${weekdays[weekday-1]}`:`every month on day ${day}`} at ${time.replace(/^0/,"")}`}/>}
       <label><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/>I approve this running unattended</label>
+      {(!approved || !time || (file && (!outputs.folder || !outputs.filename)) || (!outputs.today && !outputs.notification && !file)) && <p>Choose when to run and where to put the result, then approve the schedule above.</p>}
       <button disabled={!approved || !time || (file && (!outputs.folder || !outputs.filename)) || (!outputs.today && !outputs.notification && !file)} onClick={()=>void act(async()=>{setSchedule(await backend.setSchedule(tool.id,{frequency,outputs:approvedOutputs,versionHash:tool.versionHash,approved}));setApproved(false);})}>Turn on schedule</button>
     </fieldset>
     {!login && <p>Schedules run while Macroscope is open. <button onClick={openSettings}>Open Settings to enable opening at login</button></p>}

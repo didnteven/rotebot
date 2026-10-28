@@ -255,7 +255,7 @@ export function Settings({
       </div>
       <h2>Schedules</h2>
       <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
-      <p>Effective route: {routeLabel(status.effectiveRoute)}{status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.host} · ${status.customEndpoint.model}` : ""}</p>
+      <p>Building tools with: {routeLabel(status.effectiveRoute)}{status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.host} · ${status.customEndpoint.model}` : ""}</p>
       {status.blockedReason && (
         <p
           className={
@@ -271,14 +271,14 @@ export function Settings({
         Macroscope never signs in or out of Muse for you and never changes
         Muse's saved login.
       </p>
-      <p className="muted">
+      <details><summary>Details</summary><p className="muted">
         Version {info.version} · {info.platform}
         {info.mock
           ? " · Browser demo; no external calls or persistent files"
           : ""}
-      </p>
+      </p></details>
       <p>
-        Show:{" "}
+        Record a task:{" "}
         {show.kind === "unavailable"
           ? show.reason
           : "Available · opt-in app metadata only"}

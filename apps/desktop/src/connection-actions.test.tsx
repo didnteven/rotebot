@@ -26,14 +26,14 @@ it("renders complete action arguments and server claims as text and requires act
   const user = userEvent.setup();
   const {container} = render(<RunFlow backend={backend} tool={tool} close={vi.fn()} changed={async()=>{}} />);
   await user.click(screen.getByRole("button", {name:"Use sample input"}));
-  await user.click(screen.getByRole("button", {name:"Choose output folder…"}));
-  await user.click(screen.getByRole("button", {name:"Stage and compare"}));
+  await user.click(screen.getByRole("button", {name:"Choose output folder"}));
+  await user.click(screen.getByRole("button", {name:"Preview result"}));
   expect(await screen.findByText("test@example.invalid")).toBeVisible();
   expect(screen.getByText("Review this message")).toBeVisible();
   expect(screen.getByText("This changes data in Gmail")).toBeVisible();
   expect(screen.getByLabelText("Exact action arguments 1")).not.toBeVisible();
   expect(screen.getByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).not.toBeVisible();
-  await user.click(screen.getByText("Advanced details"));
+  await user.click(screen.getByText("Details"));
   expect(screen.getByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).toBeVisible();
   expect(screen.getByLabelText("Exact action arguments 1").textContent).toBe(JSON.stringify(action.call.args, null, 2));
   const approve = screen.getByRole("button", {name:"Approve actions"});
@@ -45,7 +45,7 @@ it("renders complete action arguments and server claims as text and requires act
   expect(await screen.findByText(receipt.actions![0].summary)).toBeVisible();
   expect(container.querySelectorAll("script,img,iframe,object")).toHaveLength(0);
   await user.click(screen.getByRole("button", {name:"Run again"}));
-  await user.click(screen.getByRole("button", {name:"Stage and compare"}));
+  await user.click(screen.getByRole("button", {name:"Preview result"}));
   expect(await screen.findByRole("checkbox", {name:"I reviewed these actions"})).not.toBeChecked();
   expect(screen.getByRole("button", {name:"Approve actions"})).toBeDisabled();
 });
@@ -67,8 +67,9 @@ it("offers explicit access to connected services in Create and lists their untru
   const select = vi.spyOn(backend, "selectTaskConnections");
   const user = userEvent.setup();
   const {container} = render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[connector]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}} />);
-  await user.type(screen.getByLabelText("What do you want to do with this file?"), "draft a Gmail message");
-  await user.click(screen.getByRole("button", {name:"Review task summary"}));
+  await user.type(screen.getByLabelText("What should the tool do?"), "draft a Gmail message");
+  await user.click(screen.getByRole("button", {name:"Check the plan"}));
+  await user.click(screen.getByText("Details"));
   const use = await screen.findByRole("checkbox", {name:`Let this tool use ${connector.name}`});
   expect(use).not.toBeChecked();
   await user.click(use);

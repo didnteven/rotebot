@@ -13,51 +13,49 @@ async function open(backend = new MockBackend()) {
 }
 async function summary(user: ReturnType<typeof userEvent.setup>) {
   await user.click(button("Try a sample"));
-  await user.click(button("Review task summary"));
+  await user.click(button("Check the plan"));
   await user.click(screen.getByRole("radio", { name: "March 4 (MM/DD/YY)" }));
-  await waitFor(() =>
-    expect(button("Review what leaves this Mac")).toBeEnabled(),
-  );
+  await waitFor(() => expect(screen.queryByText("Preparing what will be sent…")).not.toBeInTheDocument());
+  await user.click(screen.getByText("Details"));
 }
 async function review(user: ReturnType<typeof userEvent.setup>) {
   await summary(user);
-  await user.click(button("Review what leaves this Mac"));
-  await screen.findByRole("heading", { name: "Review what leaves this Mac" });
+  await user.click(screen.getByText(/What leaves this Mac ·/));
 }
 async function savedTool() {
   const backend = new MockBackend();
   await backend.selectRoute("offline_demo");
   const { user } = await open(backend);
   await review(user);
-  expect(button("Build tool")).toBeEnabled();
+  expect(button("Send and build")).toBeEnabled();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-  await user.click(button("Build tool"));
-  await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+  await user.click(button("Send and build"));
+  await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 4500,
   });
-  await user.click(screen.getByText("Advanced details"));
+  await user.click(screen.getByText("Details"));
   expect(
     screen.getByText(/✓ Pass · Row count preserved · 18 → 18/),
   ).toBeVisible();
-  await user.click(button("Save tool"));
+  await user.click(button("Yes, save this tool"));
   await screen.findByRole("heading", { name: "Clean import CSV Sample" });
   return { user, backend };
 }
 async function stage(user: ReturnType<typeof userEvent.setup>) {
   await user.click(button("Use sample input"));
-  await user.click(button("Choose output folder…"));
-  await user.click(button("Stage and compare"));
-  await screen.findByRole("heading", { name: "Staged preview" });
+  await user.click(button("Choose output folder"));
+  await user.click(button("Preview result"));
+  await screen.findByRole("heading", { name: "Result preview" });
 }
 afterEach(() => vi.useRealTimers());
 
 describe("Tell and deterministic runs", () => {
   it("answers, reviews, builds, saves, stages and creates the previewed CSV", async () => {
     const { user, backend } = await savedTool();
-    await user.click(button("Run Clean import CSV…"));
+    await user.click(button("Run now: Clean import CSV"));
     await stage(user);
     expect(
-      screen.getByText("Source unchanged; existing files are never replaced"),
+      screen.getByText("Your input stays unchanged; existing files are never replaced"),
     ).toBeVisible();
     await user.click(button("Create previewed CSV"));
     expect(
@@ -74,21 +72,21 @@ describe("Tell and deterministic runs", () => {
     const backend = new MockBackend();
     await backend.installSampleTool();
     const { user } = await open(backend);
-    await user.click(button("Run Clean import CSV…"));
+    await user.click(button("Run now: Clean import CSV"));
     await stage(user);
     await user.click(button("Create previewed CSV"));
     await screen.findByRole("heading", { name: "Run receipt" });
     await user.click(button("Run again"));
-    await user.click(button("Stage and compare"));
+    await user.click(button("Preview result"));
     await user.click(button("Create previewed CSV"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "already exists",
     );
-    await user.click(button("Choose another name"));
+    await user.click(button("Change the request"));
     const name = screen.getByLabelText("Output name");
     await user.clear(name);
     await user.type(name, "orders_second.csv");
-    await user.click(button("Stage and compare"));
+    await user.click(button("Preview result"));
     await user.click(button("Create previewed CSV"));
     expect(
       await screen.findByText("/Demo/Reports/orders_second.csv"),
@@ -100,13 +98,13 @@ describe("Tell and deterministic runs", () => {
     await backend.selectRoute("offline_demo");
     const { user } = await open(backend);
     await review(user);
-    await user.click(button("Build tool"));
+    await user.click(button("Send and build"));
     await user.click(await screen.findByRole("button", { name: "Stop build" }));
     expect(
-      await screen.findByText(/Build stopped\. Your task summary is saved/),
+      await screen.findByText(/Build stopped\. Your plan is saved\. Change/),
     ).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Save tool" }),
+      screen.queryByRole("button", { name: "Yes, save this tool" }),
     ).not.toBeInTheDocument();
   });
   it("explains the automatic offline route and preserves the draft across settings navigation", async () => {
@@ -117,7 +115,7 @@ describe("Tell and deterministic runs", () => {
         "Nothing leaves this Mac. The offline demo maps columns without a model; results are labelled as a demo.",
       ),
     ).toHaveClass("notice-info");
-    expect(button("Build tool")).toBeEnabled();
+    expect(button("Send and build")).toBeEnabled();
     await user.click(button("Settings"));
     const route = screen.getByRole("radio", {
       name: "Offline demo (no model) (automatic)",
@@ -128,11 +126,11 @@ describe("Tell and deterministic runs", () => {
         name: "Offline demo (no model) (automatic)",
       }),
     );
-    await user.click(button("Tools"));
+    await user.click(button("My tools"));
     expect(
-      screen.getByRole("heading", { name: "Review what leaves this Mac" }),
+      screen.getByRole("heading", { name: "Check the plan" }),
     ).toBeVisible();
-    expect(button("Build tool")).toBeEnabled();
+    expect(button("Send and build")).toBeEnabled();
   });
   it("builds a fresh mock with no key, no Muse sign-in and no selected route to ready", async () => {
     const { user, backend } = await open();
@@ -144,23 +142,19 @@ describe("Tell and deterministic runs", () => {
       blockedReason: expect.any(String),
     });
     await review(user);
-    expect(screen.getAllByText(/Nothing leaves this Mac/)).toHaveLength(1);
-    expect(
-      screen.queryByLabelText("Exact outbound payload"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Nothing leaves this Mac\. The offline demo/, {selector:"p"})).toBeVisible();
+    expect(screen.getByLabelText("Exact data sent")).not.toBeVisible();
     expect(
       screen.queryByText("Contains only synthetic rows"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/Budget:/)).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(button("Build tool")).toBeEnabled();
-    await user.click(button("Build tool"));
-    await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+    expect(button("Send and build")).toBeEnabled();
+    await user.click(button("Send and build"));
+    await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
       timeout: 4500,
     });
-    expect(screen.getByText("Ready to compare · Offline demo")).toHaveClass(
-      "notice-success",
-    );
+    expect(screen.getByText("Offline demo", {selector:"p"})).toBeVisible();
     expect((await backend.privacyOverview()).outbound).toEqual([]);
   });
   it("requires outbound consent for cloud builds and preserves the full review", async () => {
@@ -168,18 +162,15 @@ describe("Tell and deterministic runs", () => {
     await backend.saveApiKey("test-key");
     const { user } = await open(backend);
     await review(user);
-    expect(screen.getByLabelText("Exact outbound payload")).not.toBeVisible();
-    await user.click(screen.getByText("Advanced: exact data sent"));
-    expect(screen.getByLabelText("Exact outbound payload")).toBeVisible();
+    expect(screen.getByLabelText("Exact data sent")).not.toBeVisible();
+    await user.click(screen.getByText("Exact data sent"));
+    expect(screen.getByLabelText("Exact data sent")).toBeVisible();
     expect(screen.getByText("A made-up sample of your data's shape (no real rows)")).toBeVisible();
     expect(screen.getByText(/Estimated cost:.*Budget:/)).toBeVisible();
-    expect(button("Build tool")).toBeDisabled();
-    await user.click(
-      screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }),
-    );
-    expect(button("Build tool")).toBeEnabled();
-    await user.click(button("Build tool"));
-    await waitFor(() => expect(button("Save tool")).toBeVisible(), {
+    expect(screen.queryByRole("checkbox", { name: "I've reviewed what will be sent" })).not.toBeInTheDocument();
+    expect(button("Send and build")).toBeEnabled();
+    await user.click(button("Send and build"));
+    await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
       timeout: 4500,
     });
   });
@@ -193,15 +184,15 @@ describe("Tell and deterministic runs", () => {
       ),
     );
     const { user } = await open(backend);
-    await user.click(button("Run Clean import CSV…"));
-    await user.click(button("Choose input file…"));
-    await user.click(button("Choose output folder…"));
-    await user.click(button("Stage and compare"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      // The executor numbers data records from 1 (headers are excluded).
-      "Row: 1 · Column: created",
-    );
-    expect(button("Choose another input")).toBeVisible();
+    await user.click(button("Run now: Clean import CSV"));
+    await user.click(button("Choose input file"));
+    await user.click(button("Choose output folder"));
+    await user.click(button("Preview result"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't read this file");
+    await user.click(screen.getByText("File details"));
+    expect(screen.getByText("Row: 1 · Column: created")).toBeVisible();
+    expect(button("Try again")).toBeVisible();
+    expect(button("Change the request")).toBeVisible();
   });
   it("renders malicious cells as literal text, with no image or script", async () => {
     const backend = new MockBackend();
@@ -213,7 +204,7 @@ describe("Tell and deterministic runs", () => {
     );
     const { user } = await open(backend);
     await user.click(button("Describe a task"));
-    await user.click(button("Choose text file…"));
+    await user.click(button("Choose file"));
     expect(
       await screen.findByText("<img src=x onerror=alert(1)>"),
     ).toBeVisible();
@@ -223,16 +214,17 @@ describe("Tell and deterministic runs", () => {
   it("detects mentioned services and keeps mapping edits across navigation", async () => {
     const { user } = await open();
     await user.click(button("Try a sample"));
-    const text = screen.getByLabelText("What do you want to do with this file?");
+    const text = screen.getByLabelText("What should the tool do?");
     await user.clear(text);
     await user.type(text, "Clean Gmail orders, then Slack and notion.");
-    await user.click(button("Review task summary"));
+    await user.click(button("Check the plan"));
     expect(screen.getByText(/You mentioned Gmail/)).toBeVisible();
+    await user.click(screen.getByText("Details"));
     const column = screen.getByLabelText("Output column 1");
     await user.clear(column);
     await user.type(column, "Order reference");
     await user.click(button("Connect Gmail"));
-    await user.click(button("Tools"));
+    await user.click(button("My tools"));
     expect(screen.getByLabelText("Output column 1")).toHaveValue(
       "Order reference",
     );
@@ -242,13 +234,13 @@ describe("Tell and deterministic runs", () => {
 it("preserves a Tell draft when Show is opened and closed", async () => {
   const { user } = await open();
   await user.click(button("Try a sample"));
-  const description = screen.getByLabelText("What do you want to do with this file?");
+  const description = screen.getByLabelText("What should the tool do?");
   await user.clear(description);
   await user.type(description, "Keep this draft for later");
-  await user.click(button("Show a task"));
-  expect(screen.getByRole("heading", { name: "Show a task" })).toBeVisible();
+  await user.click(button("Record a task"));
+  expect(screen.getByRole("heading", { name: "Record a task" })).toBeVisible();
   await user.click(button("Back"));
-  expect(screen.getByLabelText("What do you want to do with this file?")).toHaveValue(
+  expect(screen.getByLabelText("What should the tool do?")).toHaveValue(
     "Keep this draft for later",
   );
 });
@@ -357,7 +349,7 @@ describe("Settings, connections, Show and privacy", () => {
   });
   it("records, pauses, stops, summarizes and dismisses a connection suggestion", async () => {
     const { user } = await open();
-    await user.click(button("Show a task"));
+    await user.click(button("Record a task"));
     await user.click(button("Start recording"));
     expect(await screen.findByRole("timer")).toHaveTextContent("0:00 / 5:00");
     await user.click(button("Pause"));
@@ -386,7 +378,7 @@ describe("Settings, connections, Show and privacy", () => {
   });
   it("shows and connects a suggestion in Connections after recording", async () => {
     const { user } = await open();
-    await user.click(button("Show a task"));
+    await user.click(button("Record a task"));
     await user.click(button("Start recording"));
     await user.click(button("Stop"));
     await user.click(button("Connections"));
@@ -419,8 +411,8 @@ describe("Settings, connections, Show and privacy", () => {
     await waitFor(() =>
       expect(screen.getByRole("radio", { name: "Local only" })).toBeChecked(),
     );
-    await user.click(button("Delete outbound history"));
-    expect(await screen.findByText("No outbound records.")).toBeVisible();
+    await user.click(button("Delete sent data history"));
+    expect(await screen.findByText("No sent data history.")).toBeVisible();
     await backend.startShow();
     await user.click(button("Emergency stop"));
     await waitFor(async () =>
@@ -475,7 +467,7 @@ it("shows mapping labels while sending enum values to the backend", async () => 
   await user.selectOptions(screen.getByLabelText("Transform 1"), "constant");
   expect(screen.getByText("Value")).toBeVisible();
   await user.type(screen.getByLabelText("Constant value 1"), "Fixed");
-  await user.click(button("Review what leaves this Mac"));
+  await waitFor(() => expect(button("Send and build")).toBeEnabled());
   expect(update).toHaveBeenLastCalledWith(
     expect.any(String),
     expect.objectContaining({
@@ -562,11 +554,8 @@ it("keeps the cloud route blocked when effectiveRoute is null", async () => {
   });
   const { user } = await open(backend);
   await review(user);
-  await user.click(screen.getByRole("checkbox"));
-  expect(button("Build tool")).toBeDisabled();
-  expect(screen.getByText("Key unavailable")).toHaveTextContent(
-    "Key unavailable",
-  );
+  expect(button("Send and build")).toBeDisabled();
+  expect(screen.getByText("Choose a model in Settings to build this tool.")).toBeVisible();
   expect(button("Open model settings").closest("div")).toHaveClass(
     "notice-warning",
   );

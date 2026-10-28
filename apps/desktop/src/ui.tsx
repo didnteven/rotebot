@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Backend,
   ConnectionSuggestion,
@@ -43,7 +43,10 @@ export function isHttpsUrl(value: string) {
 export function useAction() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const lastAction = useRef<() => Promise<unknown>>(async () => {});
+  const retry = useCallback(() => lastAction.current(), []);
   async function act(job: () => Promise<unknown>) {
+    if (job !== retry) lastAction.current = job;
     setBusy(true);
     setError(null);
     try {
@@ -56,7 +59,41 @@ export function useAction() {
       setBusy(false);
     }
   }
-  return { busy, error, setError, act };
+  return { busy, error, setError, act, retry };
+}
+export function useScreenFocus<T extends HTMLElement>(screen: unknown) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    window.scrollTo?.({ top: 0, behavior: "instant" });
+    ref.current?.closest("main")?.scrollTo?.({ top: 0, behavior: "instant" });
+  }, [screen]);
+  return ref;
+}
+export const rowCount = (count: number) => `${count} ${count === 1 ? "row" : "rows"}`;
+
+export function friendlyFailure(message: string, kind?: string): string {
+  const site = message.match(/(?:https?:\/\/)?([a-z0-9](?:[a-z0-9-]*\.)+[a-z]{2,})(?=[/:\s)]|$)/i)?.[1]?.toLowerCase();
+  if (site) {
+    const reason = /403|401|forbidden|refus|denied/i.test(message) ? " (the site refused the request)"
+      : /timeout|timed out/i.test(message) ? " (the site took too long to reply)" : "";
+    return `Couldn't read data from ${site}${reason}. Try again, or change what the tool should do.`;
+  }
+  if (kind === "auth" || kind === "no_model_access") return "Couldn't reach the model. Check your sign-in or key in Settings, then try again.";
+  if (kind === "quota" || kind === "budget") return "The model's spending limit has been reached. Check your allowance in Settings, then try again.";
+  if (kind === "destination_exists") return "That file already exists. Choose another output name, then try again.";
+  if (kind === "input_invalid") return "Couldn't read this file. Check its dates and values, or choose another file, then try again.";
+  if (kind === "checks") return "The result didn't pass its checks. Try again, or change what the tool should do.";
+  return "Couldn't finish this task. Try again, or change what the tool should do.";
+}
+export function FailureNotice({ message, kind, retry, change }: { message: string; kind?: string; retry: () => void; change: () => void }) {
+  return <>
+    <div className="notice notice-warning" role="alert">
+      <p>{friendlyFailure(message, kind)}</p>
+      <div className="actions"><button onClick={retry}>Try again</button><button onClick={change}>Change the request</button></div>
+    </div>
+    <details><summary>Details</summary><p>{message}</p></details>
+  </>;
 }
 export function Notice({ error }: { error: string | null }) {
   return error ? (
@@ -123,7 +160,7 @@ export function CsvView({ preview }: { preview: CsvPreview }) {
   return (
     <section>
       <p>
-        <FileText text={preview.handle.displayName} /> · {preview.rowCount} rows ·{" "}
+        <FileText text={preview.handle.displayName} /> · {rowCount(preview.rowCount)} ·{" "}
         {preview.byteSize.toLocaleString()} bytes
       </p>
       {preview.handle.displayPath !== preview.handle.displayName && (
@@ -180,13 +217,15 @@ export function ReceiptCard({
             : "notice notice-warning"
         }
       >
-        {receipt.toolName} · {receipt.status}
+        {receipt.toolName} · {receipt.status === "committed" || receipt.status === "reconciled" ? "Done" : receipt.status === "outcome_unknown" ? "Needs your check" : "Failed"}
       </p>
       {receipt.actions?.map((a, i) => <article key={i}>
-        <h3>{a.action.service} · {a.action.call.toolName} · {a.status}</h3>
-        <pre>{JSON.stringify(a.action.call.args, null, 2)}</pre>
-        <p>Untrusted server result:</p><pre>{a.summary}</pre>
+        <h3>{a.action.service} · {a.status === "succeeded" ? "Done" : a.status === "failed" ? "Failed" : a.status === "outcome_unknown" ? "Needs your check" : "Not run"}</h3>
+        <p>{a.summary}</p>
       </article>)}
+      {receipt.outputPath && <p>Created <FileText text={receipt.outputPath} /></p>}
+      <details><summary>Details</summary>
+      {receipt.actions?.map((a, i) => <div key={i}><p>{a.action.call.toolName}</p><pre>{JSON.stringify(a.action.call.args, null, 2)}</pre></div>)}
       <dl>
         <dt>Version</dt>
         <dd>{receipt.versionHash.slice(0, 12)}</dd>
@@ -194,9 +233,7 @@ export function ReceiptCard({
         <dd>{receipt.inputDigest.slice(0, 12)}</dd>
         <dt>Committed digest</dt>
         <dd>{receipt.committedDigest.slice(0, 12)}</dd>
-        <dt>Output path</dt>
-        <dd><FileText text={receipt.outputPath} /></dd>
-      </dl>
+      </dl></details>
       <button
         disabled={busy || !receipt.outputPath}
         onClick={() => void act(() => backend.revealOutput(receipt.runId))}
