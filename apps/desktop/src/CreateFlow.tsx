@@ -49,6 +49,16 @@ const transformLabels: Record<Transform["type"], string> = {
   money: "Money",
   constant: "Fixed value",
 };
+/** A readable default tool name from the first sentence of the task, cut at a word. */
+function toolNameFromGoal(goal: string): string {
+  const tidy = (s: string) => s.replace(/[\s:;,\-–]+$/, "");
+  const first = tidy(goal.trim().split(/[.\n]/)[0].trim());
+  const chars = Array.from(first);
+  if (chars.length <= 48) return first || "New tool";
+  const cut = chars.slice(0, 48).join("");
+  return `${tidy(cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : 48))}…`;
+}
+
 function newTransform(type: Transform["type"]): Transform {
   return type === "date"
     ? { type, from: "mm_dd_yy", to: "iso8601" }
@@ -156,6 +166,7 @@ export function CreateFlow({
   }, [step, preview, backend, draft]); // review is invalidated when the route changes
   function acceptDraft(next: TaskDraft) {
     setDraft(next);
+    if (next.kind === "program") setName(toolNameFromGoal(next.goal));
     setMap(next.mapping);
     setOutputName(next.outputName);
     setPreview(null);
@@ -676,7 +687,7 @@ export function CreateFlow({
             {build.phase === "candidate" ? "Candidate received" : build.phase}
           </p>
           <p>Building with: {build.routeLabel} <button onClick={openSettings}>Change</button></p>
-          {build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
+          {build.events.some(e=>/to review the output/i.test(e.message)) && !build.events.some(e=>/Checks failed/i.test(e.message)) ? <p role="status">The checks passed, so Macroscope had the model double-check the output against the page it read.</p> : build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
           {activeBuild && (
             <button
               disabled={busy}

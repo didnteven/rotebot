@@ -148,6 +148,64 @@ fn example_failure_detail(expected_norm: &str, closest_norm: &str) -> String {
     )
 }
 
+/// Shape-mode line match: equal after normalization, or the example line is a
+/// bare label ending in `:` (e.g. `High:`) and the output line is that label
+/// followed by a value.
+fn shape_line_matches(expected: &str, actual: &str) -> bool {
+    expected == actual
+        || (expected.ends_with(':')
+            && actual
+                .strip_prefix(expected)
+                .is_some_and(|rest| rest.starts_with(' ')))
+        || template_line_matches(expected, actual)
+}
+
+/// Splits `line` on `{placeholder}` spans, returning the literal pieces
+/// around them, or `None` when the line has no placeholder.
+fn template_literals(line: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('{') {
+        let Some(len) = rest[open..].find('}') else {
+            break;
+        };
+        parts.push(&rest[..open]);
+        rest = &rest[open + len + 1..];
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    parts.push(rest);
+    Some(parts)
+}
+
+/// Template match: an example line with `{name}`-style placeholders matches
+/// an output line whose text around them is identical and where each
+/// placeholder stands for at least one character (it may span several words,
+/// e.g. `{temp}` is `18.5 °C`).
+fn template_line_matches(expected: &str, actual: &str) -> bool {
+    let Some(parts) = template_literals(expected) else {
+        return false;
+    };
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    let Some(mut rest) = actual.strip_prefix(first) else {
+        return false;
+    };
+    for lit in &parts[1..parts.len() - 1] {
+        // A placeholder needs a character before the next literal.
+        let mut chars = rest.chars();
+        if chars.next().is_none() {
+            return false;
+        }
+        let skip = rest.len() - chars.as_str().len();
+        match rest[skip..].find(lit) {
+            Some(at) => rest = &rest[skip + at + lit.len()..],
+            None => return false,
+        }
+    }
+    rest.len() > last.len() && rest.ends_with(last)
+}
+
 /// Normalizes one line to its shape for live-data example checks: every
 /// number (integers, decimals, optional leading sign, thousands separators,
 /// e.g. `-3`, `19.7`, `1,240.50`) becomes `#`, then whitespace runs collapse
@@ -607,7 +665,7 @@ pub fn run_program_with_sources(
             let actual: Vec<String> = output.lines().map(normalize_shape_line).collect();
             let mut need = 0;
             for line in &actual {
-                if need < expected.len() && *line == expected[need] {
+                if need < expected.len() && shape_line_matches(&expected[need], line) {
                     need += 1;
                 }
             }
@@ -918,6 +976,81 @@ mod tests {
             .checks
             .iter()
             .any(|c| c.id == "web_sources" && !c.passed));
+    }
+
+    /// `{name} {temp}` placeholders in the example stand for any value, even
+    /// one spanning several words such as `18.5 °C`.
+    #[test]
+    fn template_placeholders_match_multi_word_values() {
+        let m = |e: &str, a: &str| {
+            super::shape_line_matches(
+                &super::normalize_shape_line(e),
+                &super::normalize_shape_line(a),
+            )
+        };
+        assert!(m(
+            "Hottest: {name} {temp}",
+            "Hottest: Auckland 21.4 \u{b0}C"
+        ));
+        assert!(m(
+            "Hottest: {name} {temp}",
+            "Hottest: Palmerston North 9 \u{b0}C"
+        ));
+        assert!(!m(
+            "Hottest: {name} {temp}",
+            "Coldest: Auckland 21.4 \u{b0}C"
+        ));
+        assert!(!m("Hottest: {name} {temp}", "Hottest: Auckland"));
+        assert!(!m("Hottest: {name}", "Hottest: "));
+    }
+
+    /// A bare label line (`High:`) in the example means "label, then a value".
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn web_source_example_bare_label_accepts_a_value() {
+        use std::collections::BTreeMap;
+        let mut draft = web_draft();
+        draft.example_output = Some("High:\nLow:".into());
+        let program = macroscope_builder::Program {
+            connection_sources: vec![],
+            model_step: None,
+            summary: "weather".into(),
+            output_name: "weather.txt".into(),
+            code: "source".into(),
+            web_sources: vec![macroscope_builder::WebSource {
+                name: "forecast".into(),
+                url: "https://api.open-meteo.com/v1".into(),
+            }],
+        };
+        let sources = BTreeMap::from([("forecast".to_string(), "{\"t\":21}".to_string())]);
+        let check = |text: &str| {
+            let text = text.to_string();
+            let execute = move |_: &[u8], _: &BTreeMap<String, String>, _: &str| {
+                Ok((
+                    vec![macroscope_runner::Output {
+                        name: "weather.txt".into(),
+                        text: text.clone(),
+                    }],
+                    vec![],
+                ))
+            };
+            super::run_program_with_sources(
+                &draft,
+                &program,
+                &sources,
+                None,
+                &|| panic!("no input file must not be re-read"),
+                &execute,
+            )
+            .checks
+            .into_iter()
+            .find(|c| c.id == "example")
+            .expect("example check")
+            .passed
+        };
+        assert!(check("High: 20.5\u{b0}C\nLow: 12"));
+        assert!(!check("Highest: 20\nLow: 12"));
+        assert!(!check("Low: 12\nHigh: 20"));
     }
 
     /// Live-data example checks compare line shapes so differing weather

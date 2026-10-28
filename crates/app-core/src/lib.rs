@@ -861,15 +861,20 @@ impl AppCore {
         }
     }
 
-    /// Correction prompt for a failed program build. Contains only the
-    /// previous program code, the failed host-check shapes, and the
-    /// instruction to return a corrected program in the same schema. It never
-    /// includes host-fetched response bodies or selected input rows; failed
+    /// Correction prompt for a failed or unreviewed program build. Contains the
+    /// previous program code, the failed host-check shapes, the instruction to
+    /// return a corrected program in the same schema, and (for web-source
+    /// programs) a short excerpt of each public page the host fetched plus the
+    /// current output, so the model can fix a parser against the real page.
+    /// It never includes selected input rows or connection results; failed
     /// details are shapes (`#` for numbers) or sanitized runtime diagnostics.
     fn program_correction_packet(
         draft: &TaskDraft,
         previous: Option<&macroscope_builder::Program>,
         failed: &[CheckResult],
+        web_samples: &BTreeMap<String, String>,
+        web_summaries: &BTreeMap<String, Value>,
+        current_output: Option<&str>,
     ) -> String {
         let previous_code = previous.map(|p| p.code.as_str()).unwrap_or_default();
         let failed_checks: Vec<Value> = failed
@@ -888,17 +893,50 @@ impl AppCore {
             "task_description": draft.goal,
             "synthetic_text_shape": draft.synthetic_shape,
             "previous_program_code": previous_code,
+            "previous_web_sources": previous.map(|p| &p.web_sources),
+            "fetched_web_samples": web_samples,
+            "fetched_web_summaries": web_summaries,
+            "current_output": current_output.map(|o| o.chars().take(2000).collect::<String>()),
             "approved_connection_sources": previous.map(|p| &p.connection_sources),
             "approved_model_step": previous.and_then(|p| p.model_step.as_ref()),
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
         })
         .to_string()
     }
 
+    /// Size facts about one fetched page, so a review can see that the
+    /// 4,000-character excerpt is a slice of something larger (or that a JSON
+    /// list is suspiciously short for what the task covers).
+    fn web_source_summary(text: &str) -> Value {
+        fn largest_list(value: &Value, path: &str, depth: usize) -> Option<(String, usize)> {
+            match value {
+                Value::Array(items) => Some((path.to_string(), items.len())),
+                Value::Object(map) if depth < 6 => map
+                    .iter()
+                    .filter_map(|(key, v)| largest_list(v, &format!("{path}/{key}"), depth + 1))
+                    .max_by_key(|(_, len)| *len),
+                _ => None,
+            }
+        }
+        let total = text.chars().count();
+        let mut summary = json!({
+            "total_chars": total,
+            "excerpt_chars": total.min(4000),
+            "excerpt_truncated": total > 4000,
+        });
+        if let Some((path, length)) = serde_json::from_str::<Value>(text)
+            .ok()
+            .and_then(|parsed| largest_list(&parsed, "", 0))
+        {
+            summary["largest_list"] = json!({ "json_path": path, "length": length });
+        }
+        summary
+    }
+
     fn correction_packet_text(correction: &str) -> String {
         format!(
-            "System instructions:\n{}\n\nMessage (correction; output shapes and sanitized diagnostics, no fetched data or input rows):\n{correction}",
+            "System instructions:\n{}\n\nMessage (correction; output shapes, sanitized diagnostics and short excerpts of public web pages the host fetched; no input rows):\n{correction}",
             macroscope_builder::PROGRAM_SYSTEM,
             correction = correction,
         )
@@ -1389,7 +1427,7 @@ impl AppCore {
             if draft.kind == TaskKind::Program {
                 includes.push(OutboundSummaryItem {
                     label: "Your task description".into(),
-                    detail: Some(draft.goal.chars().take(140).collect()),
+                    detail: Some(draft.goal.clone()),
                     real: true,
                 });
                 if let Some(example) = &draft.example_output {
@@ -1399,6 +1437,11 @@ impl AppCore {
                         real: true,
                     });
                 }
+                includes.push(OutboundSummaryItem {
+                    label: "Up to 4,000 characters of each public web page the draft reads, and its output (sent after the first draft so the model can check its work; recorded under Privacy)".into(),
+                    detail: None,
+                    real: false,
+                });
                 for connection in &draft.required_connections {
                     includes.push(OutboundSummaryItem {
                         label: format!(
@@ -2130,7 +2173,15 @@ impl AppCore {
         .await;
         match checked {
             Ok((passed, check_list, comparison)) => {
-                if passed || draft.kind != TaskKind::Program {
+                // Web-source programs get one model review of their real
+                // output against the fetched page, even when every check
+                // passed: the checks cannot tell a wrong headline from a right
+                // one.
+                let review_round = passed
+                    && draft.kind == TaskKind::Program
+                    && !declared_sources.is_empty()
+                    && route != ModelRoute::OfflineDemo;
+                if (passed && !review_round) || draft.kind != TaskKind::Program {
                     let failed: Vec<String> = check_list
                         .iter()
                         .filter(|c| !c.passed)
@@ -2154,13 +2205,42 @@ impl AppCore {
                     }
                     return Ok(());
                 }
-                let failed_checks: Vec<CheckResult> =
+                let mut failed_checks: Vec<CheckResult> =
                     check_list.iter().filter(|c| !c.passed).cloned().collect();
-                let _ = comparison;
+                let current_output: Option<String> =
+                    comparison.as_ref().and_then(|c| c.output_text.clone());
+                if review_round {
+                    failed_checks.push(CheckResult {
+                        id: "review".into(),
+                        label: "Review the output against the task".into(),
+                        passed: false,
+                        detail: Some(
+                            "All host checks passed. Compare current_output with the task, fetched_web_samples and fetched_web_summaries; fix the program if it is not the correct answer or if its web source returns only part of what the task covers (a first page or top-N list).".into(),
+                        ),
+                    });
+                }
+                let web_samples: BTreeMap<String, String> = declared_sources
+                    .iter()
+                    .filter_map(|source| {
+                        fetched
+                            .get(&source.name)
+                            .map(|text| (source.name.clone(), text.chars().take(4000).collect()))
+                    })
+                    .collect();
+                let web_summaries: BTreeMap<String, Value> = declared_sources
+                    .iter()
+                    .filter_map(|source| {
+                        fetched
+                            .get(&source.name)
+                            .map(|text| (source.name.clone(), Self::web_source_summary(text)))
+                    })
+                    .collect();
                 self.push_phase(
                     &build_id,
                     BuildPhase::Checking,
-                    if failed_checks.iter().any(|c| c.id == "example") {
+                    if review_round {
+                        "Checks passed; asking the model to review the output against the fetched page"
+                    } else if failed_checks.iter().any(|c| c.id == "example") {
                         "Checks failed; asking the model to correct the program (example format)"
                     } else {
                         "Checks failed; asking the model to correct the program"
@@ -2170,6 +2250,9 @@ impl AppCore {
                     &draft,
                     candidate.program.as_ref(),
                     &failed_checks,
+                    &web_samples,
+                    &web_summaries,
+                    current_output.as_deref(),
                 );
                 let correction_text = Self::correction_packet_text(&correction);
                 if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
@@ -2217,7 +2300,7 @@ impl AppCore {
                 let result2 = builder
                     .propose_program_cancellable(&contract, correction, budget2, cancel2)
                     .await;
-                let candidate2 = match result2 {
+                let mut candidate2 = match result2 {
                     Ok(c) => c,
                     Err(e) => {
                         let (kind, mut message) = build_error_message(&e);
@@ -2245,17 +2328,13 @@ impl AppCore {
                     self.db()
                         .set_outbound_cost(&format!("out_{build_id}_correction"), Some(cost))?;
                 }
-                if candidate2
-                    .program
-                    .as_ref()
-                    .map(|p| (&p.connection_sources, &p.model_step))
-                    != candidate
-                        .program
-                        .as_ref()
-                        .map(|p| (&p.connection_sources, &p.model_step))
+                // The user approved these permissions; a correction can fix the
+                // code but never widen or change what it may read or ask.
+                if let (Some(corrected), Some(approved)) =
+                    (candidate2.program.as_mut(), candidate.program.as_ref())
                 {
-                    self.fail_build(&build_id, BuildFailureKind::Checks, "Corrected reads or model step changed. Rebuild and review the new permissions.")?;
-                    return Ok(());
+                    corrected.connection_sources = approved.connection_sources.clone();
+                    corrected.model_step = approved.model_step.clone();
                 }
                 self.update_build(&build_id, |s| {
                     s.candidate = Some(candidate2.mapping.clone());
@@ -2542,6 +2621,23 @@ impl AppCore {
                 "Give the tool a name of 1–80 characters.".into(),
             ));
         }
+        // Saving the same default name repeatedly would leave an
+        // indistinguishable list, so later copies get " 2", " 3", ...
+        let taken: Vec<String> = self
+            .db()
+            .list_tools()?
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        let unique_name = if taken.iter().any(|n| n == name) {
+            (2..)
+                .map(|n| format!("{name} {n}"))
+                .find(|candidate| !taken.contains(candidate))
+                .unwrap_or_else(|| name.to_string())
+        } else {
+            name.to_string()
+        };
+        let name = unique_name.as_str();
         let tool_id = ToolId(new_id("tool"));
         let contract_hash = format!(
             "sha256:{}",

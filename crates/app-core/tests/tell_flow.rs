@@ -651,14 +651,10 @@ async fn outbound_summary_program_keeps_the_exact_real_example_visible() {
         .unwrap();
     assert!(item.real);
     assert_eq!(item.detail.as_deref(), Some(example));
+    // The outbound review shows the whole task description, never a cut-off copy.
     assert_eq!(
-        preview.summary.includes[0]
-            .detail
-            .as_ref()
-            .unwrap()
-            .chars()
-            .count(),
-        140
+        preview.summary.includes[0].detail.as_deref(),
+        Some(goal.as_str())
     );
     assert!(!preview.payload_text.contains("PRIVATE_INPUT_NEVER_SENT"));
     assert!(preview.summary.cost.contains("$0.02"));

@@ -672,7 +672,7 @@ export class MockBackend implements Backend {
       route = status.effectiveRoute ?? "offline_demo";
     const recipient = route === "custom_endpoint" ? status.customEndpoint.host! : route === "api_key" ? "Meta API (api.meta.ai)" : route === "muse_plan" ? "Muse Code with your Muse plan" : "Nothing leaves this Mac";
     const includes: import("./types").OutboundSummary["includes"] = route === "offline_demo" ? [] : [
-      ...(draft.kind === "program" ? [{label:"Your task description",detail:Array.from(draft.goal).slice(0,140).join(""),real:true}, ...(draft.exampleOutput ? [{label:"Your example result",detail:draft.exampleOutput,real:true}] : [])] : [{label:"Your column names and confirmed rules",real:true}]),
+      ...(draft.kind === "program" ? [{label:"Your task description",detail:draft.goal,real:true}, ...(draft.exampleOutput ? [{label:"Your example result",detail:draft.exampleOutput,real:true}] : [])] : [{label:"Your column names and confirmed rules",real:true}]),
       ...(!draft.noInput ? [{label:"A made-up sample of your data's shape (no real rows)",real:false}] : []),
       {label:"Standard instructions for writing the tool",real:false},
     ];

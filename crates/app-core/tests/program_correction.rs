@@ -234,8 +234,8 @@ async fn correction_passes_on_second_attempt_ready_with_both_events() {
         "correction must not contain input rows"
     );
     assert!(
-        !second_body_raw.contains(FETCHED_CANARY),
-        "correction must not contain fetched data"
+        second_body_raw.contains(FETCHED_CANARY),
+        "correction carries a short excerpt of the fetched public page"
     );
     assert!(
         user_content.contains('#'),
@@ -257,11 +257,14 @@ async fn correction_passes_on_second_attempt_ready_with_both_events() {
         .as_deref()
         .unwrap_or_default()
         .contains(INPUT_CANARY));
-    assert!(!correction_outbound
-        .payload_text
-        .as_deref()
-        .unwrap_or_default()
-        .contains(FETCHED_CANARY));
+    assert!(
+        correction_outbound
+            .payload_text
+            .as_deref()
+            .unwrap_or_default()
+            .contains(FETCHED_CANARY),
+        "the outbound record shows exactly what was sent"
+    );
     let model_costs: i64 = outbound
         .iter()
         .filter(|o| o.purpose.contains("packet"))
@@ -320,7 +323,7 @@ async fn correction_failure_stays_failed_with_second_details() {
     assert_eq!(counter.load(Ordering::SeqCst), 2);
     let second_body_raw = String::from_utf8_lossy(&model_calls[1].body);
     assert!(!second_body_raw.contains(INPUT_CANARY));
-    assert!(!second_body_raw.contains(FETCHED_CANARY));
+    assert!(second_body_raw.contains(FETCHED_CANARY));
     let failure = state.failure.expect("failure");
     assert_eq!(failure.kind, BuildFailureKind::Checks);
     let example_detail = state
@@ -410,12 +413,16 @@ async fn runtime_correction_contains_safe_detail_without_fixture_values_in_store
         assert_eq!(correction["failed_checks"][0]["detail"], detail);
         // Read back persisted events/checks rather than only the returned state.
         let stored = core.build_state(&state.build_id).unwrap();
+        // The correction request and its outbound record may carry the public
+        // web excerpt; the stored build state must not.
+        let stored_json = serde_json::to_string(&stored).unwrap();
+        assert!(!stored_json.contains(FETCHED_CANARY), "{stored_json}");
         for payload in [
             String::from_utf8_lossy(&calls[1].body).into_owned(),
-            serde_json::to_string(&stored).unwrap(),
+            stored_json,
             serde_json::to_string(&core.list_outbound().unwrap()).unwrap(),
         ] {
-            for secret in [INPUT_CANARY, FETCHED_CANARY, "@example.invalid"] {
+            for secret in [INPUT_CANARY, "@example.invalid"] {
                 assert!(
                     !payload.contains(secret),
                     "{expression}: fixture value in persisted/correction payload: {payload}"
@@ -542,8 +549,7 @@ async fn correction_fetches_renamed_source_and_reports_unknown_read_without_fetc
         "The program reads source 'gisborne_weather' but declares only: weather"
     );
     let raw = String::from_utf8_lossy(&calls[1].body);
-    assert!(!raw.contains(FETCHED_CANARY), "{raw}");
-    assert!(!raw.contains("\"high\":21"), "{raw}");
+    assert!(raw.contains(FETCHED_CANARY), "{raw}");
     let initial: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
     assert!(initial["input"][1]["content"].as_str().unwrap().contains(
         "Every name passed to macroscope.source(name) must exactly equal a declared web_sources[].name"
@@ -646,9 +652,39 @@ async fn unknown_source_diagnostic_redacts_a_name_computed_from_fetched_data() {
     let calls = model_requests(&requests);
     let raw = String::from_utf8_lossy(&calls[1].body);
     assert!(raw.contains("The program reads an undeclared source but declares only: weather"));
-    assert!(!raw.contains(FETCHED_CANARY), "{raw}");
-    assert!(!serde_json::to_string(&f.core.list_outbound().unwrap())
+    assert!(raw.contains(FETCHED_CANARY), "{raw}");
+    assert_eq!(f.web_outbound().len(), 1);
+}
+
+/// A web-source program whose checks all pass still gets one model review of
+/// its real output against an excerpt of the fetched page.
+#[tokio::test]
+async fn passing_web_program_gets_one_review_round_with_a_page_excerpt() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "weather");
+    let corrected = f.program("weather", "weather");
+    let state = f.build(first, corrected).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    let requests = f.model.received_requests().await.unwrap();
+    let calls = model_requests(&requests);
+    assert_eq!(calls.len(), 2, "one build call and one review call");
+    let packet: serde_json::Value = serde_json::from_slice(&calls[1].body).unwrap();
+    let review: serde_json::Value =
+        serde_json::from_str(packet["input"][1]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(review["failed_checks"][0]["id"], "review");
+    assert!(review["fetched_web_samples"]["weather"]
+        .as_str()
         .unwrap()
         .contains(FETCHED_CANARY));
-    assert_eq!(f.web_outbound().len(), 1);
+    assert!(review["current_output"]
+        .as_str()
+        .unwrap()
+        .contains("Gisborne high : 21"));
+    let summary = &review["fetched_web_summaries"]["weather"];
+    assert!(summary["total_chars"].as_u64().unwrap() > 0, "{summary}");
+    assert_eq!(summary["excerpt_truncated"], false);
+    assert!(review["correction_instruction"]
+        .as_str()
+        .unwrap()
+        .contains("covers everything the task asks about"));
 }
