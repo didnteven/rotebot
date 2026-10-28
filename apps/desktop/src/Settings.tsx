@@ -7,6 +7,7 @@ import type {
   ShowState,
 } from "./backend/types";
 import { Field, Notice, useAction } from "./ui";
+import { CustomEndpointCard } from "./CustomEndpointCard";
 import { routeLabel } from "./backend/mock";
 
 export function Settings({
@@ -25,41 +26,73 @@ export function Settings({
   const [entering, setEntering] = useState(false),
     [signingIn, setSigningIn] = useState(false),
     [docs, setDocs] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const chooser = useRef<HTMLFieldSetElement>(null);
+  useEffect(()=>{chooser.current?.focus(); chooser.current?.scrollIntoView?.({block:"start"});},[]);
   const [login, setLogin] = useState(false);
   useEffect(() => { void backend.loginEnabled().then(setLogin).catch(() => {}); }, [backend]);
   const key = useRef<HTMLInputElement>(null);
   const { act, error, busy } = useAction();
   const muse = status.muse;
-  const routes: {
-    route: ModelRoute;
-    label: string;
-    disabled: boolean;
-    reason: string;
-  }[] = [
-    {
-      route: "api_key",
-      label: "Meta API key (billed to your key)",
-      disabled: !status.apiKey.present,
-      reason: "Enter a key first.",
-    },
-    {
-      route: "muse_plan",
-      label: "Muse plan (uses your Muse allowance)",
-      disabled: muse.kind !== "signed_in",
-      reason: "Sign in to Muse Code and check again first.",
-    },
-    {
-      route: "offline_demo",
-      label: "Offline demo (no model)",
-      disabled: false,
-      reason: "",
-    },
+  function enterKey() {
+    if (info.platform === "macos" && !info.mock) void act(async()=>update(await backend.enterApiKeyNative()));
+    else { setEntering(true); document.getElementById("meta-key-setup")?.scrollIntoView?.({block:"start"}); }
+  }
+  const routes: {route:ModelRoute;label:string;disabled:boolean;reason:string;fix?:string;repair?:()=>void}[] = [
+    {route:"muse_plan",label:"Muse plan (uses your Muse allowance)",disabled:muse.kind!=="signed_in",reason:muse.kind==="signed_in"?"Ready":muse.kind==="missing"?"Muse Code not installed":muse.kind==="not_signed_in"?"Not signed in":"Check sign-in",fix:"Check sign-in",repair:()=>void act(async()=>update(await backend.refreshMuseStatus()))},
+    {route:"api_key",label:"Meta API key (billed to your key)",disabled:!status.apiKey.present,reason:status.apiKey.present?"Ready":"Needs a key",fix:"Add key…",repair:enterKey},
+    {route:"custom_endpoint",label:"Custom endpoint",disabled:!status.customEndpoint.tokenPresent || status.customEndpoint.lastTest?.status!=="ok",reason:status.customEndpoint.tokenPresent && status.customEndpoint.lastTest?.status==="ok"?"Ready":"Needs a token and a passing test",fix:"Set up…",repair:()=>{document.getElementById("custom-endpoint-setup")?.scrollIntoView?.({block:"start"});document.getElementById("custom-endpoint-setup")?.querySelector("input")?.focus();}},
+    {route:"offline_demo",label:"Offline demo (no model)",disabled:false,reason:"Ready"},
   ];
+  async function select(route:ModelRoute) {
+    const next = await backend.selectRoute(route);
+    update(next);
+    setConfirmation(next.effectiveRoute === route ? `Builds now use ${routeLabel(route)}` : next.blockedReason ?? "This route is currently unavailable.");
+  }
   return (
     <section>
-      <h2>Schedules</h2>
-      <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
       <h2>Model access</h2>
+      <fieldset ref={chooser} id="model-route-chooser" tabIndex={-1} disabled={busy}>
+        <legend>Which model builds your tools</legend>
+        {routes.map((r) => (
+          <div className="model-route-row" key={r.route}>
+            <label className="choice">
+              <input
+                type="radio"
+                aria-describedby={`route-state-${r.route}`}
+                name="route"
+                value={r.route}
+                checked={
+                  (status.selectedRoute ?? status.effectiveRoute) === r.route
+                }
+                disabled={r.disabled}
+                onClick={() => {
+                  if (
+                    status.selectedRoute === null &&
+                    status.effectiveRoute === r.route
+                  )
+                    void act(async () =>
+                      select(r.route),
+                    );
+                }}
+                onChange={() =>
+                  void act(async () =>
+                    select(r.route),
+                  )
+                }
+              />
+              {r.label}
+              {status.selectedRoute === null &&
+              status.effectiveRoute === r.route
+                ? " (automatic)"
+                : ""}
+            </label>
+            <p id={`route-state-${r.route}`}>{r.reason}</p>
+            {r.disabled && r.fix && <button onClick={r.repair}>{r.fix}</button>}
+          </div>
+        ))}
+      </fieldset>
+      {confirmation && <p role="status">{confirmation}</p>}
       {info.debugBuild && info.secretStore === "file" && (
         <p className="muted">
           Development build: secrets are stored in a private file in Macroscope's data folder instead of the Keychain.
@@ -67,8 +100,9 @@ export function Settings({
       )}
       <Notice error={error} />
       {busy && <p role="status">Checking…</p>}
+      <div id="custom-endpoint-setup"><CustomEndpointCard backend={backend} status={status.customEndpoint} update={update} /></div>
       <div className="card-grid">
-        <article className="card">
+        <article className="card" id="meta-key-setup">
           <h3>Meta API key</h3>
           <p>
             {status.apiKey.present
@@ -87,11 +121,7 @@ export function Settings({
             <button
               disabled={busy}
               onClick={() => {
-                if (info.platform === "macos" && !info.mock)
-                  void act(async () =>
-                    update(await backend.enterApiKeyNative()),
-                  );
-                else setEntering(true);
+                enterKey();
               }}
             >
               Enter key…
@@ -125,7 +155,7 @@ export function Settings({
               }}
             >
               <Field label="Meta API key">
-                <input ref={key} type="password" autoComplete="off" required />
+                <input autoFocus ref={key} type="password" autoComplete="off" required />
               </Field>
               <button disabled={busy} type="submit">
                 Save key
@@ -223,45 +253,9 @@ export function Settings({
           </button>
         </article>
       </div>
-      <fieldset disabled={busy}>
-        <legend>Build route</legend>
-        {routes.map((r) => (
-          <div key={r.route}>
-            <label className="choice">
-              <input
-                type="radio"
-                name="route"
-                value={r.route}
-                checked={
-                  (status.selectedRoute ?? status.effectiveRoute) === r.route
-                }
-                disabled={r.disabled}
-                onClick={() => {
-                  if (
-                    status.selectedRoute === null &&
-                    status.effectiveRoute === r.route
-                  )
-                    void act(async () =>
-                      update(await backend.selectRoute(r.route)),
-                    );
-                }}
-                onChange={() =>
-                  void act(async () =>
-                    update(await backend.selectRoute(r.route)),
-                  )
-                }
-              />
-              {r.label}
-              {status.selectedRoute === null &&
-              status.effectiveRoute === r.route
-                ? " (automatic)"
-                : ""}
-            </label>
-            {r.disabled && <p className="muted">{r.reason}</p>}
-          </div>
-        ))}
-      </fieldset>
-      <p>Effective route: {routeLabel(status.effectiveRoute)}</p>
+      <h2>Schedules</h2>
+      <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
+      <p>Effective route: {routeLabel(status.effectiveRoute)}{status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.host} · ${status.customEndpoint.model}` : ""}</p>
       {status.blockedReason && (
         <p
           className={

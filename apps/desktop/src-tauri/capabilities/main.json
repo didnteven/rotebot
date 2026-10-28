@@ -9,6 +9,12 @@
     "allow-app-info",
     "allow-model-access",
     "allow-enter-api-key-native",
+    "allow-save-custom-endpoint",
+    "allow-save-custom-endpoint-token",
+    "allow-set-custom-endpoint-options",
+    "allow-remove-custom-endpoint",
+    "allow-test-custom-endpoint",
+
     "allow-save-api-key",
     "allow-remove-api-key",
     "allow-test-api-key",

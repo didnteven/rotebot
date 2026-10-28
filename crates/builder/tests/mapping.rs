@@ -64,6 +64,7 @@ async fn direct_meta_fixture_synthetic_packet_and_host_validation() {
         policy: &policy,
         consent_epoch: epoch,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     let result = builder
@@ -125,6 +126,7 @@ async fn malformed_then_corrected_once_and_unknown_spend_stays_reserved() {
         policy: &policy,
         consent_epoch: epoch,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     let result = builder
@@ -166,6 +168,7 @@ async fn malformed_twice_fails_no_third_dispatch() {
         policy: &p,
         consent_epoch: e,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     assert!(matches!(
@@ -194,6 +197,7 @@ async fn budget_exhaustion_and_stale_epoch_prevent_dispatch() {
         policy: &p,
         consent_epoch: e,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     assert!(matches!(
@@ -234,6 +238,7 @@ async fn offline_is_labelled_and_validator_can_reject() {
         policy: &p,
         consent_epoch: 0,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     let result = b
@@ -317,6 +322,7 @@ async fn rejected_api_key_revokes_admission_and_never_falls_back_to_plan() {
         policy: &policy,
         consent_epoch: epoch,
         muse: None,
+        custom_observer: None,
         muse_progress: None,
     };
     assert!(matches!(

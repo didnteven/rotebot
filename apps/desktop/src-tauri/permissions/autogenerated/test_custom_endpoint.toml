@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-custom-endpoint"
+description = "Enables the test_custom_endpoint command without any pre-configured scope."
+commands.allow = ["test_custom_endpoint"]
+
+[[permission]]
+identifier = "deny-test-custom-endpoint"
+description = "Denies the test_custom_endpoint command without any pre-configured scope."
+commands.deny = ["test_custom_endpoint"]

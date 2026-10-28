@@ -484,3 +484,18 @@ summary {
     scroll-behavior: auto !important;
   }
 }
+
+.model-route-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+}
+.model-route-row > .choice {
+  flex: 1 1 250px;
+}
+.model-route-row > p {
+  flex: 1 1 200px;
+  margin: 0;
+}

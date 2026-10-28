@@ -89,7 +89,9 @@ it("Try another sample opens the picker and displays failing row and column deta
   await user.click(button("Try another sample…"));
   expect(pick).toHaveBeenCalledOnce();
   expect(check).toHaveBeenCalledWith(expect.any(String), bad.handle);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/row 1.*created/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("The tool did not pass its checks.");
+  await user.click(screen.getByText("Advanced details"));
+  expect(screen.getByText(/row 1.*created/i, {selector:"details p"})).toBeVisible();
   expect(
     screen.queryByRole("button", { name: "Save tool" }),
   ).not.toBeInTheDocument();

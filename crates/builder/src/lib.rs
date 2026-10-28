@@ -36,6 +36,7 @@ pub struct BuildRequest {
 pub enum ModelRoute {
     MetaApiKey,
     MusePlan,
+    CustomEndpoint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -35,6 +35,7 @@ async function savedTool() {
   await waitFor(() => expect(button("Save tool")).toBeVisible(), {
     timeout: 4500,
   });
+  await user.click(screen.getByText("Advanced details"));
   expect(
     screen.getByText(/✓ Pass · Row count preserved · 18 → 18/),
   ).toBeVisible();
@@ -167,12 +168,14 @@ describe("Tell and deterministic runs", () => {
     await backend.saveApiKey("test-key");
     const { user } = await open(backend);
     await review(user);
+    expect(screen.getByLabelText("Exact outbound payload")).not.toBeVisible();
+    await user.click(screen.getByText("Advanced: exact data sent"));
     expect(screen.getByLabelText("Exact outbound payload")).toBeVisible();
-    expect(screen.getByText("Contains only synthetic rows")).toBeVisible();
+    expect(screen.getByText("A made-up sample of your data's shape (no real rows)")).toBeVisible();
     expect(screen.getByText(/Estimated cost:.*Budget:/)).toBeVisible();
     expect(button("Build tool")).toBeDisabled();
     await user.click(
-      screen.getByRole("checkbox", { name: "I reviewed what will be sent" }),
+      screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }),
     );
     expect(button("Build tool")).toBeEnabled();
     await user.click(button("Build tool"));

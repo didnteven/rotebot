@@ -13,9 +13,10 @@ export function datedFilename(outputName?: string) {
   const name=outputName?.trim() || "result.txt", dot=name.lastIndexOf(".");
   return dot>0 ? `${name.slice(0,dot)}-{date}${name.slice(dot)}` : `${name}-{date}`;
 }
-export function ScheduleSection({backend,tool,openSettings}: {backend:Backend;tool:ToolDetail;openSettings?:()=>void}) {
+export function ScheduleSection({backend,tool,openSettings,advanced=true}: {backend:Backend;tool:ToolDetail;openSettings?:()=>void;advanced?:boolean}) {
   const [modelRoute,setModelRoute]=useState<import("./backend/types").ModelRoute>("offline_demo");
-  useEffect(()=>{void backend.modelAccess().then(a=>setModelRoute(a.effectiveRoute??"offline_demo"));},[backend]);
+  const [routeDetails,setRouteDetails]=useState("");
+  useEffect(()=>{void backend.modelAccess().then(a=>{setModelRoute(a.effectiveRoute??"offline_demo");setRouteDetails(`Custom endpoint · ${a.customEndpoint.host} · ${a.customEndpoint.model}`);});},[backend]);
   const [schedule,setSchedule]=useState<Schedule | null>(null),[login,setLogin]=useState(true);
   const [kind,setKind]=useState<Frequency["kind"]>("daily"),[time,setTime]=useState("07:00"),[weekday,setWeekday]=useState(1),[day,setDay]=useState(1);
   const [outputs,setOutputs]=useState<ScheduleOutputs>({today:true,notification:true,folder:null,filename:datedFilename(tool.program?.output_name)});
@@ -44,7 +45,7 @@ export function ScheduleSection({backend,tool,openSettings}: {backend:Backend;to
       {file && <><button onClick={()=>void act(async()=>{const folder=await backend.pickOutputDir();if(folder)setOutputs({...outputs,folder});})}>Choose schedule folder…</button><p>{outputs.folder?.displayPath}</p><label>File name template<input value={outputs.filename} onChange={e=>setOutputs({...outputs,filename:e.target.value})}/></label><p>Example: {outputs.filename.replaceAll("{date}",new Date().toLocaleDateString("en-CA"))}</p></>}
       <p>{recurrence} at {time.replace(/^0/,"")} Macroscope will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.</p>
       <p>Connection actions wait in Needs you for approval of the exact calls. Macroscope runs schedules while open; missed runs happen once when it opens again.</p>
-      {tool.program && <SourceReview program={tool.program} route={modelRoute} frequency={`${kind==="daily"?"every day":kind==="weekly"?`every ${weekdays[weekday-1]}`:`every month on day ${day}`} at ${time.replace(/^0/,"")}`}/>}
+      {tool.program && <SourceReview advanced={advanced} program={tool.program} route={modelRoute} routeDetails={routeDetails} frequency={`${kind==="daily"?"every day":kind==="weekly"?`every ${weekdays[weekday-1]}`:`every month on day ${day}`} at ${time.replace(/^0/,"")}`}/>}
       <label><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/>I approve this running unattended</label>
       <button disabled={!approved || !time || (file && (!outputs.folder || !outputs.filename)) || (!outputs.today && !outputs.notification && !file)} onClick={()=>void act(async()=>{setSchedule(await backend.setSchedule(tool.id,{frequency,outputs:approvedOutputs,versionHash:tool.versionHash,approved}));setApproved(false);})}>Turn on schedule</button>
     </fieldset>

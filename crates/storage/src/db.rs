@@ -851,6 +851,17 @@ impl Db {
         })
     }
 
+    /// Custom routes retain counts and usage only, never request or response text.
+    pub fn set_outbound_metadata(&self, id: &str, metadata: &str) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE outbound SET payload_text = ?2 WHERE id = ?1",
+                params![id, metadata],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn set_outbound_cost(&self, id: &str, cost_micros: Option<i64>) -> Result<(), DbError> {
         self.with(|c| {
             c.execute(

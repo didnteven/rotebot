@@ -8,7 +8,7 @@ import { MockBackend } from "./backend/mock";
 import type { PlannedAction, Receipt, StagedRun } from "./backend/types";
 
 const action: PlannedAction = {
-  call: {connectorId:"gmail", toolName:"create_draft", args:{to:"test@example.invalid",body:'<script>alert("args")</script><img src=x onerror=alert(1)>'}},
+  call: {connectorId:"gmail", toolName:"create_draft", args:{to:"test@example.invalid",subject:"Review this message",body:'<script>alert("args")</script><img src=x onerror=alert(1)>'}},
   service:"Gmail",resource:"https://example.invalid/mcp",readOnlyHint:false,destructiveHint:false,
 };
 const receipt: Receipt = {runId:"r",toolId:"t",toolName:"Draft message",versionHash:"v",planHash:"hash",inputDigest:"input",committedDigest:"",outputPath:"",status:"committed",atMs:1,
@@ -28,8 +28,14 @@ it("renders complete action arguments and server claims as text and requires act
   await user.click(screen.getByRole("button", {name:"Use sample input"}));
   await user.click(screen.getByRole("button", {name:"Choose output folder…"}));
   await user.click(screen.getByRole("button", {name:"Stage and compare"}));
-  expect(await screen.findByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).toBeVisible();
-  expect(screen.getByLabelText("Planned action 1").querySelector("pre")?.textContent).toBe(JSON.stringify(action.call.args, null, 2));
+  expect(await screen.findByText("test@example.invalid")).toBeVisible();
+  expect(screen.getByText("Review this message")).toBeVisible();
+  expect(screen.getByText("This changes data in Gmail")).toBeVisible();
+  expect(screen.getByLabelText("Exact action arguments 1")).not.toBeVisible();
+  expect(screen.getByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).not.toBeVisible();
+  await user.click(screen.getByText("Advanced details"));
+  expect(screen.getByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).toBeVisible();
+  expect(screen.getByLabelText("Exact action arguments 1").textContent).toBe(JSON.stringify(action.call.args, null, 2));
   const approve = screen.getByRole("button", {name:"Approve actions"});
   expect(approve).toBeDisabled();
   expect(commit).not.toHaveBeenCalled();
@@ -70,4 +76,16 @@ it("offers explicit access to connected services in Create and lists their untru
   expect(select).toHaveBeenCalledWith(expect.any(String), [connector.id]);
   expect(screen.getByText(/<script>server instructions<\/script>/)).toBeVisible();
   expect(container.querySelectorAll("script,img,iframe")).toHaveLength(0);
+});
+
+it("keeps every external field visible in plain words and hides only the exact argument object", async()=>{
+  const {ActionReview, ActionTechnicalDetails} = await import("./ActionReview");
+  const change:PlannedAction = {...action,service:"Calendar",readOnlyHint:null,destructiveHint:null,call:{...action.call,toolName:"create_event",args:{title:"Team catchup",location:"Office",start:"09:00",end:"09:30",notes:"Bring report",attendees:["owner@example.invalid"],options:{notify:true}}}};
+  render(<><ActionReview action={change}/><details><summary>Advanced details</summary><ActionTechnicalDetails actions={[change]}/></details></>);
+  expect(screen.getByText("Calendar · Create event")).toBeVisible();
+  expect(screen.getByText("This changes data in Calendar")).toBeVisible();
+  for(const value of ["Team catchup","Office","09:00","09:30","Bring report","owner@example.invalid","true"]) expect(screen.getByText(value,{exact:true})).toBeVisible();
+  expect(screen.getByLabelText("Exact action arguments 1")).not.toBeVisible();
+  await userEvent.setup().click(screen.getByText("Advanced details"));
+  expect(screen.getByLabelText("Exact action arguments 1")).toHaveTextContent(JSON.stringify(change.call.args,null,2).replace(/\s+/g," "));
 });

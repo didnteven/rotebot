@@ -8,11 +8,16 @@ import type {Program} from "./backend/types";
 const program:Program={summary:"Calendar summary",output_name:"summary.txt",code:"function run(){}",webSources:[],connectionSources:[{name:"events",connectorId:"google-calendar",toolName:"list_events",argsJson:'{"start":"{today_start}","end":"{today_end}"}'}],modelStep:{purpose:"Write the summary",prompt:"Summarize these events"}};
 it("outbound review names each connection read, its exact template and the model destination and frequency",()=>{
   render(<SourceReview program={program} route="muse_plan" frequency="each morning" build/>);
-  expect(screen.getByText("Reads today's events from Google Calendar (list_events)")).toBeVisible();
+  expect(screen.getByText("Reads today's events from Google Calendar")).toBeVisible();
   expect(screen.getByText("Today's events from Google Calendar are sent to Muse (plan) each morning to write the summary.")).toBeVisible();
   expect(screen.getByText('Sends this instruction: "Summarize these events"')).toBeVisible();
   expect(screen.getByText("This build will read your Google Calendar events for today once to test the tool.")).toBeVisible();
+  expect(screen.getByText(program.connectionSources![0].argsJson)).not.toBeVisible();
+  expect(screen.getByText(/up to 64 KB/)).not.toBeVisible();
+  fireEvent.click(screen.getByText("Advanced details"));
   expect(screen.getByText(program.connectionSources![0].argsJson)).toBeVisible();
+  expect(screen.getByText("list_events")).toBeVisible();
+  expect(screen.getByText(/up to 64 KB/)).toBeVisible();
 });
 it("tool detail shows the monthly cap and edits it through the backend",async()=>{
   const backend=new MockBackend();const tool=await backend.installSampleTool();
@@ -28,7 +33,7 @@ it("tool detail shows the monthly cap and edits it through the backend",async()=
 it("schedule approval includes the read and selected model route",async()=>{
   const backend=new MockBackend();await backend.saveApiKey("test-key");const tool=await backend.installSampleTool();tool.program=program;tool.noInput=true;
   render(<ScheduleSection backend={backend} tool={tool}/>);
-  expect(await screen.findByText("Reads today's events from Google Calendar (list_events)")).toBeVisible();
+  expect(await screen.findByText("Reads today's events from Google Calendar")).toBeVisible();
   expect(await screen.findByText("Today's events from Google Calendar are sent to Meta (API key) every day at 7:00 to write the summary.")).toBeVisible();
   expect(screen.getByRole("button",{name:"Turn on schedule"})).toBeDisabled();
 });

@@ -30,12 +30,14 @@ the build.
 | 22 | `m4/runtime-errors` | `m4/eval-suite` | Real, data-safe runtime error detail for the correction round and the user | M3 |
 | 23 | `m4/regexp-retention` | `m4/runtime-errors` | RegExp admitted with bounds and canaries (ADR 0005), Today 30-day retention, eval manifest rev 2 | M4 |
 
+| 24 | `m4/custom-endpoint` | `m4/regexp-retention` | Custom OpenAI-compatible model route (owner's Modal endpoint), set up in Settings | M4 |
+
 To publish later:
 
 ```sh
 git remote add origin <url>
 git push -u origin main m0/foundation m0/runtime-gate m1/csv-broker m0/model-access \
-  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks m4/connection-actions m4/web-sources m4/schedules m4/model-step m4/muse-findings-2 m4/eval-suite m4/runtime-errors m4/regexp-retention
+  m2/connections m5/observer-experiment m2/desktop-ui m2/app-integration m3/hardening m3/privacy-controls m3/renderer-safety m3/muse-findings m4/runtime-v2 m4/dev-file-vault m4/general-tasks m4/connection-actions m4/web-sources m4/schedules m4/model-step m4/muse-findings-2 m4/eval-suite m4/runtime-errors m4/regexp-retention m4/custom-endpoint
 ```
 
 Then open each PR with the base from the table. `docs/build/PROGRESS.md` records what each

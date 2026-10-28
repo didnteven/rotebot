@@ -930,3 +930,202 @@ total 231664
 
 No tests were weakened or deleted, and no skips or ignores were added.
 Changes remain uncommitted.
+
+## Task 25 — Custom OpenAI-compatible endpoint (2026-10-28)
+
+Branch: `m4/custom-endpoint`, based on `m4/regexp-retention`.
+
+Adds a Custom endpoint route with an HTTPS base URL, model, optional display name,
+native hidden-input token entry into its own vault item, a strict-schema endpoint
+test with status and latency, and a default 500-call monthly cap. URL, model or
+token changes invalidate the successful test. Route selection requires all three
+and a successful test. Local only blocks the route.
+
+One chat-completions gateway serves mapping/program builds, correction attempts
+and runtime model steps, with host schema validation, medium reasoning, temperature
+0.2, a 120-second transport timeout and immediate cancellation. Each dispatch is
+counted durably before sending; custom calls have no dollar estimate. Outbound
+history stores the host, byte counts and token usage without request/response
+content or credentials. The review names the host and model. Meta and Muse routes
+retain their existing behavior.
+
+The eval suite accepts `--route custom_endpoint --base-url https://host/v1 --model
+model-name`; only `MACROSCOPE_CUSTOM_TOKEN` supplies the token. Results label the
+host/model. The final frontend contract is copied to `.dev/task25/backend-types.ts`
+to keep this task's writes inside the worktree.
+
+New tests use an authenticated local fake server for strict-schema mapping and
+program builds, host-check correction, runtime model steps, both caps, Local only,
+401/schema/network test results, malformed/truncated responses, credential absence
+from DTOs/events/state/outbound/settings and captured process logs, URL validation,
+and Stop/Emergency stop. Six UI tests cover validation, native token IPC, test
+status/latency, route selection, options and removal. Verification results follow.
+
+Verification completed (all commands exit 0):
+
+| Command | Result | Exact counts |
+|---|---|---|
+| `cargo build -p macroscope-runner --bins` | PASS | Both runner binaries built |
+| `bash scripts/check.sh` — first run | PASS | Workspace Rust: 364 passed, 0 failed, 4 pre-existing ignored; explicit app-core runtime suite: 172 passed, 0 failed, 1 pre-existing ignored; UI: 133 passed across 18 files, 0 failed |
+| `bash scripts/check.sh` — second run | PASS | Workspace Rust: 364 passed, 0 failed, 4 pre-existing ignored; explicit app-core runtime suite: 172 passed, 0 failed, 1 pre-existing ignored; UI: 133 passed across 18 files, 0 failed |
+| `cd apps/desktop && npx tauri build --debug --bundles app` | PASS | 1 app bundle, 113.63 MiB |
+| `bash apps/desktop/scripts/verify-bundle.sh <built .app>` | PASS | Executable runner and byte-identical sandbox profile present |
+
+All 12 new Rust cases and all 6 new UI cases ran and passed; none are skipped or
+ignored. The existing ignores are the Swift observer integration (once in each
+Rust invocation), live MCP discovery, and two real Muse echo integrations. Their
+tests and ignore annotations were not changed. Formatting, Clippy with warnings
+denied, TypeScript checking, and the production frontend build passed twice.
+
+Output tails (full logs in `.dev/task25/`):
+
+```text
+cargo build -p macroscope-runner --bins:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.24s
+
+bash scripts/check.sh — first run:
+ Test Files  18 passed (18)
+      Tests  133 passed (133)
+...
+dist/assets/index-DQYHFqGb.js   347.08 kB │ gzip: 103.35 kB
+
+✓ built in 621ms
+
+bash scripts/check.sh — second run:
+ Test Files  18 passed (18)
+      Tests  133 passed (133)
+...
+dist/assets/index-DQYHFqGb.js   347.08 kB │ gzip: 103.35 kB
+
+✓ built in 108ms
+
+npx tauri build --debug --bundles app:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 29s
+       Built application at: /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-desktop
+    Bundling Macroscope.app (/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app)
+    Finished 1 bundle at:
+        /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app (113.63 MiB)
+```
+
+```text
+verify-bundle.sh:
+PASS: sandbox runner and byte-identical profile present in /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app
+total 232424
+-rwxr-xr-x@ 1 todd  staff  97792672 Oct 28 19:25 macroscope-desktop
+-rwxr-xr-x@ 1 todd  staff  21197488 Oct 28 19:23 macroscope-runner
+-rw-r--r--@ 1 todd  staff       782 Oct 28 19:01 macroscope-runner.sb
+```
+
+Changes remain in the worktree; no commits, pushes or branch changes were made.
+
+## Task 26 — Plain-language reviews and visible model routing (2026-10-28)
+
+Outbound build reviews now use a host-owned `OutboundSummary` DTO with the
+recipient, model, included material, later-run behavior, and cost. The summary
+follows the packet's actual inputs: program descriptions and exact real examples,
+CSV column names and confirmed rules, synthetic samples where present, and
+standard tool-writing instructions. Real examples remain fully visible with the
+“your real text” badge. Exact payloads are behind the native “Advanced: exact data
+sent” disclosure; cloud builds still require the review checkbox.
+
+Before generation, source declarations do not exist. Requested website hosts
+are identified as requested, with explicit approval required for the generated
+fetches. The build-and-compare review continues to show the actual declared hosts
+and requires approval before saving. Connection reads, quoted model instructions,
+frequency, output destinations, and model billing stay visible; argument
+templates, tool identifiers, and byte limits are in Advanced.
+
+Run previews and Today share the plain action renderer. Recipients, subjects,
+message text, and all other external action fields stay visible, including nested
+fields and recipients in arrays. Missing read-only claims and destructive claims
+show “This changes data in <service>” by default. The existing action-review
+checkbox and exact plan binding remain required. Each screen has one shared
+Advanced disclosure for full arguments, server claims, code, and diagnostics.
+Build-check labels, output shapes, and runtime diagnostics are collapsed; plain
+status explains failures and automatic example-format correction.
+
+Settings starts with “Which model builds your tools”: Muse plan, Meta API key,
+Custom endpoint, and Offline demo, with readiness states, inline repair actions,
+and immediate switch confirmation. Create's Change button opens Settings with
+the chooser focused and scrolled into view while preserving the draft. Corrected
+the demo backend's route precedence so an explicitly selected Muse plan works
+when an API key is also saved. Native route policy and credential gates remain
+enforced.
+
+Tests retain the existing inert-rendering, exact-payload, action-consent, runtime
+error, and schedule coverage, opening disclosures before inspecting technical
+text. Added core cases for real program examples, synthetic CSV packets, and
+requested web hosts; UI cases cover route discovery and switching, nested action
+fields, correction statuses, and IPC preservation of host summaries. No tests
+were removed or newly skipped/ignored. The final backend contract is copied to
+`.dev/task26/backend-types.ts`, keeping all edits within this worktree.
+
+Verification results and output tails follow below.
+
+| Command | Result | Exact counts |
+|---|---|---|
+| `bash scripts/check.sh` — run 1 | PASS (exit 0) | Workspace Rust: 367 passed, 0 failed, 4 pre-existing ignored; explicit runtime-enabled core suite: 175 passed, 0 failed, 1 pre-existing ignored; UI: 140 passed across 19 files, 0 failed, 0 skipped |
+| `bash scripts/check.sh` — run 2 | PASS (exit 0) | Workspace Rust: 367 passed, 0 failed, 4 pre-existing ignored; explicit runtime-enabled core suite: 175 passed, 0 failed, 1 pre-existing ignored; UI: 140 passed across 19 files, 0 failed, 0 skipped |
+| `cd apps/desktop && npx tauri build --debug --bundles app` | PASS (exit 0) | 1 app bundle, 113.66 MiB |
+| `bash apps/desktop/scripts/verify-bundle.sh <built .app>` | PASS (exit 0) | Executable runner and byte-identical sandbox profile present |
+
+Formatting, Clippy with warnings denied, TypeScript checking, and the production
+frontend build passed twice. All 3 new core tests and all 7 new UI tests ran;
+none are skipped or ignored. The pre-existing ignores are the Swift observer
+integration (in each Rust invocation), live MCP discovery, and two real Muse
+echo integrations. Their tests and ignore annotations were not changed.
+
+Output excerpts and tails (complete logs in `.dev/task26/`):
+
+`bash scripts/check.sh` — run 1:
+
+```text
+ Test Files  19 passed (19)
+      Tests  140 passed (140)
+...
+computing gzip size...
+dist/index.html                   0.44 kB │ gzip:   0.28 kB
+dist/assets/index-QRD9msm-.css    6.82 kB │ gzip:   2.19 kB
+dist/assets/index-BmmjqhoG.js   353.16 kB │ gzip: 105.05 kB
+
+✓ built in 103ms
+```
+
+`bash scripts/check.sh` — run 2:
+
+```text
+ Test Files  19 passed (19)
+      Tests  140 passed (140)
+...
+computing gzip size...
+dist/index.html                   0.44 kB │ gzip:   0.28 kB
+dist/assets/index-QRD9msm-.css    6.82 kB │ gzip:   2.19 kB
+dist/assets/index-BmmjqhoG.js   353.16 kB │ gzip: 105.05 kB
+
+✓ built in 156ms
+```
+
+`cd apps/desktop && npx tauri build --debug --bundles app`:
+
+```text
+   Compiling macroscope-app-core v0.1.0 (/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/crates/app-core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 13s
+       Built application at: /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-desktop
+    Bundling Macroscope.app (/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app)
+    Finished 1 bundle at:
+        /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app (113.66 MiB)
+```
+
+`bash apps/desktop/scripts/verify-bundle.sh <built .app>`:
+
+```text
+PASS: sandbox runner and byte-identical profile present in /Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/bundle/macos/Macroscope.app
+total 232488
+-rwxr-xr-x@ 1 todd  staff  97824928 Oct 28 19:41 macroscope-desktop
+-rwxr-xr-x@ 1 todd  staff  21197488 Oct 28 19:39 macroscope-runner
+-rw-r--r--@ 1 todd  staff       782 Oct 28 19:01 macroscope-runner.sb
+```
+
+Changes remain in the worktree on `m4/custom-endpoint`; no commits, pushes,
+branch changes, real account operations, or reads of Muse configuration or the
+Keychain were performed.

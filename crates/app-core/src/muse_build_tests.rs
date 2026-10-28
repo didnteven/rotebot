@@ -98,6 +98,7 @@ async fn exercise_long_call(stop_mode: u8) {
             key_ref: None,
             containment_verified: true,
         }),
+        custom_observer: None,
         muse_progress: Some(&progress),
     };
     // A second call proves notification state belongs to each exec, rather

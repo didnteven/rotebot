@@ -134,14 +134,19 @@ impl MetaResponsesClient {
 }
 // Only static error summaries leave this module. Remote bodies, URL errors,
 // schema diagnostics and header parsing errors can echo secrets and are discarded.
-fn bearer(key: &Secret) -> Result<HeaderValue, GatewayError> {
+pub(crate) fn bearer(key: &Secret) -> Result<HeaderValue, GatewayError> {
     let mut bytes = zeroize::Zeroizing::new(b"Bearer ".to_vec());
     bytes.extend_from_slice(key.expose());
     let mut header = HeaderValue::from_bytes(&bytes).map_err(|_| GatewayError::AuthRejected)?;
     header.set_sensitive(true);
     Ok(header)
 }
-async fn bounded_json(mut response: reqwest::Response) -> Result<Value, GatewayError> {
+pub(crate) async fn bounded_json(response: reqwest::Response) -> Result<Value, GatewayError> {
+    bounded_json_count(response).await.map(|(value, _)| value)
+}
+pub(crate) async fn bounded_json_count(
+    mut response: reqwest::Response,
+) -> Result<(Value, usize), GatewayError> {
     let mut bytes = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -153,9 +158,14 @@ async fn bounded_json(mut response: reqwest::Response) -> Result<Value, GatewayE
         }
         bytes.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&bytes).map_err(|_| GatewayError::MalformedOutput)
+    serde_json::from_slice(&bytes)
+        .map(|v| (v, bytes.len()))
+        .map_err(|_| GatewayError::MalformedOutput)
 }
-fn classify_status(status: StatusCode, retry: Option<&HeaderValue>) -> Result<(), GatewayError> {
+pub(crate) fn classify_status(
+    status: StatusCode,
+    retry: Option<&HeaderValue>,
+) -> Result<(), GatewayError> {
     if status.is_success() {
         return Ok(());
     }

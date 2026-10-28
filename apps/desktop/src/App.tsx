@@ -179,7 +179,7 @@ export function App({ backend }: { backend: Backend }) {
         <div className="status-strip" role="region" aria-label="App status">
           <span>
             Building with:{" "}
-            {status ? routeLabel(status.effectiveRoute) : "Checking…"}
+            {status ? `${routeLabel(status.effectiveRoute)}${status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.model?.split("/").pop()} · ${status.customEndpoint.host}` : ""}` : "Checking…"}
           </span>
           <span>
             Cloud models:{" "}

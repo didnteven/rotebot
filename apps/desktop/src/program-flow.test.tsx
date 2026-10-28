@@ -20,7 +20,11 @@ it("creates a program, reviews real example text, compares inert output and save
   expect(screen.queryByRole("region", {name:"Column mapping"})).toBeNull();
   await user.type(screen.getByLabelText("Example of the expected result (optional)"), "ERROR <img src=x onerror=alert(1)>");
   await user.click(screen.getByRole("button", {name:"Review what leaves this Mac"}));
-  expect(await screen.findByText(/Contains your real example text/)).toBeVisible();
+  expect(await screen.findByText("Your example result")).toBeVisible();
+  expect(screen.getByText("ERROR <img src=x onerror=alert(1)>")).toBeVisible();
+  expect(screen.getByLabelText("Exact outbound payload")).not.toBeVisible();
+  await user.click(screen.getByText("Advanced: exact data sent"));
+  expect(screen.getByLabelText("Exact outbound payload")).toBeVisible();
   const build = screen.getByRole("button", {name:"Build tool"});
   expect(build).toBeDisabled();
   await user.click(screen.getByRole("checkbox"));
@@ -78,6 +82,34 @@ it("shows the sanitized runtime check detail when a program build fails", async 
   await user.click(screen.getByRole("button", {name: "Review what leaves this Mac"}));
   await user.click(await screen.findByRole("checkbox"));
   await user.click(screen.getByRole("button", {name: "Build tool"}));
-  expect(await screen.findByRole("alert")).toHaveTextContent(detail);
+  expect(await screen.findByRole("alert")).not.toHaveTextContent(detail);
+  expect(screen.getByText(detail, {exact:false,selector:"li"})).not.toBeVisible();
+  await user.click(screen.getByText("Advanced details"));
+  expect(screen.getByText(detail, {exact:false,selector:"li"})).toBeVisible();
   expect(screen.getByRole("button", {name: "Edit rules"})).toBeVisible();
+});
+
+it("explains an example correction in plain words and keeps check shapes in one disclosure",async()=>{
+  const backend=new MockBackend();await backend.saveApiKey("test-key");
+  const input=backend.importText("synthetic.log","ERROR invented");
+  const detail="Expected shape: ERROR #; received shape: error #";
+  vi.spyOn(backend,"startBuild").mockImplementation(async(draftId)=>({
+    buildId:"shape-error",draftId,route:"api_key",routeLabel:"Meta API key",phase:"failed",candidate:null,comparison:null,spentMicros:0,
+    checks:[{id:"example",label:"Output shape matches",passed:false,detail}],
+    events:[{buildId:"shape-error",seq:1,phase:"checking",atMs:1,message:"Checks failed; asking the model to correct the program (example format)"}],
+    failure:{kind:"checks",message:detail},
+  }));
+  const user=userEvent.setup();
+  const {container}=render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}}/>);
+  await user.type(screen.getByLabelText("What do you want to do with this file?"),"extract errors");
+  await user.click(screen.getByRole("button",{name:"Review task summary"}));
+  await user.click(screen.getByRole("button",{name:"Review what leaves this Mac"}));
+  await user.click(await screen.findByRole("checkbox"));
+  await user.click(screen.getByRole("button",{name:"Build tool"}));
+  expect(await screen.findByText("The output didn’t match your example’s format — Macroscope asked the model to fix it.")).toBeVisible();
+  expect(container.querySelectorAll("details")).toHaveLength(1);
+  expect(screen.getByText(detail,{selector:"details p"})).not.toBeVisible();
+  await user.click(screen.getByText("Advanced details"));
+  expect(screen.getByText(detail,{selector:"details p"})).toBeVisible();
+  expect(screen.getByText(/Output shape matches/)).toBeVisible();
 });

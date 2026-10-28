@@ -621,3 +621,115 @@ async fn malformed_existing_vault_keys_are_never_silently_replaced() {
     assert!(result.is_err());
     assert_eq!(vault.get(&reference).unwrap().unwrap().expose(), b"bad-key");
 }
+
+#[tokio::test]
+async fn outbound_summary_program_keeps_the_exact_real_example_visible() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    core.save_api_key("mk-summary-test-canary").await.unwrap();
+    let source = tmp.path().join("selected.txt");
+    std::fs::write(&source, "PRIVATE_INPUT_NEVER_SENT").unwrap();
+    let file = core.register_picked_file(&source).unwrap();
+    let goal = format!("Extract errors {}", "é".repeat(160));
+    let draft = core.draft_task(&file.handle_id, &goal).unwrap();
+    let example = "ERROR Customer 123\nKeep exact punctuation: <unsafe> & é";
+    core.update_task(
+        &draft.draft_id,
+        TaskKind::Program,
+        "errors.txt",
+        Some(example.into()),
+    )
+    .unwrap();
+    let preview = core.outbound_preview(&draft.draft_id).await.unwrap();
+    assert_eq!(preview.summary.recipient, preview.destination);
+    assert_eq!(preview.summary.model, preview.model);
+    let item = preview
+        .summary
+        .includes
+        .iter()
+        .find(|i| i.label == "Your example result")
+        .unwrap();
+    assert!(item.real);
+    assert_eq!(item.detail.as_deref(), Some(example));
+    assert_eq!(
+        preview.summary.includes[0]
+            .detail
+            .as_ref()
+            .unwrap()
+            .chars()
+            .count(),
+        140
+    );
+    assert!(!preview.payload_text.contains("PRIVATE_INPUT_NEVER_SENT"));
+    assert!(preview.summary.cost.contains("$0.02"));
+    let wire = serde_json::to_value(preview).unwrap();
+    assert!(wire["summary"]["laterRuns"].is_array());
+}
+
+#[tokio::test]
+async fn outbound_summary_csv_matches_the_synthetic_packet_not_the_original_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    core.save_api_key("mk-summary-test-canary").await.unwrap();
+    let input = core.load_sample_csv().unwrap();
+    let draft = core
+        .draft_task(&input.handle.handle_id, "Clean this CSV")
+        .unwrap();
+    // An example belongs only to a program packet, not to a CSV packet.
+    core.update_task(
+        &draft.draft_id,
+        TaskKind::CsvMapping,
+        "clean.csv",
+        Some("Unused example".into()),
+    )
+    .unwrap();
+    let preview = core.outbound_preview(&draft.draft_id).await.unwrap();
+    let item = preview
+        .summary
+        .includes
+        .iter()
+        .find(|i| i.label.contains("made-up sample"))
+        .unwrap();
+    assert!(!item.real);
+    assert!(!preview.contains_real_rows);
+    assert!(!preview
+        .summary
+        .includes
+        .iter()
+        .any(|i| i.label == "Your example result"));
+    assert!(!preview.payload_text.contains("Unused example"));
+    assert!(!preview.payload_text.contains("Ada Example"));
+    assert!(preview.payload_text.contains("synthetic_example_rows"));
+}
+
+#[tokio::test]
+async fn outbound_summary_web_names_the_requested_host_without_inventing_a_declaration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core(tmp.path());
+    core.save_api_key("mk-summary-test-canary").await.unwrap();
+    let draft = core
+        .draft_task_no_input(
+            "Fetch https://api.open-meteo.com/v1/forecast each morning into weather.txt",
+        )
+        .unwrap();
+    let preview = core.outbound_preview(&draft.draft_id).await.unwrap();
+    assert!(preview
+        .summary
+        .later_runs
+        .iter()
+        .any(|s| s.contains("api.open-meteo.com") && s.contains("each run")));
+    assert!(preview
+        .summary
+        .later_runs
+        .iter()
+        .any(|s| s.contains("approval after the build")));
+    assert!(
+        preview.web_hosts.is_empty(),
+        "declared hosts are not known before generation"
+    );
+    assert!(preview
+        .summary
+        .later_runs
+        .iter()
+        .any(|s| s.contains("how often")));
+}

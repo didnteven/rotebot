@@ -1,6 +1,8 @@
 //! Single-shot, zero-tool Meta Responses gateway.
 mod responses;
 pub use responses::*;
+mod custom;
+pub use custom::*;
 
 use macroscope_domain::{JobId, TaskId};
 use serde::{Deserialize, Serialize};
@@ -45,6 +47,8 @@ pub struct ValidatedOutput {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GatewayError {
+    #[error("Skipped — monthly custom endpoint call cap reached")]
+    CallCapReached,
     #[error("model gateway is unavailable")]
     Unavailable,
     #[error("credential rejected")]

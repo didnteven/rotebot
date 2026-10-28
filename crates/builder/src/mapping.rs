@@ -51,9 +51,21 @@ pub fn model_schema() -> Value {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildRoute {
-    DirectMeta { key_ref: SecretRef },
-    MuseExec { route: CredentialRoute },
-    MuseServe { route: CredentialRoute },
+    DirectMeta {
+        key_ref: SecretRef,
+    },
+    CustomEndpoint {
+        key_ref: SecretRef,
+        base_url: String,
+        model: String,
+        allow_insecure: bool,
+    },
+    MuseExec {
+        route: CredentialRoute,
+    },
+    MuseServe {
+        route: CredentialRoute,
+    },
     Offline,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,6 +216,8 @@ pub struct MappingBuilder<'a> {
     pub policy: &'a EgressPolicy,
     pub consent_epoch: u64,
     pub muse: Option<MuseConfig>,
+    /// Host admission and accounting for every custom endpoint dispatch.
+    pub custom_observer: Option<std::sync::Arc<dyn macroscope_model_gateway::CustomCallObserver>>,
     /// Receives the once-per-call waiting message from Muse exec.
     pub muse_progress: Option<&'a (dyn Fn(&str) + Send + Sync)>,
 }
@@ -301,15 +315,16 @@ impl MappingBuilder<'_> {
         }).await;
         // All awaited single-shot transports have ended; Muse paths explicitly
         // shutdown/reap before returning, including unsuccessful turns.
-        let key_unavailable = matches!(
-            &result,
-            Err(BuildError::Gateway(GatewayError::AuthRejected))
-                | Err(BuildError::Credential)
-                | Err(BuildError::NoModelAccess(NoAccessReason::ApiKeyMissing))
-                | Err(BuildError::Muse(
-                    macroscope_muse_client::MuseError::AuthRequired
-                ))
-        );
+        let key_unavailable = !matches!(self.route, BuildRoute::CustomEndpoint { .. })
+            && matches!(
+                &result,
+                Err(BuildError::Gateway(GatewayError::AuthRejected))
+                    | Err(BuildError::Credential)
+                    | Err(BuildError::NoModelAccess(NoAccessReason::ApiKeyMissing))
+                    | Err(BuildError::Muse(
+                        macroscope_muse_client::MuseError::AuthRequired
+                    ))
+            );
         if key_unavailable {
             let _ = self.policy.begin_local_only();
         }
@@ -374,14 +389,16 @@ impl MappingBuilder<'_> {
         };
         // Plan sign-in runs are billed to the user's Muse allowance, not dollars: no
         // dollar reservation applies (the run stays capped by --max-model-steps).
-        let plan_route = matches!(
-            self.route,
-            BuildRoute::MuseExec {
-                route: CredentialRoute::PlanSignIn
-            } | BuildRoute::MuseServe {
-                route: CredentialRoute::PlanSignIn
-            }
-        );
+        let custom_route = matches!(self.route, BuildRoute::CustomEndpoint { .. });
+        let unpriced_route = custom_route
+            || matches!(
+                self.route,
+                BuildRoute::MuseExec {
+                    route: CredentialRoute::PlanSignIn
+                } | BuildRoute::MuseServe {
+                    route: CredentialRoute::PlanSignIn
+                }
+            );
         let estimator = CostEstimator::default();
         let mut reserved = 0u64;
         let mut charged = 0u64;
@@ -407,7 +424,7 @@ impl MappingBuilder<'_> {
                     ..Default::default()
                 }
             };
-            let reservation = if plan_route {
+            let reservation = if unpriced_route {
                 0
             } else {
                 estimator.estimate(DEFAULT_MODEL, &ceiling)?
@@ -422,6 +439,39 @@ impl MappingBuilder<'_> {
             reserved += reservation;
             guard.check().map_err(|_| BuildError::EgressDenied)?;
             let output = match &self.route {
+                BuildRoute::CustomEndpoint {
+                    key_ref,
+                    base_url,
+                    model,
+                    allow_insecure,
+                } => {
+                    let key = self
+                        .vault
+                        .get(key_ref)
+                        .map_err(|_| BuildError::Credential)?
+                        .ok_or(BuildError::Credential)?;
+                    let mut client = macroscope_model_gateway::CustomEndpointClient::new(
+                        base_url,
+                        model,
+                        *allow_insecure,
+                    )?;
+                    if let Some(observer) = &self.custom_observer {
+                        client = client.with_observer(observer.clone());
+                    }
+                    guard.check().map_err(|_| BuildError::EgressDenied)?;
+                    client
+                        .generate_structured(StructuredRequest {
+                            key: &key,
+                            model: Some(model),
+                            system,
+                            user: &prompt,
+                            max_output_tokens: 32768,
+                            reasoning_effort: "medium",
+                            schema_name: if is_program { "program" } else { "csv_mapping" },
+                            schema: &schema,
+                        })
+                        .await
+                }
                 BuildRoute::DirectMeta { key_ref } => {
                     let key = self
                         .vault
@@ -456,7 +506,12 @@ impl MappingBuilder<'_> {
             };
             match output {
                 Ok(output) => {
-                    if output.usage_known && !plan_route {
+                    if custom_route {
+                        usage_total.input_tokens += output.usage.input_tokens;
+                        usage_total.output_tokens += output.usage.output_tokens;
+                        usage_total.reasoning_tokens += output.usage.reasoning_tokens;
+                        known &= output.usage_known;
+                    } else if output.usage_known && !unpriced_route {
                         let cost = estimator.estimate(DEFAULT_MODEL, &output.usage)?;
                         if cost > reservation {
                             return Err(BuildError::BudgetExceeded);
@@ -496,6 +551,7 @@ impl MappingBuilder<'_> {
                         program,
                         route: self.route.clone(),
                         label: match self.route {
+                            BuildRoute::CustomEndpoint { .. } => "Custom endpoint",
                             BuildRoute::DirectMeta { .. } => "Meta API key (direct)",
                             BuildRoute::MuseExec {
                                 route: CredentialRoute::PlanSignIn,
@@ -507,7 +563,8 @@ impl MappingBuilder<'_> {
                         }
                         .into(),
                         usage: known.then_some(usage_total),
-                        cost_microusd: (known && reserved == 0 && !plan_route).then_some(charged),
+                        cost_microusd: (known && reserved == 0 && !unpriced_route)
+                            .then_some(charged),
                         reserved_microusd: reserved,
                         price_table_version: macroscope_model_gateway::PRICE_TABLE_VERSION,
                     });

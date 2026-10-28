@@ -83,15 +83,24 @@ async fn model_access(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
 /// stdout pipe into the core and the vault; never argv, logs, or the webview.
 #[tauri::command]
 async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    enter_secret_native(&core.0, false).await
+}
+
+async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessStatus> {
     if !cfg!(target_os = "macos") {
-        return Err(invalid("Use the key field on this platform."));
+        return Err(invalid("Native secret entry requires macOS."));
     }
-    let storage = match core.0.app_info().secret_store {
+    let storage = match core.app_info().secret_store {
         macroscope_vault::SecretStoreKind::File => "a private file in Macroscope's data folder",
         _ => "your macOS Keychain",
     };
+    let credential = if custom {
+        "custom endpoint token"
+    } else {
+        "Meta API key"
+    };
     let script = format!(
-        r#"text returned of (display dialog "Paste your Meta API key. Macroscope stores it in {storage}." default answer "" with hidden answer with title "Macroscope" buttons {{"Cancel", "Save key"}} default button "Save key")"#
+        r#"text returned of (display dialog "Paste your {credential}. Macroscope stores it in {storage}." default answer "" with hidden answer with title "Macroscope" buttons {{"Cancel", "Save key"}} default button "Save key")"#
     );
     let output = tokio::process::Command::new("/usr/bin/osascript")
         .arg("-e")
@@ -101,16 +110,53 @@ async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
         .await
         .map_err(|_| invalid("The key dialog could not open."))?;
     if !output.status.success() {
-        return Ok(core.0.model_access().await); // cancelled
+        return Ok(core.model_access().await); // cancelled
     }
     let mut key =
         String::from_utf8(output.stdout).map_err(|_| invalid("That key is not valid text."))?;
     let trimmed = key.trim_end_matches(['\n', '\r']).to_string();
     key.clear();
     if trimmed.is_empty() {
-        return Ok(core.0.model_access().await);
+        return Ok(core.model_access().await);
     }
-    Ok(core.0.save_api_key(&trimmed).await?)
+    if custom {
+        Ok(core.save_custom_endpoint_token(&trimmed).await?)
+    } else {
+        Ok(core.save_api_key(&trimmed).await?)
+    }
+}
+
+#[tauri::command]
+async fn save_custom_endpoint(
+    core: State<'_, Core>,
+    base_url: String,
+    model: String,
+) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.save_custom_endpoint(&base_url, &model).await?)
+}
+#[tauri::command]
+async fn set_custom_endpoint_options(
+    core: State<'_, Core>,
+    display_name: Option<String>,
+    monthly_call_cap: u32,
+) -> Cmd<ModelAccessStatus> {
+    Ok(core
+        .0
+        .set_custom_endpoint_options(display_name, monthly_call_cap)
+        .await?)
+}
+#[tauri::command]
+async fn remove_custom_endpoint(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.remove_custom_endpoint().await?)
+}
+#[tauri::command]
+async fn test_custom_endpoint(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.test_custom_endpoint().await?)
+}
+/// No token argument: credential entry and storage remain entirely in the native host.
+#[tauri::command]
+async fn save_custom_endpoint_token(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    enter_secret_native(&core.0, true).await
 }
 
 #[tauri::command]
@@ -989,6 +1035,11 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         app_info,
         model_access,
         enter_api_key_native,
+        save_custom_endpoint,
+        save_custom_endpoint_token,
+        set_custom_endpoint_options,
+        remove_custom_endpoint,
+        test_custom_endpoint,
         save_api_key,
         remove_api_key,
         test_api_key,

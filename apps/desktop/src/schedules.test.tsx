@@ -19,7 +19,7 @@ it("Today empty state links to Tools and is first in navigation",async()=>{
   await user.click(screen.getByRole("button",{name:"Go to Tools"}));expect(screen.getByRole("heading",{name:"Tools",level:1})).toBeVisible();
 });
 function pending():TodayEntry {
-  const staged:StagedRun={runId:"run",toolId:"weather",input:{handleId:"none",displayName:"No input",displayPath:""},outputDir:{handleId:"folder",displayName:"Reports",displayPath:"/Reports"},outputName:"weather.txt",planHash:"exact-hash",rowsIn:0,rowsOut:1,outputColumns:[],previewRows:[],destinationExists:false,createsOutput:true,plannedCalls:[{service:"Mail",resource:"https://mail.invalid/mcp",call:{connectorId:"mail",toolName:"send",args:{to:"owner@example.invalid",body:"Exact message"}},readOnlyHint:false,destructiveHint:false}]};
+  const staged:StagedRun={runId:"run",toolId:"weather",input:{handleId:"none",displayName:"No input",displayPath:""},outputDir:{handleId:"folder",displayName:"Reports",displayPath:"/Reports"},outputName:"weather.txt",planHash:"exact-hash",rowsIn:0,rowsOut:1,outputColumns:[],previewRows:[],destinationExists:false,createsOutput:true,plannedCalls:[{service:"Mail",resource:"https://mail.invalid/mcp",call:{connectorId:"mail",toolName:"send",args:{to:"owner@example.invalid",subject:"Your forecast",body:"Exact message"}},readOnlyHint:true,destructiveHint:true}]};
   return {id:"entry",toolId:"weather",toolName:"Weather summary",trigger:"schedule",scheduleId:"s",startedAtMs:Date.now(),finishedAtMs:null,status:"needs_you",body:"Summary",note:null,fileCreated:null,runId:"run",staged,notification:true,addToToday:true,dismissed:false};
 }
 it("Needs you reviews exact calls before approval and can discard",async()=>{
@@ -28,7 +28,14 @@ it("Needs you reviews exact calls before approval and can discard",async()=>{
   const commit=vi.spyOn(backend,"commitRun").mockImplementation(async()=>{e={...e,status:"done",staged:null};return {runId:"run",toolId:"weather",toolName:"Weather",versionHash:"v",planHash:"exact-hash",inputDigest:"",committedDigest:"",outputPath:"/Reports/weather.txt",status:"committed",atMs:Date.now()};});
   const discard=vi.spyOn(backend,"discardRun").mockImplementation(async()=>{e={...e,status:"skipped",staged:null};});
   const view=render(<Today backend={backend} tools={()=>{}}/>);
-  expect(await screen.findByRole("heading",{name:"Needs you"})).toBeVisible();expect(screen.getByText(/owner@example.invalid/)).toBeVisible();
+  expect(await screen.findByRole("heading",{name:"Needs you"})).toBeVisible();expect(screen.getByText("owner@example.invalid",{exact:true})).toBeVisible();
+  expect(screen.getByText("Your forecast")).toBeVisible();
+  expect(screen.getByText("Exact message")).toBeVisible();
+  expect(screen.getByText("This changes data in Mail")).toBeVisible();
+  expect(screen.getByLabelText("Exact action arguments 1")).not.toBeVisible();
+  await user.click(screen.getByText("Advanced details"));
+  expect(screen.getByLabelText("Exact action arguments 1")).toBeVisible();
+  expect(screen.getByText(/Server’s claims: readOnlyHint = true; destructiveHint = true/)).toBeVisible();
   expect(screen.getByRole("button",{name:"Approve and run"})).toBeDisabled();await user.click(screen.getByLabelText("I reviewed these actions"));await user.click(screen.getByRole("button",{name:"Approve and run"}));
   expect(commit).toHaveBeenCalledWith("run","exact-hash",true);await waitFor(()=>expect(screen.queryByRole("heading",{name:"Needs you"})).not.toBeInTheDocument());
   view.unmount();e=pending();render(<Today backend={backend} tools={()=>{}}/>);await user.click(await screen.findByRole("button",{name:"Discard"}));expect(discard).toHaveBeenCalledWith("run");expect(commit).toHaveBeenCalledTimes(1);

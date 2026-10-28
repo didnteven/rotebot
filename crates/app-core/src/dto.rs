@@ -20,6 +20,7 @@ pub struct AppInfo {
 #[serde(rename_all = "snake_case")]
 pub enum ModelRoute {
     ApiKey,
+    CustomEndpoint,
     MusePlan,
     OfflineDemo,
 }
@@ -27,6 +28,7 @@ pub enum ModelRoute {
 impl ModelRoute {
     pub fn label(self) -> &'static str {
         match self {
+            ModelRoute::CustomEndpoint => "Custom endpoint",
             ModelRoute::ApiKey => "Meta API key",
             ModelRoute::MusePlan => "Muse plan",
             ModelRoute::OfflineDemo => "Offline demo (no model)",
@@ -34,6 +36,7 @@ impl ModelRoute {
     }
     pub fn as_str(self) -> &'static str {
         match self {
+            ModelRoute::CustomEndpoint => "custom_endpoint",
             ModelRoute::ApiKey => "api_key",
             ModelRoute::MusePlan => "muse_plan",
             ModelRoute::OfflineDemo => "offline_demo",
@@ -110,6 +113,7 @@ pub struct ApiKeyStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelAccessStatus {
+    pub custom_endpoint: CustomEndpointStatus,
     pub api_key: ApiKeyStatus,
     pub muse: MuseState,
     pub selected_route: Option<ModelRoute>,
@@ -198,7 +202,26 @@ pub struct TaskDraft {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OutboundSummaryItem {
+    pub label: String,
+    pub detail: Option<String>,
+    pub real: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboundSummary {
+    pub recipient: String,
+    pub model: String,
+    pub includes: Vec<OutboundSummaryItem>,
+    pub later_runs: Vec<String>,
+    pub cost: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutboundPreview {
+    pub summary: OutboundSummary,
     pub draft_id: String,
     pub route: ModelRoute,
     pub model: String,
@@ -642,4 +665,23 @@ impl RunFailure {
 
 fn default_model_cap() -> u32 {
     60
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEndpointStatus {
+    pub base_url: Option<String>,
+    pub host: Option<String>,
+    pub model: Option<String>,
+    pub display_name: Option<String>,
+    pub token_present: bool,
+    pub last_test: Option<CustomEndpointTest>,
+    pub monthly_call_cap: u32,
+    pub calls_this_month: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEndpointTest {
+    pub status: String,
+    pub latency_ms: u64,
 }

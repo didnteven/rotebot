@@ -15,7 +15,7 @@ export interface AppInfo {
 
 // ---------- Model access (ADR 0001 §1) ----------
 
-export type ModelRoute = "api_key" | "muse_plan" | "offline_demo";
+export type ModelRoute = "api_key" | "muse_plan" | "custom_endpoint" | "offline_demo";
 
 export type MuseState =
   | { kind: "missing" }
@@ -27,7 +27,18 @@ export type MuseState =
 export type EgressState =
   "cloud_allowed" | "stopping" | "local_only" | "key_unavailable";
 
+export interface CustomEndpointStatus {
+  baseUrl: string | null;
+  host: string | null;
+  model: string | null;
+  displayName: string | null;
+  tokenPresent: boolean;
+  lastTest: {status: string; latencyMs: number} | null;
+  monthlyCallCap: number;
+  callsThisMonth: number;
+}
 export interface ModelAccessStatus {
+  customEndpoint: CustomEndpointStatus;
   apiKey: {
     present: boolean;
     fingerprint: string | null;
@@ -141,15 +152,24 @@ export interface TaskDraft {
   blockers: string[];
 }
 
+export interface OutboundSummary {
+  recipient: string;
+  model: string;
+  includes: Array<{label: string; detail?: string | null; real: boolean}>;
+  laterRuns: string[];
+  cost: string;
+}
+
 export interface OutboundPreview {
+  summary: OutboundSummary;
   draftId: string;
   route: ModelRoute;
   model: string;
-  destination: string; // "Meta API (api.meta.ai)" | "Muse Code with your Muse plan" | "Nothing leaves this Mac"
+  destination: string; // Endpoint host, Meta API, Muse plan, or local execution.
   /** Exact text that will be sent (direct route) or supplied to Muse (muse route). Synthetic shape and explicitly reviewed user example only. */
   payloadText: string;
   containsRealRows: boolean;
-  estimatedCostMicros: number | null; // null for plan route (counts against the plan allowance)
+  estimatedCostMicros: number | null; // null for plan allowance or an unpriced custom endpoint.
   budgetMicros: number;
   /** Hosts a built web-source tool would fetch from (empty before the build). */
   webHosts: string[];
@@ -427,6 +447,11 @@ export interface Backend {
   refreshMuseStatus(): Promise<ModelAccessStatus>;
   /** Opens Terminal running `muse login` — only on an explicit user click. */
   openMuseSignIn(): Promise<void>;
+  saveCustomEndpoint(baseUrl: string, model: string): Promise<ModelAccessStatus>;
+  saveCustomEndpointToken(): Promise<ModelAccessStatus>;
+  setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number): Promise<ModelAccessStatus>;
+  testCustomEndpoint(): Promise<ModelAccessStatus>;
+  removeCustomEndpoint(): Promise<ModelAccessStatus>;
   selectRoute(route: ModelRoute): Promise<ModelAccessStatus>;
   setMuseUnverifiedOk(ok: boolean): Promise<ModelAccessStatus>;
   setLocalOnly(localOnly: boolean): Promise<ModelAccessStatus>;

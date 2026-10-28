@@ -1,7 +1,7 @@
 //! Private generated-execution eval suite (plan §9.3).
 //!
 //!   cargo run -p macroscope-app-core --example eval_suite -- \
-//!     --route <muse_plan|api_key|replay> --tasks <all|01,02,...> --reps N --out <dir>
+//!     --route <muse_plan|api_key|custom_endpoint|replay> --tasks <all|01,02,...> --reps N --out <dir>
 //!
 //! For each task × repetition a fresh temporary data folder and `AppCore`
 //! (MemoryStore vault; the real home for `muse_plan` so the plan sign-in is
@@ -13,6 +13,9 @@
 //! its results are labeled `"replay": true, "generation_quality":
 //! "not measured"`. Never prints or stores input rows or outputs beyond a
 //! pass/fail and a short diff summary (first differing line, ≤200 chars).
+//!
+//! `--route custom_endpoint` takes `--base-url` and `--model`; its token comes only
+//! from `MACROSCOPE_CUSTOM_TOKEN`. Results include the endpoint host and model.
 //!
 //! `--route api_key` reads the key only from the app's vault flow or the
 //! `META_API_KEY` environment variable, never argv, and refuses to start if
@@ -33,7 +36,7 @@ fn corpus_dir() -> PathBuf {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: eval_suite --route <muse_plan|api_key|replay> --tasks <all|01,02,...> --reps N --out <dir> [--confirm-spend]"
+        "usage: eval_suite --route <muse_plan|api_key|custom_endpoint|replay> --tasks <all|01,02,...> --reps N --out <dir> [--confirm-spend] [--base-url https://host/v1 --model model-name]"
     );
     std::process::exit(2);
 }
@@ -45,6 +48,8 @@ struct Args {
     reps: usize,
     out: PathBuf,
     confirm_spend: bool,
+    base_url: Option<String>,
+    model: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -53,10 +58,14 @@ fn parse_args() -> Args {
     let mut reps: Option<usize> = None;
     let mut out: Option<PathBuf> = None;
     let mut confirm_spend = false;
+    let mut base_url = None;
+    let mut model = None;
     let mut it = std::env::args().skip(1).peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--route" => route = it.next(),
+            "--base-url" => base_url = it.next(),
+            "--model" => model = it.next(),
             "--tasks" => tasks = it.next(),
             "--reps" => {
                 let v = it.next().unwrap_or_else(|| usage());
@@ -73,6 +82,8 @@ fn parse_args() -> Args {
         reps: reps.unwrap_or(3),
         out: out.unwrap_or_else(|| usage()),
         confirm_spend,
+        base_url,
+        model,
     }
 }
 
@@ -127,7 +138,7 @@ async fn wait_terminal(
     None
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn run_generation(
     task_id: &str,
     task_dir: &Path,
@@ -136,6 +147,7 @@ async fn run_generation(
     api_key: Option<&str>,
     real_home: Option<PathBuf>,
     revision: u64,
+    endpoint: Option<(&str, &str)>,
 ) -> (Attempt, bool) {
     let started_at = std::time::Instant::now();
     let mut attempt = Attempt {
@@ -183,7 +195,25 @@ async fn run_generation(
             return (attempt, false);
         }
     };
-    if route == ModelRoute::ApiKey {
+    if route == ModelRoute::CustomEndpoint {
+        let (url, model) = endpoint.expect("validated endpoint flags");
+        let configured = async {
+            core.save_custom_endpoint(url, model).await?;
+            core.save_custom_endpoint_token(api_key.unwrap_or(""))
+                .await?;
+            core.test_custom_endpoint().await?;
+            core.select_route(ModelRoute::CustomEndpoint).await
+        }
+        .await;
+        if configured.is_err() {
+            fail(
+                &mut attempt,
+                FailureClass::Infrastructure,
+                "Custom endpoint configuration or test failed",
+            );
+            return (attempt, false);
+        }
+    } else if route == ModelRoute::ApiKey {
         let key = api_key.unwrap_or("").to_string();
         if key.trim().is_empty() {
             fail(
@@ -291,6 +321,14 @@ async fn run_generation(
         .iter()
         .filter(|e| e.message.contains("Candidate received"))
         .count();
+    if route == ModelRoute::CustomEndpoint {
+        attempt.model_calls = core
+            .list_outbound()
+            .unwrap_or_default()
+            .iter()
+            .filter(|row| row.purpose == "Build" || row.purpose == "Model step")
+            .count();
+    }
     attempt.cost_micros = state.spent_micros;
     if state.phase != BuildPhase::Ready {
         let (kind, message) = match state.failure {
@@ -478,7 +516,7 @@ fn score_replay(task_id: &str, task_dir: &Path, rep: usize, revision: u64) -> At
 #[tokio::main]
 async fn main() {
     let args = parse_args();
-    if !["muse_plan", "api_key", "replay"].contains(&args.route.as_str()) {
+    if !["muse_plan", "api_key", "custom_endpoint", "replay"].contains(&args.route.as_str()) {
         usage();
     }
     if args.reps == 0 || args.reps > 10 {
@@ -501,7 +539,26 @@ async fn main() {
         eprintln!("no tasks match --tasks");
         std::process::exit(2);
     }
-    let api_key: Option<String> = if args.route == "api_key" {
+    let endpoint = if args.route == "custom_endpoint" {
+        let url = args.base_url.as_deref().unwrap_or_else(|| usage());
+        let model = args.model.as_deref().unwrap_or_else(|| usage());
+        if macroscope_model_gateway::CustomEndpointClient::new(url, model, false).is_err() {
+            eprintln!("invalid custom endpoint URL or model");
+            std::process::exit(2);
+        }
+        Some((url, model))
+    } else {
+        None
+    };
+    let api_key: Option<String> = if args.route == "custom_endpoint" {
+        match std::env::var("MACROSCOPE_CUSTOM_TOKEN") {
+            Ok(k) if !k.trim().is_empty() => Some(k),
+            _ => {
+                eprintln!("set MACROSCOPE_CUSTOM_TOKEN (never pass the token via argv)");
+                std::process::exit(2);
+            }
+        }
+    } else if args.route == "api_key" {
         match std::env::var("META_API_KEY") {
             Ok(k) if !k.trim().is_empty() => Some(k),
             _ => {
@@ -549,7 +606,9 @@ async fn main() {
             }
         }
     } else {
-        let route = if args.route == "api_key" {
+        let route = if args.route == "custom_endpoint" {
+            ModelRoute::CustomEndpoint
+        } else if args.route == "api_key" {
             ModelRoute::ApiKey
         } else {
             ModelRoute::MusePlan
@@ -564,6 +623,7 @@ async fn main() {
                     api_key.as_deref(),
                     real_home.clone(),
                     revision,
+                    endpoint,
                 )
                 .await;
                 if a.pass {
@@ -611,6 +671,8 @@ async fn main() {
     }
     let results = serde_json::json!({
         "route": args.route,
+        "endpoint_host": endpoint.map(|(url, _)| macroscope_app_core::web::host_of_url(url)),
+        "endpoint_model": endpoint.map(|(_, model)| model),
         "replay": args.route == "replay",
         "generation_quality": if args.route == "replay" { "not measured" } else { "measured" },
         "tasks": tasks.iter().map(|(id, _)| id).collect::<Vec<_>>(),
@@ -630,6 +692,13 @@ async fn main() {
     )
     .expect("results.json");
     let mut md = String::from("# csv-family results\n\n");
+    if let Some((url, model)) = endpoint {
+        md.push_str(&format!(
+            "Endpoint: {} · {}\n\n",
+            macroscope_app_core::web::host_of_url(url),
+            model
+        ));
+    }
     md.push_str(&format!(
         "route: {} | reps: {} | verdict: {verdict}\n\n",
         args.route, args.reps

@@ -1,4 +1,5 @@
-import { SourceReview } from "./SourceReview";
+import { routeLabel } from "./backend/mock";
+import { SourceReview, SourceTechnicalDetails } from "./SourceReview";
 import { useEffect, useState } from "react";
 import type {
   Backend,
@@ -210,6 +211,7 @@ export function CreateFlow({
           </li>
         ))}
       </ol>
+      {step < 3 && <p>Building with: {routeLabel(status.effectiveRoute)} <button onClick={openSettings}>Change</button></p>}
       <Notice error={error} />
       {activeBuild && step !== 3 && (
         <div role="note" className="notice notice-info">
@@ -613,51 +615,31 @@ export function CreateFlow({
                   <dl>
                     <dt>Route</dt>
                     <dd>Offline demo</dd>
+                    <dt>Model</dt><dd>{preview.summary.model}</dd>
+                    <dt>Cost</dt><dd>{preview.summary.cost}</dd>
                   </dl>
+                  <h3>Later runs</h3>
+                  <ul>{preview.summary.laterRuns.map((line,i)=><li key={i}>{line}</li>)}</ul>
                 </>
               ) : (
                 <>
                   <dl>
-                    <dt>Destination</dt>
-                    <dd>{preview.destination}</dd>
-                    <dt>Route</dt>
-                    <dd>
-                      {preview.route === "api_key"
-                        ? "Meta API key"
-                        : "Muse plan"}
-                    </dd>
-                    <dt>Model</dt>
-                    <dd>{preview.model}</dd>
+                    <dt>Recipient</dt><dd>{preview.summary.recipient}</dd>
+                    <dt>Model</dt><dd>{preview.summary.model}</dd>
+                    <dt>Cost</dt><dd>{preview.summary.cost}</dd>
                   </dl>
-                  <span className="badge">{preview.containsRealRows ? "Contains your real example text — review before sending" : "Contains only synthetic rows"}</span>
-                  {preview.webHosts.length > 0 && (
-                    <p className="notice notice-info">
-                      This tool will fetch from {preview.webHosts.join(", ")} at
-                      run time. Every fetch is recorded under Privacy.
-                    </p>
-                  )}
-                  <pre tabIndex={0} aria-label="Exact outbound payload">
-                    {preview.payloadText}
-                  </pre>
-                  <p>
-                    {preview.estimatedCostMicros === null
-                      ? "Counts against your Muse plan"
-                      : `Estimated cost: $${(preview.estimatedCostMicros / 1e6).toFixed(2)}`}{" "}
-                    · Budget: ${(preview.budgetMicros / 1e6).toFixed(2)}
-                  </p>
-                  <p className="muted">
-                    Schema and rules can still be confidential. Transmitted data
-                    cannot be recalled; a canceled request may incur charges.
-                    Muse receives the exact inputs above; its additional wire
-                    requests are unknown.
-                  </p>
+                  <h3>What is included</h3>
+                  <ul>{preview.summary.includes.map((item,i)=><li key={i}>{item.label}{item.real && <> <span className="badge">your real text</span></>}{item.detail && <p style={{whiteSpace:"pre-wrap"}}>{item.detail}</p>}</li>)}</ul>
+                  <h3>Later runs</h3>
+                  <ul>{preview.summary.laterRuns.map((line,i)=><li key={i}>{line}</li>)}</ul>
+                  <details><summary>Advanced: exact data sent</summary><pre tabIndex={0} aria-label="Exact outbound payload">{preview.payloadText}</pre></details>
                   <label className="choice">
                     <input
                       type="checkbox"
                       checked={reviewed}
                       onChange={(e) => setReviewed(e.target.checked)}
                     />
-                    I reviewed what will be sent
+                    I've reviewed what will be sent
                   </label>
                 </>
               )}
@@ -693,7 +675,8 @@ export function CreateFlow({
             Writing → Checking → Compare ·{" "}
             {build.phase === "candidate" ? "Candidate received" : build.phase}
           </p>
-          <p>Building with: {build.routeLabel}</p>
+          <p>Building with: {build.routeLabel} <button onClick={openSettings}>Change</button></p>
+          {build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
           {activeBuild && (
             <button
               disabled={busy}
@@ -708,7 +691,7 @@ export function CreateFlow({
           )}
           {build.phase === "candidate" && build.program && ((build.program.connectionSources?.length??0)>0 || build.program.modelStep) && <div className="card">
             <h3>Review outbound reads for this build</h3>
-            <SourceReview program={build.program} route={build.route} build connections={draft?.requiredConnections}/>
+            <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} build connections={draft?.requiredConnections}/>
             <button disabled={busy} onClick={()=>void act(async()=>setBuild(await backend.approveBuildSources(build.buildId,build.program!)))}>Approve reads and test</button>
           </div>}
           {build.phase === "stopped" && (
@@ -719,7 +702,7 @@ export function CreateFlow({
           )}
           {build.failure && (
             <div role="alert">
-              <p>{build.failure.message}</p>
+              <p>{build.failure.kind === "checks" ? "The tool did not pass its checks. Review your instructions and try again." : build.failure.message}</p>
               {["auth", "no_model_access"].includes(build.failure.kind) ? (
                 <button onClick={openSettings}>
                   {build.failure.kind === "auth"
@@ -759,15 +742,7 @@ export function CreateFlow({
                 ))}
               </ul>
               <p>{build.program ? "Program (sandboxed)" : "Malformed values stop the run."}</p>
-              <h3>Examples checked</h3>
-              <ul>
-                {build.checks.map((c) => (
-                  <li key={c.id}>
-                    {c.passed ? "✓ Pass" : "✕ Fail"} · {c.label}
-                    {c.detail ? ` · ${c.detail}` : ""}
-                  </li>
-                ))}
-              </ul>
+              <p>{build.checks.every(c=>c.passed) ? "The tool passed its checks." : "The tool did not pass all its checks."}</p>
               <h3>Needs your check</h3>
               <p>
                 {build.program ? "Does this result match your task? Compare the first lines." : "Are these the right columns and date meaning? Compare the first 8 rows."}
@@ -778,7 +753,7 @@ export function CreateFlow({
                   ? "No input file; create one new output in the folder you choose. Existing files are never replaced."
                   : "Read the selected file; create one new output in the folder you choose. Source unchanged; existing files are never replaced."}
               </p>
-              {build.program && <SourceReview program={build.program} route={build.route} connections={draft?.requiredConnections}/>}
+              {build.program && <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} connections={draft?.requiredConnections}/>}
               {build.program && build.program.webSources.length > 0 && (
                 <>
                   <h3>Outbound fetches</h3>
@@ -857,6 +832,9 @@ export function CreateFlow({
           )}
           <details>
             <summary>Advanced details</summary>
+            {build.failure && <p>{build.failure.message}</p>}
+            <ul>{build.checks.map(c=><li key={c.id}>{c.passed ? "✓ Pass" : "✕ Fail"} · {c.label}{c.detail ? ` · ${c.detail}` : ""}</li>)}</ul>
+            {build.program && <SourceTechnicalDetails program={build.program}/>}
             <pre tabIndex={0}>{build.program ? build.program.code : JSON.stringify(build.candidate, null, 2)}</pre>
             <ol>
               {build.events.map((e) => (

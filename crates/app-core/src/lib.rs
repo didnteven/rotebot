@@ -9,6 +9,7 @@
 
 pub mod checks;
 pub mod connections;
+mod custom_endpoint;
 pub mod drafts;
 pub mod dto;
 pub mod eval;
@@ -180,6 +181,7 @@ struct Inner {
     staged: Mutex<HashMap<String, StagedSlot>>,
     plan_cache: Mutex<Option<(i64, PlanStatus)>>,
     last_key_test: Mutex<Option<KeyTestResult>>,
+    custom_calls: Mutex<()>,
     cloud_controls: tokio::sync::Mutex<()>,
     lifecycle: Mutex<()>,
     #[cfg(feature = "generated-runtime")]
@@ -331,6 +333,7 @@ impl AppCore {
                 staged: Mutex::new(HashMap::new()),
                 plan_cache: Mutex::new(None),
                 last_key_test: Mutex::new(None),
+                custom_calls: Mutex::new(()),
                 cloud_controls: tokio::sync::Mutex::new(()),
                 lifecycle: Mutex::new(()),
                 #[cfg(feature = "generated-runtime")]
@@ -1100,7 +1103,9 @@ impl AppCore {
             PolicyState::LocalOnly => EgressState::LocalOnly,
             PolicyState::KeyUnavailable => EgressState::KeyUnavailable,
         };
+        let custom = self.custom_endpoint_status();
         let available = |r: ModelRoute| match r {
+            ModelRoute::CustomEndpoint => self.custom_ready(),
             ModelRoute::ApiKey => present,
             ModelRoute::MusePlan => signed_in,
             ModelRoute::OfflineDemo => true,
@@ -1121,6 +1126,10 @@ impl AppCore {
         } else {
             match selected {
                 Some(r) if available(r) => (Some(r), None),
+                Some(ModelRoute::CustomEndpoint) => (
+                    Some(ModelRoute::OfflineDemo),
+                    Some("Configure and test your custom endpoint in Settings.".into()),
+                ),
                 Some(ModelRoute::ApiKey) => (
                     Some(ModelRoute::OfflineDemo),
                     Some("Add a Meta API key to build with it.".into()),
@@ -1140,6 +1149,7 @@ impl AppCore {
             }
         };
         ModelAccessStatus {
+            custom_endpoint: custom.clone(),
             api_key: ApiKeyStatus {
                 present,
                 fingerprint,
@@ -1150,7 +1160,11 @@ impl AppCore {
             effective_route: effective,
             blocked_reason: blocked,
             egress,
-            model: DEFAULT_MODEL.into(),
+            model: if effective == Some(ModelRoute::CustomEndpoint) {
+                custom.model.unwrap_or_default()
+            } else {
+                DEFAULT_MODEL.into()
+            },
             muse_unverified_ok: self.muse_containment_accepted(),
         }
     }
@@ -1244,6 +1258,11 @@ impl AppCore {
     }
 
     pub async fn select_route(&self, route: ModelRoute) -> CoreResult<ModelAccessStatus> {
+        if route == ModelRoute::CustomEndpoint && !self.custom_ready() {
+            return Err(CoreError::Invalid(
+                "Set the URL, model and token, then test the custom endpoint first.".into(),
+            ));
+        }
         self.db().set_setting("selected_route", &json!(route))?;
         self.activity(
             "settings",
@@ -1312,12 +1331,16 @@ impl AppCore {
 
     // ---------- outbound preview and builds ----------
 
-    fn route_destination(route: ModelRoute) -> &'static str {
+    fn route_destination(&self, route: ModelRoute) -> String {
         match route {
+            ModelRoute::CustomEndpoint => {
+                return self.custom_endpoint_status().host.unwrap_or_default()
+            }
             ModelRoute::ApiKey => "Meta API (api.meta.ai)",
             ModelRoute::MusePlan => "Muse Code with your Muse plan",
             ModelRoute::OfflineDemo => "Nothing leaves this Mac",
         }
+        .into()
     }
 
     /// The exact text a cloud build sends: fixed instructions, then the synthetic packet.
@@ -1348,19 +1371,121 @@ impl AppCore {
                 Some(0),
             ),
             ModelRoute::ApiKey => (Self::draft_packet(&draft), Some(20_000)),
-            ModelRoute::MusePlan => (Self::draft_packet(&draft), None),
+            ModelRoute::MusePlan | ModelRoute::CustomEndpoint => (Self::draft_packet(&draft), None),
+        };
+        // Describe the same inputs used by draft_packet, before serialization. CSV
+        // packets carry confirmed rules and synthetic rows, not the original goal
+        // or the optional program example. No UI parsing of the payload is needed.
+        let mut includes = Vec::new();
+        let mut later_runs = Vec::new();
+        if route != ModelRoute::OfflineDemo {
+            if draft.kind == TaskKind::Program {
+                includes.push(OutboundSummaryItem {
+                    label: "Your task description".into(),
+                    detail: Some(draft.goal.chars().take(140).collect()),
+                    real: true,
+                });
+                if let Some(example) = &draft.example_output {
+                    includes.push(OutboundSummaryItem {
+                        label: "Your example result".into(),
+                        detail: Some(example.clone()),
+                        real: true,
+                    });
+                }
+                for connection in &draft.required_connections {
+                    includes.push(OutboundSummaryItem {
+                        label: format!(
+                            "Available actions and read instructions for {}",
+                            connection.name
+                        ),
+                        detail: None,
+                        real: false,
+                    });
+                    later_runs.push(format!("May read from {}; exact reads and model instructions need your approval after the build", connection.name));
+                }
+            } else {
+                includes.push(OutboundSummaryItem {
+                    label: "Your column names and confirmed rules".into(),
+                    detail: None,
+                    real: true,
+                });
+            }
+            if draft.kind != TaskKind::Program || !draft.synthetic_shape.is_empty() {
+                includes.push(OutboundSummaryItem {
+                    label: "A made-up sample of your data's shape (no real rows)".into(),
+                    detail: None,
+                    real: false,
+                });
+            }
+            includes.push(OutboundSummaryItem {
+                label: "Standard instructions for writing the tool".into(),
+                detail: None,
+                real: false,
+            });
+        }
+        if draft.no_input {
+            // A source declaration does not exist yet. Never promise a fetch
+            // that the generated program may not declare; name requested hosts
+            // from the actual description and require approval after generation.
+            for word in draft.goal.split_whitespace() {
+                let word =
+                    word.trim_matches(|c: char| matches!(c, '\'' | '"' | '(' | ')' | ',' | '.'));
+                if let Some(rest) = word
+                    .strip_prefix("https://")
+                    .or_else(|| word.strip_prefix("http://"))
+                {
+                    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+                    if !host.is_empty() {
+                        let line = format!("Requested site: {host} on each run; exact fetches need approval after the build");
+                        if !later_runs.contains(&line) {
+                            later_runs.push(line);
+                        }
+                    }
+                }
+            }
+            later_runs.push(
+                "Reads approved websites or connections each run; you choose how often in Schedule"
+                    .into(),
+            );
+        } else {
+            later_runs.push("Reads the file you select each time you run it".into());
+        }
+        later_runs
+            .push("Creates a result for your review; external actions need your approval".into());
+        let model = if route == ModelRoute::OfflineDemo {
+            "No model".into()
+        } else {
+            access.model
+        };
+        let cost = match route {
+            ModelRoute::OfflineDemo => "Free; no model calls".into(),
+            ModelRoute::ApiKey => format!(
+                "Estimated cost: $0.02 · Budget: ${:.2}",
+                BUILD_BUDGET_MICROS as f64 / 1e6
+            ),
+            ModelRoute::MusePlan => "Counts against your Muse plan".into(),
+            ModelRoute::CustomEndpoint => format!(
+                "Price unknown · {} of {} monthly calls used",
+                access.custom_endpoint.calls_this_month, access.custom_endpoint.monthly_call_cap
+            ),
+        };
+        let summary = OutboundSummary {
+            recipient: self.route_destination(route),
+            model: model.clone(),
+            includes,
+            later_runs,
+            cost,
         };
         Ok(OutboundPreview {
+            summary,
             draft_id: draft_id.into(),
             route,
-            model: if route == ModelRoute::OfflineDemo {
-                "No model".into()
-            } else {
-                DEFAULT_MODEL.into()
-            },
-            destination: Self::route_destination(route).into(),
+            model,
+            destination: self.route_destination(route),
             payload_text,
-            contains_real_rows: draft.example_output.is_some(),
+            contains_real_rows: route != ModelRoute::OfflineDemo
+                && draft.kind == TaskKind::Program
+                && draft.example_output.is_some(),
             estimated_cost_micros: estimate,
             budget_micros: BUILD_BUDGET_MICROS,
             // Declared fetch hosts are known only after the model answers;
@@ -1397,7 +1522,10 @@ impl AppCore {
             draft_id: snapshot.draft_id.clone(),
             route: snapshot.route.as_str().into(),
             phase: snapshot.phase.as_str().into(),
-            reserved_micros: if snapshot.route == ModelRoute::OfflineDemo {
+            reserved_micros: if matches!(
+                snapshot.route,
+                ModelRoute::OfflineDemo | ModelRoute::CustomEndpoint
+            ) {
                 0
             } else {
                 BUILD_BUDGET_MICROS
@@ -1526,6 +1654,14 @@ impl AppCore {
             )));
         }
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
+        if access.selected_route == Some(ModelRoute::CustomEndpoint)
+            && route != ModelRoute::CustomEndpoint
+        {
+            return Err(CoreError::Invalid(
+                "Custom endpoint is unavailable or blocked by Local only. Check Settings.".into(),
+            ));
+        }
+
         if draft.kind == TaskKind::Program && route == ModelRoute::OfflineDemo {
             return Err(CoreError::Invalid(
                 "Writing a program needs a model: sign in to Muse or add a key".into(),
@@ -1552,7 +1688,10 @@ impl AppCore {
                 "Another build is running. Stop it or wait for it to finish.".into(),
             ));
         }
-        if route != ModelRoute::OfflineDemo {
+        if route == ModelRoute::CustomEndpoint {
+            self.check_custom_cap()?;
+        }
+        if !matches!(route, ModelRoute::OfflineDemo | ModelRoute::CustomEndpoint) {
             let month_start = self.month_window()?.1;
             let reserved = self.db().reserved_micros_since(month_start)?;
             if reserved
@@ -1572,6 +1711,7 @@ impl AppCore {
             )
         };
         let route_label = match route {
+            ModelRoute::CustomEndpoint => self.custom_route_label(),
             ModelRoute::OfflineDemo => "Offline demo (no model)".to_string(),
             ModelRoute::ApiKey => format!("Meta API key · {DEFAULT_MODEL}"),
             ModelRoute::MusePlan => format!("Muse plan · {DEFAULT_MODEL}"),
@@ -1605,7 +1745,7 @@ impl AppCore {
         );
         drop(builds);
         self.push_phase(&build_id, BuildPhase::Queued, "Queued")?;
-        if route != ModelRoute::OfflineDemo {
+        if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
             let now = self.now();
             let outbound = self.db().insert_outbound(&db::OutboundRow {
                 id: format!("out_{build_id}"),
@@ -1616,7 +1756,7 @@ impl AppCore {
                     "Build packet for a file task"
                 }
                 .into(),
-                destination: Self::route_destination(route).into(),
+                destination: self.route_destination(route),
                 route: route.as_str().into(),
                 synthetic_only: draft.example_output.is_none(),
                 cost_micros: None,
@@ -1687,6 +1827,15 @@ impl AppCore {
         let contract = drafts::contract_for(&draft);
         self.push_phase(&build_id, BuildPhase::Writing, "Writing a candidate")?;
         let builder_route = match route {
+            ModelRoute::CustomEndpoint => {
+                let c = self.custom_endpoint_status();
+                BuildRoute::CustomEndpoint {
+                    key_ref: Self::custom_token_ref(),
+                    base_url: c.base_url.unwrap_or_default(),
+                    model: c.model.unwrap_or_default(),
+                    allow_insecure: self.allow_insecure_web(),
+                }
+            }
             ModelRoute::OfflineDemo => BuildRoute::Offline,
             ModelRoute::ApiKey => BuildRoute::DirectMeta {
                 key_ref: Self::api_key_ref(),
@@ -1727,6 +1876,7 @@ impl AppCore {
             policy: &self.inner.policy,
             consent_epoch,
             muse,
+            custom_observer: Some(self.custom_observer("Build", draft.example_output.is_none())),
             muse_progress: Some(&muse_progress),
         };
         let samples = SyntheticSamples::from_contract(&contract, 5);
@@ -1756,7 +1906,16 @@ impl AppCore {
         let candidate = match result {
             Ok(c) => c,
             Err(e) => {
-                let (kind, message) = build_error_message(&e);
+                let (kind, mut message) = build_error_message(&e);
+                if route == ModelRoute::CustomEndpoint
+                    && matches!(
+                        e,
+                        BuildError::Gateway(GatewayError::AuthRejected) | BuildError::Credential
+                    )
+                {
+                    message =
+                        "Custom endpoint token rejected. Replace it in Settings and retest.".into();
+                }
                 self.fail_build(&build_id, kind, message)?;
                 return Ok(());
             }
@@ -1994,7 +2153,11 @@ impl AppCore {
                 self.push_phase(
                     &build_id,
                     BuildPhase::Checking,
-                    "Checks failed; asking the model to correct the program",
+                    if failed_checks.iter().any(|c| c.id == "example") {
+                        "Checks failed; asking the model to correct the program (example format)"
+                    } else {
+                        "Checks failed; asking the model to correct the program"
+                    },
                 )?;
                 let previous_code = candidate
                     .program
@@ -2004,13 +2167,13 @@ impl AppCore {
                 let correction =
                     Self::program_correction_packet(&draft, previous_code, &failed_checks);
                 let correction_text = Self::correction_packet_text(&correction);
-                if route != ModelRoute::OfflineDemo {
+                if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
                     let now = self.now();
                     if let Err(error) = self.db().insert_outbound(&db::OutboundRow {
                         id: format!("out_{build_id}_correction"),
                         at_ms: now,
                         purpose: "Program correction packet".into(),
-                        destination: Self::route_destination(route).into(),
+                        destination: self.route_destination(route),
                         route: route.as_str().into(),
                         synthetic_only: true,
                         cost_micros: None,
@@ -2052,7 +2215,16 @@ impl AppCore {
                 let candidate2 = match result2 {
                     Ok(c) => c,
                     Err(e) => {
-                        let (kind, message) = build_error_message(&e);
+                        let (kind, mut message) = build_error_message(&e);
+                        if route == ModelRoute::CustomEndpoint
+                            && matches!(
+                                e,
+                                BuildError::Gateway(GatewayError::AuthRejected)
+                                    | BuildError::Credential
+                            )
+                        {
+                            message = "Custom endpoint token rejected. Replace it in Settings and retest.".into();
+                        }
                         self.fail_build(&build_id, kind, message)?;
                         return Ok(());
                     }
@@ -2578,6 +2750,8 @@ impl AppCore {
         }
         let model = if state.route == ModelRoute::OfflineDemo {
             "offline-demo".to_string()
+        } else if state.route == ModelRoute::CustomEndpoint {
+            state.route_label.clone()
         } else {
             DEFAULT_MODEL.to_string()
         };
@@ -3490,6 +3664,7 @@ fn build_error_message(e: &BuildError) -> (BuildFailureKind, String) {
         BuildError::Muse(macroscope_muse_client::MuseError::AuthRequired) => {
             (BuildFailureKind::Auth, "Muse Code is not signed in. Run muse login in Terminal, then check again.".into())
         }
+        BuildError::Gateway(GatewayError::CallCapReached) => (BuildFailureKind::Budget, GatewayError::CallCapReached.to_string()),
         BuildError::BudgetExceeded => (BuildFailureKind::Budget, "This build would exceed its $2.00 budget.".into()),
         BuildError::Validation | BuildError::Gateway(GatewayError::MalformedOutput) => {
             (BuildFailureKind::Malformed, "The model's answer did not match the task summary. Try again or edit the rules.".into())

@@ -24,7 +24,7 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   await user.clear(description);
   await user.type(
     description,
-    "Get today's forecast for Auckland from Open-Meteo and write a short summary to weather.txt",
+    "Get today's forecast for Auckland from https://api.open-meteo.com and write a short summary to weather.txt",
   );
   await user.click(button("Review task summary"));
 
@@ -33,13 +33,13 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   ).toBeVisible();
   await user.click(button("Review what leaves this Mac"));
 
-  // The outbound review lists the fetch hosts and requires the checkbox.
+  // Before generation, requested hosts are named; exact sources need approval.
   expect(
-    await screen.findByText(/This tool will fetch from api.open-meteo.com/),
+    await screen.findByText(/Requested site: api.open-meteo.com on each run/),
   ).toBeVisible();
   expect(button("Build tool")).toBeDisabled();
   await user.click(
-    screen.getByRole("checkbox", { name: "I reviewed what will be sent" }),
+    screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }),
   );
   await user.click(button("Build tool"));
 

@@ -64,7 +64,7 @@ export const routeLabel = (route: ModelRoute | null) =>
     ? "Meta API key"
     : route === "muse_plan"
       ? "Muse plan"
-      : "Offline demo";
+      : route === "custom_endpoint" ? "Custom endpoint" : "Offline demo";
 
 /** Small RFC 4180 reader. Cells remain text, including anything resembling markup. */
 function parseCsv(text: string): string[][] {
@@ -271,6 +271,7 @@ export class MockBackend implements Backend {
   private showListeners = new Set<(state: ShowState) => void>();
   private museReadyAt: number | null = null;
   private status: ModelAccessStatus = {
+    customEndpoint: {baseUrl:null, host:null, model:null, displayName:null, tokenPresent:false, lastTest:null, monthlyCallCap:500, callsThisMonth:0},
     apiKey: { present: false, fingerprint: null, lastTest: null },
     muse: { kind: "not_signed_in", version: "mock" },
     selectedRoute: null,
@@ -341,17 +342,14 @@ export class MockBackend implements Backend {
     });
   }
   private resolveRoute() {
-    this.status.effectiveRoute =
-      this.status.egress !== "cloud_allowed"
-        ? "offline_demo"
-        : this.status.selectedRoute === "offline_demo"
-          ? "offline_demo"
-          : this.status.apiKey.present
-            ? "api_key"
-            : this.status.selectedRoute === "muse_plan" &&
-                this.status.muse.kind === "signed_in"
-              ? "muse_plan"
-              : "offline_demo";
+    const selected = this.status.selectedRoute;
+    const available = (route: ModelRoute) => route === "api_key" ? this.status.apiKey.present
+      : route === "muse_plan" ? this.status.muse.kind === "signed_in"
+      : route === "custom_endpoint" ? this.customReady() : true;
+    this.status.effectiveRoute = this.status.egress !== "cloud_allowed" ? "offline_demo"
+      : selected !== null ? available(selected) ? selected : "offline_demo"
+      : this.status.apiKey.present ? "api_key"
+      : this.status.muse.kind === "signed_in" ? "muse_plan" : "offline_demo";
     this.status.blockedReason =
       this.status.selectedRoute === "offline_demo"
         ? null
@@ -360,6 +358,7 @@ export class MockBackend implements Backend {
           : this.status.effectiveRoute === "offline_demo"
             ? blockedReason
             : null;
+    this.status.model = this.status.effectiveRoute === "custom_endpoint" ? this.status.customEndpoint.model! : "muse-spark-1.3";
     return clone(this.status);
   }
   async appInfo(): Promise<AppInfo> {
@@ -408,7 +407,29 @@ export class MockBackend implements Backend {
       };
     return this.resolveRoute();
   }
+  private customReady() { const c=this.status.customEndpoint; return !!(c.baseUrl && c.model && c.tokenPresent && c.lastTest?.status === "ok"); }
+  async saveCustomEndpoint(baseUrl: string, model: string) {
+    let u: URL; try { u=new URL(baseUrl); } catch { throw new Error("Use an HTTPS base URL."); }
+    if(u.protocol!=="https:" || u.username || u.password || baseUrl.includes("?") || baseUrl.includes("#") || !model.trim()) throw new Error("Use HTTPS without userinfo, query or fragment, and enter a model.");
+    const c=this.status.customEndpoint;
+    if(c.baseUrl!==u.href || c.model!==model.trim()) c.lastTest=null;
+    Object.assign(c,{baseUrl:u.href,host:u.hostname,model:model.trim()}); return this.resolveRoute();
+  }
+  async saveCustomEndpointToken() { this.status.customEndpoint.tokenPresent=true; this.status.customEndpoint.lastTest=null; return this.resolveRoute(); }
+  async setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number) {
+    if(!Number.isInteger(monthlyCallCap) || monthlyCallCap<0) throw new Error("Enter a nonnegative whole call cap.");
+    Object.assign(this.status.customEndpoint,{displayName,monthlyCallCap}); return this.resolveRoute();
+  }
+  async testCustomEndpoint() {
+    const c=this.status.customEndpoint;
+    if(this.status.egress!=="cloud_allowed") throw new Error("Local only blocks endpoint tests");
+    if(!c.baseUrl || !c.model || !c.tokenPresent) throw new Error("Set URL, model and token first.");
+    if(c.callsThisMonth>=c.monthlyCallCap) throw new Error("Skipped — monthly custom endpoint call cap reached");
+    c.callsThisMonth++; c.lastTest={status:"ok",latencyMs:7}; return this.resolveRoute();
+  }
+  async removeCustomEndpoint() { this.status.customEndpoint={baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:this.status.customEndpoint.callsThisMonth}; return this.resolveRoute(); }
   async selectRoute(route: ModelRoute) {
+    if(route==="custom_endpoint" && !this.customReady()) throw new Error("Configure and test the custom endpoint first.");
     if (route === "api_key" && !this.status.apiKey.present)
       throw new Error("Enter a key first.");
     if (route === "muse_plan" && this.status.muse.kind !== "signed_in")
@@ -645,17 +666,33 @@ export class MockBackend implements Backend {
     draft.revision++;
     return this.validate(draft);
   }
-  async outboundPreview(draftId: string) {
+  async outboundPreview(draftId: string): Promise<import("./types").OutboundPreview> {
     const draft = this.draft(draftId),
       status = this.resolveRoute(),
       route = status.effectiveRoute ?? "offline_demo";
+    const recipient = route === "custom_endpoint" ? status.customEndpoint.host! : route === "api_key" ? "Meta API (api.meta.ai)" : route === "muse_plan" ? "Muse Code with your Muse plan" : "Nothing leaves this Mac";
+    const includes: import("./types").OutboundSummary["includes"] = route === "offline_demo" ? [] : [
+      ...(draft.kind === "program" ? [{label:"Your task description",detail:Array.from(draft.goal).slice(0,140).join(""),real:true}, ...(draft.exampleOutput ? [{label:"Your example result",detail:draft.exampleOutput,real:true}] : [])] : [{label:"Your column names and confirmed rules",real:true}]),
+      ...(!draft.noInput ? [{label:"A made-up sample of your data's shape (no real rows)",real:false}] : []),
+      {label:"Standard instructions for writing the tool",real:false},
+    ];
+    const laterRuns = draft.noInput ? ["Reads approved websites or connections each run; you choose how often in Schedule"] : ["Reads the file you select each time you run it"];
+    for (const match of draft.goal.matchAll(/https?:\/\/[^\s]+/g)) {
+      try { laterRuns.unshift(`Requested site: ${new URL(match[0]).hostname} on each run; exact fetches need approval after the build`); } catch { /* Plain text is not necessarily a URL. */ }
+    }
+    for (const c of draft.requiredConnections ?? []) {
+      if (route !== "offline_demo" && draft.kind === "program") includes.push({label:`Available actions and read instructions for ${c.name}`,real:false});
+      laterRuns.push(`May read from ${c.name}; exact reads and model instructions need your approval after the build`);
+    }
+    laterRuns.push("Creates a result for your review; external actions need your approval");
     return {
+      summary: {recipient,model:route === "offline_demo" ? "No model" : status.model,includes,laterRuns,cost:route === "offline_demo" ? "Free; no model calls" : route === "api_key" ? "Estimated cost: $0.02 · Budget: $2.00" : route === "muse_plan" ? "Counts against your Muse plan" : `Price unknown · ${status.customEndpoint.callsThisMonth} of ${status.customEndpoint.monthlyCallCap} monthly calls used`},
       draftId,
       route,
-      webHosts: draft.noInput ? ["api.open-meteo.com"] : [],
+      webHosts: [],
       model: route === "offline_demo" ? "No model" : status.model,
       destination:
-        route === "api_key"
+        route === "custom_endpoint" ? status.customEndpoint.host! : route === "api_key"
           ? "Meta API (api.meta.ai)"
           : route === "muse_plan"
             ? "Muse Code with your Muse plan"
@@ -663,7 +700,7 @@ export class MockBackend implements Backend {
       payloadText:
         route === "offline_demo"
           ? "Nothing leaves this Mac. The offline demo maps columns without a model."
-          : draft.kind === "program" ? JSON.stringify({description: draft.goal, syntheticTextShape: "2123-45-67 HJKLM inventedvalue", exampleRealData: draft.exampleOutput, outputName: draft.outputName}) : JSON.stringify(
+          : draft.kind === "program" ? JSON.stringify({description: draft.goal, syntheticTextShape: draft.noInput ? "" : "2123-45-67 HJKLM inventedvalue", exampleRealData: draft.exampleOutput, outputName: draft.outputName}) : JSON.stringify(
               {
                 task: "Create a CSV mapping using these confirmed rules.",
                 mapping: draft.mapping,
@@ -679,9 +716,9 @@ export class MockBackend implements Backend {
               null,
               2,
             ),
-      containsRealRows: !!draft.exampleOutput,
+      containsRealRows: route !== "offline_demo" && draft.kind === "program" && !!draft.exampleOutput,
       estimatedCostMicros:
-        route === "muse_plan" ? null : route === "offline_demo" ? 0 : 20000,
+        route === "muse_plan" || route === "custom_endpoint" ? null : route === "offline_demo" ? 0 : 20000,
       budgetMicros: 2000000,
     };
   }
@@ -698,6 +735,7 @@ export class MockBackend implements Backend {
   }
   async startBuild(draftId: string, consent: { outboundReviewed: boolean }) {
     const draft = clone(this.draft(draftId));
+    if(this.status.selectedRoute === "custom_endpoint" && this.resolveRoute().effectiveRoute !== "custom_endpoint") throw new Error("Custom endpoint is unavailable or blocked by Local only. Check Settings.");
     if (draft.kind === "program" && (this.resolveRoute().effectiveRoute ?? "offline_demo") === "offline_demo") throw new Error("Writing a program needs a model: sign in to Muse or add a key");
     if (!this.validate(draft).readyToBuild)
       throw new Error(draft.blockers.join(" "));
@@ -714,6 +752,11 @@ export class MockBackend implements Backend {
       throw new Error("Stop the current build before starting another.");
     const preview = await this.outboundPreview(draftId),
       status = this.resolveRoute();
+    if(preview.route === "custom_endpoint") {
+      const c=this.status.customEndpoint;
+      if(c.callsThisMonth>=c.monthlyCallCap) throw new Error("Skipped — monthly custom endpoint call cap reached");
+      c.callsThisMonth++;
+    }
     const build: BuildState = {
       buildId: this.id("build"),
       draftId,
@@ -725,7 +768,7 @@ export class MockBackend implements Backend {
       comparison: null,
       spentMicros: preview.estimatedCostMicros,
       failure: null,
-      routeLabel: routeLabel(preview.route),
+      routeLabel: preview.route === "custom_endpoint" ? `Custom endpoint · ${status.customEndpoint.model?.split("/").pop()} · ${status.customEndpoint.host}` : routeLabel(preview.route),
     };
     this.builds.set(build.buildId, build);
     this.buildDrafts.set(build.buildId, clone(draft));

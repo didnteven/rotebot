@@ -214,3 +214,16 @@ it("provides verified catalog metadata and public Gmail tool previews", async ()
   ).toEqual(["Create draft email", "Search threads", "Read thread"]);
   expect(await backend.previewConnectorTools("notion")).toEqual([]);
 });
+
+it("passes the host's outbound summary through IPC without parsing the payload",async()=>{
+  const backend=new MockBackend();await backend.saveApiKey("test-key");
+  const input=backend.importText("input.txt","Private data");
+  const draft=await backend.draftTask(input.handle,"Extract errors");
+  await backend.updateTask(draft.draftId,"program","errors.txt","Exact real example");
+  const preview={...await backend.outboundPreview(draft.draftId),payloadText:"an opaque exact payload"};
+  vi.mocked(invoke).mockResolvedValueOnce(preview);
+  const result=await new TauriBackend().outboundPreview(draft.draftId);
+  expect(result).toEqual(preview);
+  expect(result.summary.includes).toContainEqual({label:"Your example result",detail:"Exact real example",real:true});
+  expect(invoke).toHaveBeenLastCalledWith("outbound_preview",{draftId:draft.draftId});
+});

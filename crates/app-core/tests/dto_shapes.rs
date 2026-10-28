@@ -24,6 +24,7 @@ fn app_info_identifies_the_actual_store_and_build() {
 #[test]
 fn model_access_and_tagged_unions_match_the_contract() {
     let status = ModelAccessStatus {
+        custom_endpoint: CustomEndpointStatus::default(),
         api_key: ApiKeyStatus {
             present: true,
             fingerprint: Some("Key ending …abcd".into()),
@@ -46,6 +47,7 @@ fn model_access_and_tagged_unions_match_the_contract() {
     assert_eq!(
         serde_json::to_value(&status).unwrap(),
         json!({
+            "customEndpoint": {"baseUrl":null,"host":null,"model":null,"displayName":null,"tokenPresent":false,"lastTest":null,"monthlyCallCap":0,"callsThisMonth":0},
             "apiKey": {"present": true, "fingerprint": "Key ending …abcd",
                        "lastTest": {"kind": "quota", "checkedAtMs": 1, "retryAtMs": 2}},
             "muse": {"kind": "signed_in", "version": "1.4.13", "planSummary": null},

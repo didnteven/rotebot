@@ -92,13 +92,13 @@ function fixture(payload: string) {
   const outbound = { id: "outbound", atMs: 1, purpose: v("outbound purpose"), destination: v("destination"), route: "api_key" as const, syntheticOnly: true, costMicros: 0, payloadText: v("outbound payload") };
   const backend = new MockBackend([{ id: "tool", name: v("saved tool"), version: 1 }], {
     testOnlyOverrides: {
-      modelAccess: async () => ({ apiKey: { present: false, fingerprint: null, lastTest: null }, muse: { kind: "unknown", version: null, message: v("model error") }, selectedRoute: null, effectiveRoute: "offline_demo", blockedReason: v("route blocker"), egress: "cloud_allowed", model: "fixture", museUnverifiedOk: false }),
+      modelAccess: async () => ({ customEndpoint: {baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:0}, apiKey: { present: false, fingerprint: null, lastTest: null }, muse: { kind: "unknown", version: null, message: v("model error") }, selectedRoute: null, effectiveRoute: "offline_demo", blockedReason: v("route blocker"), egress: "cloud_allowed", model: "fixture", museUnverifiedOk: false }),
       refreshMuseStatus: async () => { throw new Error(v("settings error")); },
       pickCsv: async () => csv,
       pickOutputDir: async () => folder,
       draftTask: async () => draft,
       updateMapping: async (_id, mapping, outputName) => ({ ...draft, mapping, outputName }),
-      outboundPreview: async () => ({ ...outbound, draftId: "draft", model: v("model"), containsRealRows: false, estimatedCostMicros: 0, budgetMicros: 1, webHosts: [] }),
+      outboundPreview: async () => ({ ...outbound, summary:{recipient:v("destination"),model:v("model"),includes:[],laterRuns:[],cost:"Free"}, draftId: "draft", model: v("model"), containsRealRows: false, estimatedCostMicros: 0, budgetMicros: 1, webHosts: [] }),
       startBuild: async () => build,
       buildState: async () => build,
       buildTryInput: async () => ({ ...build, phase: "failed", failure: { kind: "internal", message: v("build error") } }),
@@ -167,15 +167,17 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     await user.click(button("Review what leaves this Mac"));
     expect(update).toHaveBeenCalledWith("draft", expect.any(Object), v("output name"));
     await screen.findByLabelText("Exact outbound payload");
+    await user.click(screen.getByText("Advanced: exact data sent"));
     literal(root, v("outbound payload"));
     literal(root, v("model"));
     literal(root, v("destination"));
     inert();
-    await user.click(screen.getByRole("checkbox", { name: "I reviewed what will be sent" }));
+    await user.click(screen.getByRole("checkbox", { name: "I've reviewed what will be sent" }));
     await user.click(button("Build tool"));
     const result = screen.getByRole("region", { name: "Staged output · first 8 rows" });
     literal(result, v("mapping column"));
     literal(result, v("constant"));
+    await user.click(screen.getByText("Advanced details"));
     // These are plain strings embedded in host-owned rule/check/event text.
     for (const label of ["mapping column", "mapping source", "check label", "check detail"]) {
       const lines = screen.getAllByText((text, node) => node?.tagName === "LI" && text.includes(v(label)), textOptions);
@@ -184,7 +186,6 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
         assertBounded(line);
       }
     }
-    await user.click(screen.getByText("Advanced details"));
     expect(screen.getByText((text, node) => node?.tagName === "LI" && text.includes(v("build event")), textOptions)).toBeVisible();
     inert({ startBuild: 1 });
     await user.click(button("Try another sample…"));
