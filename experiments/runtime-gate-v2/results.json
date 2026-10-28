@@ -1,5 +1,5 @@
 {
-  "measured_at": "2026-10-28T06:52:56.772982+00:00",
+  "measured_at": "2026-10-28T08:39:25.012033+00:00",
   "verdict": "PASS (developer boundary; release admission pending signed bundle)",
   "runner_version": "0.1.0",
   "pins": {
@@ -18,8 +18,8 @@
   },
   "quickjs_ng_version": "0.16.2",
   "quickjs_header_sha256": "979127138da79cad5ddc7effa1afb13e8b02f744da2aa36844d4cb9d8cb92de9",
-  "runner_sha256": "120b0773edbd2f98daefbae49b173c49f92e33ef9890bd9d98f57d893ba63dd4",
-  "launcher_sha256": "5773124282eaaa08355bc3b3da7e6294ea55934d252164751822bcb38c3902e1",
+  "runner_sha256": "0344c294f259c45ef7b3913b300001c2aa87899871b4e3e845c79bb27572510e",
+  "launcher_sha256": "da0e3fac39ed9cf2b6c1579cfe84180fd5d432266e4e2b212c0c9aebf14c2ff9",
   "profile_sha256": "9d9d615e1d6772666f0cb96a197f7a1a9391ebe66719f8d9b73f60cc7bcb1e3a",
   "cargo_lock_sha256": "b13306dab03c642c246f6a64a266d944cd0ab8d9222597bdb8ad652407df4359",
   "harness_sha256": "90d70afb600e635a3e449edb34f0597d96a5c509341fbe41bbd7cfdf01b6486e",
@@ -43,7 +43,7 @@
       ],
       "exit": 0,
       "stdout": "",
-      "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner\nIdentifier=macroscope_runner-e5fcb2d420d6a35d\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=164283 flags=0x20002(adhoc,linker-signed) hashes=5130+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
+      "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner\nIdentifier=macroscope_runner-e5fcb2d420d6a35d\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=164187 flags=0x20002(adhoc,linker-signed) hashes=5127+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
     },
     {
       "argv": [
@@ -55,7 +55,7 @@
       ],
       "exit": 0,
       "stdout": "",
-      "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch\nIdentifier=macroscope_runner_launch-4c98731b2016c928\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=17986 flags=0x20002(adhoc,linker-signed) hashes=558+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
+      "stderr": "Executable=/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch\nIdentifier=macroscope_runner_launch-4c98731b2016c928\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=17954 flags=0x20002(adhoc,linker-signed) hashes=557+0 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements=none\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n"
     }
   ],
   "rlimits": {
@@ -76,16 +76,16 @@
       "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
       "--seatbelt",
       "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-      "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+      "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
     ],
     "env": {},
     "exit": 0,
-    "wall_seconds": 1.3467,
+    "wall_seconds": 1.301,
     "stdout_bytes": 90,
-    "stderr": "{\"cpu_seconds\":0.013489000000000001,\"peak_rss_bytes\":4833280}\n",
+    "stderr": "{\"cpu_seconds\":0.016642999999999998,\"peak_rss_bytes\":4866048}\n",
     "usage": {
-      "cpu_seconds": 0.013489000000000001,
-      "peak_rss_bytes": 4833280
+      "cpu_seconds": 0.016642999999999998,
+      "peak_rss_bytes": 4866048
     },
     "response": {
       "ok": true,
@@ -99,7 +99,7 @@
       ]
     },
     "observed": "PASS",
-    "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4833280"
+    "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4866048"
   },
   "rows": [
     {
@@ -110,16 +110,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0109,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.0031219999999999998,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.0029259999999999998,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.0031219999999999998,
-          "peak_rss_bytes": 4800512
+          "cpu_seconds": 0.0029259999999999998,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -130,22 +130,22 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0203,
+        "wall_seconds": 0.0142,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.010448,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.008589,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.010448,
+          "cpu_seconds": 0.008589,
           "peak_rss_bytes": 4816896
         },
         "response": {
@@ -168,15 +168,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0104,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.001829,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.002059,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.001829,
+          "cpu_seconds": 0.002059,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -194,15 +194,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0161,
+        "wall_seconds": 0.0147,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.009721,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006494,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.009721,
+          "cpu_seconds": 0.006494,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -224,15 +224,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.011,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.003327,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002935,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003327,
+          "cpu_seconds": 0.002935,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -251,15 +251,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0169,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008302,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007646,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.008302,
+          "cpu_seconds": 0.007646,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -282,15 +282,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0083,
+        "wall_seconds": 0.0096,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.002941,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.002964,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.002941,
+          "cpu_seconds": 0.002964,
           "peak_rss_bytes": 4800512
         },
         "response": {
@@ -309,16 +309,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0159,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008163,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.008022,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008163,
-          "peak_rss_bytes": 4800512
+          "cpu_seconds": 0.008022,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -329,7 +329,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -340,15 +340,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0098,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 102,
-        "stderr": "{\"cpu_seconds\":0.00394,\"peak_rss_bytes\":5439488}\n",
+        "stderr": "{\"cpu_seconds\":0.003966,\"peak_rss_bytes\":5439488}\n",
         "usage": {
-          "cpu_seconds": 0.00394,
+          "cpu_seconds": 0.003966,
           "peak_rss_bytes": 5439488
         },
         "response": {
@@ -366,16 +366,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0151,
+        "wall_seconds": 0.0161,
         "stdout_bytes": 102,
-        "stderr": "{\"cpu_seconds\":0.008796,\"peak_rss_bytes\":5439488}\n",
+        "stderr": "{\"cpu_seconds\":0.008895,\"peak_rss_bytes\":5472256}\n",
         "usage": {
-          "cpu_seconds": 0.008796,
-          "peak_rss_bytes": 5439488
+          "cpu_seconds": 0.008895,
+          "peak_rss_bytes": 5472256
         },
         "response": {
           "ok": false,
@@ -385,7 +385,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"invalid connection request or args exceed 64 KiB\"}}; peak RSS=5439488"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"invalid connection request or args exceed 64 KiB\"}}; peak RSS=5472256"
       }
     },
     {
@@ -396,16 +396,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.009,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 88,
-        "stderr": "{\"cpu_seconds\":0.003045,\"peak_rss_bytes\":5193728}\n",
+        "stderr": "{\"cpu_seconds\":0.004325,\"peak_rss_bytes\":5210112}\n",
         "usage": {
-          "cpu_seconds": 0.003045,
-          "peak_rss_bytes": 5193728
+          "cpu_seconds": 0.004325,
+          "peak_rss_bytes": 5210112
         },
         "response": {
           "ok": false,
@@ -415,23 +415,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"at most 5 connection calls per run\"}}; peak RSS=5193728"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"at most 5 connection calls per run\"}}; peak RSS=5210112"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0151,
+        "wall_seconds": 0.0148,
         "stdout_bytes": 88,
-        "stderr": "{\"cpu_seconds\":0.008065,\"peak_rss_bytes\":5193728}\n",
+        "stderr": "{\"cpu_seconds\":0.008296,\"peak_rss_bytes\":5210112}\n",
         "usage": {
-          "cpu_seconds": 0.008065,
-          "peak_rss_bytes": 5193728
+          "cpu_seconds": 0.008296,
+          "peak_rss_bytes": 5210112
         },
         "response": {
           "ok": false,
@@ -441,7 +441,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"at most 5 connection calls per run\"}}; peak RSS=5193728"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"at most 5 connection calls per run\"}}; peak RSS=5210112"
       }
     },
     {
@@ -452,15 +452,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0085,
+        "wall_seconds": 0.0091,
         "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.003257,\"peak_rss_bytes\":4882432}\n",
+        "stderr": "{\"cpu_seconds\":0.003203,\"peak_rss_bytes\":4882432}\n",
         "usage": {
-          "cpu_seconds": 0.003257,
+          "cpu_seconds": 0.003203,
           "peak_rss_bytes": 4882432
         },
         "response": {
@@ -485,16 +485,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0161,
+        "wall_seconds": 0.0185,
         "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.008352,\"peak_rss_bytes\":4882432}\n",
+        "stderr": "{\"cpu_seconds\":0.008435999999999999,\"peak_rss_bytes\":4898816}\n",
         "usage": {
-          "cpu_seconds": 0.008352,
-          "peak_rss_bytes": 4882432
+          "cpu_seconds": 0.008435999999999999,
+          "peak_rss_bytes": 4898816
         },
         "response": {
           "ok": true,
@@ -511,7 +511,7 @@
           "outputs": []
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [{\"connectorId\": \"gmail\", \"toolName\": \"create_draft\", \"args\": {\"body\": \"review me\"}}], \"outputs\": []}; peak RSS=4882432"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [{\"connectorId\": \"gmail\", \"toolName\": \"create_draft\", \"args\": {\"body\": \"review me\"}}], \"outputs\": []}; peak RSS=4898816"
       }
     },
     {
@@ -522,16 +522,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.1079,
+        "wall_seconds": 0.1102,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.10202900000000001,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.102073,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.10202900000000001,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.102073,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -541,23 +541,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5128192"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.1149,
+        "wall_seconds": 0.1179,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.107538,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.107473,\"peak_rss_bytes\":5111808}\n",
         "usage": {
-          "cpu_seconds": 0.107538,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.107473,
+          "peak_rss_bytes": 5111808
         },
         "response": {
           "ok": false,
@@ -567,7 +567,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5111808"
       }
     },
     {
@@ -578,15 +578,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0108,
+        "wall_seconds": 0.0096,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.001583,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001658,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.001583,
+          "cpu_seconds": 0.001658,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -604,15 +604,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0139,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.007173,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006436,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.007173,
+          "cpu_seconds": 0.006436,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -634,15 +634,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0099,
+        "wall_seconds": 0.0101,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.001612,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001579,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.001612,
+          "cpu_seconds": 0.001579,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -660,15 +660,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0146,
+        "wall_seconds": 0.0137,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0067870000000000005,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006479,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.0067870000000000005,
+          "cpu_seconds": 0.006479,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -690,15 +690,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0092,
+        "wall_seconds": 0.0093,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.001814,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001526,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.001814,
+          "cpu_seconds": 0.001526,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -716,15 +716,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0148,
+        "wall_seconds": 0.0145,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.006443,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.0066549999999999995,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.006443,
+          "cpu_seconds": 0.0066549999999999995,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -746,15 +746,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0099,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 76,
-        "stderr": "{\"cpu_seconds\":0.0029500000000000004,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002882,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.0029500000000000004,
+          "cpu_seconds": 0.002882,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -773,15 +773,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0161,
+        "wall_seconds": 0.0145,
         "stdout_bytes": 76,
-        "stderr": "{\"cpu_seconds\":0.007747,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007733,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.007747,
+          "cpu_seconds": 0.007733,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -804,16 +804,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0101,
+        "wall_seconds": 0.0084,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.002856,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002892,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.002856,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.002892,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -824,23 +824,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.018,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008287,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007489,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008287,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007489,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -851,7 +851,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -862,15 +862,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.01,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.002979,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002781,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.002979,
+          "cpu_seconds": 0.002781,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -889,16 +889,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0157,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008909,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007794,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.008909,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007794,
+          "peak_rss_bytes": 4800512
         },
         "response": {
           "ok": true,
@@ -909,7 +909,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: eval absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: eval absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
       }
     },
     {
@@ -920,15 +920,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0106,
+        "wall_seconds": 0.0093,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.003108,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0029360000000000002,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003108,
+          "cpu_seconds": 0.0029360000000000002,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -947,16 +947,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0151,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.008339,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008291,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.008339,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.008291,
+          "peak_rss_bytes": 4800512
         },
         "response": {
           "ok": true,
@@ -967,7 +967,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: fetch absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: fetch absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
       }
     },
     {
@@ -978,16 +978,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0099,
+        "wall_seconds": 0.0118,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.0035700000000000003,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.003445,\"peak_rss_bytes\":4833280}\n",
         "usage": {
-          "cpu_seconds": 0.0035700000000000003,
-          "peak_rss_bytes": 4816896
+          "cpu_seconds": 0.003445,
+          "peak_rss_bytes": 4833280
         },
         "response": {
           "ok": true,
@@ -998,23 +998,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4833280"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0149,
+        "wall_seconds": 0.0147,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008378,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.007995,\"peak_rss_bytes\":4833280}\n",
         "usage": {
-          "cpu_seconds": 0.008378,
-          "peak_rss_bytes": 4816896
+          "cpu_seconds": 0.007995,
+          "peak_rss_bytes": 4833280
         },
         "response": {
           "ok": true,
@@ -1025,7 +1025,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4833280"
       }
     },
     {
@@ -1036,15 +1036,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0107,
+        "wall_seconds": 0.0094,
         "stdout_bytes": 81,
-        "stderr": "{\"cpu_seconds\":0.003044,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.0029100000000000003,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.003044,
+          "cpu_seconds": 0.0029100000000000003,
           "peak_rss_bytes": 4816896
         },
         "response": {
@@ -1063,16 +1063,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0141,
+        "wall_seconds": 0.0139,
         "stdout_bytes": 81,
-        "stderr": "{\"cpu_seconds\":0.008162,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.007974,\"peak_rss_bytes\":4849664}\n",
         "usage": {
-          "cpu_seconds": 0.008162,
-          "peak_rss_bytes": 4816896
+          "cpu_seconds": 0.007974,
+          "peak_rss_bytes": 4849664
         },
         "response": {
           "ok": true,
@@ -1083,7 +1083,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: constructors absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: constructors absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4849664"
       }
     },
     {
@@ -1094,16 +1094,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0157,
+        "wall_seconds": 0.0145,
         "stdout_bytes": 77,
-        "stderr": "{\"cpu_seconds\":0.006882,\"peak_rss_bytes\":7159808}\n",
+        "stderr": "{\"cpu_seconds\":0.0068330000000000005,\"peak_rss_bytes\":7192576}\n",
         "usage": {
-          "cpu_seconds": 0.006882,
-          "peak_rss_bytes": 7159808
+          "cpu_seconds": 0.0068330000000000005,
+          "peak_rss_bytes": 7192576
         },
         "response": {
           "ok": false,
@@ -1113,23 +1113,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"date argument too large\"}}; peak RSS=7159808"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"date argument too large\"}}; peak RSS=7192576"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0256,
+        "wall_seconds": 0.0208,
         "stdout_bytes": 77,
-        "stderr": "{\"cpu_seconds\":0.014346,\"peak_rss_bytes\":7159808}\n",
+        "stderr": "{\"cpu_seconds\":0.012046,\"peak_rss_bytes\":7192576}\n",
         "usage": {
-          "cpu_seconds": 0.014346,
-          "peak_rss_bytes": 7159808
+          "cpu_seconds": 0.012046,
+          "peak_rss_bytes": 7192576
         },
         "response": {
           "ok": false,
@@ -1139,7 +1139,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"date argument too large\"}}; peak RSS=7159808"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"date argument too large\"}}; peak RSS=7192576"
       }
     },
     {
@@ -1150,16 +1150,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0164,
+        "wall_seconds": 0.016,
         "stdout_bytes": 78,
-        "stderr": "{\"cpu_seconds\":0.0069700000000000005,\"peak_rss_bytes\":7176192}\n",
+        "stderr": "{\"cpu_seconds\":0.007296,\"peak_rss_bytes\":7192576}\n",
         "usage": {
-          "cpu_seconds": 0.0069700000000000005,
-          "peak_rss_bytes": 7176192
+          "cpu_seconds": 0.007296,
+          "peak_rss_bytes": 7192576
         },
         "response": {
           "ok": false,
@@ -1169,22 +1169,22 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"money argument too large\"}}; peak RSS=7176192"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"money argument too large\"}}; peak RSS=7192576"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0169,
+        "wall_seconds": 0.0219,
         "stdout_bytes": 78,
-        "stderr": "{\"cpu_seconds\":0.012033,\"peak_rss_bytes\":7176192}\n",
+        "stderr": "{\"cpu_seconds\":0.012053000000000001,\"peak_rss_bytes\":7176192}\n",
         "usage": {
-          "cpu_seconds": 0.012033,
+          "cpu_seconds": 0.012053000000000001,
           "peak_rss_bytes": 7176192
         },
         "response": {
@@ -1206,15 +1206,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0095,
+        "wall_seconds": 0.01,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.0028929999999999997,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.0030340000000000002,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.0028929999999999997,
+          "cpu_seconds": 0.0030340000000000002,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1232,15 +1232,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0143,
+        "wall_seconds": 0.0151,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.007933,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.00836,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.007933,
+          "cpu_seconds": 0.00836,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1262,15 +1262,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0086,
         "stdout_bytes": 109,
-        "stderr": "{\"cpu_seconds\":0.002917,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.003156,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.002917,
+          "cpu_seconds": 0.003156,
           "peak_rss_bytes": 4816896
         },
         "response": {
@@ -1288,15 +1288,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.015,
+        "wall_seconds": 0.0148,
         "stdout_bytes": 109,
-        "stderr": "{\"cpu_seconds\":0.007882,\"peak_rss_bytes\":4816896}\n",
+        "stderr": "{\"cpu_seconds\":0.007827,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.007882,
+          "cpu_seconds": 0.007827,
           "peak_rss_bytes": 4816896
         },
         "response": {
@@ -1318,16 +1318,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.2009,
+        "wall_seconds": 0.1972,
         "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.195585,\"peak_rss_bytes\":74317824}\n",
+        "stderr": "{\"cpu_seconds\":0.188875,\"peak_rss_bytes\":74334208}\n",
         "usage": {
-          "cpu_seconds": 0.195585,
-          "peak_rss_bytes": 74317824
+          "cpu_seconds": 0.188875,
+          "peak_rss_bytes": 74334208
         },
         "response": {
           "ok": false,
@@ -1337,22 +1337,22 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"memory\", \"message\": \"JavaScript execution failed: InternalError at line 1, column 47: out of memory\"}}; peak RSS=74317824"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"memory\", \"message\": \"JavaScript execution failed: InternalError at line 1, column 47: out of memory\"}}; peak RSS=74334208"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.2105,
+        "wall_seconds": 0.233,
         "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.199067,\"peak_rss_bytes\":74317824}\n",
+        "stderr": "{\"cpu_seconds\":0.219808,\"peak_rss_bytes\":74317824}\n",
         "usage": {
-          "cpu_seconds": 0.199067,
+          "cpu_seconds": 0.219808,
           "peak_rss_bytes": 74317824
         },
         "response": {
@@ -1374,41 +1374,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0167,
+        "wall_seconds": 0.0159,
         "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.0097,\"peak_rss_bytes\":71548928}\n",
+        "stderr": "{\"cpu_seconds\":0.008736,\"peak_rss_bytes\":71581696}\n",
         "usage": {
-          "cpu_seconds": 0.0097,
-          "peak_rss_bytes": 71548928
-        },
-        "response": {
-          "ok": false,
-          "error": {
-            "kind": "memory",
-            "message": "JavaScript execution failed: InternalError at line 1, column 45: out of memory"
-          }
-        },
-        "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"memory\", \"message\": \"JavaScript execution failed: InternalError at line 1, column 45: out of memory\"}}; peak RSS=71548928"
-      },
-      "os": {
-        "argv": [
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
-          "--seatbelt",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
-        ],
-        "env": {},
-        "exit": 0,
-        "wall_seconds": 0.0342,
-        "stdout_bytes": 129,
-        "stderr": "{\"cpu_seconds\":0.01708,\"peak_rss_bytes\":71581696}\n",
-        "usage": {
-          "cpu_seconds": 0.01708,
+          "cpu_seconds": 0.008736,
           "peak_rss_bytes": 71581696
         },
         "response": {
@@ -1420,6 +1394,32 @@
         },
         "observed": "DENIED",
         "evidence": "{\"ok\": false, \"error\": {\"kind\": \"memory\", \"message\": \"JavaScript execution failed: InternalError at line 1, column 45: out of memory\"}}; peak RSS=71581696"
+      },
+      "os": {
+        "argv": [
+          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
+          "--seatbelt",
+          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
+        ],
+        "env": {},
+        "exit": 0,
+        "wall_seconds": 0.0209,
+        "stdout_bytes": 129,
+        "stderr": "{\"cpu_seconds\":0.01379,\"peak_rss_bytes\":71565312}\n",
+        "usage": {
+          "cpu_seconds": 0.01379,
+          "peak_rss_bytes": 71565312
+        },
+        "response": {
+          "ok": false,
+          "error": {
+            "kind": "memory",
+            "message": "JavaScript execution failed: InternalError at line 1, column 45: out of memory"
+          }
+        },
+        "observed": "DENIED",
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"memory\", \"message\": \"JavaScript execution failed: InternalError at line 1, column 45: out of memory\"}}; peak RSS=71565312"
       }
     },
     {
@@ -1430,16 +1430,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0199,
+        "wall_seconds": 0.0153,
         "stdout_bytes": 113,
-        "stderr": "{\"cpu_seconds\":0.012731000000000001,\"peak_rss_bytes\":10371072}\n",
+        "stderr": "{\"cpu_seconds\":0.010211999999999999,\"peak_rss_bytes\":10305536}\n",
         "usage": {
-          "cpu_seconds": 0.012731000000000001,
-          "peak_rss_bytes": 10371072
+          "cpu_seconds": 0.010211999999999999,
+          "peak_rss_bytes": 10305536
         },
         "response": {
           "ok": false,
@@ -1449,23 +1449,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"model_limit\", \"message\": \"At most 3 model requests per run; repeated unanswered key\"}}; peak RSS=10371072"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"model_limit\", \"message\": \"At most 3 model requests per run; repeated unanswered key\"}}; peak RSS=10305536"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0293,
+        "wall_seconds": 0.0194,
         "stdout_bytes": 113,
-        "stderr": "{\"cpu_seconds\":0.019786,\"peak_rss_bytes\":10403840}\n",
+        "stderr": "{\"cpu_seconds\":0.01385,\"peak_rss_bytes\":10321920}\n",
         "usage": {
-          "cpu_seconds": 0.019786,
-          "peak_rss_bytes": 10403840
+          "cpu_seconds": 0.01385,
+          "peak_rss_bytes": 10321920
         },
         "response": {
           "ok": false,
@@ -1475,7 +1475,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"model_limit\", \"message\": \"At most 3 model requests per run; repeated unanswered key\"}}; peak RSS=10403840"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"model_limit\", \"message\": \"At most 3 model requests per run; repeated unanswered key\"}}; peak RSS=10321920"
       }
     },
     {
@@ -1486,15 +1486,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0102,
+        "wall_seconds": 0.0098,
         "stdout_bytes": 91,
-        "stderr": "{\"cpu_seconds\":0.003224,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.003019,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.003224,
+          "cpu_seconds": 0.003019,
           "peak_rss_bytes": 4800512
         },
         "response": {
@@ -1513,16 +1513,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0152,
+        "wall_seconds": 0.0146,
         "stdout_bytes": 91,
-        "stderr": "{\"cpu_seconds\":0.007988,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.007753,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.007988,
-          "peak_rss_bytes": 4800512
+          "cpu_seconds": 0.007753,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -1533,7 +1533,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: no fetch or socket API exists\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: no fetch or socket API exists\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -1544,16 +1544,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0107,
+        "wall_seconds": 0.0087,
         "stdout_bytes": 90,
-        "stderr": "{\"cpu_seconds\":0.0030680000000000004,\"peak_rss_bytes\":4833280}\n",
+        "stderr": "{\"cpu_seconds\":0.002828,\"peak_rss_bytes\":4866048}\n",
         "usage": {
-          "cpu_seconds": 0.0030680000000000004,
-          "peak_rss_bytes": 4833280
+          "cpu_seconds": 0.002828,
+          "peak_rss_bytes": 4866048
         },
         "response": {
           "ok": true,
@@ -1567,23 +1567,23 @@
           ]
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4833280"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4866048"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.015,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 90,
-        "stderr": "{\"cpu_seconds\":0.007883,\"peak_rss_bytes\":4833280}\n",
+        "stderr": "{\"cpu_seconds\":0.008818,\"peak_rss_bytes\":4866048}\n",
         "usage": {
-          "cpu_seconds": 0.007883,
-          "peak_rss_bytes": 4833280
+          "cpu_seconds": 0.008818,
+          "peak_rss_bytes": 4866048
         },
         "response": {
           "ok": true,
@@ -1597,7 +1597,7 @@
           ]
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4833280"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"ok.csv\", \"bytes\": 9}]}; peak RSS=4866048"
       }
     },
     {
@@ -1608,16 +1608,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0087,
+        "wall_seconds": 0.0096,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.0030600000000000002,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.0029709999999999997,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.0030600000000000002,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.0029709999999999997,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -1627,22 +1627,22 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5128192"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0164,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.007903,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.007913,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.007903,
+          "cpu_seconds": 0.007913,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1664,16 +1664,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0955,
+        "wall_seconds": 0.0991,
         "stdout_bytes": 83,
-        "stderr": "{\"cpu_seconds\":0.085563,\"peak_rss_bytes\":45187072}\n",
+        "stderr": "{\"cpu_seconds\":0.088333,\"peak_rss_bytes\":45219840}\n",
         "usage": {
-          "cpu_seconds": 0.085563,
-          "peak_rss_bytes": 45187072
+          "cpu_seconds": 0.088333,
+          "peak_rss_bytes": 45219840
         },
         "response": {
           "ok": false,
@@ -1683,23 +1683,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"output byte limit exceeded\"}}; peak RSS=45187072"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"output byte limit exceeded\"}}; peak RSS=45219840"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0971,
+        "wall_seconds": 0.0968,
         "stdout_bytes": 83,
-        "stderr": "{\"cpu_seconds\":0.08934,\"peak_rss_bytes\":45187072}\n",
+        "stderr": "{\"cpu_seconds\":0.086973,\"peak_rss_bytes\":45219840}\n",
         "usage": {
-          "cpu_seconds": 0.08934,
-          "peak_rss_bytes": 45187072
+          "cpu_seconds": 0.086973,
+          "peak_rss_bytes": 45219840
         },
         "response": {
           "ok": false,
@@ -1709,7 +1709,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"output byte limit exceeded\"}}; peak RSS=45187072"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"output byte limit exceeded\"}}; peak RSS=45219840"
       }
     },
     {
@@ -1720,15 +1720,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0098,
+        "wall_seconds": 0.0104,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.00317,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.0031709999999999998,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.00317,
+          "cpu_seconds": 0.0031709999999999998,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1746,15 +1746,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0145,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.008172,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.008178999999999999,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.008172,
+          "cpu_seconds": 0.008178999999999999,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1776,16 +1776,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0093,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 83,
-        "stderr": "{\"cpu_seconds\":0.003117,\"peak_rss_bytes\":5144576}\n",
+        "stderr": "{\"cpu_seconds\":0.0032510000000000004,\"peak_rss_bytes\":5160960}\n",
         "usage": {
-          "cpu_seconds": 0.003117,
-          "peak_rss_bytes": 5144576
+          "cpu_seconds": 0.0032510000000000004,
+          "peak_rss_bytes": 5160960
         },
         "response": {
           "ok": false,
@@ -1795,23 +1795,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"only one output is allowed\"}}; peak RSS=5144576"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"only one output is allowed\"}}; peak RSS=5160960"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0159,
+        "wall_seconds": 0.0151,
         "stdout_bytes": 83,
-        "stderr": "{\"cpu_seconds\":0.008373,\"peak_rss_bytes\":5144576}\n",
+        "stderr": "{\"cpu_seconds\":0.007932,\"peak_rss_bytes\":5160960}\n",
         "usage": {
-          "cpu_seconds": 0.008373,
-          "peak_rss_bytes": 5144576
+          "cpu_seconds": 0.007932,
+          "peak_rss_bytes": 5160960
         },
         "response": {
           "ok": false,
@@ -1821,7 +1821,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"only one output is allowed\"}}; peak RSS=5144576"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"only one output is allowed\"}}; peak RSS=5160960"
       }
     },
     {
@@ -1832,15 +1832,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0097,
+        "wall_seconds": 0.0087,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.003005,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.002994,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.003005,
+          "cpu_seconds": 0.002994,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1858,16 +1858,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0156,
+        "wall_seconds": 0.0148,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.008373,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.007786,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.008373,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.007786,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -1877,7 +1877,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5128192"
       }
     },
     {
@@ -1888,16 +1888,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0089,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.003034,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.002856,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.003034,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.002856,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -1907,22 +1907,22 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"forbidden\", \"message\": \"output requires a .csv, .tsv, .txt, .md or .json basename\"}}; peak RSS=5128192"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0151,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 111,
-        "stderr": "{\"cpu_seconds\":0.008378,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.007627999999999999,\"peak_rss_bytes\":5095424}\n",
         "usage": {
-          "cpu_seconds": 0.008378,
+          "cpu_seconds": 0.007627999999999999,
           "peak_rss_bytes": 5095424
         },
         "response": {
@@ -1944,15 +1944,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0099,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0030080000000000003,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.003658,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.0030080000000000003,
+          "cpu_seconds": 0.003658,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -1971,16 +1971,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.0161,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.008476000000000001,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007865,\"peak_rss_bytes\":4833280}\n",
         "usage": {
-          "cpu_seconds": 0.008476000000000001,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007865,
+          "peak_rss_bytes": 4833280
         },
         "response": {
           "ok": true,
@@ -1991,7 +1991,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: frozen SDK\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: frozen SDK\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4833280"
       }
     },
     {
@@ -2002,16 +2002,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0098,
+        "wall_seconds": 0.0231,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.003032,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.005325,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.003032,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.005325,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -2022,23 +2022,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.015,
+        "wall_seconds": 0.0457,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008299,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.015874,\"peak_rss_bytes\":4833280}\n",
         "usage": {
-          "cpu_seconds": 0.008299,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.015874,
+          "peak_rss_bytes": 4833280
         },
         "response": {
           "ok": true,
@@ -2049,7 +2049,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4833280"
       }
     },
     {
@@ -2060,15 +2060,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0094,
+        "wall_seconds": 0.0223,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.003068,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0069759999999999996,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003068,
+          "cpu_seconds": 0.0069759999999999996,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -2087,16 +2087,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0163,
+        "wall_seconds": 0.028,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008477,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.011566,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008477,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.011566,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -2107,7 +2107,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Deno absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -2118,16 +2118,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0107,
+        "wall_seconds": 0.0187,
         "stdout_bytes": 190,
-        "stderr": "{\"cpu_seconds\":0.00306,\"peak_rss_bytes\":4997120}\n",
+        "stderr": "{\"cpu_seconds\":0.0057020000000000005,\"peak_rss_bytes\":5029888}\n",
         "usage": {
-          "cpu_seconds": 0.00306,
-          "peak_rss_bytes": 4997120
+          "cpu_seconds": 0.0057020000000000005,
+          "peak_rss_bytes": 5029888
         },
         "response": {
           "ok": true,
@@ -2141,22 +2141,22 @@
           ]
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"regex.txt\", \"bytes\": 91}]}; peak RSS=4997120"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": [{\"name\": \"regex.txt\", \"bytes\": 91}]}; peak RSS=5029888"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0169,
+        "wall_seconds": 0.0159,
         "stdout_bytes": 190,
-        "stderr": "{\"cpu_seconds\":0.008017999999999999,\"peak_rss_bytes\":4997120}\n",
+        "stderr": "{\"cpu_seconds\":0.00799,\"peak_rss_bytes\":4997120}\n",
         "usage": {
-          "cpu_seconds": 0.008017999999999999,
+          "cpu_seconds": 0.00799,
           "peak_rss_bytes": 4997120
         },
         "response": {
@@ -2182,16 +2182,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0219,
+        "wall_seconds": 0.0212,
         "stdout_bytes": 52,
-        "stderr": "{\"cpu_seconds\":0.009616999999999999,\"peak_rss_bytes\":6668288}\n",
+        "stderr": "{\"cpu_seconds\":0.009713,\"peak_rss_bytes\":6701056}\n",
         "usage": {
-          "cpu_seconds": 0.009616999999999999,
-          "peak_rss_bytes": 6668288
+          "cpu_seconds": 0.009713,
+          "peak_rss_bytes": 6701056
         },
         "response": {
           "ok": true,
@@ -2200,23 +2200,23 @@
           "outputs": []
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": []}; peak RSS=6668288"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": []}; peak RSS=6701056"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0272,
+        "wall_seconds": 0.0268,
         "stdout_bytes": 52,
-        "stderr": "{\"cpu_seconds\":0.014653,\"peak_rss_bytes\":6668288}\n",
+        "stderr": "{\"cpu_seconds\":0.014643,\"peak_rss_bytes\":6651904}\n",
         "usage": {
-          "cpu_seconds": 0.014653,
-          "peak_rss_bytes": 6668288
+          "cpu_seconds": 0.014643,
+          "peak_rss_bytes": 6651904
         },
         "response": {
           "ok": true,
@@ -2225,7 +2225,7 @@
           "outputs": []
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": []}; peak RSS=6668288"
+        "evidence": "{\"ok\": true, \"log\": [], \"planned_calls\": [], \"outputs\": []}; peak RSS=6651904"
       }
     },
     {
@@ -2236,15 +2236,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0113,
+        "wall_seconds": 0.0096,
         "stdout_bytes": 153,
-        "stderr": "{\"cpu_seconds\":0.006364,\"peak_rss_bytes\":5193728}\n",
+        "stderr": "{\"cpu_seconds\":0.00609,\"peak_rss_bytes\":5193728}\n",
         "usage": {
-          "cpu_seconds": 0.006364,
+          "cpu_seconds": 0.00609,
           "peak_rss_bytes": 5193728
         },
         "response": {
@@ -2262,16 +2262,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0166,
+        "wall_seconds": 0.021,
         "stdout_bytes": 153,
-        "stderr": "{\"cpu_seconds\":0.011049999999999999,\"peak_rss_bytes\":5193728}\n",
+        "stderr": "{\"cpu_seconds\":0.011433,\"peak_rss_bytes\":5210112}\n",
         "usage": {
-          "cpu_seconds": 0.011049999999999999,
-          "peak_rss_bytes": 5193728
+          "cpu_seconds": 0.011433,
+          "peak_rss_bytes": 5210112
         },
         "response": {
           "ok": false,
@@ -2281,7 +2281,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"runtime\", \"message\": \"JavaScript execution failed: RangeError at line 6, column 1: regex pattern exceeds \\u2026,\\u2026 characters\"}}; peak RSS=5193728"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"runtime\", \"message\": \"JavaScript execution failed: RangeError at line 6, column 1: regex pattern exceeds \\u2026,\\u2026 characters\"}}; peak RSS=5210112"
       }
     },
     {
@@ -2292,15 +2292,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0101,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 101,
-        "stderr": "{\"cpu_seconds\":0.002978,\"peak_rss_bytes\":4866048}\n",
+        "stderr": "{\"cpu_seconds\":0.0029720000000000002,\"peak_rss_bytes\":4866048}\n",
         "usage": {
-          "cpu_seconds": 0.002978,
+          "cpu_seconds": 0.0029720000000000002,
           "peak_rss_bytes": 4866048
         },
         "response": {
@@ -2319,15 +2319,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0156,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 101,
-        "stderr": "{\"cpu_seconds\":0.007993,\"peak_rss_bytes\":4866048}\n",
+        "stderr": "{\"cpu_seconds\":0.007901,\"peak_rss_bytes\":4866048}\n",
         "usage": {
-          "cpu_seconds": 0.007993,
+          "cpu_seconds": 0.007901,
           "peak_rss_bytes": 4866048
         },
         "response": {
@@ -2350,16 +2350,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 10.0901,
+        "wall_seconds": 10.027,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":10.002578000000002,\"peak_rss_bytes\":5718016}\n",
+        "stderr": "{\"cpu_seconds\":10.001987,\"peak_rss_bytes\":6111232}\n",
         "usage": {
-          "cpu_seconds": 10.002578000000002,
-          "peak_rss_bytes": 5718016
+          "cpu_seconds": 10.001987,
+          "peak_rss_bytes": 6111232
         },
         "response": {
           "ok": false,
@@ -2369,23 +2369,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5718016"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=6111232"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 10.0898,
+        "wall_seconds": 10.0319,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":10.008078,\"peak_rss_bytes\":5718016}\n",
+        "stderr": "{\"cpu_seconds\":10.007515,\"peak_rss_bytes\":6094848}\n",
         "usage": {
-          "cpu_seconds": 10.008078,
-          "peak_rss_bytes": 5718016
+          "cpu_seconds": 10.007515,
+          "peak_rss_bytes": 6094848
         },
         "response": {
           "ok": false,
@@ -2395,7 +2395,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=5718016"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"cpu\", \"message\": \"execution budget exceeded\"}}; peak RSS=6094848"
       }
     },
     {
@@ -2406,15 +2406,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0104,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.002359,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001617,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.002359,
+          "cpu_seconds": 0.001617,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2432,15 +2432,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
         "wall_seconds": 0.015,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.007683000000000001,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.007476,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.007683000000000001,
+          "cpu_seconds": 0.007476,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2462,15 +2462,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0119,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.001882,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001946,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.001882,
+          "cpu_seconds": 0.001946,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2488,15 +2488,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0155,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.007435,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006434,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.007435,
+          "cpu_seconds": 0.006434,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2518,15 +2518,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0097,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0017929999999999999,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001592,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.0017929999999999999,
+          "cpu_seconds": 0.001592,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2544,15 +2544,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0158,
+        "wall_seconds": 0.0154,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.00653,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006274,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.00653,
+          "cpu_seconds": 0.006274,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2574,16 +2574,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0089,
+        "wall_seconds": 0.0095,
         "stdout_bytes": 76,
-        "stderr": "{\"cpu_seconds\":0.00295,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.00298,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.00295,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.00298,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -2594,23 +2594,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: console absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: console absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0152,
+        "wall_seconds": 0.0148,
         "stdout_bytes": 76,
-        "stderr": "{\"cpu_seconds\":0.007889,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007934,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.007889,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007934,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -2621,7 +2621,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: console absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: console absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -2632,16 +2632,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0165,
+        "wall_seconds": 0.015,
         "stdout_bytes": 80,
-        "stderr": "{\"cpu_seconds\":0.007331,\"peak_rss_bytes\":6160384}\n",
+        "stderr": "{\"cpu_seconds\":0.007324,\"peak_rss_bytes\":6193152}\n",
         "usage": {
-          "cpu_seconds": 0.007331,
-          "peak_rss_bytes": 6160384
+          "cpu_seconds": 0.007324,
+          "peak_rss_bytes": 6193152
         },
         "response": {
           "ok": false,
@@ -2651,23 +2651,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"log byte limit exceeded\"}}; peak RSS=6160384"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"log byte limit exceeded\"}}; peak RSS=6193152"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0213,
+        "wall_seconds": 0.0197,
         "stdout_bytes": 80,
-        "stderr": "{\"cpu_seconds\":0.01217,\"peak_rss_bytes\":6160384}\n",
+        "stderr": "{\"cpu_seconds\":0.012243,\"peak_rss_bytes\":6193152}\n",
         "usage": {
-          "cpu_seconds": 0.01217,
-          "peak_rss_bytes": 6160384
+          "cpu_seconds": 0.012243,
+          "peak_rss_bytes": 6193152
         },
         "response": {
           "ok": false,
@@ -2677,7 +2677,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"log byte limit exceeded\"}}; peak RSS=6160384"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"output_limit\", \"message\": \"log byte limit exceeded\"}}; peak RSS=6193152"
       }
     },
     {
@@ -2688,15 +2688,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0089,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.002872,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002924,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.002872,
+          "cpu_seconds": 0.002924,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -2715,15 +2715,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0153,
+        "wall_seconds": 0.0151,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.00792,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007814,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.00792,
+          "cpu_seconds": 0.007814,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -2746,15 +2746,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0099,
+        "wall_seconds": 0.0091,
         "stdout_bytes": 78,
-        "stderr": "{\"cpu_seconds\":0.002977,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.002989,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.002977,
+          "cpu_seconds": 0.002989,
           "peak_rss_bytes": 4800512
         },
         "response": {
@@ -2773,15 +2773,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0164,
+        "wall_seconds": 0.0178,
         "stdout_bytes": 78,
-        "stderr": "{\"cpu_seconds\":0.008019,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.009513,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.008019,
+          "cpu_seconds": 0.009513,
           "peak_rss_bytes": 4800512
         },
         "response": {
@@ -2804,16 +2804,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0093,
+        "wall_seconds": 0.0106,
         "stdout_bytes": 81,
-        "stderr": "{\"cpu_seconds\":0.004351000000000001,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.002967,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.004351000000000001,
-          "peak_rss_bytes": 4800512
+          "cpu_seconds": 0.002967,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -2824,22 +2824,22 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: localStorage absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4800512"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: localStorage absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0157,
+        "wall_seconds": 0.015,
         "stdout_bytes": 81,
-        "stderr": "{\"cpu_seconds\":0.008439,\"peak_rss_bytes\":4800512}\n",
+        "stderr": "{\"cpu_seconds\":0.007862,\"peak_rss_bytes\":4800512}\n",
         "usage": {
-          "cpu_seconds": 0.008439,
+          "cpu_seconds": 0.007862,
           "peak_rss_bytes": 4800512
         },
         "response": {
@@ -2862,15 +2862,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0119,
+        "wall_seconds": 0.0101,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0024330000000000003,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.001544,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.0024330000000000003,
+          "cpu_seconds": 0.001544,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2888,15 +2888,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0179,
+        "wall_seconds": 0.0145,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.007958,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006425,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.007958,
+          "cpu_seconds": 0.006425,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2918,15 +2918,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0093,
+        "wall_seconds": 0.0101,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0017560000000000002,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.0015760000000000001,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.0017560000000000002,
+          "cpu_seconds": 0.0015760000000000001,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2944,15 +2944,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0151,
+        "wall_seconds": 0.0162,
         "stdout_bytes": 72,
-        "stderr": "{\"cpu_seconds\":0.0077540000000000005,\"peak_rss_bytes\":3014656}\n",
+        "stderr": "{\"cpu_seconds\":0.006556,\"peak_rss_bytes\":3014656}\n",
         "usage": {
-          "cpu_seconds": 0.0077540000000000005,
+          "cpu_seconds": 0.006556,
           "peak_rss_bytes": 3014656
         },
         "response": {
@@ -2974,16 +2974,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.1075,
+        "wall_seconds": 0.1068,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.101695,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.101732,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.101695,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.101732,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -2993,23 +2993,23 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"wall\", \"message\": \"execution budget exceeded\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"wall\", \"message\": \"execution budget exceeded\"}}; peak RSS=5128192"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.1142,
+        "wall_seconds": 0.1163,
         "stdout_bytes": 74,
-        "stderr": "{\"cpu_seconds\":0.106797,\"peak_rss_bytes\":5095424}\n",
+        "stderr": "{\"cpu_seconds\":0.106992,\"peak_rss_bytes\":5128192}\n",
         "usage": {
-          "cpu_seconds": 0.106797,
-          "peak_rss_bytes": 5095424
+          "cpu_seconds": 0.106992,
+          "peak_rss_bytes": 5128192
         },
         "response": {
           "ok": false,
@@ -3019,7 +3019,7 @@
           }
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"wall\", \"message\": \"execution budget exceeded\"}}; peak RSS=5095424"
+        "evidence": "{\"ok\": false, \"error\": {\"kind\": \"wall\", \"message\": \"execution budget exceeded\"}}; peak RSS=5128192"
       }
     },
     {
@@ -3030,15 +3030,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.009,
+        "wall_seconds": 0.0118,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003211,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0037610000000000005,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003211,
+          "cpu_seconds": 0.0037610000000000005,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3057,15 +3057,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.015,
+        "wall_seconds": 0.0171,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008798,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008353,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.008798,
+          "cpu_seconds": 0.008353,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3088,16 +3088,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0091,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003229,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0029779999999999997,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.003229,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.0029779999999999997,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3108,23 +3108,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0151,
+        "wall_seconds": 0.0153,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008345,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008188,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008345,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.008188,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3135,7 +3135,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3146,16 +3146,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0108,
+        "wall_seconds": 0.0096,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003222,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.003101,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.003222,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.003101,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3166,23 +3166,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0154,
+        "wall_seconds": 0.0142,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008289000000000001,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007904999999999999,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008289000000000001,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007904999999999999,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3193,7 +3193,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3204,15 +3204,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0088,
+        "wall_seconds": 0.0095,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003105,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.003005,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003105,
+          "cpu_seconds": 0.003005,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3231,15 +3231,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0152,
+        "wall_seconds": 0.0151,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008766,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008877,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.008766,
+          "cpu_seconds": 0.008877,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3262,16 +3262,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0092,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003453,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002968,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.003453,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.002968,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3282,23 +3282,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0147,
+        "wall_seconds": 0.0155,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.009701999999999999,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007629,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.009701999999999999,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007629,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3309,7 +3309,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3320,15 +3320,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0109,
+        "wall_seconds": 0.0093,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.0038580000000000003,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.00296,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.0038580000000000003,
+          "cpu_seconds": 0.00296,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3347,16 +3347,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.02,
+        "wall_seconds": 0.015,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008409,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008284,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008409,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.008284,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3367,7 +3367,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3378,15 +3378,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0087,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.003053,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0030290000000000004,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.003053,
+          "cpu_seconds": 0.0030290000000000004,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3405,16 +3405,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0163,
+        "wall_seconds": 0.0141,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.007766,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007821999999999999,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.007766,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007821999999999999,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3425,7 +3425,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3436,15 +3436,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0096,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.002953,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0035399999999999997,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.002953,
+          "cpu_seconds": 0.0035399999999999997,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3463,16 +3463,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.016,
+        "wall_seconds": 0.0158,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008243,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008395,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008243,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.008395,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3483,7 +3483,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3494,15 +3494,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0092,
+        "wall_seconds": 0.009,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.0033350000000000003,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.0031520000000000003,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.0033350000000000003,
+          "cpu_seconds": 0.0031520000000000003,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3521,16 +3521,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0154,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.0077269999999999995,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007916,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.0077269999999999995,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.007916,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3541,7 +3541,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3552,15 +3552,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0091,
+        "wall_seconds": 0.0086,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.002919,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.003048,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.002919,
+          "cpu_seconds": 0.003048,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3579,15 +3579,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.015,
+        "wall_seconds": 0.0141,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008003,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007838999999999999,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.008003,
+          "cpu_seconds": 0.007838999999999999,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3610,16 +3610,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0097,
+        "wall_seconds": 0.0089,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.0032170000000000002,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002918,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.0032170000000000002,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.002918,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3630,22 +3630,22 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0143,
+        "wall_seconds": 0.0148,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.00843,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007845999999999999,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.00843,
+          "cpu_seconds": 0.007845999999999999,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3668,16 +3668,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0093,
+        "wall_seconds": 0.0097,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.004101,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002974,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.004101,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.002974,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3688,23 +3688,23 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0142,
+        "wall_seconds": 0.0151,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.008099,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008348999999999999,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.008099,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.008348999999999999,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3715,7 +3715,7 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       }
     },
     {
@@ -3726,16 +3726,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0085,
+        "wall_seconds": 0.0088,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.002886,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002927,\"peak_rss_bytes\":4816896}\n",
         "usage": {
-          "cpu_seconds": 0.002886,
-          "peak_rss_bytes": 4784128
+          "cpu_seconds": 0.002927,
+          "peak_rss_bytes": 4816896
         },
         "response": {
           "ok": true,
@@ -3746,22 +3746,22 @@
           "outputs": []
         },
         "observed": "DENIED",
-        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4784128"
+        "evidence": "{\"ok\": true, \"log\": [\"DENIED: Worker absent\"], \"planned_calls\": [], \"outputs\": []}; peak RSS=4816896"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0163,
+        "wall_seconds": 0.0149,
         "stdout_bytes": 75,
-        "stderr": "{\"cpu_seconds\":0.007827,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.007797999999999999,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.007827,
+          "cpu_seconds": 0.007797999999999999,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3784,15 +3784,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0085,
+        "wall_seconds": 0.0099,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.0028669999999999998,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.002985,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.0028669999999999998,
+          "cpu_seconds": 0.002985,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3811,15 +3811,15 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0175,
+        "wall_seconds": 0.0152,
         "stdout_bytes": 73,
-        "stderr": "{\"cpu_seconds\":0.008166,\"peak_rss_bytes\":4784128}\n",
+        "stderr": "{\"cpu_seconds\":0.008151,\"peak_rss_bytes\":4784128}\n",
         "usage": {
-          "cpu_seconds": 0.008166,
+          "cpu_seconds": 0.008151,
           "peak_rss_bytes": 4784128
         },
         "response": {
@@ -3842,16 +3842,16 @@
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--synthetic",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.0084,
+        "wall_seconds": 0.0112,
         "stdout_bytes": 599,
-        "stderr": "{\"cpu_seconds\":0.003406,\"peak_rss_bytes\":5603328}\n",
+        "stderr": "{\"cpu_seconds\":0.003665,\"peak_rss_bytes\":5636096}\n",
         "usage": {
-          "cpu_seconds": 0.003406,
-          "peak_rss_bytes": 5603328
+          "cpu_seconds": 0.003665,
+          "peak_rss_bytes": 5636096
         },
         "response": {
           "ok": true,
@@ -3867,23 +3867,23 @@
           ]
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [\"rows: 18\"], \"planned_calls\": [], \"outputs\": [{\"name\": \"orders_ready.csv\", \"bytes\": 481}]}; peak RSS=5603328"
+        "evidence": "{\"ok\": true, \"log\": [\"rows: 18\"], \"planned_calls\": [], \"outputs\": [{\"name\": \"orders_ready.csv\", \"bytes\": 481}]}; peak RSS=5636096"
       },
       "os": {
         "argv": [
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner-launch",
           "--seatbelt",
           "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-cache/targets/codex-25/debug/macroscope-runner",
-          "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-wt/custom-endpoint/experiments/runtime-gate-v2/profile.sb"
+          "/Users/todd/StudioProjects/macroscope/experiments/runtime-gate-v2/profile.sb"
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.017,
+        "wall_seconds": 0.0165,
         "stdout_bytes": 599,
-        "stderr": "{\"cpu_seconds\":0.008993,\"peak_rss_bytes\":5586944}\n",
+        "stderr": "{\"cpu_seconds\":0.009166,\"peak_rss_bytes\":5619712}\n",
         "usage": {
-          "cpu_seconds": 0.008993,
-          "peak_rss_bytes": 5586944
+          "cpu_seconds": 0.009166,
+          "peak_rss_bytes": 5619712
         },
         "response": {
           "ok": true,
@@ -3899,7 +3899,7 @@
           ]
         },
         "observed": "PASS",
-        "evidence": "{\"ok\": true, \"log\": [\"rows: 18\"], \"planned_calls\": [], \"outputs\": [{\"name\": \"orders_ready.csv\", \"bytes\": 481}]}; peak RSS=5586944"
+        "evidence": "{\"ok\": true, \"log\": [\"rows: 18\"], \"planned_calls\": [], \"outputs\": [{\"name\": \"orders_ready.csv\", \"bytes\": 481}]}; peak RSS=5619712"
       }
     },
     {
@@ -3911,7 +3911,7 @@
         ],
         "env": {},
         "exit": 0,
-        "wall_seconds": 0.1162,
+        "wall_seconds": 0.1337,
         "stdout_bytes": 99,
         "stderr": "",
         "usage": null,
