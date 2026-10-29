@@ -270,12 +270,17 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
                 request.usesLanguageCorrection = false
                 try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
                 var textBytes = 0
-                guard let results = request.results, results.count <= 1024 else { throw CaptureWire.Failure.oversized }
+                guard let results = request.results else { throw CaptureWire.Failure.invalid }
+                // Pages can hold more text than the limits allow. Collect what fits and flag the frame
+                // as not fully checked; the person sees it and decides whether to keep it.
                 for result in results {
-                    guard let candidate = result.topCandidates(1).first, candidate.confidence >= 0.4,
-                          let rect = CaptureGeometry.vision(result.boundingBox, width: width, height: height) else { throw CaptureWire.Failure.invalid }
+                    guard let candidate = result.topCandidates(1).first,
+                          let rect = CaptureGeometry.vision(result.boundingBox, width: width, height: height) else {
+                        header.uncertain = true; continue
+                    }
+                    if candidate.confidence < 0.4 { header.uncertain = true } // still scanned for sensitive text
                     textBytes += candidate.string.utf8.count
-                    guard textBytes <= 24_000 else { throw CaptureWire.Failure.oversized }
+                    if boxes.count >= 1024 || textBytes > 24_000 { header.uncertain = true; break }
                     boxes.append(CaptureOCR(text: candidate.string, rect: rect))
                 }
             } catch { header.uncertain = true; textScanFailed = true; boxes = [] }
