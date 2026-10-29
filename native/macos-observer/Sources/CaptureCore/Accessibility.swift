@@ -78,17 +78,18 @@ enum CaptureAccessibility {
                 evidence.masks.append(mask)
                 return // Never read any text/value/children of a secure field.
             }
-            // A missing/ambiguous visible-control geometry invalidates this frame.
-            if element != window && role != "AXWindow" {
-                guard let rect = bounds(element) else { mark("a9"); return }
+            // Labels are only extra notes (masking comes from pixels and secure fields), so an element
+            // without readable geometry just contributes no label; its children are still walked.
+            if element != window && role != "AXWindow", let rect = bounds(element) {
                 if !rect.intersects(windowRect) { return }
                 for key in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
                     if let raw = value(element, key), CFGetTypeID(raw) == CFStringGetTypeID() {
                         let string = raw as! CFString
-                        guard CFStringGetLength(string) <= 4096 else { mark("a10"); return }
+                        // Over-long or too many labels are simply not collected (they are notes only).
+                        guard CFStringGetLength(string) <= 4096 else { continue }
                         let text = string as String
+                        guard bytes + text.utf8.count <= 24_000, evidence.labels.count < 1024 else { continue }
                         bytes += text.utf8.count
-                        guard bytes <= 24_000, evidence.labels.count < 1024 else { mark("a11"); return }
                         if !text.isEmpty { evidence.labels.append(text) }
                     }
                 }
