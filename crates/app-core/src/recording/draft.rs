@@ -167,7 +167,9 @@ impl TaskDraftV2 {
                 outputs += 1;
             }
         }
-        if outputs != 1 {
+        // A chore the tool cannot do at all (every step manual) has no output file.
+        let all_manual = manual_ids.len() == self.steps.len();
+        if outputs > 1 || (outputs == 0 && !all_manual) {
             return Err(DraftError(
                 "exactly one create-only output file is required",
             ));
@@ -250,6 +252,11 @@ pub fn apply_answers(
     answers: &BTreeMap<String, String>,
 ) -> Result<ClarifiedTask, DraftError> {
     draft.validate()?;
+    if draft.steps.iter().all(|s| s.capability == Capability::Manual) {
+        return Err(DraftError(
+            "A tool can't do any part of this chore: it needs clicking, typing or other apps. Nothing was built",
+        ));
+    }
     if answers.len() != draft.questions.len()
         || answers
             .keys()

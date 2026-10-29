@@ -1,0 +1,867 @@
+[
+ {
+  "name": "weather",
+  "expect": "web source for weather; variable city; output file with tomorrow high/low; typing the city is manual",
+  "frames": [
+   {
+    "title": "MetService - Weather",
+    "url": "metservice.com/",
+    "lines": [
+     {
+      "t": "Weather forecasts for New Zealand",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Search for a town or city",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "[ Gisborne ]   (Search)",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Popular: Auckland  Wellington  Christchurch",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Gisborne Forecast - MetService",
+    "url": "metservice.com/towns-cities/locations/gisborne",
+    "lines": [
+     {
+      "t": "Gisborne 7 day forecast",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Today   High 21   Low 11   Fine",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Tomorrow   High 19   Low 10   Showers clearing",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Thursday   High 20   Low 9   Fine",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Friday   High 22   Low 12   Partly cloudy",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Weather notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Gisborne tomorrow: high 19, low 10 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "fx",
+  "expect": "web source for exchange rate; output one line with the rate; variables currencies",
+  "frames": [
+   {
+    "title": "Currency Converter - Xe",
+    "url": "xe.com/currencyconverter/",
+    "lines": [
+     {
+      "t": "Currency Converter",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Amount: 1",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "From: EUR - Euro",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "To: NZD - New Zealand Dollar",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "(Convert)",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "EUR to NZD - Xe",
+    "url": "xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=NZD",
+    "lines": [
+     {
+      "t": "1 EUR = 1.9833 NZD",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Euro to New Zealand Dollar",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "1 NZD = 0.5042 EUR",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Mid-market exchange rate at 09:40 UTC",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Rate log",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "EUR to NZD 1.9833 today (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "hn",
+  "expect": "web source news.ycombinator.com or API; output top story title and points",
+  "frames": [
+   {
+    "title": "Hacker News",
+    "url": "news.ycombinator.com/",
+    "lines": [
+     {
+      "t": "Hacker News",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1. Show HN: A tiny database in 200 lines (example.org)  412 points  98 comments",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "2. The state of Rust async  305 points  120 comments",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "3. Why we left the cloud  290 points  210 comments",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "4. A visual guide to SQLite  201 points  40 comments",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Daily reading",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Top story: Show HN: A tiny database in 200 lines - 412 points (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "bitcoin",
+  "expect": "web source for bitcoin price; output file with price; no hard-coded price",
+  "frames": [
+   {
+    "title": "Bitcoin price - CoinDesk",
+    "url": "coindesk.com/price/bitcoin",
+    "lines": [
+     {
+      "t": "Bitcoin (BTC) price",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "$67,420.12 USD",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "+1.2% in the last 24 hours",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Market cap $1.33T   Volume $28.1B",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Prices",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "BTC $67,420 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "wikipedia",
+  "expect": "web source wikipedia (api text); model step summarises; variable article title",
+  "frames": [
+   {
+    "title": "Nintendo Switch - Wikipedia",
+    "url": "en.wikipedia.org/wiki/Nintendo_Switch",
+    "lines": [
+     {
+      "t": "Nintendo Switch",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "The Nintendo Switch is a video game console developed by Nintendo and released worldwide in most regions on March 3, 2017.",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "It is a hybrid console that can be used as a home console and as a portable device.",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "As of 2025 it has sold over 150 million units.",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Summary",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Switch: released 2017, 150m+ sold (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "trademe",
+  "expect": "listing page read; watchlist click manual; plan states clearly if the page cannot be read; no stale hardcoded values",
+  "frames": [
+   {
+    "title": "Gaming | Trade Me",
+    "url": "trademe.co.nz/a/marketplace/gaming?condition=used&buy=now&sort_order=ExpiryDesc",
+    "lines": [
+     {
+      "t": "Gaming marketplace",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Nintendo Switch Monster Hunter Rise Limited Edition   Buy Now $400.00",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Hogwarts Legacy PS5   Buy Now $35.00",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Used only | Buy Now | Sort: Closing soon",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Nintendo Switch Monster Hunter Rise Limited Edition | Trade Me",
+    "url": "trademe.co.nz/a/marketplace/gaming/listing/5583960712",
+    "lines": [
+     {
+      "t": "Nintendo Switch Monster Hunter Rise Limited Edition",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Buy Now $400.00",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Closes: Thu 5th Nov, 11:45pm",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Condition: Used",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "[ Add to Watchlist ]   7 others watchlisted",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "stocks",
+  "expect": "web source with complete market list; output biggest gainer; not top-N page",
+  "frames": [
+   {
+    "title": "Top gainers - Nasdaq",
+    "url": "nasdaq.com/market-activity/stocks/screener",
+    "lines": [
+     {
+      "t": "Stock screener",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Sort by: % change (descending)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "ACME Corp  ACME  +42.10%",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Globex Inc  GLBX  +31.77%",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Initech  INTC2  +28.30%",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Movers",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Biggest gainer today: ACME +42.10% (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "email",
+  "expect": "unsupported: sending email can't be done by a tool; plan says so, no fake tool",
+  "frames": [
+   {
+    "title": "Inbox - Gmail",
+    "url": "mail.google.com/mail/u/0/#inbox",
+    "lines": [
+     {
+      "t": "Inbox",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Compose",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Weekly report from Sam",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Invoice 1042",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "New Message - Gmail",
+    "url": "mail.google.com/mail/u/0/#inbox?compose=new",
+    "lines": [
+     {
+      "t": "New Message",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "To: team@example.com",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Subject: Weekly update",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Body: Hi all, here is this week's update.",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "(Send)",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "github",
+  "expect": "web source github api for repo stars; output the star count; no hard-coded number",
+  "frames": [
+   {
+    "title": "rust-lang/rust",
+    "url": "github.com/rust-lang/rust",
+    "lines": [
+     {
+      "t": "rust-lang/rust",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Empowering everyone to build reliable and efficient software.",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Star   98.4k",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Fork   12.7k",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Issues 9,512   Pull requests 842",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Rust stars: 98.4k (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "headline",
+  "expect": "web source for BBC news headline (RSS); output top headline; not hard-coded",
+  "frames": [
+   {
+    "title": "BBC News - Home",
+    "url": "bbc.com/news",
+    "lines": [
+     {
+      "t": "BBC News",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Top story: Storm warning issued for the south coast",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Business: Markets edge higher ahead of rates decision",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "World: Talks resume in Geneva",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "BBC top story: Storm warning issued for the south coast (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "sunset",
+  "expect": "web source for sunset time Wellington; variable city; output time",
+  "frames": [
+   {
+    "title": "Sunrise and sunset in Wellington",
+    "url": "timeanddate.com/sun/new-zealand/wellington",
+    "lines": [
+     {
+      "t": "Sun & Moon times today in Wellington",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Sunrise today 06:41",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Sunset today 19:59",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Daylight 13 hours 18 minutes",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Wellington sunset 19:59 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "npm",
+  "expect": "web source for npm registry; output latest version of a package",
+  "frames": [
+   {
+    "title": "react - npm",
+    "url": "npmjs.com/package/react",
+    "lines": [
+     {
+      "t": "react",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "18.3.1 - Public - Published 6 months ago",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "A JavaScript library for building user interfaces",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Weekly downloads 24,000,000",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "react latest 18.3.1 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ }
+]

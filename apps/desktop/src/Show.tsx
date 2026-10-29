@@ -314,6 +314,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     </>}
     {step===3 && understood && <>
       <h3>What the tool can do</h3><ol>{understood.steps.filter(s=>s.capability!=="manual").map(s=><li key={s.id}>{s.action}</li>)}</ol>
+      {understood.steps.every(s=>s.capability==="manual") && <p className="notice notice-warning">A tool can't do any part of this chore, because it needs clicking, typing or other apps. You can discard this recording.</p>}
       {understood.steps.some(s=>s.capability==="manual") && <><h3>You'll still need to do this part yourself</h3><ul>{understood.steps.filter(s=>s.capability==="manual").map(s=><li key={s.id}>{s.action}. {understood.unsupported_steps.find(u=>u.step_id===s.id)?.reason}</li>)}</ul></>}
       <h3>This changes each time</h3>{understood.variables.length?<ul>{understood.variables.map(v=><li key={v.name}>{v.name}: {v.description}</li>)}</ul>:<p>No changing details were found.</p>}
       {!!understood.constants.length && <><h3>What stays the same</h3><ul>{understood.constants.map(c=><li key={c.name}>{c.name}: {c.value}</li>)}</ul></>}

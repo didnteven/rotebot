@@ -535,10 +535,11 @@ impl MappingBuilder<'_> {
                         known = false;
                     }
                     let program = if is_program {
-                        Some(
+                        let mut program =
                             serde_json::from_value::<crate::Program>(output.value.clone())
-                                .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?,
-                        )
+                                .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?;
+                        program.correct_known_addresses();
+                        Some(program)
                     } else {
                         None
                     };

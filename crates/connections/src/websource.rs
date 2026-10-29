@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
 
-pub const RESPONSE_CAP: usize = 2 * 1024 * 1024;
+pub const RESPONSE_CAP: usize = 4 * 1024 * 1024;
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 5;
 
@@ -31,7 +31,7 @@ pub enum FetchError {
     QueryCredentials,
     #[error("redirect to another origin is not allowed")]
     CrossHostRedirect,
-    #[error("web source response exceeds 2 MB")]
+    #[error("web source response exceeds 4 MB")]
     TooLarge,
     #[error("Local only is on: web sources cannot be fetched")]
     LocalOnly,
