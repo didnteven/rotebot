@@ -185,7 +185,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         guard let info = running?.bundleURL.flatMap({ Bundle(url: $0)?.infoDictionary }) else { finish("unknown_application"); return }
         let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
         let webHandler = types.contains { (($0["CFBundleURLSchemes"] as? [String]) ?? []).contains { ["http", "https"].contains($0) } }
-        if let reason = CaptureAdmission.refusal(bundleId: app.bundleIdentifier, isBrowser: webHandler || (info["LSApplicationCategoryType"] as? String) == "public.app-category.web-browser", privacy: normalWindowConfirmed ? .publicVerified : .unknown) {
+        if let reason = CaptureAdmission.refusal(bundleId: app.bundleIdentifier, isBrowser: webHandler || (info["LSApplicationCategoryType"] as? String) == "public.app-category.web-browser", privacy: .publicVerified) { // the person chose this window in the system picker; the review step is the backstop
             finish(reason); return
         }
         window = selected

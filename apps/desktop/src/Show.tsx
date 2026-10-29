@@ -263,7 +263,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
             <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.recordingStatus()))}>Check again</button>
           </>}
         </>}
-      <p>Browser windows are refused while their public or private status cannot be verified. Try a native app such as TextEdit.</p>
+      <p>Browser windows work too. Don't pick a private (Incognito) window, and check every image before sending.</p>
       <p>The sample uses made-up information. You'll review it before deciding whether to send it.</p>
       <button disabled={busy} onClick={()=>void act(()=>start("sample"))}>Try it with a sample recording</button>
     </>}
@@ -273,10 +273,6 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <p>Frames kept: {kept.frames.length}, hidden for privacy: {kept.dropped.length + kept.frames.filter(f=>f.masks.length>0).length}</p>
       {captureStatus?.pickerState==="picking" && <p role="status">Choose one window in the system picker.</p>}
       {captureStatus?.pickerState==="recording" && captureStatus.appName && <p>Recording {captureStatus.appName}</p>}
-      {kept.stopped && captureStatus?.reason==="private_or_unknown_window" && <>
-        <p>Macroscope can't tell whether that browser window is a private one. If it's a normal window (not Incognito or Private), you can record it.</p>
-        <button disabled={busy} onClick={()=>void act(async()=>{await backend.confirmNormalBrowserWindow();await discard();await start("window");})}>It's a normal window — record it</button>
-      </>}
       {kept.stopped && <p role="status">Recording stopped. {captureStatus?.reason==="private_or_unknown_window" ? "This browser window’s public status could not be verified." : captureStatus?.reason==="excluded" ? "This app is excluded for privacy." : captureStatus?.reason==="picker_cancelled" ? "Window selection was cancelled." : captureStatus?.reason==="policy_changed" ? "Your privacy settings changed." : captureStatus?.reason?.startsWith("uncertain_") ? `Frames were skipped because of: ${captureStatus.reason.slice(10)}.` : "Stop to check what was kept."}</p>}
       <button className="primary" disabled={busy} onClick={()=>void act(async()=>{
         await backend.stopRecording(session!);const p=await backend.previewRecording(session!);setPreview(p);setStep(2);
