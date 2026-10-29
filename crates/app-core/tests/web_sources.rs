@@ -109,7 +109,7 @@ fn serve(mut stream: std::net::TcpStream, state: &Arc<Mutex<StandInState>>) {
             format!("Location: {}\r\n", state.redirect_to),
             Vec::new(),
         ),
-        ("GET", "/big") => ("200 OK", String::new(), vec![b'x'; 3 * 1024 * 1024]),
+        ("GET", "/big") => ("200 OK", String::new(), vec![b'x'; 5 * 1024 * 1024]),
         _ => ("404 Not Found", String::new(), b"no".to_vec()),
     };
     drop(state);
@@ -438,7 +438,7 @@ async fn oversize_response_rejected() {
     assert!(
         state.checks.iter().any(|c| c.id == "web_sources"
             && !c.passed
-            && c.detail.as_deref().is_some_and(|d| d.contains("2 MB"))),
+            && c.detail.as_deref().is_some_and(|d| d.contains("4 MB"))),
         "{:#?}",
         state.checks
     );
