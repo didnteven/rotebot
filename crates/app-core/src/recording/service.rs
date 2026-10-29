@@ -428,9 +428,10 @@ impl AppCore {
         if s.frames.frames.is_empty() {
             return Err(invalid("No frames were safe to keep. Try recording again."));
         }
+        // Work from a copy so the person can still remove frames while reviewing.
         let payload = s
             .capture
-            .take()
+            .clone()
             .ok_or_else(|| invalid("Start a new recording."))?
             .preview(rates())
             .map_err(err)?;
@@ -541,6 +542,8 @@ impl AppCore {
                 .map_err(err)?
                 .into_model_request()
                 .map_err(err)?;
+            // Sending closes the review: the stored frames are released now.
+            s.capture = None;
             s.analyzing = true;
             // No frame bytes survive in the stored session draft.
             s.frames.frames.clear();

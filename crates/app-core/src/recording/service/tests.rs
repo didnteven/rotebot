@@ -386,3 +386,17 @@ async fn permission_command_has_full_envelope_without_starting_capture() {
     }
     assert!(lock(&c.inner.recordings).is_empty());
 }
+
+#[tokio::test]
+async fn a_frame_can_be_removed_while_reviewing_and_the_review_is_rebuilt_without_it() {
+    let (c, _dir, _) = core("http://127.0.0.1:9".into());
+    let (id, p) = preview(&c).await;
+    let first = p.frames[0].seq;
+    let before = p.frames.len();
+    let left = c.remove_recording_frame(&id, first).unwrap();
+    assert_eq!(left.frames.len(), before - 1);
+    let again = c.preview_recording(&id).await.unwrap();
+    assert!(again.frames.iter().all(|f| f.seq != first));
+    assert_ne!(again.payload_hash, p.payload_hash);
+    assert!(!again.cleared_text_json.contains(&format!("\"seq\":{first},")));
+}

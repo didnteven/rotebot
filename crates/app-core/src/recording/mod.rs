@@ -89,6 +89,7 @@ pub struct FrameText {
     pub masks: Vec<MaskRegion>,
 }
 
+#[derive(Clone)]
 pub struct MaskedFrame {
     text: FrameText,
     width: u32,
@@ -135,6 +136,7 @@ pub struct DroppedFrame {
     pub reason: DropReason,
 }
 
+#[derive(Clone)]
 pub struct RecordingSession {
     id: String,
     frames: Vec<MaskedFrame>,
