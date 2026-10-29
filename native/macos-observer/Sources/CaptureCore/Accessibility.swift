@@ -63,9 +63,9 @@ enum CaptureAccessibility {
         guard let windowRect = bounds(window), let screenRect else { mark("window_bounds"); return evidence }
         guard CaptureGeometry.sameWindowBounds(windowRect, screenRect) else { mark("bounds_differ"); return evidence }
         var visited = 0, bytes = 0
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.8
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
         func walk(_ element: AXUIElement, depth: Int) {
-            guard allowed(), depth <= 32, visited < 1024,
+            guard allowed(), depth <= 32, visited < 8000,
                   ProcessInfo.processInfo.systemUptime < deadline else { mark("a6"); return }
             visited += 1
             guard let role = value(element, kAXRoleAttribute) as? String else { mark("a7"); return }
