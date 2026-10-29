@@ -107,7 +107,14 @@ async fn run_one(prompt: &str, key: &str) -> String {
     let steps = steps.join(" > ");
     if state.phase != BuildPhase::Ready {
         let why = state.failure.map(|f| f.message).unwrap_or_default();
-        return format!("BUILD FAILED: {why}\n  steps: {steps}");
+        // SCENARIO_DEBUG=1 also shows the declared sources and the program, to see what the model wrote.
+        let detail = if std::env::var("SCENARIO_DEBUG").is_ok() {
+            state.program.as_ref().map(|p| {
+                let sources: Vec<String> = p.web_sources.iter().map(|w| format!("{}={}", w.name, w.url)).collect();
+                format!("\n  declared: {}\n  code: {}", sources.join(", "), p.code.chars().take(1500).collect::<String>())
+            }).unwrap_or_default()
+        } else { String::new() };
+        return format!("BUILD FAILED: {why}\n  steps: {steps}{detail}");
     }
     let hosts = state
         .program
