@@ -128,6 +128,10 @@ impl TextDetector {
                 .filter(|s| !s.is_empty())
                 .map(str::len)
                 .collect();
+            // Chart/table rows (many separate short values) are not one identifier.
+            if groups.len() >= 5 && groups.iter().all(|&g| g <= 3) {
+                continue;
+            }
             let inside_url = self
                 .url
                 .find_iter(&text)

@@ -285,7 +285,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
         {preview.frames.map(frame=><figure key={frame.seq}>
           <img src={`data:image/png;base64,${frame.pngBase64}`} width={frame.width} height={frame.height} alt={`Reviewed frame ${frame.seq}${frame.masks.length?", private content hidden in black":""}`}/>
           <figcaption>Frame {frame.seq} · {frame.masks.length ? `${frame.masks.length} area(s) hidden for privacy (black)` : "No areas hidden"}</figcaption>
-          {frame.unverified && <p className="notice notice-warning">Not fully checked: password fields may not be hidden in this frame. Look closely, then keep it or remove it.</p>}
+          {frame.unverified && <p className="notice notice-warning">Not fully checked: this page was too large to scan for password fields. If you can't see one here, keep the frame; otherwise remove it.</p>}
           <button disabled={busy} onClick={()=>void act(async()=>{
             await backend.removeRecordingFrame(session!,frame.seq);
             try { setPreview(await backend.previewRecording(session!)); }

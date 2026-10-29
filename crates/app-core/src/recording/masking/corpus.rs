@@ -3,6 +3,9 @@ use super::*;
 use legacy::LegacyDetector;
 
 const HARMLESS: &[&str] = &[
+    "0 0 0 0 0 0 0 0 0 0 0 0",
+    "28 39 34 34 35 37 37 41 43 43 41 39",
+    "14 14 13 13 12 12 11 10 10 10 10 9",
     "trademe.co.nz/a/marketplace/gaming?condition=used&buy=now&sort_order=ExpiryDesc",
     "https://www.trademe.co.nz/a/marketplace/gaming/listing/5583960712",
     "Closes: Thu 5th Nov, 11:45pm",
