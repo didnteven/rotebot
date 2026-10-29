@@ -258,7 +258,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         let evidence = CaptureAccessibility.read(pid: app.processID, selectedWindow: window.windowID,
                                                   screenRect: screenRect, width: width, height: height, allowed: { self.allowed() && !IsSecureEventInputEnabled() })
         header.axLabels = evidence.labels; header.masks = evidence.masks
-        header.uncertain = evidence.uncertain || !AXIsProcessTrusted() || !sampleAge.isFinite || sampleAge < 0 || sampleAge > 0.25
+        header.uncertain = evidence.uncertain || !AXIsProcessTrusted() || !sampleAge.isFinite || sampleAge < 0 || sampleAge > 1
         header.secureInputGap = secureBefore || IsSecureEventInputEnabled()
         if header.secureInputGap == true { var gap = CaptureHeader(type: "gap"); gap.reason = "secure_input_gap"; send(gap) }
         var boxes: [CaptureOCR] = []
@@ -287,7 +287,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         header.secureInputGap = header.secureInputGap == true || IsSecureEventInputEnabled()
         if header.uncertain == true {
             // Fixed codes only (no window content) so a rejected frame can be explained to the person.
-            let why = evidence.why ?? (!AXIsProcessTrusted() ? "ax_untrusted" : (!sampleAge.isFinite || sampleAge < 0 || sampleAge > 0.25) ? "stale_frame"
+            let why = evidence.why ?? (!AXIsProcessTrusted() ? "ax_untrusted" : (!sampleAge.isFinite || sampleAge < 0 || sampleAge > 1) ? "stale_frame"
                 : (after.why ?? (after.masks != evidence.masks ? "window_changed"
                 : (ProcessInfo.processInfo.systemUptime-now > 6 ? "too_slow" : "text_scan_failed"))))
             var note = CaptureHeader(type: "gap"); note.reason = "uncertain_" + why; send(note)
