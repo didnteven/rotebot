@@ -529,10 +529,11 @@ button.primary:disabled { color: var(--muted); background: var(--info-surface); 
 ul, ol { padding-left: 24px; }
 .stepper, .plain-list { padding-left: 0; }
 
-.recording-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.recording-gallery { display: grid; grid-template-columns: 1fr; gap: 24px; }
 .recording-gallery figure { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
 .recording-gallery img { display: block; width: 100%; height: auto; border: 1px solid var(--border); }
-.recording-gallery figcaption { color: var(--muted); padding-top: 8px; }
+.recording-gallery figcaption { color: var(--muted); padding: 8px 0 12px; }
+.recording-gallery .notice { margin: 0 0 12px; }
 .recording-flow pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; background: var(--info-surface); padding: 12px; }
 .recording-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
 .recording-choice input { width: 20px; height: 20px; flex-shrink: 0; }
