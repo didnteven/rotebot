@@ -192,7 +192,7 @@ async fn gateway_sends_exact_reviewed_images_roles_and_schema_and_logs_exact_tex
         body["text"]["format"]["schema"],
         super::transport::provider_schema(&p.schema_json).unwrap()
     );
-    assert_eq!(body["max_output_tokens"], 8000);
+    assert_eq!(body["max_output_tokens"], 16000);
     assert!(body.get("tools").is_none());
     let rows = c.list_outbound().unwrap();
     assert_eq!(rows.len(), 1);
