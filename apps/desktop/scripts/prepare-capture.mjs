@@ -31,4 +31,7 @@ const destination = path.join(desktop, "src-tauri/binaries", `macroscope-capture
 mkdirSync(path.dirname(destination), { recursive: true });
 copyFileSync(path.join(bin, "macroscope-capture"), destination);
 chmodSync(destination, 0o755);
+// A fixed identifier keeps the macOS permission grant attached across rebuilds.
+const signed = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", "dev.macroscope.desktop.capture", destination], { encoding: "utf8" });
+if (signed.status !== 0) throw new Error(signed.stderr || "Signing the capture helper failed");
 console.log(`Prepared capture helper: ${destination}`);
