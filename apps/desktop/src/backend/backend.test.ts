@@ -162,6 +162,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["connectionSuggestions", [], undefined],
     ["dismissSuggestion", ["gmail"], { connectorId: "gmail" }],
     ["recordingStatus", [], undefined],
+    ["requestRecordingPermission", [], undefined],
     ["startRecording", ["sample"], {source:"sample"}],
     ["stopRecording", ["s"], {sessionId:"s"}],
     ["listRecordingFrames", ["s"], {sessionId:"s"}],

@@ -648,10 +648,14 @@ fn dismiss_suggestion(conns: State<'_, Conns>, connector_id: String) -> Cmd<()> 
     Ok(conns.0.dismiss(&connector_id)?)
 }
 
-// ---------- Recording: memory-only Stage B ----------
+// ---------- Recording: native ingress, memory-only review ----------
 #[tauri::command]
 fn recording_status(core: State<'_, Core>) -> RecordingStatus {
     core.0.recording_status()
+}
+#[tauri::command]
+fn request_recording_permission(core: State<'_, Core>) -> Cmd<RecordingStatus> {
+    Ok(core.0.request_recording_permission()?)
 }
 #[tauri::command]
 fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
@@ -722,6 +726,32 @@ async fn pause_show(show: State<'_, Show>, paused: bool) -> Cmd<ShowState> {
 #[tauri::command]
 async fn stop_show(show: State<'_, Show>) -> Cmd<ShowState> {
     Ok(show.0.stop().await)
+}
+
+/// Only trusted native paths, never a renderer-supplied executable.
+fn capture_path() -> Option<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    if let Some(path) = std::env::var_os("MACROSCOPE_CAPTURE") {
+        return Some(PathBuf::from(path));
+    }
+    let adjacent = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join("macroscope-capture");
+    if adjacent.is_file() {
+        return Some(adjacent);
+    }
+    let triple = if cfg!(target_arch = "aarch64") {
+        "aarch64-apple-darwin"
+    } else {
+        "x86_64-apple-darwin"
+    };
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries")
+        .join(format!("macroscope-capture-{triple}"));
+    dev.is_file().then_some(dev)
 }
 
 /// The observer helper: `MACROSCOPE_OBSERVER`, a sidecar next to the executable, or the
@@ -1117,6 +1147,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         draft_task,
         draft_task_no_input,
         recording_status,
+        request_recording_permission,
         start_recording,
         stop_recording,
         list_recording_frames,
@@ -1247,6 +1278,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            core.configure_capture_helper(capture_path());
             core.set_notifier(Arc::new(DesktopNotifier(app.handle().clone())));
             let notification_app = app.handle().clone();
             app.notification().on_action(move |_| {
@@ -1302,8 +1334,16 @@ fn main() {
             }
         })
         .invoke_handler(handlers())
-        .run(context())
-        .expect("Macroscope could not start");
+        .build(context())
+        .expect("Macroscope could not start")
+        .run(|app, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+            ) {
+                app.state::<Core>().0.discard_all_recordings();
+            }
+        });
 }
 
 #[cfg(test)]

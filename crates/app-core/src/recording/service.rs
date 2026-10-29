@@ -101,6 +101,12 @@ pub struct RecordingFrames {
 #[serde(rename_all = "camelCase")]
 pub struct RecordingStatus {
     pub capture_available: bool,
+    pub helper_available: bool,
+    pub screen_recording_granted: bool,
+    pub accessibility_granted: bool,
+    pub picker_state: String,
+    pub app_name: Option<String>,
+    pub reason: Option<String>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,12 +134,13 @@ struct Review {
 pub(crate) struct RecordingSlot {
     touched: i64,
     capture: Option<RecordingSession>,
-    frames: RecordingFrames,
+    pub(super) frames: RecordingFrames,
     review: Option<Review>,
     draft: Option<TaskDraftV2>,
     clarified: Option<ClarifiedTask>,
     raw_bytes: usize,
     attempts: usize,
+    native_epoch: Option<u64>,
     sample: bool,
     analyzing: bool,
     cancel: tokio::sync::watch::Sender<bool>,
@@ -197,17 +204,10 @@ fn slot<'a>(
 }
 impl AppCore {
     pub fn recording_status(&self) -> RecordingStatus {
-        RecordingStatus {
-            capture_available: false,
-        }
+        self.native_recording_status()
     }
     pub fn start_recording(&self, source: RecordingSource) -> CoreResult<String> {
         let _admission = self.admit_local()?;
-        if matches!(source, RecordingSource::Window) {
-            return Err(invalid(
-                "Screen recording isn't set up on this Mac yet. Try the sample recording.",
-            ));
-        }
         let now = self.now();
         let mut slots = lock(&self.inner.recordings);
         slots.retain(|_, s| now.saturating_sub(s.touched) < IDLE_MS);
@@ -229,7 +229,9 @@ impl AppCore {
                 clarified: None,
                 raw_bytes: 0,
                 attempts: 0,
-                sample: true,
+                native_epoch: matches!(source, RecordingSource::Window)
+                    .then(|| self.inner.policy.epoch()),
+                sample: matches!(source, RecordingSource::Sample),
                 analyzing: false,
                 cancel: tokio::sync::watch::channel(false).0,
             },
@@ -250,8 +252,18 @@ impl AppCore {
                 lock(&inner.recordings).retain(|_, s| now.saturating_sub(s.touched) < IDLE_MS);
             });
         }
-        for seq in 1..=3 {
-            self.record_frame(&id, sample_frame(seq), true)?;
+        match source {
+            RecordingSource::Sample => {
+                for seq in 1..=3 {
+                    self.record_frame(&id, sample_frame(seq), true)?;
+                }
+            }
+            RecordingSource::Window => {
+                if let Err(error) = self.start_native_capture(&id) {
+                    self.discard_recording(&id)?;
+                    return Err(error);
+                }
+            }
         }
         Ok(id)
     }
@@ -271,6 +283,15 @@ impl AppCore {
     ) -> CoreResult<RecordingFrames> {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
+        if s.native_epoch.is_some_and(|epoch| {
+            epoch != self.inner.policy.epoch()
+                || self.inner.policy.state() != PolicyState::CloudAllowed
+        }) {
+            s.frames.stopped = true;
+            return Err(invalid(
+                "Your privacy settings changed. Start a new recording.",
+            ));
+        }
         if s.capture.is_none() || s.frames.stopped {
             return Err(invalid("This recording has stopped."));
         }
@@ -345,16 +366,19 @@ impl AppCore {
         )
     }
     pub fn stop_recording(&self, session_id: &str) -> CoreResult<RecordingFrames> {
+        self.stop_native_capture(Some(session_id), "user");
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         s.frames.stopped = true;
         Ok(s.frames.clone())
     }
     pub fn discard_recording(&self, session_id: &str) -> CoreResult<()> {
+        self.stop_native_capture(Some(session_id), "discarded");
         lock(&self.inner.recordings).remove(session_id);
         Ok(())
     }
     pub fn discard_all_recordings(&self) {
+        self.stop_native_capture(None, "discarded");
         lock(&self.inner.recordings).clear();
     }
     pub async fn preview_recording(&self, session_id: &str) -> CoreResult<RecordingPreview> {

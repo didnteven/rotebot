@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft } from "./backend/types";
+import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus } from "./backend/types";
 import { Notice, useAction, useScreenFocus } from "./ui";
 import { CreateFlow } from "./CreateFlow";
 import type { ComponentProps } from "react";
@@ -176,7 +176,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
 }) {
   const [step,setStep]=useState(0);
   const heading=useScreenFocus<HTMLHeadingElement>(step);
-  const [available,setAvailable]=useState<boolean|null>(null);
+  const [captureStatus,setCaptureStatus]=useState<RecordingStatus|null>(null);
   const [session,setSession]=useState<string|null>(null);
   const sessionRef=useRef<string|null>(null);
   const mounted=useRef(true);
@@ -188,7 +188,15 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   const [draft,setDraft]=useState<TaskDraft|null>(null);
   const [started,setStarted]=useState(0),[elapsed,setElapsed]=useState(0);
   const {act,busy,error}=useAction();
-  useEffect(()=>{ void act(async()=>setAvailable((await backend.recordingStatus()).captureAvailable)); },[backend]);
+  useEffect(()=>{
+    let active=true;
+    const refresh=()=>void backend.recordingStatus().then(s=>{if(active)setCaptureStatus(s);}).catch(e=>{
+      if(active)setPollError(e instanceof Error?e.message:"Couldn’t check recording access.");
+    });
+    refresh();
+    const timer=setInterval(refresh,1000);
+    return ()=>{active=false;clearInterval(timer);};
+  },[backend]);
   useEffect(()=>{
     mounted.current=true;
     return ()=>{
@@ -232,17 +240,27 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <p>Choose one window and show Macroscope a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
       <p>Passwords, card numbers and private windows are excluded. If a frame can't be checked safely, it is left out.</p>
       <p className="muted">Privacy checks can miss sensitive details. Always check every image before sending.</p>
-      {available===null ? <p role="status">Checking screen recording…</p> : available ?
+      {captureStatus===null ? <p role="status">Checking screen recording…</p> : captureStatus.captureAvailable ?
         <button className="primary" disabled={busy} onClick={()=>void act(()=>start("window"))}>Choose a window to record</button> : <>
           <p className="notice notice-info">Screen recording isn't set up on this Mac yet</p>
-          <p>The sample uses made-up information. You'll review it before deciding whether to send it.</p>
-          <button className="primary" disabled={busy} onClick={()=>void act(()=>start("sample"))}>Try it with a sample recording</button>
+          {captureStatus.reason==="picker_identity_unavailable" && <p>Window recording needs macOS 15.2 or later to identify the window you choose safely.</p>}
+          {captureStatus.helperAvailable && captureStatus.reason!=="picker_identity_unavailable" && <>
+            <p>Open System Settings &gt; Privacy &amp; Security &gt; Screen Recording, switch Macroscope on, then come back and press Try again.</p>
+            <p>In Privacy &amp; Security &gt; Accessibility, switch Macroscope on too. Without this access, frames are left out.</p>
+            <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.requestRecordingPermission()))}>Allow recording access</button>
+            <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.recordingStatus()))}>Try again</button>
+          </>}
         </>}
+      <p>Browser windows are refused while their public or private status cannot be verified. Try a native app such as TextEdit.</p>
+      <p>The sample uses made-up information. You'll review it before deciding whether to send it.</p>
+      <button disabled={busy} onClick={()=>void act(()=>start("sample"))}>Try it with a sample recording</button>
     </>}
     {step===1 && <>
       <p role="timer" aria-label="Elapsed recording time">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,"0")}</p>
       <p>Frames kept: {kept.frames.length}, hidden for privacy: {kept.dropped.length + kept.frames.filter(f=>f.masks.length>0).length}</p>
-      {kept.stopped && <p role="status">The recording limit was reached. Stop to check what was kept.</p>}
+      {captureStatus?.pickerState==="picking" && <p role="status">Choose one window in the system picker.</p>}
+      {captureStatus?.pickerState==="recording" && captureStatus.appName && <p>Recording {captureStatus.appName}</p>}
+      {kept.stopped && <p role="status">Recording stopped. {captureStatus?.reason==="private_or_unknown_window" ? "This browser window’s public status could not be verified." : captureStatus?.reason==="excluded" ? "This app is excluded for privacy." : captureStatus?.reason==="picker_cancelled" ? "Window selection was cancelled." : captureStatus?.reason==="policy_changed" ? "Your privacy settings changed." : "Stop to check what was kept."}</p>}
       <button className="primary" disabled={busy} onClick={()=>void act(async()=>{
         await backend.stopRecording(session!);const p=await backend.previewRecording(session!);setPreview(p);setStep(2);
       })}>Stop</button>

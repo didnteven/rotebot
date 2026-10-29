@@ -218,6 +218,7 @@ export class MockBackend implements Backend {
     },
   );
   recordingStatus: Backend["recordingStatus"] = () => this.recording.recordingStatus();
+  requestRecordingPermission: Backend["requestRecordingPermission"] = () => this.recording.requestRecordingPermission();
   startRecording: Backend["startRecording"] = source => this.recording.startRecording(source);
   stopRecording: Backend["stopRecording"] = id => this.recording.stopRecording(id);
   listRecordingFrames: Backend["listRecordingFrames"] = id => this.recording.listRecordingFrames(id);

@@ -1,4 +1,5 @@
 //! Headless privacy gate, task drafting and memory-only recording service. Capture is external.
+pub(crate) mod capture;
 mod draft;
 mod masking;
 mod payload;

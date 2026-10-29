@@ -32,7 +32,9 @@ export class RecordingMock {
     const s=this.sessions.get(id); if (!s) throw new Error("This recording expired or was discarded. Start a new recording.");
     s.touched=Date.now(); return s;
   }
-  async recordingStatus() { return {captureAvailable:false}; }
+  async recordingStatus() { return {captureAvailable:false, helperAvailable:false,
+    screenRecordingGranted:false, accessibilityGranted:false, pickerState:"unavailable", appName:null, reason:null}; }
+  async requestRecordingPermission() { return this.recordingStatus(); }
   async startRecording(source:"sample"|"window") {
     if (source !== "sample") throw new Error("Screen recording isn't set up on this Mac yet. Try the sample recording.");
     // Sweep even when no existing session is accessed.

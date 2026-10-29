@@ -196,3 +196,37 @@ it("applies the existing custom endpoint cap before analysis and consumes attemp
   await expect(b.consentAndAnalyze(id, p.payloadHash)).rejects.toThrow(/consent/);
   expect((await b.privacyOverview()).outbound.filter(r => r.purpose === "Recording analysis")).toEqual([]);
 });
+
+it("requests permissions only on the explicit button, then starts the window source and waits for review consent", async () => {
+  const backend = new MockBackend();
+  let granted = false;
+  vi.spyOn(backend, "recordingStatus").mockImplementation(async () => ({
+    captureAvailable: granted, helperAvailable: true, screenRecordingGranted: granted,
+    accessibilityGranted: granted, pickerState: granted ? "idle" : "permission_required",
+    appName: null, reason: null,
+  }));
+  const permission = vi.spyOn(backend, "requestRecordingPermission").mockImplementation(async () => {
+    granted = true;
+    return backend.recordingStatus();
+  });
+  // Fabricated backend data only; the test verifies which native command the UI requests.
+  const originalStart = backend.startRecording.bind(backend);
+  const start = vi.spyOn(backend, "startRecording").mockImplementation(source => originalStart(source === "window" ? "sample" : source));
+  const originalPreview = backend.previewRecording.bind(backend);
+  vi.spyOn(backend, "previewRecording").mockImplementation(async id => ({...await originalPreview(id), sample:false}));
+  const ctx = await open(backend);
+  expect(permission).not.toHaveBeenCalled();
+  expect(screen.getByText(/Open System Settings > Privacy & Security > Screen Recording/)).toBeVisible();
+  expect(button("Try it with a sample recording")).toBeVisible();
+  await ctx.user.click(button("Try again"));
+  expect(permission).not.toHaveBeenCalled();
+  await ctx.user.click(button("Allow recording access"));
+  expect(permission).toHaveBeenCalledOnce();
+  await ctx.user.click(await screen.findByRole("button", {name:"Choose a window to record"}));
+  expect(start).toHaveBeenCalledExactlyOnceWith("window");
+  expect(ctx.analyze).not.toHaveBeenCalled();
+  await ctx.user.click(button("Stop"));
+  expect(await screen.findByRole("heading", {name:"Check what will be sent"})).toBeVisible();
+  expect(ctx.analyze).not.toHaveBeenCalled();
+  expect(button("Send for analysis")).toBeVisible();
+});

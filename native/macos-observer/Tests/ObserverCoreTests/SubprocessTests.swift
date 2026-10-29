@@ -3,6 +3,8 @@ import Foundation
 import Testing
 @testable import ObserverCore
 
+private final class TestBundleMarker: NSObject {}
+
 private enum HarnessError: Error { case timeout, prematureEOF, oversizedOutput, invalidJSON, failedExit }
 
 /// Reads real NDJSON from the built helper, with deadlines so a lifecycle regression fails promptly.
@@ -18,10 +20,14 @@ private final class ChildSession {
     init() throws {
         // An unexpected early child exit should fail the test through write(), not kill the runner.
         signal(SIGPIPE, SIG_IGN)
-        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        // SwiftPM builds the executable dependency alongside the debug tests.
-        process.executableURL = package.appendingPathComponent(".build/debug/macroscope-observer")
+        // Locate the executable dependency beside the test bundle, including when
+        // SwiftPM uses an external --scratch-path (never require worktree .build).
+        var directory = Bundle(for: TestBundleMarker.self).bundleURL.deletingLastPathComponent()
+        while !FileManager.default.isExecutableFile(atPath: directory.appendingPathComponent("macroscope-observer").path),
+              directory.path != "/" {
+            directory.deleteLastPathComponent()
+        }
+        process.executableURL = directory.appendingPathComponent("macroscope-observer")
         process.standardInput = input
         process.standardOutput = output
         process.standardError = diagnostics

@@ -257,3 +257,131 @@ fn rgba_decoder_rejects_oversize_before_allocating_the_declared_length() {
     );
     assert!(bounded_rgba(input).is_err());
 }
+
+// Synthetic subprocess only: never launch ScreenCaptureKit or request real permissions.
+#[cfg(target_os = "macos")]
+fn synthetic_capture(core: &AppCore, dir: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let helper = dir.join("synthetic-capture");
+    std::fs::write(
+        &helper,
+        r#"#!/usr/bin/python3
+import json, struct, sys
+out = sys.stdout.buffer
+inp = sys.stdin.buffer
+session = ''
+epoch = 0
+def emit(kind, raw=b'', **fields):
+    h = dict(v=1, type=kind, sessionId=session, policyEpoch=epoch, payloadBytes=len(raw), **fields)
+    data = json.dumps(h).encode()
+    out.write(struct.pack('>I', len(data)) + data + raw)
+    out.flush()
+emit('ready', captureSupported=True, screenRecordingGranted=True, accessibilityGranted=True)
+while True:
+    prefix = inp.read(4)
+    if len(prefix) != 4: break
+    header = json.loads(inp.read(struct.unpack('>I', prefix)[0]))
+    assert header['v'] == 1 and header['payloadBytes'] == 0
+    assert isinstance(header['sessionId'], str) and isinstance(header['policyEpoch'], int)
+    if header['type'] == 'request_permission':
+        emit('ready', captureSupported=True, screenRecordingGranted=True, accessibilityGranted=True)
+        break
+    if header['type'] == 'stop': break
+    if header['type'] == 'start':
+        session, epoch = header['sessionId'], header['policyEpoch']
+        emit('picked', appName='Synthetic native app')
+        emit('frame', bytes([255,255,255,255] * 4), seq=1, monoMs=1,
+            appName='Synthetic native app', width=2, height=2, axLabels=[], ocrBoxes=[],
+            masks=[dict(rect=dict(x=0,y=0,width=1,height=1), reason='secure_field')],
+            uncertain=False, secureInputGap=False)
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    core.configure_capture_helper(Some(helper));
+    let until = std::time::Instant::now() + Duration::from_secs(5);
+    while !core.recording_status().capture_available {
+        assert!(
+            std::time::Instant::now() < until,
+            "synthetic ready timed out"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+#[cfg(target_os = "macos")]
+fn await_native_frame(core: &AppCore, id: &str) {
+    let until = std::time::Instant::now() + Duration::from_secs(5);
+    while core.list_recording_frames(id).unwrap().frames.is_empty() {
+        assert!(
+            std::time::Instant::now() < until,
+            "synthetic frame timed out"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn native_stop_masks_before_preview_and_has_no_sample_authority() {
+    let (c, dir, _) = core("http://127.0.0.1:9".into());
+    c.set_local_only(false).await.unwrap();
+    synthetic_capture(&c, dir.path());
+    let id = c.start_recording(RecordingSource::Window).unwrap();
+    await_native_frame(&c, &id);
+    c.stop_recording(&id).unwrap();
+    assert_eq!(c.recording_status().picker_state, "stopped");
+    assert!(c.submit_frame(&id, sample_frame(2)).is_err());
+    let p = c.preview_recording(&id).await.unwrap();
+    assert!(!p.sample);
+    assert_eq!(p.frames[0].masks[0].reason, MaskReason::SecureField);
+    assert!(!p.cleared_text_json.contains("window_title\":\""));
+    // Native pixels can never use the offline sample analyzer.
+    assert!(c.consent_and_analyze(&id, &p.payload_hash).await.is_err());
+}
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn local_only_and_epoch_changes_close_native_ingress() {
+    let (c, dir, _) = core("http://127.0.0.1:9".into());
+    c.set_local_only(false).await.unwrap();
+    synthetic_capture(&c, dir.path());
+    let id = c.start_recording(RecordingSource::Window).unwrap();
+    await_native_frame(&c, &id);
+    c.set_local_only(true).await.unwrap();
+    assert!(c.list_recording_frames(&id).unwrap().stopped);
+    assert_eq!(
+        c.recording_status().reason.as_deref(),
+        Some("policy_changed")
+    );
+    assert!(c.start_recording(RecordingSource::Window).is_err());
+    assert!(c.submit_frame(&id, sample_frame(2)).is_err());
+    c.set_local_only(false).await.unwrap();
+    let next = c.start_recording(RecordingSource::Window).unwrap();
+    await_native_frame(&c, &next);
+    // Exercise the host watchdog independently of the Local-only command's direct stop.
+    c.inner.policy.begin_local_only().unwrap();
+    // Even a frame already decoded by the reader cannot slip through while
+    // waiting for lifecycle admission after the epoch changes.
+    assert!(c.submit_frame(&next, sample_frame(2)).is_err());
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    while c.recording_status().reason.as_deref() != Some("policy_changed") {
+        assert!(std::time::Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(c.list_recording_frames(&next).unwrap().stopped);
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn permission_command_has_full_envelope_without_starting_capture() {
+    let (c, dir, _) = core("http://127.0.0.1:9".into());
+    synthetic_capture(&c, dir.path());
+    c.request_recording_permission().unwrap();
+    let until = std::time::Instant::now() + Duration::from_secs(5);
+    while c.recording_status().picker_state != "idle" {
+        assert!(
+            std::time::Instant::now() < until,
+            "synthetic permission handshake timed out"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(lock(&c.inner.recordings).is_empty());
+}

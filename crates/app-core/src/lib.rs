@@ -173,6 +173,7 @@ struct StagedSlot {
 }
 
 struct Inner {
+    capture_host: Mutex<recording::capture::CaptureHost>,
     recordings: Mutex<recording::RecordingSlots>,
     recording_expiry_started: std::sync::atomic::AtomicBool,
     cfg: CoreConfig,
@@ -329,6 +330,7 @@ impl AppCore {
             inner: Arc::new(Inner {
                 cfg,
                 recordings: Mutex::new(HashMap::new()),
+                capture_host: Mutex::new(recording::capture::CaptureHost::default()),
                 recording_expiry_started: std::sync::atomic::AtomicBool::new(false),
                 db,
                 staging_key,
@@ -1336,6 +1338,7 @@ impl AppCore {
     }
 
     async fn stop_cloud_work(&self) -> CoreResult<()> {
+        self.stop_native_capture(None, "policy_changed");
         let barrier = self
             .inner
             .policy

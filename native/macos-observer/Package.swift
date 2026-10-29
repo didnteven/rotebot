@@ -7,10 +7,15 @@ let package = Package(
     products: [
         .executable(name: "macroscope-observer", targets: ["MacroscopeObserver"]),
         .library(name: "ObserverCore", targets: ["ObserverCore"]),
+        .executable(name: "macroscope-capture", targets: ["MacroscopeCapture"]),
+        .library(name: "CaptureCore", targets: ["CaptureCore"]),
     ],
     targets: [
         .target(name: "ObserverCore"),
         .executableTarget(name: "MacroscopeObserver", dependencies: ["ObserverCore"]),
         .testTarget(name: "ObserverCoreTests", dependencies: ["ObserverCore", "MacroscopeObserver"]),
+        .target(name: "CaptureCore", dependencies: ["ObserverCore"]),
+        .executableTarget(name: "MacroscopeCapture", dependencies: ["CaptureCore"]),
+        .testTarget(name: "CaptureCoreTests", dependencies: ["CaptureCore"]),
     ]
 )

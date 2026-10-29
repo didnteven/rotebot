@@ -49,6 +49,7 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
+  requestRecordingPermission: Backend["requestRecordingPermission"] = () => invoke("request_recording_permission");
   startRecording: Backend["startRecording"] = source => invoke("start_recording", {source});
   stopRecording: Backend["stopRecording"] = sessionId => invoke("stop_recording", {sessionId});
   listRecordingFrames: Backend["listRecordingFrames"] = sessionId => invoke("list_recording_frames", {sessionId});

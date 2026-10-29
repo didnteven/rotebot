@@ -426,8 +426,19 @@ export interface Schedule { id: string; toolId: string; frequency: Frequency; ou
 export interface TodayEntry { id: string; toolId: string; toolName: string; trigger: "schedule" | "manual"; scheduleId: string | null; startedAtMs: number; finishedAtMs: number | null; status: "done" | "needs_you" | "skipped" | "failed" | "staged"; body: string; note: string | null; fileCreated: string | null; runId: string | null; staged: StagedRun | null; notification: boolean; addToToday: boolean; dismissed: boolean }
 export interface TodayDay { day: string; entries: TodayEntry[] }
 
+export interface RecordingStatus {
+  captureAvailable: boolean;
+  helperAvailable: boolean;
+  screenRecordingGranted: boolean;
+  accessibilityGranted: boolean;
+  pickerState: string;
+  appName: string | null;
+  reason: string | null;
+}
+
 export interface Backend {
-  recordingStatus(): Promise<{captureAvailable: boolean}>;
+  recordingStatus(): Promise<RecordingStatus>;
+  requestRecordingPermission(): Promise<RecordingStatus>;
   startRecording(source: "sample" | "window"): Promise<string>;
   stopRecording(sessionId: string): Promise<RecordingFrames>;
   listRecordingFrames(sessionId: string): Promise<RecordingFrames>;
