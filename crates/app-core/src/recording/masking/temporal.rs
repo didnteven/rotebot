@@ -1,7 +1,7 @@
 use super::{line_rect, run_text};
 use crate::recording::{DropReason, RecordedFrame, Rect};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(in crate::recording) struct MaskHistory {
     // Raw OCR history is bounded, memory-only, has no Debug/Serialize, and dies
     // with the recording session. Never shared across sessions or sent in previews.
@@ -10,6 +10,7 @@ pub(in crate::recording) struct MaskHistory {
     app: String,
 }
 
+#[derive(Clone)]
 struct RememberedLine {
     text: String,
     rect: Rect,

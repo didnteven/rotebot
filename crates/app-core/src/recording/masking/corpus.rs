@@ -3,6 +3,13 @@ use super::*;
 use legacy::LegacyDetector;
 
 const HARMLESS: &[&str] = &[
+    "trademe.co.nz/a/marketplace/gaming?condition=used&buy=now&sort_order=ExpiryDesc",
+    "https://www.trademe.co.nz/a/marketplace/gaming/listing/5583960712",
+    "Closes: Thu 5th Nov, 11:45pm",
+    "Buy now $400.00",
+    "Or four interest-free payments of $100.00 (plus shipping)",
+    "$4.99 Service Fee may apply",
+    "Nintendo Switch Monster Hunter Rise Limited Edition",
     "Home",
     "Accounts",
     "Payments",
