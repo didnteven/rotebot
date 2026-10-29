@@ -142,6 +142,7 @@ pub struct RecordingSession {
     last: Option<(u64, u64)>,
     attempts: usize,
     closed: bool,
+    mask_history: masking::MaskHistory,
 }
 
 impl Default for RecordingSession {
@@ -159,6 +160,7 @@ impl RecordingSession {
             last: None,
             attempts: 0,
             closed: false,
+            mask_history: masking::MaskHistory::default(),
         }
     }
 
@@ -180,7 +182,7 @@ impl RecordingSession {
             Err(DropReason::OutOfOrder)
         } else {
             self.last = Some((seq, frame.mono_ms));
-            masking::mask(frame, regions, detector)
+            masking::mask(frame, regions, detector, &mut self.mask_history)
         };
         self.attempts = self.attempts.saturating_add(1);
         match result {
