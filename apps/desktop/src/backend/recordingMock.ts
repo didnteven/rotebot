@@ -34,6 +34,7 @@ export class RecordingMock {
   }
   async recordingStatus() { return {captureAvailable:false, helperAvailable:false,
     screenRecordingGranted:false, accessibilityGranted:false, pickerState:"unavailable", appName:null, reason:null}; }
+  async confirmNormalBrowserWindow() {}
   async openPrivacySettings(_pane: "screen_recording" | "accessibility") {}
   async requestRecordingPermission() { return this.recordingStatus(); }
   async startRecording(source:"sample"|"window") {

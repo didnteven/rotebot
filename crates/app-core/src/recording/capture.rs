@@ -123,6 +123,7 @@ pub(crate) struct CaptureHost {
     probed: Option<Instant>,
     requesting: bool,
     ready_count: u32,
+    normal_window_confirmed: bool,
     status: RecordingStatus,
 }
 impl Default for CaptureHost {
@@ -137,6 +138,7 @@ impl Default for CaptureHost {
             probed: None,
             requesting: false,
             ready_count: 0,
+            normal_window_confirmed: false,
             status: RecordingStatus {
                 capture_available: false,
                 helper_available: false,
@@ -200,6 +202,13 @@ impl AppCore {
             let _ = self.spawn_capture(&mut host, None, false);
         }
         host.status.clone()
+    }
+    /// The person says the window they are about to pick is a normal (not private) browser window.
+    /// Applies to the next recording only.
+    pub fn confirm_normal_browser_window(&self) -> CoreResult<()> {
+        let _admission = self.admit_local()?;
+        lock(&self.inner.capture_host).normal_window_confirmed = true;
+        Ok(())
     }
     pub fn request_recording_permission(&self) -> CoreResult<RecordingStatus> {
         let _admission = self.admit_local()?;
@@ -270,7 +279,7 @@ impl AppCore {
         let mut output = child.stdout.take().expect("piped stdout");
         let epoch = self.inner.policy.epoch();
         let control = if let Some(id) = &session {
-            Some(json!({"v":1,"type":"start","payloadBytes":0,"sessionId":id,"policyEpoch":epoch}))
+            Some(json!({"v":1,"type":"start","payloadBytes":0,"sessionId":id,"policyEpoch":epoch,"normalWindowConfirmed":std::mem::take(&mut host.normal_window_confirmed)}))
         } else if requesting {
             Some(
                 json!({"v":1,"type":"request_permission","payloadBytes":0,"sessionId":"","policyEpoch":0}),

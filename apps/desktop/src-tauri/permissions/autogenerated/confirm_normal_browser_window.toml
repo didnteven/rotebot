@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-confirm-normal-browser-window"
+description = "Enables the confirm_normal_browser_window command without any pre-configured scope."
+commands.allow = ["confirm_normal_browser_window"]
+
+[[permission]]
+identifier = "deny-confirm-normal-browser-window"
+description = "Denies the confirm_normal_browser_window command without any pre-configured scope."
+commands.deny = ["confirm_normal_browser_window"]

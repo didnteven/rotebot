@@ -30,6 +30,7 @@
     "allow-recording-status",
     "allow-request-recording-permission",
     "allow-open-privacy-settings",
+    "allow-confirm-normal-browser-window",
     "allow-start-recording",
     "allow-stop-recording",
     "allow-list-recording-frames",

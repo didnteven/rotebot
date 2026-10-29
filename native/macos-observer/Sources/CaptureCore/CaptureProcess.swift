@@ -41,6 +41,7 @@ public enum CaptureProcess {
 private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @preconcurrency SCStreamOutput, SCStreamDelegate {
     private let authority = Authority()
     private var session = ""
+    private var normalWindowConfirmed = false
     private var epoch: UInt64 = 0
     private var began = ProcessInfo.processInfo.systemUptime
     private var stream: SCStream?
@@ -126,6 +127,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
             ready(); finish("permission_requested")
         case "start":
             guard session.isEmpty, !header.sessionId.isEmpty, header.sessionId.utf8.count <= 128 else { finish("error"); return }
+            normalWindowConfirmed = header.normalWindowConfirmed == true
             session = header.sessionId; epoch = header.policyEpoch; began = ProcessInfo.processInfo.systemUptime
             let authority = self.authority
             DispatchQueue.global().asyncAfter(deadline: .now()+600) { [weak self] in
@@ -183,7 +185,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         guard let info = running?.bundleURL.flatMap({ Bundle(url: $0)?.infoDictionary }) else { finish("unknown_application"); return }
         let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
         let webHandler = types.contains { (($0["CFBundleURLSchemes"] as? [String]) ?? []).contains { ["http", "https"].contains($0) } }
-        if let reason = CaptureAdmission.refusal(bundleId: app.bundleIdentifier, isBrowser: webHandler || (info["LSApplicationCategoryType"] as? String) == "public.app-category.web-browser", privacy: .unknown) {
+        if let reason = CaptureAdmission.refusal(bundleId: app.bundleIdentifier, isBrowser: webHandler || (info["LSApplicationCategoryType"] as? String) == "public.app-category.web-browser", privacy: normalWindowConfirmed ? .publicVerified : .unknown) {
             finish(reason); return
         }
         window = selected

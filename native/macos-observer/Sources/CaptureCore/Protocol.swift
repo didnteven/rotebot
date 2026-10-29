@@ -68,5 +68,6 @@ public struct CaptureHeader: Codable, Sendable {
     public var masks: [CaptureMask]?
     public var uncertain: Bool?
     public var secureInputGap: Bool?
+    public var normalWindowConfirmed: Bool?
     public init(type: String) { self.type = type }
 }

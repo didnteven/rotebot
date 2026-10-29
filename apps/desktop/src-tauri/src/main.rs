@@ -669,6 +669,10 @@ fn open_privacy_settings(pane: String) -> Cmd<()> {
     Ok(())
 }
 #[tauri::command]
+fn confirm_normal_browser_window(core: State<'_, Core>) -> Cmd<()> {
+    Ok(core.0.confirm_normal_browser_window()?)
+}
+#[tauri::command]
 fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
     Ok(core.0.start_recording(source)?)
 }
@@ -1160,6 +1164,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         recording_status,
         request_recording_permission,
         open_privacy_settings,
+        confirm_normal_browser_window,
         start_recording,
         stop_recording,
         list_recording_frames,
