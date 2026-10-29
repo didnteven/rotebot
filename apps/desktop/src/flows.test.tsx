@@ -238,7 +238,7 @@ it("preserves a Tell draft when Show is opened and closed", async () => {
   await user.clear(description);
   await user.type(description, "Keep this draft for later");
   await user.click(button("Record a task"));
-  expect(screen.getByRole("heading", { name: "Record a task" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Show Macroscope what to do" })).toBeVisible();
   await user.click(button("Back"));
   expect(screen.getByLabelText("What should the tool do?")).toHaveValue(
     "Keep this draft for later",
@@ -350,6 +350,7 @@ describe("Settings, connections, Show and privacy", () => {
   it("records, pauses, stops, summarizes and dismisses a connection suggestion", async () => {
     const { user } = await open();
     await user.click(button("Record a task"));
+    await user.click(screen.getByText("Advanced: app activity log"));
     await user.click(button("Start recording"));
     expect(await screen.findByRole("timer")).toHaveTextContent("0:00 / 5:00");
     await user.click(button("Pause"));
@@ -379,6 +380,7 @@ describe("Settings, connections, Show and privacy", () => {
   it("shows and connects a suggestion in Connections after recording", async () => {
     const { user } = await open();
     await user.click(button("Record a task"));
+    await user.click(screen.getByText("Advanced: app activity log"));
     await user.click(button("Start recording"));
     await user.click(button("Stop"));
     await user.click(button("Connections"));

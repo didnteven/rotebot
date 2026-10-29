@@ -82,6 +82,8 @@ function hostOf(url: string): string {
 export function CreateFlow({
   backend,
   initialInput,
+  initialGoal,
+  initialDraft,
   status,
   connectors,
   openSettings,
@@ -91,6 +93,8 @@ export function CreateFlow({
 }: {
   backend: Backend;
   initialInput: CsvPreview | null;
+  initialGoal?: string;
+  initialDraft?: TaskDraft;
   status: ModelAccessStatus;
   connectors: ConnectorInfo[];
   openSettings: () => void;
@@ -98,21 +102,21 @@ export function CreateFlow({
   close: () => void;
   saved: () => Promise<void>;
 }) {
-  const [step, setStep] = useState(0),
+  const [step, setStep] = useState(initialDraft ? 1 : 0),
     [input, setInput] = useState(initialInput),
     [noInput, setNoInput] = useState(!initialInput),
     [description, setDescription] = useState(
-      initialInput && initialInput.text === undefined
+      initialGoal ?? (initialInput && initialInput.text === undefined
         ? "Clean this orders CSV for import: Order, Date, Amount."
-        : "",
+        : ""),
     );
-  const [draft, setDraft] = useState<TaskDraft | null>(null),
-    [map, setMap] = useState<CsvMapping | null>(null),
-    [outputName, setOutputName] = useState("orders_ready.csv");
+  const [draft, setDraft] = useState<TaskDraft | null>(initialDraft ?? null),
+    [map, setMap] = useState<CsvMapping | null>(initialDraft?.mapping ?? null),
+    [outputName, setOutputName] = useState(initialDraft?.outputName ?? "orders_ready.csv");
   const [preview, setPreview] = useState<OutboundPreview | null>(null),
     [build, setBuild] = useState<BuildState | null>(null),
-    [name, setName] = useState("Clean import CSV");
-  const [example, setExample] = useState("");
+    [name, setName] = useState(initialDraft ? toolNameFromGoal(initialDraft.goal) : "Clean import CSV");
+  const [example, setExample] = useState(initialDraft?.exampleOutput ?? "");
   const [editing, setEditing] = useState(false);
   const requestRef = useRef<HTMLTextAreaElement>(null);
   const headingRef = useScreenFocus<HTMLHeadingElement>(step);
@@ -124,6 +128,12 @@ export function CreateFlow({
   const accessIdentity = JSON.stringify([status.effectiveRoute, status.selectedRoute, status.egress]);
   const { act, busy, error, retry, setError } = useAction();
   const buildId = build?.buildId;
+  const initialGoalStarted = useRef(false);
+  useEffect(() => {
+    if (!initialGoal || initialDraft || initialGoalStarted.current) return;
+    initialGoalStarted.current = true;
+    void act(async () => { acceptDraft(await backend.draftTaskNoInput(initialGoal)); setStep(1); });
+  }, [backend, initialGoal, initialDraft]);
   useEffect(() => {
     if (!buildId) return;
     let active = true;

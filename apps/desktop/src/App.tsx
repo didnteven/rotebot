@@ -194,7 +194,7 @@ export function App({ backend }: { backend: Backend }) {
         <div className="status-strip" role="region" aria-label="App status">
           <span>{status ? `Using ${routeLabel(status.effectiveRoute)} - cloud models ${status.egress === "cloud_allowed" ? "on" : status.egress === "stopping" ? "stopping" : status.egress === "key_unavailable" ? "unavailable (check your key)" : "off (local only)"}` : "Checking model access…"}</span>
           <button className="quiet" aria-label="Settings for model access" onClick={openSettings}>Settings</button>
-          {show && show.kind !== "unavailable" && (
+          {show && (
             <button
               onClick={() => {
                 setDestination("Tools");
@@ -218,10 +218,11 @@ export function App({ backend }: { backend: Backend }) {
           {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} run={id => void act(async () => { const tool = await backend.getTool(id); setCreating(false); setShowPanel(false); setRunning(tool); setDestination("Tools"); })} create={() => { setDestination("Tools"); setInitialInput(null); setCreating(true); }} />}
           <div hidden={destination !== "Tools"}>
             {destination === "Tools" && commonSuggestions}
-            {showPanel && show && (
+            {showPanel && show && status && (
               <ShowPanel
                 backend={backend}
                 state={show}
+                createFlow={{status, connectors, openSettings, connect, close: () => setShowPanel(false), saved: async () => {await refreshTools();setShowPanel(false);}}}
                 update={updateShow}
                 close={() => setShowPanel(false)}
               />

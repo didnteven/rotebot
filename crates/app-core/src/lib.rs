@@ -173,6 +173,8 @@ struct StagedSlot {
 }
 
 struct Inner {
+    recordings: Mutex<recording::RecordingSlots>,
+    recording_expiry_started: std::sync::atomic::AtomicBool,
     cfg: CoreConfig,
     db: Db,
     staging_key: [u8; 32],
@@ -326,6 +328,8 @@ impl AppCore {
         let core = AppCore {
             inner: Arc::new(Inner {
                 cfg,
+                recordings: Mutex::new(HashMap::new()),
+                recording_expiry_started: std::sync::atomic::AtomicBool::new(false),
                 db,
                 staging_key,
                 policy: EgressPolicy::default(),
@@ -3740,6 +3744,7 @@ impl AppCore {
     /// Stops builds and staged runs and turns on Local only. Show stop lives in the
     /// shell's Show controller and is invoked alongside this.
     pub async fn emergency_stop(&self) -> CoreResult<()> {
+        self.discard_all_recordings();
         self.pause_all_schedules()?;
         let ids: Vec<String> = lock(&self.inner.builds)
             .iter()

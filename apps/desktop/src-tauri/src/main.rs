@@ -4,6 +4,7 @@
 
 use macroscope_app_core::connections::Connections;
 use macroscope_app_core::dto::*;
+use macroscope_app_core::recording::*;
 use macroscope_app_core::schedules::{Schedule, ScheduleRequest, TodayDay};
 use macroscope_app_core::show::ShowController;
 use macroscope_app_core::{AppCore, CoreConfig, CoreError, NativeMuse};
@@ -647,6 +648,63 @@ fn dismiss_suggestion(conns: State<'_, Conns>, connector_id: String) -> Cmd<()> 
     Ok(conns.0.dismiss(&connector_id)?)
 }
 
+// ---------- Recording: memory-only Stage B ----------
+#[tauri::command]
+fn recording_status(core: State<'_, Core>) -> RecordingStatus {
+    core.0.recording_status()
+}
+#[tauri::command]
+fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
+    Ok(core.0.start_recording(source)?)
+}
+#[tauri::command]
+fn submit_frame(
+    core: State<'_, Core>,
+    session_id: String,
+    frame: RecordedFrameDto,
+) -> Cmd<RecordingFrames> {
+    Ok(core.0.submit_frame(&session_id, frame)?)
+}
+#[tauri::command]
+fn stop_recording(core: State<'_, Core>, session_id: String) -> Cmd<RecordingFrames> {
+    Ok(core.0.stop_recording(&session_id)?)
+}
+#[tauri::command]
+fn list_recording_frames(core: State<'_, Core>, session_id: String) -> Cmd<RecordingFrames> {
+    Ok(core.0.list_recording_frames(&session_id)?)
+}
+#[tauri::command]
+async fn preview_recording(core: State<'_, Core>, session_id: String) -> Cmd<RecordingPreview> {
+    Ok(core.0.preview_recording(&session_id).await?)
+}
+#[tauri::command]
+async fn consent_and_analyze(
+    core: State<'_, Core>,
+    session_id: String,
+    payload_hash: String,
+) -> Cmd<TaskDraftV2> {
+    Ok(core
+        .0
+        .consent_and_analyze(&session_id, &payload_hash)
+        .await?)
+}
+#[tauri::command]
+fn answer_recording_questions(
+    core: State<'_, Core>,
+    session_id: String,
+    answers: std::collections::BTreeMap<String, String>,
+) -> Cmd<String> {
+    Ok(core.0.answer_recording_questions(&session_id, answers)?)
+}
+#[tauri::command]
+fn approve_recording_draft(core: State<'_, Core>, session_id: String) -> Cmd<TaskDraft> {
+    Ok(core.0.approve_recording_draft(&session_id)?)
+}
+#[tauri::command]
+fn discard_recording(core: State<'_, Core>, session_id: String) -> Cmd<()> {
+    Ok(core.0.discard_recording(&session_id)?)
+}
+
 // ---------- Show ----------
 
 #[tauri::command]
@@ -933,7 +991,10 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                         refresh_tray(&handle);
                     });
                 }
-                "quit" => app.exit(0),
+                "quit" => {
+                    app.state::<Core>().0.discard_all_recordings();
+                    app.exit(0);
+                }
                 id if id.starts_with("run:") => {
                     open_main(app);
                     let _ = app.emit("navigate://run", &id[4..]);
@@ -1063,6 +1124,16 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         load_sample_csv,
         draft_task,
         draft_task_no_input,
+        recording_status,
+        start_recording,
+        submit_frame,
+        stop_recording,
+        list_recording_frames,
+        preview_recording,
+        consent_and_analyze,
+        answer_recording_questions,
+        approve_recording_draft,
+        discard_recording,
         answer_question,
         update_mapping,
         update_task,

@@ -48,6 +48,16 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
+  recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
+  startRecording: Backend["startRecording"] = source => invoke("start_recording", {source});
+  submitFrame: Backend["submitFrame"] = (sessionId, frame) => invoke("submit_frame", {sessionId, frame});
+  stopRecording: Backend["stopRecording"] = sessionId => invoke("stop_recording", {sessionId});
+  listRecordingFrames: Backend["listRecordingFrames"] = sessionId => invoke("list_recording_frames", {sessionId});
+  previewRecording: Backend["previewRecording"] = sessionId => invoke("preview_recording", {sessionId});
+  consentAndAnalyze: Backend["consentAndAnalyze"] = (sessionId, payloadHash) => invoke("consent_and_analyze", {sessionId, payloadHash});
+  answerRecordingQuestions: Backend["answerRecordingQuestions"] = (sessionId, answers) => invoke("answer_recording_questions", {sessionId, answers});
+  approveRecordingDraft: Backend["approveRecordingDraft"] = sessionId => invoke("approve_recording_draft", {sessionId});
+  discardRecording: Backend["discardRecording"] = sessionId => invoke("discard_recording", {sessionId});
   listToday: Backend["listToday"] = () => invoke("list_today");
   dismissTodayEntry: Backend["dismissTodayEntry"] = (id) => invoke("dismiss_today_entry", {id});
   listSchedules: Backend["listSchedules"] = () => invoke("list_schedules");

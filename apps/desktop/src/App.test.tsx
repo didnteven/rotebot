@@ -102,7 +102,7 @@ it.each([
   ["local_only", "off (local only)"],
   ["key_unavailable", "unavailable (check your key)"],
 ] as const)(
-  "labels %s cloud models and hides unavailable Show",
+  "labels %s cloud models and keeps the recording sample available",
   async (egress, label) => {
     const backend = new MockBackend();
     const status = await backend.modelAccess();
@@ -113,9 +113,9 @@ it.each([
     });
     render(<App backend={backend} />);
     expect(await screen.findByText((text, el) => el?.tagName === "SPAN" && text.endsWith(`cloud models ${label}`))).toBeVisible();
-      expect(
-      screen.queryByRole("button", { name: "Record a task" }),
-    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Record a task" }),
+    ).toBeVisible();
   },
 );
 

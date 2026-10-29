@@ -1,3 +1,4 @@
+import { RecordingMock } from "./recordingMock";
 import connectorCatalog from "../../../../contracts/connectors.json";
 import type {
   ActivityItem,
@@ -207,6 +208,25 @@ function digest(value: unknown): string {
 
 /** Fresh, isolated in-memory product state. No credentials or files persist. */
 export class MockBackend implements Backend {
+  private recording = new RecordingMock(
+    () => this.resolveRoute(), description => this.draftTaskNoInput(description), row => this.outbound.unshift(row),
+    () => {
+      if (this.resolveRoute().effectiveRoute !== "custom_endpoint") return;
+      const c = this.status.customEndpoint;
+      if (c.callsThisMonth >= c.monthlyCallCap) throw new Error("Skipped — monthly custom endpoint call cap reached");
+      c.callsThisMonth++;
+    },
+  );
+  recordingStatus: Backend["recordingStatus"] = () => this.recording.recordingStatus();
+  startRecording: Backend["startRecording"] = source => this.recording.startRecording(source);
+  submitFrame: Backend["submitFrame"] = () => this.recording.submitFrame();
+  stopRecording: Backend["stopRecording"] = id => this.recording.stopRecording(id);
+  listRecordingFrames: Backend["listRecordingFrames"] = id => this.recording.listRecordingFrames(id);
+  previewRecording: Backend["previewRecording"] = id => this.recording.previewRecording(id);
+  consentAndAnalyze: Backend["consentAndAnalyze"] = (id, hash) => this.recording.consentAndAnalyze(id, hash);
+  answerRecordingQuestions: Backend["answerRecordingQuestions"] = (id, answers) => this.recording.answerRecordingQuestions(id, answers);
+  approveRecordingDraft: Backend["approveRecordingDraft"] = id => this.recording.approveRecordingDraft(id);
+  discardRecording: Backend["discardRecording"] = id => this.recording.discardRecording(id);
   private schedules = new Map<string, import("./types").Schedule>();
   private today: import("./types").TodayDay[] = [];
   private login = false;
@@ -413,9 +433,10 @@ export class MockBackend implements Backend {
     if(u.protocol!=="https:" || u.username || u.password || baseUrl.includes("?") || baseUrl.includes("#") || !model.trim()) throw new Error("Use HTTPS without userinfo, query or fragment, and enter a model.");
     const c=this.status.customEndpoint;
     if(c.baseUrl!==u.href || c.model!==model.trim()) c.lastTest=null;
+    this.recording.invalidateConsent();
     Object.assign(c,{baseUrl:u.href,host:u.hostname,model:model.trim()}); return this.resolveRoute();
   }
-  async saveCustomEndpointToken() { this.status.customEndpoint.tokenPresent=true; this.status.customEndpoint.lastTest=null; return this.resolveRoute(); }
+  async saveCustomEndpointToken() { this.recording.invalidateConsent(); this.status.customEndpoint.tokenPresent=true; this.status.customEndpoint.lastTest=null; return this.resolveRoute(); }
   async setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number) {
     if(!Number.isInteger(monthlyCallCap) || monthlyCallCap<0) throw new Error("Enter a nonnegative whole call cap.");
     Object.assign(this.status.customEndpoint,{displayName,monthlyCallCap}); return this.resolveRoute();
@@ -427,7 +448,7 @@ export class MockBackend implements Backend {
     if(c.callsThisMonth>=c.monthlyCallCap) throw new Error("Skipped — monthly custom endpoint call cap reached");
     c.callsThisMonth++; c.lastTest={status:"ok",latencyMs:7}; return this.resolveRoute();
   }
-  async removeCustomEndpoint() { this.status.customEndpoint={baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:this.status.customEndpoint.callsThisMonth}; return this.resolveRoute(); }
+  async removeCustomEndpoint() { this.recording.invalidateConsent(); this.status.customEndpoint={baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:this.status.customEndpoint.callsThisMonth}; return this.resolveRoute(); }
   async selectRoute(route: ModelRoute) {
     if(route==="custom_endpoint" && !this.customReady()) throw new Error("Configure and test the custom endpoint first.");
     if (route === "api_key" && !this.status.apiKey.present)
@@ -442,6 +463,7 @@ export class MockBackend implements Backend {
     return this.resolveRoute();
   }
   async setLocalOnly(localOnly: boolean) {
+    this.recording.invalidateConsent();
     if (localOnly) {
       this.status.egress = "stopping";
       for (const b of this.builds.values())
@@ -1495,6 +1517,7 @@ export class MockBackend implements Backend {
     this.log("settings", "Outbound history deleted");
   }
   async emergencyStop() {
+    this.recording.clear();
     for(const s of this.schedules.values()) s.status="emergency_paused";
     for (const b of this.builds.values()) await this.stopBuild(b.buildId);
     this.staged.clear();

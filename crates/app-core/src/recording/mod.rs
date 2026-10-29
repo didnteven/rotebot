@@ -1,7 +1,9 @@
-//! Headless recording privacy gate and task drafting. No capture, persistence or network I/O.
+//! Headless privacy gate, task drafting and memory-only recording service. Capture is external.
 mod draft;
 mod masking;
 mod payload;
+mod service;
+pub use service::*;
 
 pub use draft::*;
 pub use masking::{DetectorError, SensitiveDetector, TextDetector};

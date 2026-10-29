@@ -175,6 +175,7 @@ impl AppCore {
             let _admission = lock(&self.inner.lifecycle);
             self.inner.deleting.store(true, Ordering::SeqCst);
         }
+        self.discard_all_recordings();
         let _cloud = self.inner.cloud_controls.lock().await;
         self.db().set_setting("local_only", &json!(true))?;
         self.stop_cloud_work().await?;

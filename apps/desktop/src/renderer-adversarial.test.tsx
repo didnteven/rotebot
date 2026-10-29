@@ -240,6 +240,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     literal(root, v("action error"));
     inert({ exportTool: 1, revealOutput: 1 });
     await user.click(button("Record a task"));
+    await user.click(screen.getByText("Advanced: app activity log"));
     expect(screen.getByText(`Apps seen: ${v("app")}`, textOptions)).toBeVisible();
     assertBounded(screen.getByText(`Apps seen: ${v("app")}`, textOptions));
     inert({ exportTool: 1, revealOutput: 1 });

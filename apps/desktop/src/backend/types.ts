@@ -427,6 +427,16 @@ export interface TodayEntry { id: string; toolId: string; toolName: string; trig
 export interface TodayDay { day: string; entries: TodayEntry[] }
 
 export interface Backend {
+  recordingStatus(): Promise<{captureAvailable: boolean}>;
+  startRecording(source: "sample" | "window"): Promise<string>;
+  submitFrame(sessionId: string, frame: RecordedFrameInput): Promise<RecordingFrames>;
+  stopRecording(sessionId: string): Promise<RecordingFrames>;
+  listRecordingFrames(sessionId: string): Promise<RecordingFrames>;
+  previewRecording(sessionId: string): Promise<RecordingPreview>;
+  consentAndAnalyze(sessionId: string, payloadHash: string): Promise<TaskDraftV2>;
+  answerRecordingQuestions(sessionId: string, answers: Record<string, string>): Promise<string>;
+  approveRecordingDraft(sessionId: string): Promise<TaskDraft>;
+  discardRecording(sessionId: string): Promise<void>;
   listToday(): Promise<TodayDay[]>;
   dismissTodayEntry(id: string): Promise<void>;
   listSchedules(): Promise<Schedule[]>;
@@ -558,4 +568,37 @@ export interface Backend {
   pauseShow(paused: boolean): Promise<ShowState>;
   stopShow(): Promise<ShowState>;
   onShowEvent(cb: (state: ShowState) => void): Promise<() => void>;
+}
+
+// Stage B recording ingress is raw, memory-only. Never cache or log RecordedFrameInput.
+export interface RecordingRect { x: number; y: number; width: number; height: number }
+export interface RecordedFrameInput {
+  seq: number; monoMs: number; appName: string; windowTitle: string;
+  width: number; height: number; rgba: number[]; axLabels: string[];
+  ocrBoxes: {text: string; rect: RecordingRect}[];
+  masks: {rect: RecordingRect; reason: "secure_field" | "manual"}[];
+  uncertain: boolean; secureInputGap: boolean;
+}
+export interface RecordingFrame {
+  seq: number; pngBase64: string; width: number; height: number;
+  masks: {rect: RecordingRect; reason: "secure_field" | "manual" | "sensitive_text"}[];
+}
+export interface RecordingFrames {
+  frames: RecordingFrame[]; dropped: {seq: number; reason: string}[]; stopped: boolean;
+}
+export interface RecordingPreview {
+  sessionId: string; frames: RecordingFrame[]; dropped: RecordingFrames["dropped"];
+  clearedTextJson: string; systemInstructions: string; schemaJson: string; payloadText: string;
+  totalBytes: number; recipient: string; model: string; payloadHash: string; sample: boolean;
+  cost: {estimated_input_tokens: number; max_output_tokens: number; estimated_micros: number; caveat: string};
+}
+/** Task Draft v2 deliberately preserves the Stage A schema's snake_case fields. */
+export interface TaskDraftV2 {
+  schema_version: 2; goal: string;
+  steps: {id: string; order: number; app: string; action: string; capability: "file_read" | "web_source" | "connection" | "model_step" | "output_file" | "manual"; evidence_frames: number[]}[];
+  variables: {name: string; description: string}[]; constants: {name: string; value: string}[];
+  output_description: string; example_output?: string | null; trigger: string;
+  unsupported_steps: {step_id: string; reason: string}[]; ambiguities: string[];
+  questions: {id: string; prompt: string; evidence_frames: number[]; default: string;
+    options: {id: string; label: string; any_is_fine: boolean}[]}[];
 }
