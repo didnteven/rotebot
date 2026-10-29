@@ -66,13 +66,16 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   expect(
     screen.queryByRole("button", { name: "Choose input file" }),
   ).not.toBeInTheDocument();
-  await user.click(button("Choose output folder"));
-  await user.click(button("Preview result"));
-  await screen.findByRole("heading", { name: "Result preview" });
+  // The answer can be read before any folder or file name is chosen.
   expect(
-    screen.getByLabelText("Answer"),
+    screen.queryByRole("button", { name: "Choose output folder" }),
+  ).not.toBeInTheDocument();
+  await user.click(button("Preview result"));
+  expect(
+    await screen.findByLabelText("Answer"),
   ).toHaveTextContent("Auckland: fine, high 21C, low 14C.");
-  await user.click(button("Create previewed output"));
+  await user.click(button("Choose output folder"));
+  await user.click(button("Create file"));
   expect(
     await screen.findByRole("heading", { name: "Run receipt" }),
   ).toBeVisible();

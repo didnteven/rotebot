@@ -1314,6 +1314,16 @@ export class MockBackend implements Backend {
     const group=this.today.find(d=>d.day===day);if(group)group.entries.unshift(entry);else this.today.unshift({day,entries:[entry]});
     return run;
   }
+  async previewRunNoInput(toolId: string) {
+    const tool = await this.getTool(toolId);
+    const result = await this.stageRunNoInput(
+      toolId,
+      { handleId: "preview", displayName: "preview", displayPath: "/preview" },
+      tool.program?.output_name ?? "answer.txt",
+    );
+    if (!("failure" in result)) await this.discardRun(result.runId);
+    return result;
+  }
   async commitRun(runId: string, planHash: string) {
     const run = this.staged.get(runId);
     if (!run)

@@ -2984,6 +2984,35 @@ impl AppCore {
         result
     }
 
+    /// Runs a no-input tool once so its answer can be read before the person
+    /// picks a folder or file name. The run is staged in a private scratch
+    /// folder and discarded straight away; nothing is created for the user.
+    pub async fn preview_run_no_input(&self, tool_id: &str) -> CoreResult<StageResult> {
+        let detail = self.get_tool(tool_id)?;
+        let program = detail
+            .program
+            .as_ref()
+            .ok_or_else(|| CoreError::Invalid("Only program tools can be previewed.".into()))?;
+        let scratch = self
+            .inner
+            .cfg
+            .data_dir
+            .join("previews")
+            .join(new_id("preview"));
+        std::fs::create_dir_all(&scratch).map_err(|e| CoreError::Internal(e.to_string()))?;
+        let result = async {
+            let dir = self.register_picked_dir(&scratch)?;
+            self.stage_run_no_input(tool_id, &dir.handle_id, &program.output_name)
+                .await
+        }
+        .await;
+        if let Ok(StageResult::Staged(staged)) = &result {
+            let _ = self.discard_run(&staged.run_id);
+        }
+        let _ = std::fs::remove_dir_all(&scratch);
+        result
+    }
+
     pub(crate) async fn stage_inner(
         &self,
         tool_id: &str,

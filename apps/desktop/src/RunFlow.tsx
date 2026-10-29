@@ -46,6 +46,7 @@ export function RunFlow({
   const [input, setInput] = useState<CsvPreview | null>(null),
     [folder, setFolder] = useState<FileHandle | null>(null),
     [name, setName] = useState("orders_ready.csv");
+  const [preview, setPreview] = useState<StagedRun | null>(null);
   const [staged, setStaged] = useState<StagedRun | null>(null),
     [receipt, setReceipt] = useState<Receipt | null>(null),
     [failure, setFailure] = useState<RunFailure | null>(null);
@@ -65,6 +66,26 @@ export function RunFlow({
       : await backend.stageRun(tool.id, input!.handle, folder!, name);
     if ("failure" in result) setFailure(result.failure);
     else { setStaged(result); setActionsReviewed(false); }
+  }
+  const previewMode = !!detail?.noInput && !!detail.program;
+  async function previewFirst() {
+    setFailure(null);
+    const result = await backend.previewRunNoInput(tool.id);
+    if ("failure" in result) setFailure(result.failure);
+    else setPreview(result);
+  }
+  // The person has already read the answer, so when the real run matches it
+  // and plans nothing else, creating the file is the one click they just made.
+  async function createFromPreview() {
+    setFailure(null);
+    const result = await backend.stageRunNoInput(tool.id, folder!, name);
+    if ("failure" in result) { setFailure(result.failure); return; }
+    const same = result.previewText === preview?.previewText && !result.plannedCalls?.length && !result.destinationExists;
+    if (!same) { setStaged(result); setActionsReviewed(false); return; }
+    const receipt = await backend.commitRun(result.runId, result.planHash, false);
+    if ("failure" in receipt) { setStaged(result); setFailure(receipt.failure); return; }
+    setReceipt(receipt);
+    await changed();
   }
   return (
     <section>
@@ -97,8 +118,18 @@ export function RunFlow({
       {busy && <p role="status">Working…</p>}
       {!receipt && (
         <>
-          <fieldset disabled={busy || !!staged}>
-            <legend>{detail?.noInput ? "Choose output" : "Choose files"}</legend>
+          {detail?.noInput && !!detail.program && !preview && !staged && (
+            <button className="primary" disabled={busy || !detail} onClick={() => void act(previewFirst)}>Preview result</button>
+          )}
+          {detail?.noInput && !!preview && !staged && (
+            <section className="card">
+              <h3>Result</h3>
+              <div className="result-answer preserve-lines" aria-label="Answer">{preview.previewText}</div>
+              <div className="actions"><button disabled={busy} onClick={() => void act(previewFirst)}>Check again</button></div>
+            </section>
+          )}
+          {(!detail?.noInput || !!preview || !!staged || !detail.program) && <fieldset disabled={busy || !!staged}>
+            <legend>{detail?.noInput ? "Save the result" : "Choose files"}</legend>
             <div className="actions">
               {!detail?.noInput && (
                 <>
@@ -149,18 +180,18 @@ export function RunFlow({
                 }}
               />
             </Field>
-          </fieldset>
+          </fieldset>}
           {input && !staged && !detail?.noInput && <CsvView preview={input} />}
-          {!staged && (
+          {!staged && (!previewMode || !!preview) && (
             <>
             {(busy || !detail || (!detail?.noInput && !input) || !folder || !name.trim()) && <p id="run-reason">{busy ? "Working…" : !detail ? "Loading your tool…" : !detail?.noInput && !input ? "Choose an input file and output folder to continue." : !folder ? "Choose an output folder to continue." : "Give the output file a name."}</p>}
             <button
               className="primary"
               aria-describedby="run-reason"
               disabled={busy || !detail || (!detail?.noInput && !input) || !folder || !name.trim()}
-              onClick={() => void act(stage)}
+              onClick={() => void act(previewMode ? createFromPreview : stage)}
             >
-              Preview result
+              {previewMode ? "Create file" : "Preview result"}
             </button>
             </>
           )}

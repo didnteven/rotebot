@@ -119,6 +119,24 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Ok(t) => t,
         Err(e) => return format!("SAVE FAILED: {e}"),
     };
+    match core.preview_run_no_input(&tool.summary_row.id).await {
+        Ok(StageResult::Staged(p)) => eprintln!(
+            "preview ok: {}",
+            p.preview_text
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or("")
+        ),
+        Ok(StageResult::Failed(f)) => eprintln!("preview failed: {}", f.failure.message()),
+        Err(e) => eprintln!("preview error: {e}"),
+    }
+    eprintln!(
+        "scratch left behind: {}",
+        std::fs::read_dir(tmp.path().join("data/previews"))
+            .map(|d| d.count())
+            .unwrap_or(0)
+    );
     let program_name = state
         .program
         .as_ref()

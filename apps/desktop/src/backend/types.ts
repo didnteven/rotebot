@@ -517,6 +517,8 @@ export interface Backend {
     planHash: string,
     actionsReviewed?: boolean,
   ): Promise<Receipt | { failure: RunFailure }>;
+  /** Runs a no-input tool into a discarded scratch folder so its answer can be read first. */
+  previewRunNoInput(toolId: string): Promise<StagedRun | { failure: RunFailure }>;
   discardRun(runId: string): Promise<void>;
   revealOutput(receiptRunId: string): Promise<void>;
 
