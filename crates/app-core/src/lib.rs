@@ -2212,6 +2212,16 @@ impl AppCore {
                     }
                     return Ok(());
                 }
+                // A review of output that already passed must never leave the
+                // build worse off: keep the passing version to fall back on.
+                let passing_original = review_round.then(|| {
+                    (
+                        candidate.program.clone(),
+                        candidate.mapping.clone(),
+                        check_list.clone(),
+                        comparison.clone(),
+                    )
+                });
                 let mut failed_checks: Vec<CheckResult> =
                     check_list.iter().filter(|c| !c.passed).cloned().collect();
                 let current_output: Option<String> =
@@ -2222,7 +2232,7 @@ impl AppCore {
                         label: "Review the output against the task".into(),
                         passed: false,
                         detail: Some(
-                            "All host checks passed. Compare current_output with the task, fetched_web_samples and fetched_web_summaries; fix the program if it is not the correct answer or if its web source returns only part of what the task covers (a first page or top-N list).".into(),
+                            "All host checks passed. Compare current_output with the task, fetched_web_samples and fetched_web_summaries; fix the program if it is not the correct answer or if its web source returns only part of what the task covers (a first page or top-N list). Do not change the output wording or layout: if the task gave an example, the output must keep matching it exactly, so return the program unchanged unless the data is wrong.".into(),
                         ),
                     });
                 }
@@ -2478,6 +2488,22 @@ impl AppCore {
                             .filter(|c| !c.passed)
                             .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
                             .collect();
+                        if !passed2 {
+                            if let Some((program, mapping, checks, comparison)) = passing_original {
+                                self.update_build(&build_id, |s| {
+                                    s.candidate = Some(mapping);
+                                    s.program = program;
+                                    s.checks = checks;
+                                    s.comparison = comparison;
+                                })?;
+                                self.push_phase(
+                                    &build_id,
+                                    BuildPhase::Ready,
+                                    "Ready to compare (the model's suggested change did not pass the checks, so the version that passed was kept)",
+                                )?;
+                                return Ok(());
+                            }
+                        }
                         self.update_build(&build_id, |s| {
                             s.checks = check_list2;
                             s.comparison = comparison2;

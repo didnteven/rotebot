@@ -688,3 +688,20 @@ async fn passing_web_program_gets_one_review_round_with_a_page_excerpt() {
         .unwrap()
         .contains("covers everything the task asks about"));
 }
+
+/// A review can only improve a passing build: when the reviewed program fails
+/// the checks, the version that passed is kept and the build stays Ready.
+#[tokio::test]
+async fn failing_review_change_keeps_the_passing_program() {
+    let f = SourceCorrection::new().await;
+    let first = f.program("weather", "weather");
+    let worse = f.program("weather", "not_declared");
+    let state = f.build(first.clone(), worse).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert_eq!(state.program.as_ref().unwrap().code, first.code);
+    assert!(state.checks.iter().all(|c| c.passed), "{state:?}");
+    assert!(state
+        .events
+        .iter()
+        .any(|e| e.message.contains("version that passed was kept")));
+}

@@ -64,7 +64,7 @@ async fn run_one(prompt: &str, key: &str) -> String {
         &draft.draft_id,
         TaskKind::Program,
         &std::env::var("SCENARIO_OUTPUT_NAME").unwrap_or_else(|_| "answer.txt".into()),
-        None,
+        std::env::var("SCENARIO_EXAMPLE").ok(),
     ) {
         Ok(d) => d,
         Err(e) => return format!("DRAFT FAILED: {e}"),

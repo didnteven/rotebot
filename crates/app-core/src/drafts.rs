@@ -584,6 +584,55 @@ pub fn contract_for(draft: &TaskDraft) -> TaskContract {
     }
 }
 
+/// Problems in an example result that would make a build fail for a reason
+/// the person can fix in one edit. Values that change are written in
+/// `{braces}` with a plain name, like `{city}` or `{temp}`.
+pub fn example_problems(example: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut open = false;
+    let mut name = String::new();
+    for ch in example.chars() {
+        match ch {
+            '{' if open => {
+                problems.push("Your example has a { inside another { }. Use one pair of braces per changing value, like {temp}.".into());
+                return problems;
+            }
+            '{' => {
+                open = true;
+                name.clear();
+            }
+            '}' if !open => {
+                problems.push(
+                    "Your example has a } without a matching {. Write changing values like {temp}."
+                        .into(),
+                );
+                return problems;
+            }
+            '}' => {
+                open = false;
+                let valid = !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if !valid {
+                    problems.push(format!(
+                        "Your example has {{{name}}}, which isn't a plain name. Use a short word like {{temp}} or {{city}}."
+                    ));
+                    return problems;
+                }
+            }
+            c if open => name.push(c),
+            _ => {}
+        }
+    }
+    if open {
+        problems.push(
+            "Your example has a { that is never closed. Write changing values like {temp}.".into(),
+        );
+    }
+    problems
+}
+
 /// Recomputes readiness after any change.
 pub fn refresh(draft: &mut TaskDraft) {
     let mut blockers = Vec::new();
@@ -591,6 +640,9 @@ pub fn refresh(draft: &mut TaskDraft) {
         if macroscope_effect_broker::validate_basename(&draft.output_name).is_err() {
             blockers
                 .push("Use a .csv, .tsv, .txt, .md or .json output name, without folders.".into());
+        }
+        if let Some(example) = &draft.example_output {
+            blockers.extend(example_problems(example));
         }
         draft.summary = summary(draft);
         draft.ready_to_build = blockers.is_empty();
@@ -761,5 +813,25 @@ mod tests {
         assert_eq!(pv.row_count, 2);
         assert_eq!(pv.rows[0][0].chars().count(), CELL_LIMIT + 1);
         assert!(parse(b"", 1).is_err());
+    }
+}
+
+#[cfg(test)]
+mod example_tests {
+    use super::example_problems;
+
+    #[test]
+    fn plain_placeholders_are_fine() {
+        assert!(example_problems("High: {high} and low {low}").is_empty());
+        assert!(example_problems("No changing values here").is_empty());
+    }
+
+    #[test]
+    fn malformed_braces_are_explained() {
+        assert_eq!(example_problems("High: {high and low").len(), 1);
+        assert_eq!(example_problems("High: high} and low").len(), 1);
+        assert_eq!(example_problems("High: {} low").len(), 1);
+        assert_eq!(example_problems("High: {high low} x").len(), 1);
+        assert_eq!(example_problems("High: {{high}}").len(), 1);
     }
 }
