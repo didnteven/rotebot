@@ -60,7 +60,12 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Ok(d) => d,
         Err(e) => return format!("DRAFT FAILED: {e}"),
     };
-    let draft = match core.update_task(&draft.draft_id, TaskKind::Program, "answer.txt", None) {
+    let draft = match core.update_task(
+        &draft.draft_id,
+        TaskKind::Program,
+        &std::env::var("SCENARIO_OUTPUT_NAME").unwrap_or_else(|_| "answer.txt".into()),
+        None,
+    ) {
         Ok(d) => d,
         Err(e) => return format!("DRAFT FAILED: {e}"),
     };
@@ -114,6 +119,12 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Ok(t) => t,
         Err(e) => return format!("SAVE FAILED: {e}"),
     };
+    let program_name = state
+        .program
+        .as_ref()
+        .map(|p| p.output_name.clone())
+        .unwrap_or_default();
+    eprintln!("program output_name = {program_name}");
     let out_dir = tmp.path().join("out");
     std::fs::create_dir_all(&out_dir).expect("out dir");
     let dir = match core.register_picked_dir(&out_dir) {
@@ -121,7 +132,7 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Err(e) => return format!("RUN SETUP FAILED: {e}"),
     };
     match core
-        .stage_run_no_input(&tool.summary_row.id, &dir.handle_id, "answer.txt")
+        .stage_run_no_input(&tool.summary_row.id, &dir.handle_id, &program_name)
         .await
     {
         Ok(StageResult::Staged(s)) => format!(

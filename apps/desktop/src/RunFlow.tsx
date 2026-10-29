@@ -60,9 +60,12 @@ export function RunFlow({
   }
   async function stage() {
     setFailure(null);
+    // A program's output file name was approved with the program, so it is
+    // never taken from the editable field.
+    const outputName = detail?.program ? detail.program.output_name : name;
     const result = detail?.noInput
-      ? await backend.stageRunNoInput(tool.id, folder!, name)
-      : await backend.stageRun(tool.id, input!.handle, folder!, name);
+      ? await backend.stageRunNoInput(tool.id, folder!, outputName)
+      : await backend.stageRun(tool.id, input!.handle, folder!, outputName);
     if ("failure" in result) setFailure(result.failure);
     else { setStaged(result); setActionsReviewed(false); }
   }
@@ -140,14 +143,14 @@ export function RunFlow({
             </div>
             {folder && <p>Output folder: <FileText text={folder.displayPath} /></p>}
             <Field label="Output name">
-              <FileNameInput
+              {detail?.program ? <p>Output name: <FileText text={detail.program.output_name} /></p> : <FileNameInput
                 label="Output name"
                 value={name}
                 onChange={(value) => {
                   setName(value);
                   setFailure(null);
                 }}
-              />
+              />}
             </Field>
           </fieldset>
           {input && !staged && !detail?.noInput && <CsvView preview={input} />}

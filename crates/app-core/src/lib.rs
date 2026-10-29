@@ -3245,9 +3245,10 @@ impl AppCore {
         };
         let staged: Result<StagedPlan, BrokerError> = if let Some(program) = &detail.program {
             if schedule.is_none() && output_name != program.output_name {
-                Err(BrokerError::Runner(
-                    "Use the confirmed output name for this program.".into(),
-                ))
+                Err(BrokerError::Runner(format!(
+                    "Use the confirmed output name for this program ({}).",
+                    program.output_name
+                )))
             } else {
                 #[cfg(not(feature = "generated-runtime"))]
                 {
