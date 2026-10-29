@@ -232,3 +232,21 @@ it("requests permissions only on the explicit button, then starts the window sou
   expect(ctx.analyze).not.toHaveBeenCalled();
   expect(button("Send for analysis")).toBeVisible();
 });
+
+it("lets the person remove a frame from the review, which is then re-reviewed without it", async () => {
+  const backend = new MockBackend();
+  const originalPreview = backend.previewRecording.bind(backend);
+  vi.spyOn(backend, "previewRecording").mockImplementation(async id => {
+    const p = await originalPreview(id);
+    return {...p, frames: p.frames.map(f => f.seq === 2 ? {...f, unverified: true} : f)};
+  });
+  const remove = vi.spyOn(backend, "removeRecordingFrame");
+  const ctx = await open(backend);
+  await ctx.user.click(button("Try it with a sample recording"));
+  await ctx.user.click(await screen.findByRole("button", {name:"Stop"}));
+  expect(await screen.findByText(/Not fully checked/)).toBeVisible();
+  await ctx.user.click(button("Remove frame 2"));
+  expect(remove).toHaveBeenCalledWith(expect.any(String), 2);
+  await waitFor(() => expect(screen.queryByRole("button", {name:"Remove frame 2"})).toBeNull());
+  expect(button("Remove frame 1")).toBeVisible();
+});

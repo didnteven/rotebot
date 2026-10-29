@@ -94,9 +94,15 @@ pub struct MaskedFrame {
     width: u32,
     height: u32,
     png: Vec<u8>,
+    unverified: bool,
 }
 
 impl MaskedFrame {
+    /// True when the capture could not fully check the window; shown to the person as a warning.
+    pub fn unverified(&self) -> bool {
+        self.unverified
+    }
+
     pub fn text(&self) -> &FrameText {
         &self.text
     }
@@ -193,6 +199,13 @@ impl RecordingSession {
 
     pub fn frames(&self) -> &[MaskedFrame] {
         &self.frames
+    }
+
+    /// The person decided to leave this frame out; it is removed before anything can be sent.
+    pub fn remove_frame(&mut self, seq: u64) -> bool {
+        let before = self.frames.len();
+        self.frames.retain(|f| f.text().seq != seq);
+        self.frames.len() != before
     }
 
     pub fn dropped(&self) -> &[DroppedFrame] {

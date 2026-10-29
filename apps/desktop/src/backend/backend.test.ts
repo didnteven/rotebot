@@ -164,6 +164,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["recordingStatus", [], undefined],
     ["requestRecordingPermission", [], undefined],
     ["confirmNormalBrowserWindow", [], undefined],
+    ["removeRecordingFrame", ["s", 2], {sessionId:"s",seq:2}],
     ["openPrivacySettings", ["accessibility"], {pane:"accessibility"}],
     ["startRecording", ["sample"], {source:"sample"}],
     ["stopRecording", ["s"], {sessionId:"s"}],

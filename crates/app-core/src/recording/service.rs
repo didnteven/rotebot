@@ -89,6 +89,7 @@ pub struct MaskedFrameDto {
     pub width: u32,
     pub height: u32,
     pub masks: Vec<MaskRegion>,
+    pub unverified: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,6 +180,7 @@ fn frames(session: &RecordingSession, stopped: bool) -> RecordingFrames {
             .frames()
             .iter()
             .map(|f| MaskedFrameDto {
+                unverified: f.unverified(),
                 seq: f.text().seq,
                 png_base64: encode(f.png()),
                 width: f.dimensions().0,
@@ -370,6 +372,27 @@ impl AppCore {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         s.frames.stopped = true;
+        Ok(s.frames.clone())
+    }
+    /// Leaves one frame out of a stopped recording and clears the review so it is rebuilt without it.
+    pub fn remove_recording_frame(&self, session_id: &str, seq: u64) -> CoreResult<RecordingFrames> {
+        let mut slots = lock(&self.inner.recordings);
+        let s = slot(&mut slots, session_id, self.now())?;
+        if !s.frames.stopped {
+            return Err(invalid("Stop the recording before removing frames."));
+        }
+        if s.analyzing || s.draft.is_some() {
+            return Err(invalid("This recording has already been analyzed."));
+        }
+        let capture = s
+            .capture
+            .as_mut()
+            .ok_or_else(|| invalid("This recording can no longer be changed."))?;
+        if !capture.remove_frame(seq) {
+            return Err(invalid("That frame is no longer in the recording."));
+        }
+        s.review = None;
+        s.frames = frames(capture, true);
         Ok(s.frames.clone())
     }
     pub fn discard_recording(&self, session_id: &str) -> CoreResult<()> {

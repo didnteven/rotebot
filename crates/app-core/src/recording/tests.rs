@@ -623,12 +623,24 @@ impl SensitiveDetector for BrokenDetector {
 }
 
 #[test]
+fn doubtful_frames_are_kept_masked_and_flagged() {
+    let detector = TextDetector::new().unwrap();
+    let mut raw = frame();
+    raw.uncertain = true;
+    let mut session = RecordingSession::new();
+    session.record(raw, &[], &detector).expect("kept");
+    assert!(session.frames()[0].unverified());
+    assert!(session.dropped().is_empty());
+    let mut next = frame();
+    next.seq = 2;
+    session.record(next, &[], &detector).expect("kept");
+    assert!(!session.frames()[1].unverified());
+}
+
+#[test]
 fn fail_closed_drops_have_content_free_reasons() {
     let detector = TextDetector::new().unwrap();
     let mut cases = Vec::new();
-    let mut raw = frame();
-    raw.uncertain = true;
-    cases.push((raw, DropReason::Uncertain));
     let mut raw = frame();
     raw.secure_input_gap = true;
     cases.push((raw, DropReason::SecureInputGap));

@@ -147,7 +147,8 @@ fn dto_emits_only_masked_pixels_and_drop_reasons() {
     f.uncertain = true;
     c.submit_frame(&id, f).unwrap();
     let dto = c.list_recording_frames(&id).unwrap();
-    assert_eq!(dto.dropped[0].reason, DropReason::Uncertain);
+    assert!(dto.dropped.is_empty());
+    assert!(dto.frames.iter().find(|f| f.seq == 4).unwrap().unverified);
     let json = serde_json::to_string(&dto).unwrap();
     assert!(!json.contains("windowTitle"));
     assert!(!json.contains("rgba"));

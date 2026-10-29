@@ -440,6 +440,7 @@ export interface Backend {
   recordingStatus(): Promise<RecordingStatus>;
   requestRecordingPermission(): Promise<RecordingStatus>;
   confirmNormalBrowserWindow(): Promise<void>;
+  removeRecordingFrame(sessionId: string, seq: number): Promise<RecordingFrames>;
   openPrivacySettings(pane: "screen_recording" | "accessibility"): Promise<void>;
   startRecording(source: "sample" | "window"): Promise<string>;
   stopRecording(sessionId: string): Promise<RecordingFrames>;
@@ -592,7 +593,7 @@ export interface RecordedFrameInput {
   uncertain: boolean; secureInputGap: boolean;
 }
 export interface RecordingFrame {
-  seq: number; pngBase64: string; width: number; height: number;
+  seq: number; pngBase64: string; width: number; height: number; unverified?: boolean;
   masks: {rect: RecordingRect; reason: "secure_field" | "manual" | "sensitive_text"}[];
 }
 export interface RecordingFrames {

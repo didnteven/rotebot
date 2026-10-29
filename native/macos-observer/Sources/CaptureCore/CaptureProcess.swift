@@ -262,6 +262,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         header.secureInputGap = secureBefore || IsSecureEventInputEnabled()
         if header.secureInputGap == true { var gap = CaptureHeader(type: "gap"); gap.reason = "secure_input_gap"; send(gap) }
         var boxes: [CaptureOCR] = []
+        var textScanFailed = false
         if header.secureInputGap != true {
             do {
                 let request = VNRecognizeTextRequest()
@@ -277,7 +278,7 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
                     guard textBytes <= 24_000 else { throw CaptureWire.Failure.oversized }
                     boxes.append(CaptureOCR(text: candidate.string, rect: rect))
                 }
-            } catch { header.uncertain = true; boxes = [] }
+            } catch { header.uncertain = true; textScanFailed = true; boxes = [] }
         }
         header.ocrBoxes = boxes
         let after = CaptureAccessibility.read(pid: app.processID, selectedWindow: window.windowID,
@@ -292,7 +293,8 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
                 : (ProcessInfo.processInfo.systemUptime-now > 6 ? "too_slow" : "text_scan_failed"))))
             var note = CaptureHeader(type: "gap"); note.reason = "uncertain_" + why; send(note)
         }
-        guard allowed(), CGPreflightScreenCaptureAccess() else { return }
+        // Without the on-screen text scan the main protection is missing, so such a frame is not sent at all.
+        guard !textScanFailed, allowed(), CGPreflightScreenCaptureAccess() else { return }
         send(header, pixels: pixels)
         if header.uncertain == true || header.secureInputGap == true { diff = FrameDifference() }
         if seq >= 60 { finish("frame_limit") }

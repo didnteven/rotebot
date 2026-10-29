@@ -284,7 +284,14 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <div className="recording-gallery" aria-label="Exact masked frames">
         {preview.frames.map(frame=><figure key={frame.seq}>
           <img src={`data:image/png;base64,${frame.pngBase64}`} width={frame.width} height={frame.height} alt={`Reviewed frame ${frame.seq}${frame.masks.length?", private content hidden in black":""}`}/>
-          <figcaption>Frame {frame.seq} · {frame.masks.length ? `${frame.masks.length} area(s) hidden for privacy (black)` : "No areas hidden"}</figcaption>
+          <figcaption>Frame {frame.seq} · {frame.masks.length ? `${frame.masks.length} area(s) hidden for privacy (black)` : "No areas hidden"}
+            {frame.unverified && <strong className="notice notice-info"> Not fully checked: password fields may not be hidden in this frame. Look closely, then keep it or remove it.</strong>}
+          </figcaption>
+          <button disabled={busy} onClick={()=>void act(async()=>{
+            await backend.removeRecordingFrame(session!,frame.seq);
+            try { setPreview(await backend.previewRecording(session!)); }
+            catch { setPreview({...preview, frames:preview.frames.filter(f=>f.seq!==frame.seq)}); }
+          })}>Remove frame {frame.seq}</button>
         </figure>)}
       </div>
       {!preview.frames.length && <p>No frames were safe to keep{captureStatus?.reason?.startsWith("uncertain_") ? ` (skipped because of: ${captureStatus.reason.slice(10)})` : ""}. Discard this recording and try again.</p>}

@@ -179,9 +179,8 @@ pub(super) fn mask(
     regions: &[MaskRegion],
     detector: &impl SensitiveDetector,
 ) -> Result<MaskedFrame, DropReason> {
-    if frame.uncertain {
-        return Err(DropReason::Uncertain);
-    }
+    // A doubtful frame is kept, masked as far as it could be checked, and flagged for the person.
+    let unverified = frame.uncertain;
     if frame.secure_input_gap {
         return Err(DropReason::SecureInputGap);
     }
@@ -322,5 +321,6 @@ pub(super) fn mask(
         width: frame.width,
         height: frame.height,
         png,
+        unverified,
     })
 }
