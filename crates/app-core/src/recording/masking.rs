@@ -1,5 +1,5 @@
 use super::*;
-use regex::Regex;
+use std::ops::Range;
 
 const MAX_DETECTOR_BYTES: usize = 65_536;
 
@@ -10,98 +10,38 @@ pub struct DetectorError;
 /// An adapter must return an error for incomplete or uncertain detection, never `Ok(false)`.
 pub trait SensitiveDetector {
     fn is_sensitive(&self, text: &str) -> Result<bool, DetectorError>;
-}
 
-pub struct TextDetector {
-    patterns: Vec<Regex>,
-    cards: Regex,
-}
-
-impl TextDetector {
-    pub fn new() -> Result<Self, DetectorError> {
-        let patterns = [
-            r"(?i)[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+",
-            r"\b[0-9]{3}[- ][0-9]{2}[- ][0-9]{4}\b",
-            r"(?i)\b[A-Z]{2}[0-9]{2}(?:[ -]?[A-Z0-9]){11,30}\b",
-            r"(?:\+[0-9][0-9 ().-]{5,}[0-9]|\(?[0-9]{2,4}\)?[ .-][0-9]{3,4}[ .-][0-9]{3,4}|\b[0-9]{10,15}\b)",
-            r"[A-Za-z0-9_+/=-]{24,}",
-            r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
-            r"(?i)\b(?:sk|pk|ghp|gho|github_pat)[_-][A-Za-z0-9_-]{12,}\b",
-        ]
-        .into_iter()
-        .map(Regex::new)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| DetectorError)?;
-        Ok(Self {
-            patterns,
-            cards: Regex::new(r"\b[0-9](?:[ -]?[0-9]){12,18}\b").map_err(|_| DetectorError)?,
+    /// UTF-8 byte ranges in the original input. Older adapters remain fail-closed
+    /// by masking the whole input when their boolean detector finds a match.
+    fn sensitive_ranges(&self, text: &str) -> Result<Vec<Range<usize>>, DetectorError> {
+        Ok(if self.is_sensitive(text)? {
+            vec![0..text.len()]
+        } else {
+            vec![]
         })
     }
-}
 
-impl SensitiveDetector for TextDetector {
-    fn is_sensitive(&self, text: &str) -> Result<bool, DetectorError> {
-        if text.len() > MAX_DETECTOR_BYTES || text.contains('\0') {
-            return Err(DetectorError);
-        }
-        let cards: Vec<_> = self.cards.find_iter(text).collect();
-        if cards.iter().any(|m| luhn(m.as_str())) {
-            return Ok(true);
-        }
-        for (index, pattern) in self.patterns.iter().enumerate() {
-            for found in pattern.find_iter(text) {
-                let candidate = found.as_str();
-                if index == 3 {
-                    // A formatted card must not be mistaken for a shorter phone substring.
-                    if cards
-                        .iter()
-                        .any(|m| m.start() < found.end() && found.start() < m.end())
-                    {
-                        continue;
-                    }
-                    let digits = candidate.bytes().filter(u8::is_ascii_digit).count();
-                    // Short dates and card-sized digit runs are not phone numbers.
-                    if !(7..=15).contains(&digits) || candidate.len() <= digits && digits < 10 {
-                        continue;
-                    }
-                }
-                if index == 4
-                    && !(candidate.bytes().any(|b| b.is_ascii_alphabetic())
-                        && candidate.bytes().any(|b| b.is_ascii_digit()))
-                {
-                    continue;
-                }
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    /// Detectors may require the full line as authority (for example an address
+    /// bar whose numeric path fragments are harmless only in URL context).
+    fn requires_line_context(&self, _text: &str) -> bool {
+        false
+    }
+
+    /// Standalone field labels for spatial association with the next row.
+    fn label_ranges(&self, _text: &str) -> Result<Vec<Range<usize>>, DetectorError> {
+        Ok(vec![])
     }
 }
 
-fn luhn(text: &str) -> bool {
-    let digits: Vec<u32> = text
-        .bytes()
-        .filter(u8::is_ascii_digit)
-        .map(|b| u32::from(b - b'0'))
-        .collect();
-    (13..=19).contains(&digits.len())
-        && digits.iter().any(|&d| d != 0)
-        && digits
-            .iter()
-            .rev()
-            .enumerate()
-            .map(|(i, &d)| {
-                let n = if i % 2 == 1 { d * 2 } else { d };
-                if n > 9 {
-                    n - 9
-                } else {
-                    n
-                }
-            })
-            .sum::<u32>()
-            % 10
-            == 0
-}
+mod detector;
+mod temporal;
+pub use detector::TextDetector;
+pub(super) use temporal::MaskHistory;
+
+#[cfg(test)]
+mod corpus;
+#[cfg(test)]
+mod legacy;
 
 fn padded_rect(rect: Rect, width: u32, height: u32) -> Rect {
     // Geometry has already been validated against the (at most 1600px) frame.
@@ -144,40 +84,195 @@ fn ocr_lines(boxes: &[OcrBox]) -> Vec<Vec<usize>> {
     lines
 }
 
-fn sensitive_run(
+/// A run keeps the byte provenance of every box, including in the compact variant.
+fn run_text(
     boxes: &[OcrBox],
     run: &[usize],
-    detector: &impl SensitiveDetector,
-) -> Result<bool, DropReason> {
-    let bytes = run.iter().map(|&i| boxes[i].text.len()).sum::<usize>() + run.len() - 1;
+    compact: bool,
+) -> Result<(String, Vec<Range<usize>>), DropReason> {
+    let bytes =
+        run.iter().map(|&i| boxes[i].text.len()).sum::<usize>() + run.len().saturating_sub(1);
     if bytes > MAX_DETECTOR_BYTES {
         return Err(DropReason::DetectorError);
     }
-    let mut joined = String::with_capacity(bytes);
+    let mut text = String::with_capacity(bytes);
+    let mut offsets = Vec::new();
     for (position, &i) in run.iter().enumerate() {
-        if position > 0 {
-            joined.push(' ');
+        if position > 0 && !compact {
+            text.push(' ');
         }
-        joined.push_str(&boxes[i].text);
+        let start = text.len();
+        text.push_str(&boxes[i].text);
+        offsets.push(start..text.len());
     }
-    if detector
-        .is_sensitive(&joined)
-        .map_err(|_| DropReason::DetectorError)?
-    {
-        return Ok(true);
+    Ok((text, offsets))
+}
+
+fn checked_ranges(
+    detector: &impl SensitiveDetector,
+    text: &str,
+) -> Result<Vec<Range<usize>>, DropReason> {
+    let ranges = detector
+        .sensitive_ranges(text)
+        .map_err(|_| DropReason::DetectorError)?;
+    if ranges.iter().any(|r| {
+        r.start > r.end
+            || r.end > text.len()
+            || !text.is_char_boundary(r.start)
+            || !text.is_char_boundary(r.end)
+    }) {
+        return Err(DropReason::DetectorError);
     }
-    // An inserted space can break an email split at '@' or within its domain.
-    // This variant is shorter than the bounded, space-joined run above.
-    let compact: String = run.iter().map(|&i| boxes[i].text.as_str()).collect();
-    detector
-        .is_sensitive(&compact)
-        .map_err(|_| DropReason::DetectorError)
+    Ok(ranges)
+}
+
+fn detect_run(
+    boxes: &[OcrBox],
+    run: &[usize],
+    detector: &impl SensitiveDetector,
+    detected: &mut [Vec<Range<usize>>],
+) -> Result<(), DropReason> {
+    let (text, offsets) = run_text(boxes, run, false)?;
+    let spans = checked_ranges(detector, &text)?;
+    let compact = spans.is_empty() && run.len() > 1;
+    for span in spans {
+        distribute(&span, run, &offsets, detected);
+    }
+    if compact {
+        let (text, offsets) = run_text(boxes, run, true)?;
+        for span in checked_ranges(detector, &text)? {
+            distribute(&span, run, &offsets, detected);
+        }
+    }
+    Ok(())
+}
+
+fn distribute(
+    span: &Range<usize>,
+    run: &[usize],
+    offsets: &[Range<usize>],
+    detected: &mut [Vec<Range<usize>>],
+) {
+    for (&i, offset) in run.iter().zip(offsets) {
+        let start = span.start.max(offset.start);
+        let end = span.end.min(offset.end);
+        if start < end {
+            detected[i].push(start - offset.start..end - offset.start);
+        }
+    }
+}
+
+fn sub_rect(b: &OcrBox, range: Range<usize>) -> Rect {
+    let count = b.text.chars().count().max(1) as u32;
+    let start = b.text[..range.start].chars().count() as u32;
+    let end = b.text[..range.end].chars().count() as u32;
+    let x = b.rect.x + b.rect.width * start / count;
+    let right = b.rect.x + (b.rect.width * end).div_ceil(count);
+    Rect {
+        x,
+        width: (right - x).max(1),
+        ..b.rect
+    }
+}
+
+fn line_rect(boxes: &[OcrBox], line: &[usize]) -> Rect {
+    let x = line.iter().map(|&i| boxes[i].rect.x).min().unwrap();
+    let y = line.iter().map(|&i| boxes[i].rect.y).min().unwrap();
+    let right = line
+        .iter()
+        .map(|&i| boxes[i].rect.x + boxes[i].rect.width)
+        .max()
+        .unwrap();
+    let bottom = line
+        .iter()
+        .map(|&i| boxes[i].rect.y + boxes[i].rect.height)
+        .max()
+        .unwrap();
+    Rect {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    }
+}
+
+fn contextual_values(
+    boxes: &[OcrBox],
+    lines: &[Vec<usize>],
+    detector: &impl SensitiveDetector,
+    detected: &mut [Vec<Range<usize>>],
+) -> Result<(), DropReason> {
+    let mut labels = Vec::new();
+    for b in boxes {
+        if !detector
+            .label_ranges(&b.text)
+            .map_err(|_| DropReason::DetectorError)?
+            .is_empty()
+        {
+            labels.push(b.rect);
+        }
+    }
+    for line in lines {
+        let (text, _) = run_text(boxes, line, false)?;
+        if !detector
+            .label_ranges(&text)
+            .map_err(|_| DropReason::DetectorError)?
+            .is_empty()
+        {
+            labels.push(line_rect(boxes, line));
+        }
+    }
+    labels.sort_by_key(|r| (r.y, r.x, r.width, r.height));
+    labels.dedup();
+    for &label in &labels {
+        // The closest aligned row below is the value. Another label or column
+        // bounds the field; a distant row cannot inherit a sensitive label.
+        let anchor = boxes
+            .iter()
+            .filter(|b| {
+                let r = b.rect;
+                r.y >= label.y + label.height
+                    && r.y - (label.y + label.height) <= label.height * 2 + 12
+                    && r.x.abs_diff(label.x) <= label.height * 2
+            })
+            .min_by_key(|b| b.rect.y);
+        let Some(anchor) = anchor else {
+            continue;
+        };
+        if !detector
+            .label_ranges(&anchor.text)
+            .map_err(|_| DropReason::DetectorError)?
+            .is_empty()
+        {
+            continue;
+        }
+        let right = labels
+            .iter()
+            .filter(|r| r.y.abs_diff(label.y) <= label.height / 2 && r.x > label.x)
+            .map(|r| r.x)
+            .min()
+            .unwrap_or(label.x + label.width.max(240));
+        for (i, b) in boxes.iter().enumerate() {
+            if b.rect.y.abs_diff(anchor.rect.y) <= anchor.rect.height / 2
+                && b.rect.x >= anchor.rect.x.saturating_sub(2)
+                && b.rect.x < right
+                && detector
+                    .label_ranges(&b.text)
+                    .map_err(|_| DropReason::DetectorError)?
+                    .is_empty()
+            {
+                detected[i].push(0..b.text.len());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn mask(
     mut frame: RecordedFrame,
     regions: &[MaskRegion],
     detector: &impl SensitiveDetector,
+    history: &mut MaskHistory,
 ) -> Result<MaskedFrame, DropReason> {
     // A doubtful frame is kept, masked as far as it could be checked, and flagged for the person.
     let unverified = frame.uncertain;
@@ -220,42 +315,50 @@ pub(super) fn mask(
             .is_sensitive(s)
             .map_err(|_| DropReason::DetectorError)
     };
-    let mut detected = Vec::with_capacity(frame.ocr_boxes.len());
-    for b in &frame.ocr_boxes {
-        detected.push(sensitive(&b.text)?);
-    }
-    for line in ocr_lines(&frame.ocr_boxes) {
-        if line.len() < 2 {
-            continue;
-        }
-        if sensitive_run(&frame.ocr_boxes, &line, detector)? {
-            for &i in &line {
-                detected[i] = true;
-            }
+    let lines = ocr_lines(&frame.ocr_boxes);
+    let mut detected = vec![Vec::new(); frame.ocr_boxes.len()];
+    for line in &lines {
+        let (joined, _) = run_text(&frame.ocr_boxes, line, false)?;
+        let contextual = detector.requires_line_context(&joined);
+        // Evaluate all adapters for errors even when their standalone decisions
+        // are superseded by line context.
+        let mut fallback = vec![Vec::new(); frame.ocr_boxes.len()];
+        for &i in line {
+            detect_run(&frame.ocr_boxes, &[i], detector, &mut fallback)?;
         }
         for pair in line.windows(2) {
-            if sensitive_run(&frame.ocr_boxes, pair, detector)? {
-                for &i in pair {
-                    detected[i] = true;
-                }
+            detect_run(&frame.ocr_boxes, pair, detector, &mut fallback)?;
+        }
+        if !contextual {
+            for &i in line {
+                detected[i].append(&mut fallback[i]);
             }
         }
+        detect_run(&frame.ocr_boxes, line, detector, &mut detected)?;
     }
+    contextual_values(&frame.ocr_boxes, &lines, detector, &mut detected)?;
+    let mut text_rects = Vec::new();
+    for (b, spans) in frame.ocr_boxes.iter().zip(&mut detected) {
+        spans.sort_by_key(|s| (s.start, s.end));
+        let mut merged: Vec<Range<usize>> = Vec::new();
+        for span in spans.drain(..).filter(|s| !s.is_empty()) {
+            if let Some(last) = merged.last_mut().filter(|s| span.start <= s.end) {
+                last.end = last.end.max(span.end);
+            } else {
+                merged.push(span);
+            }
+        }
+        text_rects.extend(merged.into_iter().map(|span| sub_rect(b, span)));
+    }
+    // History is staged until all metadata detection and encoding have succeeded.
+    let (text_rects, next_history) = history.smooth(&frame, &lines, text_rects)?;
     let masks: Vec<_> = regions
         .iter()
         .copied()
-        .chain(
-            frame
-                .ocr_boxes
-                .iter()
-                .zip(detected)
-                .filter_map(|(b, detected)| {
-                    detected.then_some(MaskRegion {
-                        rect: b.rect,
-                        reason: MaskReason::SensitiveText,
-                    })
-                }),
-        )
+        .chain(text_rects.into_iter().map(|rect| MaskRegion {
+            rect,
+            reason: MaskReason::SensitiveText,
+        }))
         .map(|mask| MaskRegion {
             rect: padded_rect(mask.rect, frame.width, frame.height),
             ..mask
@@ -308,6 +411,7 @@ pub(super) fn mask(
             .map_err(|_| DropReason::EncodingError)?;
         writer.finish().map_err(|_| DropReason::EncodingError)?;
     }
+    *history = next_history;
     Ok(MaskedFrame {
         text: FrameText {
             seq: frame.seq,
