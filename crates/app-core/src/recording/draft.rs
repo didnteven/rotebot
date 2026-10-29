@@ -266,9 +266,11 @@ pub fn apply_answers(
                 .iter()
                 .find(|s| s.step_id == step.id)
                 .ok_or(DraftError("unknown manual step"))?;
+            // The reason is shown to the person on the review screen; repeating it per step only bloats the goal.
+            let _ = unsupported;
             lines.push(format!(
-                "{}. Manual only (unsupported) — {}: {}. {}",
-                step.order, step.app, step.action, unsupported.reason
+                "{}. Manual only (unsupported) — {}: {}",
+                step.order, step.app, step.action
             ));
         } else {
             lines.push(format!(
@@ -318,10 +320,10 @@ pub fn apply_answers(
         lines.push(format!("Unresolved ambiguity: {ambiguity}"));
     }
     let description = lines.join("\n");
-    // The existing no-input builder truncates its goal to 2,000 characters. Never silently lose decisions.
-    if description.chars().count() > 2000 {
+    // The builder truncates its goal at GOAL_LIMIT. Never silently lose decisions.
+    if description.chars().count() > crate::GOAL_LIMIT {
         return Err(DraftError(
-            "clarified task exceeds the builder's 2000-character limit; shorten it before approval",
+            "clarified task is too long for the builder; discard the recording and record a shorter task",
         ));
     }
     Ok(ClarifiedTask {

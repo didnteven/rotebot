@@ -56,6 +56,8 @@ const DB_KEY_REF: &str = "db-key";
 const STAGING_KEY_REF: &str = "staging-key";
 const LOCAL_RUN_POLICY_EPOCH: u64 = 0;
 const BUILD_BUDGET_MICROS: i64 = 2_000_000;
+/// Longest task description the builder accepts. A plan made from a recording is longer than a typed request.
+pub(crate) const GOAL_LIMIT: usize = 6000;
 const SAMPLE_CSV: &[u8] = include_bytes!("../../../fixtures/orders/input.csv");
 const SAMPLE_TASK: &str = include_str!("../../../fixtures/orders/task.json");
 
@@ -664,7 +666,7 @@ impl AppCore {
             no_input: false,
             draft_id: new_id("draft"),
             revision: 1,
-            goal: description.trim().chars().take(2000).collect(),
+            goal: description.trim().chars().take(GOAL_LIMIT).collect(),
             input: preview,
             summary: vec![],
             mapping: proposal.mapping,
@@ -695,7 +697,7 @@ impl AppCore {
     /// selected file, so `macroscope.input` is unavailable at run time.
     pub fn draft_task_no_input(&self, description: &str) -> CoreResult<TaskDraft> {
         let _admission = self.admit_local()?;
-        let goal: String = description.trim().chars().take(2000).collect();
+        let goal: String = description.trim().chars().take(GOAL_LIMIT).collect();
         let mut draft = TaskDraft {
             kind: TaskKind::Program,
             example_output: None,

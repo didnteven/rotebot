@@ -876,7 +876,7 @@ fn answers_produce_reviewable_builder_text_and_keep_manual_limits() {
     bad.insert("injected".into(), "yes".into());
     assert!(apply_answers(&draft, &bad).is_err());
     let mut long = draft;
-    long.goal = "x".repeat(2000);
+    long.goal = "x".repeat(crate::GOAL_LIMIT);
     assert!(apply_answers(&long, &answers).is_err());
 }
 
