@@ -177,7 +177,7 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
         Err(e) => return format!("{out}  SAVE FAILED: {e}"),
     };
     match core.preview_run_no_input(&tool.summary_row.id).await {
-        Ok(StageResult::Staged(p)) => out += &format!("  RESULT: {}\n", p.preview_text.unwrap_or_default().trim()),
+        Ok(StageResult::Staged(p)) => out += &format!("  RESULT:\n{}\n", p.preview_text.unwrap_or_default().trim()),
         Ok(StageResult::Failed(f)) => out += &format!("  RUN FAILED: {}\n", f.failure.message()),
         Err(e) => out += &format!("  RUN ERROR: {e}\n"),
     }

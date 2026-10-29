@@ -319,8 +319,8 @@ async fn correction_failure_stays_failed_with_second_details() {
     );
     let requests = model_server.received_requests().await.unwrap();
     let model_calls = model_requests(&requests);
-    assert_eq!(model_calls.len(), 2, "at most one correction round");
-    assert_eq!(counter.load(Ordering::SeqCst), 2);
+    assert_eq!(model_calls.len(), 3, "at most two further correction rounds");
+    assert_eq!(counter.load(Ordering::SeqCst), 3);
     let second_body_raw = String::from_utf8_lossy(&model_calls[1].body);
     assert!(!second_body_raw.contains(INPUT_CANARY));
     assert!(second_body_raw.contains(FETCHED_CANARY));
@@ -378,7 +378,7 @@ async fn runtime_correction_contains_safe_detail_without_fixture_values_in_store
         let file = core.register_picked_file(&source).unwrap();
         let state = build_with_correction(&core, &file).await;
         assert_eq!(state.phase, BuildPhase::Failed, "{expression}: {state:?}");
-        assert_eq!(counter.load(Ordering::SeqCst), 2);
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
         let detail = state
             .checks
             .iter()

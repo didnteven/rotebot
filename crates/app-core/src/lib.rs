@@ -2223,6 +2223,14 @@ impl AppCore {
                 }
                 // A review of output that already passed must never leave the
                 // build worse off: keep the passing version to fall back on.
+                let approved_program = candidate.program.clone();
+                let mut candidate = candidate;
+                let mut check_list = check_list;
+                let mut comparison = comparison;
+                let mut spent = spent;
+                let mut declared_sources = declared_sources;
+                let mut review_round = review_round;
+                let mut fix_round = 0u32;
                 let passing_original = review_round.then(|| {
                     (
                         candidate.program.clone(),
@@ -2231,12 +2239,20 @@ impl AppCore {
                         comparison.clone(),
                     )
                 });
-                let mut failed_checks: Vec<CheckResult> =
-                    check_list.iter().filter(|c| !c.passed).cloned().collect();
-                let current_output: Option<String> =
-                    comparison.as_ref().and_then(|c| c.output_text.clone());
-                if review_round {
-                    failed_checks.push(CheckResult {
+                // Self-healing: a failing correction is corrected again (up to
+                // three corrections in all), each round seeing the latest failure.
+                loop {
+                    let corr_id = if fix_round == 0 {
+                        format!("out_{build_id}_correction")
+                    } else {
+                        format!("out_{build_id}_correction{fix_round}")
+                    };
+                    let mut failed_checks: Vec<CheckResult> =
+                        check_list.iter().filter(|c| !c.passed).cloned().collect();
+                    let current_output: Option<String> =
+                        comparison.as_ref().and_then(|c| c.output_text.clone());
+                    if review_round {
+                        failed_checks.push(CheckResult {
                         id: "review".into(),
                         label: "Review the output against the task".into(),
                         passed: false,
@@ -2244,24 +2260,24 @@ impl AppCore {
                             "All host checks passed. Compare current_output with the task, fetched_web_samples and fetched_web_summaries; fix the program if it is not the correct answer or if its web source returns only part of what the task covers (a first page or top-N list). Do not change the output wording or layout: if the task gave an example, the output must keep matching it exactly, so return the program unchanged unless the data is wrong.".into(),
                         ),
                     });
-                }
-                let web_samples: BTreeMap<String, String> = declared_sources
-                    .iter()
-                    .filter_map(|source| {
-                        fetched
-                            .get(&source.name)
-                            .map(|text| (source.name.clone(), text.chars().take(4000).collect()))
-                    })
-                    .collect();
-                let web_summaries: BTreeMap<String, Value> = declared_sources
-                    .iter()
-                    .filter_map(|source| {
-                        fetched
-                            .get(&source.name)
-                            .map(|text| (source.name.clone(), Self::web_source_summary(text)))
-                    })
-                    .collect();
-                self.push_phase(
+                    }
+                    let web_samples: BTreeMap<String, String> = declared_sources
+                        .iter()
+                        .filter_map(|source| {
+                            fetched.get(&source.name).map(|text| {
+                                (source.name.clone(), text.chars().take(4000).collect())
+                            })
+                        })
+                        .collect();
+                    let web_summaries: BTreeMap<String, Value> = declared_sources
+                        .iter()
+                        .filter_map(|source| {
+                            fetched
+                                .get(&source.name)
+                                .map(|text| (source.name.clone(), Self::web_source_summary(text)))
+                        })
+                        .collect();
+                    self.push_phase(
                     &build_id,
                     BuildPhase::Checking,
                     if review_round {
@@ -2272,269 +2288,290 @@ impl AppCore {
                         "Checks failed; asking the model to correct the program"
                     },
                 )?;
-                let correction = Self::program_correction_packet(
-                    &draft,
-                    candidate.program.as_ref(),
-                    &failed_checks,
-                    &web_samples,
-                    &web_summaries,
-                    current_output.as_deref(),
-                );
-                let correction_text = Self::correction_packet_text(&correction);
-                if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
-                    let now = self.now();
-                    if let Err(error) = self.db().insert_outbound(&db::OutboundRow {
-                        id: format!("out_{build_id}_correction"),
-                        at_ms: now,
-                        purpose: "Program correction packet".into(),
-                        destination: self.route_destination(route),
-                        route: route.as_str().into(),
-                        synthetic_only: true,
-                        cost_micros: None,
-                        payload_text: Some(correction_text),
-                    }) {
-                        self.fail_build(
-                            &build_id,
-                            BuildFailureKind::Internal,
-                            "The outbound intent could not be saved.",
-                        )?;
-                        return Err(error.into());
-                    }
-                }
-                if *cancelled.borrow() {
-                    self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
-                    return Ok(());
-                }
-                let remaining = BUILD_BUDGET_MICROS - spent.unwrap_or(0);
-                if remaining < 0 {
-                    self.fail_build(
-                        &build_id,
-                        BuildFailureKind::Budget,
-                        "This build would exceed its $2.00 budget.",
-                    )?;
-                    return Ok(());
-                }
-                let budget2 = BuildBudget {
-                    max_cost_microusd: remaining as u64,
-                    ..BuildBudget::default()
-                };
-                let cancel2 = async {
-                    if !*cancelled.borrow() {
-                        let _ = cancelled.changed().await;
-                    }
-                };
-                let result2 = builder
-                    .propose_program_cancellable(&contract, correction, budget2, cancel2)
-                    .await;
-                let mut candidate2 = match result2 {
-                    Ok(c) => c,
-                    Err(e) => {
-                        let (kind, mut message) = build_error_message(&e);
-                        if route == ModelRoute::CustomEndpoint
-                            && matches!(
-                                e,
-                                BuildError::Gateway(GatewayError::AuthRejected)
-                                    | BuildError::Credential
-                            )
-                        {
-                            message = "Custom endpoint token rejected. Replace it in Settings and retest.".into();
+                    let correction = Self::program_correction_packet(
+                        &draft,
+                        candidate.program.as_ref(),
+                        &failed_checks,
+                        &web_samples,
+                        &web_summaries,
+                        current_output.as_deref(),
+                    );
+                    let correction_text = Self::correction_packet_text(&correction);
+                    if route != ModelRoute::OfflineDemo && route != ModelRoute::CustomEndpoint {
+                        let now = self.now();
+                        if let Err(error) = self.db().insert_outbound(&db::OutboundRow {
+                            id: corr_id.clone(),
+                            at_ms: now,
+                            purpose: "Program correction packet".into(),
+                            destination: self.route_destination(route),
+                            route: route.as_str().into(),
+                            synthetic_only: true,
+                            cost_micros: None,
+                            payload_text: Some(correction_text),
+                        }) {
+                            self.fail_build(
+                                &build_id,
+                                BuildFailureKind::Internal,
+                                "The outbound intent could not be saved.",
+                            )?;
+                            return Err(error.into());
                         }
-                        self.fail_build(&build_id, kind, message)?;
+                    }
+                    if *cancelled.borrow() {
+                        self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
                         return Ok(());
                     }
-                };
-                let spent2 = candidate2.cost_microusd.map(|c| c as i64);
-                let total_spent = match (spent, spent2) {
-                    (Some(a), Some(b)) => Some(a + b),
-                    (Some(a), None) => Some(a),
-                    (None, Some(b)) => Some(b),
-                    (None, None) => None,
-                };
-                if let Some(cost) = spent2 {
-                    self.db()
-                        .set_outbound_cost(&format!("out_{build_id}_correction"), Some(cost))?;
-                }
-                // The user approved these permissions; a correction can fix the
-                // code but never widen or change what it may read or ask.
-                if let (Some(corrected), Some(approved)) =
-                    (candidate2.program.as_mut(), candidate.program.as_ref())
-                {
-                    corrected.connection_sources = approved.connection_sources.clone();
-                    corrected.model_step = approved.model_step.clone();
-                }
-                self.update_build(&build_id, |s| {
-                    s.candidate = Some(candidate2.mapping.clone());
-                    s.program = candidate2.program.clone();
-                    s.spent_micros = total_spent;
-                })?;
-                self.push_phase(
-                    &build_id,
-                    BuildPhase::Candidate,
-                    format!("Corrected candidate received from {}", candidate2.label),
-                )?;
-                self.push_phase(
-                    &build_id,
-                    BuildPhase::Checking,
-                    "Checking the corrected program",
-                )?;
-                if let Some(program) = &candidate2.program {
-                    let hosts =
-                        match connections::validate_sources(program, &draft.required_connections)
-                            .and_then(|_| {
-                                macroscope_builder::program_hosts(
-                                    program,
-                                    self.allow_insecure_web(),
+                    let remaining = BUILD_BUDGET_MICROS - spent.unwrap_or(0);
+                    if remaining < 0 {
+                        self.fail_build(
+                            &build_id,
+                            BuildFailureKind::Budget,
+                            "This build would exceed its $2.00 budget.",
+                        )?;
+                        return Ok(());
+                    }
+                    let budget2 = BuildBudget {
+                        max_cost_microusd: remaining as u64,
+                        ..BuildBudget::default()
+                    };
+                    let cancel2 = async {
+                        if !*cancelled.borrow() {
+                            let _ = cancelled.changed().await;
+                        }
+                    };
+                    let result2 = builder
+                        .propose_program_cancellable(&contract, correction, budget2, cancel2)
+                        .await;
+                    let mut candidate2 = match result2 {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let (kind, mut message) = build_error_message(&e);
+                            if route == ModelRoute::CustomEndpoint
+                                && matches!(
+                                    e,
+                                    BuildError::Gateway(GatewayError::AuthRejected)
+                                        | BuildError::Credential
                                 )
-                            }) {
+                            {
+                                message = "Custom endpoint token rejected. Replace it in Settings and retest.".into();
+                            }
+                            self.fail_build(&build_id, kind, message)?;
+                            return Ok(());
+                        }
+                    };
+                    let spent2 = candidate2.cost_microusd.map(|c| c as i64);
+                    let total_spent = match (spent, spent2) {
+                        (Some(a), Some(b)) => Some(a + b),
+                        (Some(a), None) => Some(a),
+                        (None, Some(b)) => Some(b),
+                        (None, None) => None,
+                    };
+                    if let Some(cost) = spent2 {
+                        self.db().set_outbound_cost(&corr_id, Some(cost))?;
+                    }
+                    // The user approved these permissions; a correction can fix the
+                    // code but never widen or change what it may read or ask.
+                    if let (Some(corrected), Some(approved)) =
+                        (candidate2.program.as_mut(), approved_program.as_ref())
+                    {
+                        corrected.connection_sources = approved.connection_sources.clone();
+                        corrected.model_step = approved.model_step.clone();
+                    }
+                    self.update_build(&build_id, |s| {
+                        s.candidate = Some(candidate2.mapping.clone());
+                        s.program = candidate2.program.clone();
+                        s.spent_micros = total_spent;
+                    })?;
+                    self.push_phase(
+                        &build_id,
+                        BuildPhase::Candidate,
+                        format!("Corrected candidate received from {}", candidate2.label),
+                    )?;
+                    self.push_phase(
+                        &build_id,
+                        BuildPhase::Checking,
+                        "Checking the corrected program",
+                    )?;
+                    if let Some(program) = &candidate2.program {
+                        let hosts = match connections::validate_sources(
+                            program,
+                            &draft.required_connections,
+                        )
+                        .and_then(|_| {
+                            macroscope_builder::program_hosts(program, self.allow_insecure_web())
+                        }) {
                             Ok(hosts) => hosts,
                             Err(message) => {
                                 self.fail_build(&build_id, BuildFailureKind::Checks, message)?;
                                 return Ok(());
                             }
                         };
-                    if program.web_sources != declared_sources {
-                        // Keep the approved connection results, but never check a
-                        // corrected declaration against the previous web snapshot.
-                        for source in &declared_sources {
-                            fetched.remove(&source.name);
-                        }
-                        fetch_error = None;
-                        if !program.web_sources.is_empty() {
-                            if let Some(blocked) = self.web_fetch_blocked() {
-                                self.fail_build(
-                                    &build_id,
-                                    BuildFailureKind::NoModelAccess,
-                                    blocked,
-                                )?;
-                                return Ok(());
+                        if program.web_sources != declared_sources {
+                            // Keep the approved connection results, but never check a
+                            // corrected declaration against the previous web snapshot.
+                            for source in &declared_sources {
+                                fetched.remove(&source.name);
                             }
-                            match self
-                                .fetch_for_build(
-                                    &program.web_sources,
-                                    &hosts,
-                                    consent_epoch,
-                                    cancelled,
-                                )
-                                .await
-                            {
-                                Some((texts, error)) => {
-                                    fetched.extend(texts);
-                                    fetch_error = error;
-                                }
-                                None => {
-                                    self.push_phase(
+                            fetch_error = None;
+                            if !program.web_sources.is_empty() {
+                                if let Some(blocked) = self.web_fetch_blocked() {
+                                    self.fail_build(
                                         &build_id,
-                                        BuildPhase::Stopped,
-                                        "Stopped by you",
+                                        BuildFailureKind::NoModelAccess,
+                                        blocked,
                                     )?;
                                     return Ok(());
+                                }
+                                match self
+                                    .fetch_for_build(
+                                        &program.web_sources,
+                                        &hosts,
+                                        consent_epoch,
+                                        cancelled,
+                                    )
+                                    .await
+                                {
+                                    Some((texts, error)) => {
+                                        fetched.extend(texts);
+                                        fetch_error = error;
+                                    }
+                                    None => {
+                                        self.push_phase(
+                                            &build_id,
+                                            BuildPhase::Stopped,
+                                            "Stopped by you",
+                                        )?;
+                                        return Ok(());
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                #[cfg(feature = "generated-runtime")]
-                let runtime2 = if draft.kind == TaskKind::Program {
-                    Some(self.runtime())
-                } else {
-                    None
-                };
-                let draft_for_check2 = draft.clone();
-                let candidate2_for_check = candidate2.clone();
-                let fetched_for_check2 = fetched.clone();
-                let fetch_error_for_check2 = fetch_error.clone();
-                let input_for_check2 = input.clone();
-                let checked2 = tokio::task::spawn_blocking(move || {
-                    let read2 = || match &input_for_check2 {
-                        Some(path) => Self::read_limited(path).map_err(|e| e.to_string()),
-                        None => Err("This task has no input file.".to_string()),
-                    };
-                    let outcome = if draft_for_check2.kind == TaskKind::Program {
-                        #[cfg(feature = "generated-runtime")]
-                        {
-                            match runtime2.unwrap() {
-                                Ok(engine) => checks::run_program_with_sources(
-                                    &draft_for_check2,
-                                    candidate2_for_check.program.as_ref().unwrap(),
-                                    &fetched_for_check2,
-                                    fetch_error_for_check2,
-                                    &read2,
-                                    &|snapshot, sources, code| {
-                                        engine
-                                            .execute_with_answers(
-                                                snapshot,
-                                                sources,
-                                                !no_input,
-                                                code,
-                                                macroscope_runner::Limits::default(),
-                                                &build_answers,
-                                                candidate2_for_check
-                                                    .program
-                                                    .as_ref()
-                                                    .and_then(|p| p.model_step.as_ref())
-                                                    .map(|m| m.prompt.as_str()),
-                                            )
-                                            .map_err(|e| e.to_string())
-                                    },
-                                ),
-                                Err(e) => checks::program_failure(e.to_string()),
-                            }
-                        }
-                        #[cfg(not(feature = "generated-runtime"))]
-                        {
-                            checks::program_failure("Generated runtime is disabled.".into())
-                        }
+                    #[cfg(feature = "generated-runtime")]
+                    let runtime2 = if draft.kind == TaskKind::Program {
+                        Some(self.runtime())
                     } else {
-                        unreachable!("correction applies only to program builds")
+                        None
                     };
-                    (outcome.all_passed(), outcome.checks, outcome.comparison)
-                })
-                .await;
-                match checked2 {
-                    Ok((passed2, check_list2, comparison2)) => {
-                        let failed2: Vec<String> = check_list2
-                            .iter()
-                            .filter(|c| !c.passed)
-                            .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
-                            .collect();
-                        if !passed2 {
-                            if let Some((program, mapping, checks, comparison)) = passing_original {
-                                self.update_build(&build_id, |s| {
-                                    s.candidate = Some(mapping);
-                                    s.program = program;
-                                    s.checks = checks;
-                                    s.comparison = comparison;
-                                })?;
-                                self.push_phase(
+                    let draft_for_check2 = draft.clone();
+                    let candidate2_for_check = candidate2.clone();
+                    let fetched_for_check2 = fetched.clone();
+                    let fetch_error_for_check2 = fetch_error.clone();
+                    let input_for_check2 = input.clone();
+                    let build_answers = build_answers.clone();
+                    let checked2 = tokio::task::spawn_blocking(move || {
+                        let read2 = || match &input_for_check2 {
+                            Some(path) => Self::read_limited(path).map_err(|e| e.to_string()),
+                            None => Err("This task has no input file.".to_string()),
+                        };
+                        let outcome = if draft_for_check2.kind == TaskKind::Program {
+                            #[cfg(feature = "generated-runtime")]
+                            {
+                                match runtime2.unwrap() {
+                                    Ok(engine) => checks::run_program_with_sources(
+                                        &draft_for_check2,
+                                        candidate2_for_check.program.as_ref().unwrap(),
+                                        &fetched_for_check2,
+                                        fetch_error_for_check2,
+                                        &read2,
+                                        &|snapshot, sources, code| {
+                                            engine
+                                                .execute_with_answers(
+                                                    snapshot,
+                                                    sources,
+                                                    !no_input,
+                                                    code,
+                                                    macroscope_runner::Limits::default(),
+                                                    &build_answers,
+                                                    candidate2_for_check
+                                                        .program
+                                                        .as_ref()
+                                                        .and_then(|p| p.model_step.as_ref())
+                                                        .map(|m| m.prompt.as_str()),
+                                                )
+                                                .map_err(|e| e.to_string())
+                                        },
+                                    ),
+                                    Err(e) => checks::program_failure(e.to_string()),
+                                }
+                            }
+                            #[cfg(not(feature = "generated-runtime"))]
+                            {
+                                checks::program_failure("Generated runtime is disabled.".into())
+                            }
+                        } else {
+                            unreachable!("correction applies only to program builds")
+                        };
+                        (outcome.all_passed(), outcome.checks, outcome.comparison)
+                    })
+                    .await;
+                    match checked2 {
+                        Ok((passed2, check_list2, comparison2)) => {
+                            let failed2: Vec<String> = check_list2
+                                .iter()
+                                .filter(|c| !c.passed)
+                                .map(|c| c.detail.clone().unwrap_or_else(|| c.label.clone()))
+                                .collect();
+                            if !passed2 {
+                                if let Some((program, mapping, checks, comparison)) =
+                                    passing_original.clone()
+                                {
+                                    self.update_build(&build_id, |s| {
+                                        s.candidate = Some(mapping);
+                                        s.program = program;
+                                        s.checks = checks;
+                                        s.comparison = comparison;
+                                    })?;
+                                    self.push_phase(
                                     &build_id,
                                     BuildPhase::Ready,
                                     "Ready to compare (the model's suggested change did not pass the checks, so the version that passed was kept)",
                                 )?;
-                                return Ok(());
+                                    return Ok(());
+                                }
+                            }
+                            if !passed2 && fix_round < 2 {
+                                self.update_build(&build_id, |s| {
+                                    s.checks = check_list2.clone();
+                                    s.comparison = comparison2.clone();
+                                })?;
+                                candidate = candidate2;
+                                check_list = check_list2;
+                                comparison = comparison2;
+                                spent = total_spent;
+                                declared_sources = candidate
+                                    .program
+                                    .as_ref()
+                                    .map(|p| p.web_sources.clone())
+                                    .unwrap_or_default();
+                                review_round = false;
+                                fix_round += 1;
+                                continue;
+                            }
+                            self.update_build(&build_id, |s| {
+                                s.checks = check_list2;
+                                s.comparison = comparison2;
+                            })?;
+                            if passed2 {
+                                self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
+                            } else {
+                                self.fail_build(
+                                    &build_id,
+                                    BuildFailureKind::Checks,
+                                    format!(
+                                        "Checks failed: {}. Edit the rules and build again.",
+                                        Self::plain_check_failure(&failed2.join(", "))
+                                    ),
+                                )?;
                             }
                         }
-                        self.update_build(&build_id, |s| {
-                            s.checks = check_list2;
-                            s.comparison = comparison2;
-                        })?;
-                        if passed2 {
-                            self.push_phase(&build_id, BuildPhase::Ready, "Ready to compare")?;
-                        } else {
-                            self.fail_build(
-                                &build_id,
-                                BuildFailureKind::Checks,
-                                format!(
-                                    "Checks failed: {}. Edit the rules and build again.",
-                                    Self::plain_check_failure(&failed2.join(", "))
-                                ),
-                            )?;
-                        }
+                        Err(_) => self.fail_build(
+                            &build_id,
+                            BuildFailureKind::Internal,
+                            "The checks could not run.",
+                        )?,
                     }
-                    Err(_) => self.fail_build(
-                        &build_id,
-                        BuildFailureKind::Internal,
-                        "The checks could not run.",
-                    )?,
+                    break;
                 }
             }
             Err(_) => self.fail_build(

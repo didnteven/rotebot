@@ -863,5 +863,729 @@
     ]
    }
   ]
+ },
+ {
+  "name": "akl_full",
+  "expect": "Auckland weather summary: current temp, feels-like, wind, humidity plus today and Saturday high/low and description, as a text file",
+  "frames": [
+   {
+    "title": "Auckland Central - MetService",
+    "url": "metservice.com/towns-cities/regions/auckland/locations/auckland",
+    "lines": [
+     {
+      "t": "Auckland Central",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Now 16 C feels like 14 C",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Wind SW 28 km/h   Humidity 71%",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Today   High 17   Low 12   Showers",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Saturday   High 14   Low 10   Fine",
+      "x": 40,
+      "y": 258,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Auckland now 16 feels 14 wind 28 humidity 71 today 17/12 Saturday 14/10 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "quakes",
+  "expect": "Latest earthquakes: list the 5 most recent NZ quakes with magnitude and place as a CSV file",
+  "frames": [
+   {
+    "title": "GeoNet - Quakes",
+    "url": "geonet.org.nz/earthquake",
+    "lines": [
+     {
+      "t": "Recent quakes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "M4.2  12 km north of Taupo  2 hours ago",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "M3.1  Off Gisborne  5 hours ago",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "M3.8  Fiordland  7 hours ago",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "5 quakes into a csv with magnitude, place (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "country",
+  "expect": "Look up the population and capital of a country and write a one-line summary file",
+  "frames": [
+   {
+    "title": "Japan - Wikipedia",
+    "url": "en.wikipedia.org/wiki/Japan",
+    "lines": [
+     {
+      "t": "Japan",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Capital Tokyo",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Population 124,000,000",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Japan: capital Tokyo, population 124 million (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "define",
+  "expect": "Look up the dictionary definition of a word and write it to a markdown file with word, part of speech, definition",
+  "frames": [
+   {
+    "title": "ephemeral - Dictionary",
+    "url": "dictionary.com/browse/ephemeral",
+    "lines": [
+     {
+      "t": "ephemeral",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "adjective",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "lasting for a very short time",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "ephemeral - adjective - lasting for a very short time, in markdown (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "crypto2",
+  "expect": "Get the current Bitcoin and Ethereum prices in USD and write them as a two-row CSV with columns coin,price_usd",
+  "frames": [
+   {
+    "title": "Coinbase - Prices",
+    "url": "coinbase.com/price",
+    "lines": [
+     {
+      "t": "Prices",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Bitcoin  $68,200",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Ethereum  $3,410",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "csv: coin,price_usd; bitcoin,68200; ethereum,3410 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "hn5",
+  "expect": "Top 5 Hacker News stories with title and points as a numbered markdown list",
+  "frames": [
+   {
+    "title": "Hacker News",
+    "url": "news.ycombinator.com",
+    "lines": [
+     {
+      "t": "Hacker News",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1. A thing launched (320 points)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "2. Another thing (210 points)",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "3. Third (190 points)",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "numbered list of top 5 with points (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "moon",
+  "expect": "What is the moon phase and the sunrise and sunset time in Dunedin today, as a short text file",
+  "frames": [
+   {
+    "title": "Dunedin Sun and Moon",
+    "url": "timeanddate.com/sun/new-zealand/dunedin",
+    "lines": [
+     {
+      "t": "Dunedin",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Sunrise 06:20",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Sunset 20:05",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Moon: Waxing Gibbous",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Dunedin sunrise 6:20 sunset 20:05 waxing gibbous (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "json_out",
+  "expect": "Latest release version of the rust-lang/rust repo on GitHub written as a JSON file with fields repo and version",
+  "frames": [
+   {
+    "title": "Releases - rust-lang/rust",
+    "url": "github.com/rust-lang/rust/releases",
+    "lines": [
+     {
+      "t": "Releases",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1.90.0 Latest",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "1.89.0",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "{\"repo\":\"rust-lang/rust\",\"version\":\"1.90.0\"} (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "tz",
+  "expect": "What time is it now in Tokyo, London and New York? Write one line per city to a text file",
+  "frames": [
+   {
+    "title": "World Clock",
+    "url": "timeanddate.com/worldclock",
+    "lines": [
+     {
+      "t": "World Clock",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Tokyo 14:05",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "London 06:05",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "New York 01:05",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "three lines, city then time (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "wind",
+  "expect": "Wellington current wind speed and direction written as a single sentence in a text file",
+  "frames": [
+   {
+    "title": "Wellington - MetService",
+    "url": "metservice.com/towns-cities/locations/wellington",
+    "lines": [
+     {
+      "t": "Wellington",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Now 12 C",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Wind NW 45 km/h",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Wellington wind NW 45 km/h (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "pypi",
+  "expect": "Latest version of the Python package requests on PyPI, written to a text file as name==version",
+  "frames": [
+   {
+    "title": "requests - PyPI",
+    "url": "pypi.org/project/requests",
+    "lines": [
+     {
+      "t": "requests 2.32.3",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "HTTP for humans",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "requests==2.32.3 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "xrates3",
+  "expect": "Today's NZD exchange rate to USD, AUD and GBP written as a three-row CSV with columns currency,rate",
+  "frames": [
+   {
+    "title": "XE Converter",
+    "url": "xe.com/currencyconverter",
+    "lines": [
+     {
+      "t": "NZD to USD 0.59",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "NZD to AUD 0.91",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "NZD to GBP 0.45",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "csv currency,rate rows USD AUD GBP (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "holiday",
+  "expect": "Next New Zealand public holiday name and date written to a text file",
+  "frames": [
+   {
+    "title": "Public holidays - NZ",
+    "url": "govt.nz/browse/work/public-holidays",
+    "lines": [
+     {
+      "t": "Public holidays",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Labour Day 26 October 2026",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Christmas Day 25 December 2026",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Next holiday: Christmas Day 25 December 2026 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
  }
 ]

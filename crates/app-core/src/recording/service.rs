@@ -375,7 +375,11 @@ impl AppCore {
         Ok(s.frames.clone())
     }
     /// Leaves one frame out of a stopped recording and clears the review so it is rebuilt without it.
-    pub fn remove_recording_frame(&self, session_id: &str, seq: u64) -> CoreResult<RecordingFrames> {
+    pub fn remove_recording_frame(
+        &self,
+        session_id: &str,
+        seq: u64,
+    ) -> CoreResult<RecordingFrames> {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         if !s.frames.stopped {
@@ -612,15 +616,9 @@ impl AppCore {
                 .clone()
                 .ok_or_else(|| invalid("Answer every question before creating the tool."))?
         };
-        let mut draft = self.draft_task_no_input(&clarified.description)?;
-        if clarified.example_output.is_some() {
-            draft = self.update_task(
-                &draft.draft_id,
-                TaskKind::Program,
-                &draft.output_name,
-                clarified.example_output.clone(),
-            )?;
-        }
+        // A format example read off a screen is a guess; the plan's output description carries the
+        // format, so the builder is not held to it as a literal line.
+        let draft = self.draft_task_no_input(&clarified.description)?;
         self.discard_recording(session_id)?;
         Ok(draft)
     }
