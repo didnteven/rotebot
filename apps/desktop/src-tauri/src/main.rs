@@ -657,6 +657,17 @@ fn recording_status(core: State<'_, Core>) -> RecordingStatus {
 fn request_recording_permission(core: State<'_, Core>) -> Cmd<RecordingStatus> {
     Ok(core.0.request_recording_permission()?)
 }
+/// Opens one macOS privacy pane. The pane is a fixed choice, never a renderer-supplied URL.
+#[tauri::command]
+fn open_privacy_settings(pane: String) -> Cmd<()> {
+    let url = match pane.as_str() {
+        "screen_recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        _ => return Err(macroscope_app_core::CoreError::Invalid("Unknown settings pane.".into()).into()),
+    };
+    std::process::Command::new("open").arg(url).spawn().map_err(|_| macroscope_app_core::CoreError::Invalid("Couldn't open System Settings.".into()))?;
+    Ok(())
+}
 #[tauri::command]
 fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
     Ok(core.0.start_recording(source)?)
@@ -1148,6 +1159,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         draft_task_no_input,
         recording_status,
         request_recording_permission,
+        open_privacy_settings,
         start_recording,
         stop_recording,
         list_recording_frames,

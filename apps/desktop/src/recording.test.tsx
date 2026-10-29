@@ -216,11 +216,13 @@ it("requests permissions only on the explicit button, then starts the window sou
   vi.spyOn(backend, "previewRecording").mockImplementation(async id => ({...await originalPreview(id), sample:false}));
   const ctx = await open(backend);
   expect(permission).not.toHaveBeenCalled();
-  expect(screen.getByText(/Open System Settings > Privacy & Security > Screen Recording/)).toBeVisible();
+  expect(button("Open Accessibility settings")).toBeVisible();
   expect(button("Try it with a sample recording")).toBeVisible();
-  await ctx.user.click(button("Try again"));
+  await ctx.user.click(button("Check again"));
   expect(permission).not.toHaveBeenCalled();
-  await ctx.user.click(button("Allow recording access"));
+  expect(screen.getByText("Screen Recording: off")).toBeVisible();
+  expect(screen.getByText("Accessibility: off")).toBeVisible();
+  await ctx.user.click(button("Open Screen Recording settings"));
   expect(permission).toHaveBeenCalledOnce();
   await ctx.user.click(await screen.findByRole("button", {name:"Choose a window to record"}));
   expect(start).toHaveBeenCalledExactlyOnceWith("window");

@@ -245,10 +245,16 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
           <p className="notice notice-info">Screen recording isn't set up on this Mac yet</p>
           {captureStatus.reason==="picker_identity_unavailable" && <p>Window recording needs macOS 15.2 or later to identify the window you choose safely.</p>}
           {captureStatus.helperAvailable && captureStatus.reason!=="picker_identity_unavailable" && <>
-            <p>Open System Settings &gt; Privacy &amp; Security &gt; Screen Recording, switch Macroscope on, then come back and press Try again.</p>
-            <p>In Privacy &amp; Security &gt; Accessibility, switch Macroscope on too. Without this access, frames are left out.</p>
-            <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.requestRecordingPermission()))}>Allow recording access</button>
-            <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.recordingStatus()))}>Try again</button>
+            <p>Macroscope needs both of these. Switch Macroscope on in each, then quit and reopen the app. This page updates by itself.</p>
+            <div className="actions">
+              <button disabled={busy} onClick={()=>void act(async()=>{await backend.requestRecordingPermission();await backend.openPrivacySettings("screen_recording");})}>Open Screen Recording settings</button>
+              <span role="status">{captureStatus.screenRecordingGranted ? "Screen Recording: on" : "Screen Recording: off"}</span>
+            </div>
+            <div className="actions">
+              <button disabled={busy} onClick={()=>void act(()=>backend.openPrivacySettings("accessibility"))}>Open Accessibility settings</button>
+              <span role="status">{captureStatus.accessibilityGranted ? "Accessibility: on" : "Accessibility: off"}</span>
+            </div>
+            <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.recordingStatus()))}>Check again</button>
           </>}
         </>}
       <p>Browser windows are refused while their public or private status cannot be verified. Try a native app such as TextEdit.</p>

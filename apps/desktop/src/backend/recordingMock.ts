@@ -34,6 +34,7 @@ export class RecordingMock {
   }
   async recordingStatus() { return {captureAvailable:false, helperAvailable:false,
     screenRecordingGranted:false, accessibilityGranted:false, pickerState:"unavailable", appName:null, reason:null}; }
+  async openPrivacySettings(_pane: "screen_recording" | "accessibility") {}
   async requestRecordingPermission() { return this.recordingStatus(); }
   async startRecording(source:"sample"|"window") {
     if (source !== "sample") throw new Error("Screen recording isn't set up on this Mac yet. Try the sample recording.");

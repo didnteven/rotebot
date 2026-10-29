@@ -439,6 +439,7 @@ export interface RecordingStatus {
 export interface Backend {
   recordingStatus(): Promise<RecordingStatus>;
   requestRecordingPermission(): Promise<RecordingStatus>;
+  openPrivacySettings(pane: "screen_recording" | "accessibility"): Promise<void>;
   startRecording(source: "sample" | "window"): Promise<string>;
   stopRecording(sessionId: string): Promise<RecordingFrames>;
   listRecordingFrames(sessionId: string): Promise<RecordingFrames>;

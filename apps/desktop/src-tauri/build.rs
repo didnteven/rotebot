@@ -37,6 +37,7 @@ fn main() {
         "draft_task_no_input",
         "recording_status",
         "request_recording_permission",
+        "open_privacy_settings",
         "start_recording",
         "stop_recording",
         "list_recording_frames",
