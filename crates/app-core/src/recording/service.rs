@@ -171,7 +171,7 @@ fn rates() -> EstimateRates {
         input_micros_per_million_tokens: 1_250_000,
         output_micros_per_million_tokens: 4_250_000,
         estimated_image_tokens_per_frame: 1600,
-        max_output_tokens: 8000,
+        max_output_tokens: 16000,
     }
 }
 fn frames(session: &RecordingSession, stopped: bool) -> RecordingFrames {
@@ -512,7 +512,7 @@ impl AppCore {
         let epoch = self.inner.policy.epoch();
         let identity = self.recording_identity(&access, epoch);
         let route = access.effective_route.unwrap_or(ModelRoute::OfflineDemo);
-        let (request, dto, sample, mut cancelled) = {
+        let (request, dto, sample, mut cancelled, restore) = {
             let mut slots = lock(&self.inner.recordings);
             let s = slot(&mut slots, session_id, self.now())?;
             let r = s
@@ -542,12 +542,13 @@ impl AppCore {
                 .map_err(err)?
                 .into_model_request()
                 .map_err(err)?;
-            // Sending closes the review: the stored frames are released now.
-            s.capture = None;
+            // Sending closes the review: the stored frames are released now. They are only kept in
+            // memory here so that a failed attempt can be reviewed and sent again.
+            let restore = (s.capture.take(), s.frames.clone());
             s.analyzing = true;
             // No frame bytes survive in the stored session draft.
             s.frames.frames.clear();
-            (request, r.dto, s.sample, s.cancel.subscribe())
+            (request, r.dto, s.sample, s.cancel.subscribe(), restore)
         };
         let result = if sample && route == ModelRoute::OfflineDemo {
             request.parse_draft(&sample_draft_json()).map_err(err)
@@ -571,7 +572,18 @@ impl AppCore {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         s.analyzing = false;
-        let draft = result?;
+        let draft = match result {
+            Ok(draft) => draft,
+            Err(e) => {
+                // Nothing was analysed: bring the recording back so the person can review and retry.
+                if !*s.cancel.subscribe().borrow() {
+                    s.capture = restore.0;
+                    s.frames = restore.1;
+                    s.review = None;
+                }
+                return Err(e);
+            }
+        };
         s.draft = Some(draft.clone());
         Ok(draft)
     }

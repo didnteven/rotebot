@@ -302,7 +302,13 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <details><summary>Instructions and response format</summary><h3>System instructions</h3><pre tabIndex={0}>{preview.systemInstructions}</pre><h3>Response schema</h3><pre tabIndex={0}>{preview.schemaJson}</pre><h3>Exact text fields</h3><pre tabIndex={0}>{preview.payloadText}</pre></details>
       <p>Pressing Send gives permission for this exact recording and model only.</p>
       <button className="primary" disabled={busy || !preview.frames.length} onClick={()=>void act(async()=>{
-        const d=await backend.consentAndAnalyze(session!,preview.payloadHash);
+        let d;
+        try { d=await backend.consentAndAnalyze(session!,preview.payloadHash); }
+        catch(e) {
+          // A failed send leaves the recording intact; rebuild the review so Send works again.
+          try { setPreview(await backend.previewRecording(session!)); } catch { /* keep the old review visible */ }
+          throw e;
+        }
         setUnderstood(d);setAnswers(Object.fromEntries(d.questions.map(q=>[q.id,q.default])));setPreview(null);setStep(3);
       })}>Send for analysis</button>
     </>}

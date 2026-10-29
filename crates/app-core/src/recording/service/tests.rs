@@ -232,10 +232,16 @@ async fn outbound_attempt_logs_exact_reviewed_text_even_when_transport_cannot_st
         .as_ref()
         .unwrap()
         .contains(&p.frames[0].png_base64));
-    let slots = lock(&c.inner.recordings);
-    assert!(slots[&id].capture.is_none());
-    assert!(slots[&id].review.is_none());
-    assert!(slots[&id].frames.frames.is_empty());
+    {
+        // The attempt failed, so nothing was analysed: the recording is back for a new review.
+        let slots = lock(&c.inner.recordings);
+        assert!(slots[&id].capture.is_some());
+        assert!(slots[&id].review.is_none());
+        assert!(!slots[&id].frames.frames.is_empty());
+        assert!(!slots[&id].analyzing);
+    }
+    let again = c.preview_recording(&id).await.unwrap();
+    assert_eq!(again.frames.len(), p.frames.len());
 }
 
 #[tokio::test]
