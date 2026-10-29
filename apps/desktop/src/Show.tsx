@@ -88,6 +88,12 @@ function ActivityLog({
     </section>
   );
 }
+const DROP_WORDS:Record<string,string>={uncertain:"couldn't be checked in time",secureinputgap:"a password field was active",invalidpixels:"the window image was too large",invalidgeometry:"text positions didn't fit the image",detectorerror:"the privacy check failed",encodingerror:"the image couldn't be prepared",outoforder:"arrived out of order",sessionlimit:"the recording limit was reached"};
+function dropSummary(dropped:{reason:string}[]){
+  const counts=new Map<string,number>();
+  for(const d of dropped){const k=d.reason.replace(/[_\s-]/g,"").toLowerCase();counts.set(k,(counts.get(k)??0)+1);}
+  return [...counts].map(([k,n])=>`${n} ${DROP_WORDS[k]??k}`).join("; ");
+}
 export function RecordingBar({
   backend,
   state,
@@ -263,6 +269,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     </>}
     {step===1 && <>
       <p role="timer" aria-label="Elapsed recording time">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,"0")}</p>
+      {captureStatus?.reason?.startsWith("uncertain_") && <p className="muted">Last frame skipped: {captureStatus.reason.slice(10)}</p>}
       <p>Frames kept: {kept.frames.length}, hidden for privacy: {kept.dropped.length + kept.frames.filter(f=>f.masks.length>0).length}</p>
       {captureStatus?.pickerState==="picking" && <p role="status">Choose one window in the system picker.</p>}
       {captureStatus?.pickerState==="recording" && captureStatus.appName && <p>Recording {captureStatus.appName}</p>}
@@ -281,7 +288,8 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
         </figure>)}
       </div>
       {!preview.frames.length && <p>No frames were safe to keep. Discard this recording and try again.</p>}
-      {preview.dropped.length>0 && <p>{preview.dropped.length} frame(s) left out for privacy.</p>}
+      {preview.dropped.length>0 && <><p>{preview.dropped.length} frame(s) left out for privacy.</p>
+        <p className="muted">Why: {dropSummary(preview.dropped)}</p></>}
       <h3>The text that goes with the images</h3><pre tabIndex={0} aria-label="Cleared recording text">{preview.clearedTextJson}</pre>
       <dl><dt>Recipient</dt><dd>{preview.recipient}</dd><dt>Model</dt><dd>{preview.model}</dd><dt>Size</dt><dd>{preview.totalBytes.toLocaleString()} bytes before delivery packaging</dd><dt>Estimated cost</dt><dd>${(preview.cost.estimated_micros/1_000_000).toFixed(4)}</dd></dl>
       <p>{preview.cost.caveat}</p>

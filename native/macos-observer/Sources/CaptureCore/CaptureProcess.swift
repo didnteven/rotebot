@@ -283,6 +283,13 @@ private final class CaptureRuntime: NSObject, SCContentSharingPickerObserver, @p
         header.uncertain = header.uncertain == true || after.uncertain || after.masks != evidence.masks || after.labels != evidence.labels
             || ProcessInfo.processInfo.systemUptime-now > 1
         header.secureInputGap = header.secureInputGap == true || IsSecureEventInputEnabled()
+        if header.uncertain == true {
+            // Fixed codes only (no window content) so a rejected frame can be explained to the person.
+            let why = evidence.why ?? (!AXIsProcessTrusted() ? "ax_untrusted" : (!sampleAge.isFinite || sampleAge < 0 || sampleAge > 0.25) ? "stale_frame"
+                : (after.why ?? (after.masks != evidence.masks || after.labels != evidence.labels ? "window_changed"
+                : (ProcessInfo.processInfo.systemUptime-now > 1 ? "too_slow" : "text_scan_failed"))))
+            var note = CaptureHeader(type: "gap"); note.reason = "uncertain_" + why; send(note)
+        }
         guard allowed(), CGPreflightScreenCaptureAccess() else { return }
         send(header, pixels: pixels)
         if header.uncertain == true || header.secureInputGap == true { diff = FrameDifference() }
