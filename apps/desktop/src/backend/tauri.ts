@@ -50,7 +50,6 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export class TauriBackend implements Backend {
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
   startRecording: Backend["startRecording"] = source => invoke("start_recording", {source});
-  submitFrame: Backend["submitFrame"] = (sessionId, frame) => invoke("submit_frame", {sessionId, frame});
   stopRecording: Backend["stopRecording"] = sessionId => invoke("stop_recording", {sessionId});
   listRecordingFrames: Backend["listRecordingFrames"] = sessionId => invoke("list_recording_frames", {sessionId});
   previewRecording: Backend["previewRecording"] = sessionId => invoke("preview_recording", {sessionId});

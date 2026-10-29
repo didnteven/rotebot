@@ -42,7 +42,6 @@ export class RecordingMock {
     this.sessions.set(id,{touched:Date.now(),frames:{stopped:false,dropped:[],frames:[1,2,3].map(seq=>({seq,pngBase64:samplePngs[seq-1],width:320,height:160,masks:[{rect:{x:5,y:55,width:210,height:40},reason:"secure_field"}]}))}});
     return id;
   }
-  async submitFrame(): Promise<RecordingFrames> { throw new Error("The sample recorder cannot accept native frames. Native capture is not set up yet."); }
   async listRecordingFrames(id:string) { return copy(this.get(id).frames); }
   async stopRecording(id:string) { const s=this.get(id); s.frames.stopped=true; return copy(s.frames); }
   async previewRecording(id:string) {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-recording-frames"
+description = "Enables the list_recording_frames command without any pre-configured scope."
+commands.allow = ["list_recording_frames"]
+
+[[permission]]
+identifier = "deny-list-recording-frames"
+description = "Denies the list_recording_frames command without any pre-configured scope."
+commands.deny = ["list_recording_frames"]

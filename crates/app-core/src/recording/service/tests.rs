@@ -189,7 +189,7 @@ async fn gateway_sends_exact_reviewed_images_roles_and_schema_and_logs_exact_tex
     );
     assert_eq!(
         body["text"]["format"]["schema"],
-        serde_json::from_str::<serde_json::Value>(&p.schema_json).unwrap()
+        super::transport::provider_schema(&p.schema_json).unwrap()
     );
     assert_eq!(body["max_output_tokens"], 8000);
     assert!(body.get("tools").is_none());

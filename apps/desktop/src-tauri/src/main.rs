@@ -658,14 +658,6 @@ fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String
     Ok(core.0.start_recording(source)?)
 }
 #[tauri::command]
-fn submit_frame(
-    core: State<'_, Core>,
-    session_id: String,
-    frame: RecordedFrameDto,
-) -> Cmd<RecordingFrames> {
-    Ok(core.0.submit_frame(&session_id, frame)?)
-}
-#[tauri::command]
 fn stop_recording(core: State<'_, Core>, session_id: String) -> Cmd<RecordingFrames> {
     Ok(core.0.stop_recording(&session_id)?)
 }
@@ -1126,7 +1118,6 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         draft_task_no_input,
         recording_status,
         start_recording,
-        submit_frame,
         stop_recording,
         list_recording_frames,
         preview_recording,

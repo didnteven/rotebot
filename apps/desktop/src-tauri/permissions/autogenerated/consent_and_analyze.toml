@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-consent-and-analyze"
+description = "Enables the consent_and_analyze command without any pre-configured scope."
+commands.allow = ["consent_and_analyze"]
+
+[[permission]]
+identifier = "deny-consent-and-analyze"
+description = "Denies the consent_and_analyze command without any pre-configured scope."
+commands.deny = ["consent_and_analyze"]

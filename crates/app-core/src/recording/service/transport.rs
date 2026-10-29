@@ -9,8 +9,7 @@ pub(super) async fn analyze(
     preview: &RecordingPreview,
     route: ModelRoute,
 ) -> CoreResult<TaskDraftV2> {
-    let schema: serde_json::Value =
-        serde_json::from_str(request.response_schema_json()).map_err(err)?;
+    let schema = provider_schema(request.response_schema_json())?;
     let mut content =
         vec![serde_json::json!({"type":"input_text","text":request.untrusted_data_json()})];
     for frame in request.frames() {
@@ -108,8 +107,9 @@ pub(super) async fn analyze(
         invalid("The model couldn't be reached. Discard this recording and try again.")
     })?;
     if !response.status().is_success() {
+        let status = response.status().as_u16();
         return Err(invalid(
-            "The model couldn't analyze this recording. Check your model settings and try again.",
+            format!("The model couldn't analyze this recording (error {status}). Check your model settings and try again."),
         ));
     }
     let mut response_bytes = Vec::new();
@@ -160,4 +160,79 @@ pub(super) async fn analyze(
         return Err(invalid("The model response couldn't be used."));
     }
     request.parse_draft(&text).map_err(err)
+}
+
+/// Keywords that strict structured-output endpoints refuse. Removing them only
+/// loosens what the provider enforces; `ModelRequest::parse_draft` still rejects
+/// anything the full schema would.
+const UNSUPPORTED_SCHEMA_KEYWORDS: &[&str] = &["uniqueItems"];
+
+fn strip_unsupported_keywords(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in UNSUPPORTED_SCHEMA_KEYWORDS {
+                map.remove(*key);
+            }
+            map.values_mut().for_each(strip_unsupported_keywords);
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(strip_unsupported_keywords),
+        _ => {}
+    }
+}
+
+/// Strict structured output wants every property listed as required; optional
+/// fields in our schema already allow null, so the reply can still omit a value.
+fn require_every_property(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Object(props)) = map.get("properties") {
+                let all: Vec<serde_json::Value> = props
+                    .keys()
+                    .map(|k| serde_json::Value::String(k.clone()))
+                    .collect();
+                map.insert("required".into(), serde_json::Value::Array(all));
+            }
+            map.values_mut().for_each(require_every_property);
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(require_every_property),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn real_schema_is_made_acceptable_to_strict_structured_output() {
+        let mut schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../docs/build/task-draft-v2.schema.json"
+        ))
+        .unwrap();
+        strip_unsupported_keywords(&mut schema);
+        require_every_property(&mut schema);
+        let text = schema.to_string();
+        assert!(!text.contains("uniqueItems"));
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.iter().any(|r| r == "example_output"));
+        assert_eq!(
+            required.len(),
+            schema["properties"].as_object().unwrap().len()
+        );
+        // Optional text stays nullable so the reply can still leave it out.
+        assert!(schema["properties"]["example_output"]["type"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t == "null"));
+    }
+}
+
+/// The reviewed schema in the form strict structured-output endpoints accept.
+/// The reply is still validated in full by `ModelRequest::parse_draft`.
+pub(super) fn provider_schema(schema_json: &str) -> CoreResult<serde_json::Value> {
+    let mut schema: serde_json::Value = serde_json::from_str(schema_json).map_err(err)?;
+    strip_unsupported_keywords(&mut schema);
+    require_every_property(&mut schema);
+    Ok(schema)
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-answer-recording-questions"
+description = "Enables the answer_recording_questions command without any pre-configured scope."
+commands.allow = ["answer_recording_questions"]
+
+[[permission]]
+identifier = "deny-answer-recording-questions"
+description = "Denies the answer_recording_questions command without any pre-configured scope."
+commands.deny = ["answer_recording_questions"]

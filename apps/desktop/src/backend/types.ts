@@ -429,7 +429,6 @@ export interface TodayDay { day: string; entries: TodayEntry[] }
 export interface Backend {
   recordingStatus(): Promise<{captureAvailable: boolean}>;
   startRecording(source: "sample" | "window"): Promise<string>;
-  submitFrame(sessionId: string, frame: RecordedFrameInput): Promise<RecordingFrames>;
   stopRecording(sessionId: string): Promise<RecordingFrames>;
   listRecordingFrames(sessionId: string): Promise<RecordingFrames>;
   previewRecording(sessionId: string): Promise<RecordingPreview>;
