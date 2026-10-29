@@ -273,7 +273,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <p>Frames kept: {kept.frames.length}, hidden for privacy: {kept.dropped.length + kept.frames.filter(f=>f.masks.length>0).length}</p>
       {captureStatus?.pickerState==="picking" && <p role="status">Choose one window in the system picker.</p>}
       {captureStatus?.pickerState==="recording" && captureStatus.appName && <p>Recording {captureStatus.appName}</p>}
-      {kept.stopped && <p role="status">Recording stopped. {captureStatus?.reason==="private_or_unknown_window" ? "This browser window’s public status could not be verified." : captureStatus?.reason==="excluded" ? "This app is excluded for privacy." : captureStatus?.reason==="picker_cancelled" ? "Window selection was cancelled." : captureStatus?.reason==="policy_changed" ? "Your privacy settings changed." : "Stop to check what was kept."}</p>}
+      {kept.stopped && <p role="status">Recording stopped. {captureStatus?.reason==="private_or_unknown_window" ? "This browser window’s public status could not be verified." : captureStatus?.reason==="excluded" ? "This app is excluded for privacy." : captureStatus?.reason==="picker_cancelled" ? "Window selection was cancelled." : captureStatus?.reason==="policy_changed" ? "Your privacy settings changed." : captureStatus?.reason?.startsWith("uncertain_") ? `Frames were skipped because of: ${captureStatus.reason.slice(10)}.` : "Stop to check what was kept."}</p>}
       <button className="primary" disabled={busy} onClick={()=>void act(async()=>{
         await backend.stopRecording(session!);const p=await backend.previewRecording(session!);setPreview(p);setStep(2);
       })}>Stop</button>
@@ -287,7 +287,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
           <figcaption>Frame {frame.seq} · {frame.masks.length ? `${frame.masks.length} area(s) hidden for privacy (black)` : "No areas hidden"}</figcaption>
         </figure>)}
       </div>
-      {!preview.frames.length && <p>No frames were safe to keep. Discard this recording and try again.</p>}
+      {!preview.frames.length && <p>No frames were safe to keep{captureStatus?.reason?.startsWith("uncertain_") ? ` (skipped because of: ${captureStatus.reason.slice(10)})` : ""}. Discard this recording and try again.</p>}
       {preview.dropped.length>0 && <><p>{preview.dropped.length} frame(s) left out for privacy.</p>
         <p className="muted">Why: {dropSummary(preview.dropped)}</p></>}
       <h3>The text that goes with the images</h3><pre tabIndex={0} aria-label="Cleared recording text">{preview.clearedTextJson}</pre>

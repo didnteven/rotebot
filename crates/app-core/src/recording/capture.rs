@@ -157,7 +157,10 @@ impl CaptureHost {
         self.requesting = false;
         if session.is_some() {
             self.status.picker_state = "stopped".into();
-            self.status.reason = Some(reason.into());
+            // A frame-skip code stays visible after Stop so the person can be told why.
+            if !self.status.reason.as_deref().is_some_and(|r| r.starts_with("uncertain_")) {
+                self.status.reason = Some(reason.into());
+            }
         }
         session
     }
