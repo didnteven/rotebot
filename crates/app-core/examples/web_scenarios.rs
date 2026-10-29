@@ -39,16 +39,21 @@ async fn main() {
 async fn run_one(prompt: &str, key: &str) -> String {
     let tmp = tempfile::tempdir().expect("tempdir");
     let home = tmp.path().join("home");
-    let core = match AppCore::new(CoreConfig {
-        data_dir: tmp.path().join("data"),
-        vault: Arc::new(macroscope_vault::MemoryStore::default()),
-        gateway_base_url: "https://api.meta.ai/v1".into(),
-        home: home.clone(),
-        muse: Arc::new(NativeMuse { home }),
-        app_version: "web-scenarios".into(),
-        platform: std::env::consts::OS.into(),
-        now_ms: CoreConfig::system_clock(),
-    }) {
+    let vault: Arc<dyn macroscope_vault::SecretStore> =
+        Arc::new(macroscope_vault::MemoryStore::default());
+    let open = |vault: Arc<dyn macroscope_vault::SecretStore>| {
+        AppCore::new(CoreConfig {
+            data_dir: tmp.path().join("data"),
+            vault,
+            gateway_base_url: "https://api.meta.ai/v1".into(),
+            home: home.clone(),
+            muse: Arc::new(NativeMuse { home: home.clone() }),
+            app_version: "web-scenarios".into(),
+            platform: std::env::consts::OS.into(),
+            now_ms: CoreConfig::system_clock(),
+        })
+    };
+    let core = match open(vault.clone()) {
         Ok(c) => c,
         Err(e) => return format!("SETUP FAILED: {e}"),
     };
@@ -137,6 +142,17 @@ async fn run_one(prompt: &str, key: &str) -> String {
             .map(|d| d.count())
             .unwrap_or(0)
     );
+    // SCENARIO_RESTART=1 reopens the core on the same data folder, as the app
+    // does when it is closed and opened again, before the saved tool is run.
+    let core = if std::env::var("SCENARIO_RESTART").is_ok() {
+        drop(core);
+        match open(vault.clone()) {
+            Ok(c) => c,
+            Err(e) => return format!("REOPEN FAILED: {e}"),
+        }
+    } else {
+        core
+    };
     let program_name = state
         .program
         .as_ref()
