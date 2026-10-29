@@ -125,6 +125,7 @@ async fn run_one(prompt: &str, key: &str) -> String {
         .map(|p| p.output_name.clone())
         .unwrap_or_default();
     eprintln!("program output_name = {program_name}");
+    let run_name = std::env::var("SCENARIO_RUN_NAME").unwrap_or_else(|_| program_name.clone());
     let out_dir = tmp.path().join("out");
     std::fs::create_dir_all(&out_dir).expect("out dir");
     let dir = match core.register_picked_dir(&out_dir) {
@@ -132,13 +133,24 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Err(e) => return format!("RUN SETUP FAILED: {e}"),
     };
     match core
-        .stage_run_no_input(&tool.summary_row.id, &dir.handle_id, &program_name)
+        .stage_run_no_input(&tool.summary_row.id, &dir.handle_id, &run_name)
         .await
     {
-        Ok(StageResult::Staged(s)) => format!(
-            "OK\n  sources: {hosts}\n  steps: {steps}\n  answer: {}",
-            s.preview_text.unwrap_or_default().trim()
-        ),
+        Ok(StageResult::Staged(s)) => {
+            let committed = match core.commit_run(&s.run_id, &s.plan_hash) {
+                Ok(_) => format!(
+                    "created {:?}",
+                    std::fs::read_dir(&out_dir)
+                        .map(|d| d.flatten().map(|e| e.file_name()).collect::<Vec<_>>())
+                        .unwrap_or_default()
+                ),
+                Err(e) => format!("commit failed: {e}"),
+            };
+            format!(
+                "OK\n  sources: {hosts}\n  steps: {steps}\n  file: {committed}\n  answer: {}",
+                s.preview_text.unwrap_or_default().trim()
+            )
+        }
         Ok(StageResult::Failed(f)) => {
             format!("RUN FAILED: {}\n  sources: {hosts}", f.failure.message())
         }
