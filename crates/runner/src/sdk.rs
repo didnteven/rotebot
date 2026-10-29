@@ -337,7 +337,7 @@ fn model_ask(ctx: Ctx<'_>, json: String) -> Result<String> {
         fail(
             &ctx,
             "model_limit",
-            "Invalid model request: prompt <=8 KiB, data <=64 KiB, strict schema <=8 KiB",
+            "Invalid model request: prompt <=8 KiB, data <=64 KiB (pass only the relevant part of the page, at most 20000 characters of text), strict schema <=8 KiB",
         )
     })?;
     let data = ctx.userdata::<Data>().unwrap();
