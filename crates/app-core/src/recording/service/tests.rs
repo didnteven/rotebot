@@ -406,3 +406,19 @@ async fn a_frame_can_be_removed_while_reviewing_and_the_review_is_rebuilt_withou
     assert_ne!(again.payload_hash, p.payload_hash);
     assert!(!again.cleared_text_json.contains(&format!("\"seq\":{first},")));
 }
+
+#[tokio::test]
+async fn changing_the_mask_level_changes_the_frames_in_the_next_preview() {
+    let (c, _d, _n) = core("http://127.0.0.1:9".into());
+    let id = c.start_recording(RecordingSource::Sample).unwrap();
+    let mut card = sample_frame(9);
+    card.ocr_boxes[0].text = "Card 4111 1111 1111 1111".into();
+    c.record_frame(&id, card, true).unwrap();
+    c.stop_recording(&id).unwrap();
+    c.set_recording_mask_level(&id, MaskLevel::Off).unwrap();
+    let off = c.preview_recording(&id).await.unwrap();
+    c.set_recording_mask_level(&id, MaskLevel::Strict).unwrap();
+    let strict = c.preview_recording(&id).await.unwrap();
+    let hidden = |p: &RecordingPreview| p.frames.iter().map(|f| f.masks.len()).sum::<usize>();
+    assert!(hidden(&strict) > hidden(&off));
+}

@@ -423,7 +423,7 @@ impl AppCore {
         let detector = TextDetector::with_level(level).map_err(err)?;
         capture.set_level(level, &detector);
         s.review = None;
-        // The preview that follows encodes the frames; doing it here too doubled the wait.
+        s.frames = frames(capture, true);
         Ok(())
     }
     pub fn discard_recording(&self, session_id: &str) -> CoreResult<()> {
