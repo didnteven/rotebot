@@ -36,7 +36,7 @@
         "smtp_host": "smtp.gmail.com",
         "smtp_port": 465,
         "smtp_starttls": false,
-        "app_password_help": "Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords and paste the 16 letters here.",
+        "app_password_help": "Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords and paste the 16 letters here. If Google says “The setting you are looking for is not available for your account”: check you are signed in to the right Google account (top right), that 2-Step Verification includes a phone prompt, authenticator app or backup codes (not only passkeys or security keys), and that it is not a work, school or Advanced Protection account.",
         "custom_server": false,
         "app_password_url": "https://myaccount.google.com/apppasswords"
       }
