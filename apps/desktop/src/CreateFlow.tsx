@@ -685,7 +685,7 @@ export function CreateFlow({
           </div>}
           {build.phase === "ready" && build.comparison && (
             <>
-              {build.comparison.outputText !== undefined ? <div className="result-answer preserve-lines" aria-label="Answer">{build.comparison.outputText}</div> : <DataTable columns={build.comparison.outputColumns} rows={build.comparison.outputRows} caption="Result · first 8 rows" />}
+              {build.comparison.outputText !== undefined ? <div className={`result-answer preserve-lines${build.comparison.outputText.length>200?" long":""}`} tabIndex={0} aria-label="Answer">{build.comparison.outputText}</div> : <DataTable columns={build.comparison.outputColumns} rows={build.comparison.outputRows} caption="Result · first 8 rows" />}
               {!draft?.noInput && !sites.length && <p>{rowCount(build.comparison.rowsIn)} → {rowCount(build.comparison.rowsOut)}</p>}
               {build.route === "offline_demo" && <p className="muted">Offline demo</p>}
               <p>The tool creates a new output file in the folder you choose. Existing files stay unchanged.</p>

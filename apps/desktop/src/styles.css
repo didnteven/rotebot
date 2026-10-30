@@ -517,7 +517,9 @@ p, .field, .result-answer, .plan-sentence { max-width: 70ch; }
 .secondary-start, .secondary-nav { color: var(--muted); }
 .status-strip button:last-child { margin-left: auto; }
 .preserve-lines { white-space: pre-wrap; }
-.result-answer { font-size: 24px; line-height: 1.5; padding: 24px; margin: 24px 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+.result-answer { font-size: 24px; line-height: 1.5; padding: 24px; margin: 24px 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  max-height: 60vh; overflow: auto; }
+.result-answer.long { font-size: 16px; }
 .choice, summary { min-height: 44px; }
 .skip-link { position: fixed; top: 8px; left: 8px; transform: translateY(-200%); z-index: 10; padding: 12px 16px; background: var(--card); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; }
 .skip-link:focus { transform: none; }
