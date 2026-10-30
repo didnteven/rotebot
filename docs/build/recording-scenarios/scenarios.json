@@ -1587,5 +1587,620 @@
     ]
    }
   ]
+ },
+ {
+  "name": "iss",
+  "expect": "Where is the International Space Station right now? Write latitude and longitude to a text file",
+  "frames": [
+   {
+    "title": "ISS Tracker",
+    "url": "spotthestation.nasa.gov/tracking_map.cfm",
+    "lines": [
+     {
+      "t": "ISS now",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Latitude 12.4",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Longitude 130.2",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "iss lat 12.4 lon 130.2 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "pokemon",
+  "expect": "Look up a Pokemon by name and write its type and base height and weight as a small JSON file",
+  "frames": [
+   {
+    "title": "Pikachu - Pokemon Database",
+    "url": "pokemondb.net/pokedex/pikachu",
+    "lines": [
+     {
+      "t": "Pikachu",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Type Electric",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Height 0.4 m",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Weight 6.0 kg",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "json name type height weight (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "book",
+  "expect": "Look up a book by ISBN and write its title, author and first publish year to a CSV file with one row",
+  "frames": [
+   {
+    "title": "Open Library",
+    "url": "openlibrary.org/isbn/9780140328721",
+    "lines": [
+     {
+      "t": "Fantastic Mr Fox",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Roald Dahl",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "First published 1970",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "csv title,author,year (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "npmdl",
+  "expect": "How many times was the npm package lodash downloaded last week? Write the number to a text file",
+  "frames": [
+   {
+    "title": "lodash - npm",
+    "url": "npmjs.com/package/lodash",
+    "lines": [
+     {
+      "t": "lodash",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Weekly Downloads 50,000,000",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "lodash weekly downloads 50,000,000 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "nager",
+  "expect": "List the next three public holidays in Australia as a CSV with date and name",
+  "frames": [
+   {
+    "title": "Public holidays Australia",
+    "url": "officeholidays.com/countries/australia",
+    "lines": [
+     {
+      "t": "Holidays",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Melbourne Cup 3 Nov",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Christmas Day 25 Dec",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Boxing Day 26 Dec",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "csv date,name next three (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "aqi",
+  "expect": "Current air quality index and PM2.5 for Christchurch written to a text file",
+  "frames": [
+   {
+    "title": "Christchurch Air Quality",
+    "url": "iqair.com/new-zealand/canterbury/christchurch",
+    "lines": [
+     {
+      "t": "Christchurch",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "AQI 22",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "PM2.5 5 ug/m3",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Christchurch AQI 22 PM2.5 5 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "hnuser",
+  "expect": "What is the Hacker News karma of user pg? Write username and karma to a text file",
+  "frames": [
+   {
+    "title": "pg - Hacker News",
+    "url": "news.ycombinator.com/user?id=pg",
+    "lines": [
+     {
+      "t": "user: pg",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "karma: 157000",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "pg 157000 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "sotop",
+  "expect": "Title and score of the top voted question tagged rust on Stack Overflow, written to a markdown file",
+  "frames": [
+   {
+    "title": "Top Questions tagged rust",
+    "url": "stackoverflow.com/questions/tagged/rust?tab=votes",
+    "lines": [
+     {
+      "t": "Questions tagged rust",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "How do I ... 3200 votes",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "markdown title and score (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "crates",
+  "expect": "Latest version of the serde crate on crates.io written to a text file as name version",
+  "frames": [
+   {
+    "title": "serde - crates.io",
+    "url": "crates.io/crates/serde",
+    "lines": [
+     {
+      "t": "serde",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1.0.228",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "serde 1.0.228 (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "restc",
+  "expect": "Currency, languages and area of a chosen country as a JSON file",
+  "frames": [
+   {
+    "title": "Norway",
+    "url": "en.wikipedia.org/wiki/Norway",
+    "lines": [
+     {
+      "t": "Norway",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "Currency Norwegian krone",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Language Norwegian",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Area 385,207 km2",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "json currency languages area (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "dockerpulls",
+  "expect": "Number of Docker Hub pulls for the official nginx image, written to a text file",
+  "frames": [
+   {
+    "title": "nginx - Docker Hub",
+    "url": "hub.docker.com/_/nginx",
+    "lines": [
+     {
+      "t": "nginx",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1B+ downloads",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "nginx pulls 1B+ (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "history",
+  "expect": "Fetch one 'on this day' historical event from Wikipedia for today's date and write year and text to a file",
+  "frames": [
+   {
+    "title": "On this day",
+    "url": "en.wikipedia.org/wiki/Wikipedia:Selected_anniversaries/October_30",
+    "lines": [
+     {
+      "t": "October 30",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "1938 Orson Welles radio broadcast of War of the Worlds",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Notes",
+    "url": "docs.google.com/document/d/abc/edit",
+    "lines": [
+     {
+      "t": "Notes",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "year and event text (typed by hand)",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
  }
 ]

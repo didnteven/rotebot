@@ -2056,32 +2056,33 @@ impl AppCore {
             Vec::new()
         };
         if !declared_sources.is_empty() {
+            // A rejected address is a failed check the model can correct, not the end of the build.
             let hosts = match self.validated_web_hosts(&declared_sources) {
-                Ok(hosts) => hosts,
+                Ok(hosts) => Some(hosts),
                 Err(message) => {
-                    self.fail_build(
-                        &build_id,
-                        BuildFailureKind::Checks,
-                        format!("The program's web sources were rejected: {message}"),
-                    )?;
-                    return Ok(());
+                    fetch_error = Some(format!(
+                        "A web source was rejected before it could be fetched: {message}"
+                    ));
+                    None
                 }
             };
-            if let Some(blocked) = self.web_fetch_blocked() {
-                self.fail_build(&build_id, BuildFailureKind::NoModelAccess, blocked)?;
-                return Ok(());
-            }
-            match self
-                .fetch_for_build(&declared_sources, &hosts, consent_epoch, cancelled)
-                .await
-            {
-                Some((texts, error)) => {
-                    fetched = texts;
-                    fetch_error = error;
-                }
-                None => {
-                    self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
+            if let Some(hosts) = hosts {
+                if let Some(blocked) = self.web_fetch_blocked() {
+                    self.fail_build(&build_id, BuildFailureKind::NoModelAccess, blocked)?;
                     return Ok(());
+                }
+                match self
+                    .fetch_for_build(&declared_sources, &hosts, consent_epoch, cancelled)
+                    .await
+                {
+                    Some((texts, error)) => {
+                        fetched = texts;
+                        fetch_error = error;
+                    }
+                    None => {
+                        self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?;
+                        return Ok(());
+                    }
                 }
             }
         }
