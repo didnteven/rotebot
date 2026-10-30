@@ -153,10 +153,18 @@ impl Connections {
     }
 
     fn client_credentials(&self, id: &str, resource: &str) -> Option<ClientCredentials> {
-        let r = SecretRef::new(client_key(id)).ok()?;
-        let secret = self.vault.get(&r).ok()??;
-        let stored: StoredClient = serde_json::from_slice(secret.expose()).ok()?;
-        (stored.resource == resource).then_some(stored.credentials)
+        let saved = SecretRef::new(client_key(id))
+            .ok()
+            .and_then(|r| self.vault.get(&r).ok().flatten())
+            .and_then(|secret| serde_json::from_slice::<StoredClient>(secret.expose()).ok())
+            .filter(|stored| stored.resource == resource)
+            .map(|stored| stored.credentials);
+        saved.or_else(|| {
+            // Macroscope's own registered client, when the catalog carries one for this service.
+            let auth = &self.catalog.get(id)?.auth;
+            let client_id = auth.bundled_client_id.as_deref().filter(|c| !c.is_empty())?;
+            Some(ClientCredentials::new(client_id, auth.bundled_client_secret.clone()))
+        })
     }
 
     fn info(&self, status: &ConnectionStatus) -> Option<ConnectorInfo> {

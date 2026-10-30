@@ -35,6 +35,12 @@ pub struct Auth {
     pub extra_authorize_params: BTreeMap<String, String>,
     #[serde(default)]
     pub client_setup: Option<String>,
+    /// An OAuth client registered for Macroscope itself. When present the person goes straight to
+    /// the service's sign-in; their own client (saved in Connections) still takes priority.
+    #[serde(default)]
+    pub bundled_client_id: Option<String>,
+    #[serde(default)]
+    pub bundled_client_secret: Option<String>,
     #[serde(default)]
     pub fixed_redirect_port: Option<u16>,
 }
@@ -119,5 +125,20 @@ impl Catalog {
     }
     pub fn get(&self, id: &str) -> Option<&Connector> {
         self.connectors.iter().find(|c| c.id == id)
+    }
+}
+
+#[cfg(test)]
+mod bundled_client_tests {
+    use super::*;
+
+    #[test]
+    fn a_catalog_entry_can_carry_a_bundled_client_and_the_embedded_one_has_none_yet() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(include_str!("../../../contracts/connectors.json")).unwrap();
+        value["connectors"][0]["auth"]["bundled_client_id"] = "app-client.example".into();
+        let catalog = Catalog::from_json(&value.to_string()).unwrap();
+        assert_eq!(catalog.connectors[0].auth.bundled_client_id.as_deref(), Some("app-client.example"));
+        assert!(Catalog::embedded().connectors.iter().all(|c| c.auth.bundled_client_id.is_none()));
     }
 }
