@@ -30,7 +30,8 @@ export function Connections({
   select: (id: string) => void;
   changed: () => Promise<void>;
 }) {
-  const connector = connectors.find((c) => c.id === selected);
+  // Every click on a card, even the one already open, brings its details into view.
+  const [tick, setTick] = useState(0);
   return (
     <section>
       {connectors.length === 0 && <p role="status">Loading connections…</p>}
@@ -40,7 +41,7 @@ export function Connections({
       </p>
       <div className="connector-grid">
         {connectors.map((c) => (
-          <article className="card" key={c.id}>
+          <article className={`card${selected === c.id ? " card-open" : ""}`} key={c.id}>
             <h2>{c.name}</h2>
             <p>{c.category.charAt(0).toUpperCase() + c.category.slice(1)}</p>
             <p className="badge">{stateName(c)}</p>
@@ -51,9 +52,21 @@ export function Connections({
                 : "Unverified endpoint"}
             </p>
             <ConnectorTools backend={backend} connectorId={c.id} />
+            {selected === c.id && (
+              <ConnectionDetail
+                key={c.id}
+                backend={backend}
+                connector={c}
+                changed={changed}
+                focusTick={tick}
+              />
+            )}
             <button
               aria-expanded={selected === c.id}
-              onClick={() => select(c.id)}
+              onClick={() => {
+                select(c.id);
+                setTick((t) => t + 1);
+              }}
             >
               {c.state.kind === "connected"
                 ? `Manage ${c.name}`
@@ -62,14 +75,6 @@ export function Connections({
           </article>
         ))}
       </div>
-      {connector && (
-        <ConnectionDetail
-          key={connector.id}
-          backend={backend}
-          connector={connector}
-          changed={changed}
-        />
-      )}
     </section>
   );
 }
@@ -127,10 +132,12 @@ function ConnectionDetail({
   backend,
   connector,
   changed,
+  focusTick,
 }: {
   backend: Backend;
   connector: ConnectorInfo;
   changed: () => Promise<void>;
+  focusTick: number;
 }) {
   const [url, setUrl] = useState(connector.mcpUrl),
     [confirmDocs, setConfirmDocs] = useState(false),
@@ -141,11 +148,12 @@ function ConnectionDetail({
     attempt = useRef(0);
   const { act, busy, error, setError } = useAction();
   const heading = useRef<HTMLHeadingElement>(null);
-  // Choosing a card opens this section below the grid: bring it into view so it is clear something happened.
+  // Choosing a card opens its details inside the card: keep them in view.
   useEffect(() => {
     heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     heading.current?.focus({ preventScroll: true });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTick]);
   async function connect() {
     setNotice(null);
     const start = await backend.beginConnect(connector.id);
@@ -170,10 +178,10 @@ function ConnectionDetail({
   }
   return (
     <section
-      className="card connection-detail"
+      className="connection-detail"
       aria-label={`${connector.name} connection details`}
     >
-      <h2 ref={heading} tabIndex={-1}>{connector.name} connection</h2>
+      <h3 ref={heading} tabIndex={-1}>{connector.name} connection</h3>
       {connector.registration === "preregistered" && !connector.hasClientCredentials && connector.state.kind !== "connected" && (
         <p className="notice notice-info" role="status">
           {connector.name} needs your own OAuth client before it can connect. Follow the steps below, save the client ID, then press Connect.
