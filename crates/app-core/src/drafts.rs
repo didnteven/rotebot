@@ -383,11 +383,27 @@ pub fn parse_date_answer(answer: &str) -> Option<DateFormat> {
 
 /// Plain-language task summary lines (plan §2.1 wording).
 pub fn text_preview(text: &str) -> String {
-    text.lines()
-        .take(PREVIEW_ROWS)
-        .map(|l| l.chars().take(500).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
+    // Text answers (lists, reports) are read whole; only very long ones are cut, and say so.
+    const LINES: usize = 200;
+    const CHARS: usize = 20_000;
+    let mut out = String::new();
+    let mut shown = 0;
+    let total = text.lines().count();
+    for line in text.lines().take(LINES) {
+        let line: String = line.chars().take(500).collect();
+        if out.chars().count() + line.chars().count() > CHARS {
+            break;
+        }
+        if shown > 0 {
+            out.push('\n');
+        }
+        out.push_str(&line);
+        shown += 1;
+    }
+    if shown < total {
+        out.push_str(&format!("\n… and {} more lines in the full file", total - shown));
+    }
+    out
 }
 
 /// Conservative local routing: only the finite operations may choose mapping.
