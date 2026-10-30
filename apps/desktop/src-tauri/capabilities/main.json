@@ -77,6 +77,7 @@
     "allow-list-connectors",
     "allow-set-connector-url",
     "allow-find-connectors",
+    "allow-edit-recording-draft",
     "allow-set-client-credentials",
     "allow-begin-connect",
     "allow-complete-connect",

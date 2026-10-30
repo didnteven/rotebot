@@ -85,6 +85,14 @@ export class RecordingMock {
     s.analyzed=true;
     return copy(sampleDraft);
   }
+  async editRecordingDraft(id:string,edit:{goal:string;step_actions:Record<string,string>;removed_steps:string[];note?:string|null}) {
+    const s=this.get(id); if (!s.analyzed) throw new Error("Analyze the recording first.");
+    if (!edit.goal.trim()) throw new Error("the goal cannot be empty");
+    const out=copy(sampleDraft); out.goal=edit.note?.trim()?`${edit.goal.trim().replace(/\.$/,"")} ${edit.note.trim()}`:edit.goal.trim();
+    out.steps=out.steps.filter(st=>!edit.removed_steps.includes(st.id)).map((st,i)=>({...st,order:i+1,action:edit.step_actions[st.id]?.trim()||st.action}));
+    out.unsupported_steps=out.unsupported_steps.filter(u=>!edit.removed_steps.includes(u.step_id));
+    return out;
+  }
   async answerRecordingQuestions(id:string,answers:Record<string,string>) {
     const s=this.get(id); delete s.goal;
     if (!s.analyzed) throw new Error("Analyze the recording first.");

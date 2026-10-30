@@ -250,3 +250,25 @@ it("lets the person remove a frame from the review, which is then re-reviewed wi
   await waitFor(() => expect(screen.queryByRole("button", {name:"Remove frame 2"})).toBeNull());
   expect(button("Remove frame 1")).toBeVisible();
 });
+
+it("lets the person reword, remove and add a note to the plan before approving it", async () => {
+  const ctx = await open();
+  await review(ctx);
+  await ctx.user.click(button("Send for analysis"));
+  await screen.findByRole("heading", { name: "What we understood" });
+  const edit = vi.spyOn(ctx.backend, "editRecordingDraft");
+  await ctx.user.click(button("Edit plan"));
+  const first = screen.getByLabelText("Step 1") as HTMLInputElement;
+  await ctx.user.clear(first);
+  await ctx.user.type(first, "Read only the newest rows");
+  await ctx.user.click(button("Remove step 3"));
+  await ctx.user.type(screen.getByLabelText(/Anything to add or change/), "Skip blank lines.");
+  await ctx.user.click(button("Save changes"));
+  await waitFor(() => expect(edit).toHaveBeenCalledOnce());
+  const [, sent] = edit.mock.calls[0];
+  expect(sent.step_actions).toEqual({ read: "Read only the newest rows" });
+  expect(sent.removed_steps).toHaveLength(1);
+  expect(sent.note).toBe("Skip blank lines.");
+  expect(await screen.findByText(/Skip blank lines\./)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+});

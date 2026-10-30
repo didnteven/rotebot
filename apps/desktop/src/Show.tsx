@@ -214,6 +214,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   const [preview,setPreview]=useState<RecordingPreview|null>(null);
   const [understood,setUnderstood]=useState<TaskDraftV2|null>(null);
   const [found,setFound]=useState<Record<string,ConnectorCandidate[]>>({});
+  const [editing,setEditing]=useState<{goal:string;actions:Record<string,string>;removed:string[];note:string}|null>(null);
   const [answers,setAnswers]=useState<Record<string,string>>({});
   const [draft,setDraft]=useState<TaskDraft|null>(null);
   const [started,setStarted]=useState(0),[elapsed,setElapsed]=useState(0);
@@ -350,6 +351,21 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       })}>Send for analysis</button>
     </>}
     {step===3 && understood && <>
+      <p>{understood.goal}</p>
+      {!editing && <button disabled={busy} onClick={()=>setEditing({goal:understood.goal,actions:Object.fromEntries(understood.steps.map(s=>[s.id,s.action])),removed:[],note:""})}>Edit plan</button>}
+      {editing && <section aria-label="Edit plan"><h3>Edit plan</h3>
+        <label>What the tool does<textarea rows={2} value={editing.goal} onChange={e=>setEditing({...editing,goal:e.target.value})}/></label>
+        <ol>{understood.steps.filter(s=>!editing.removed.includes(s.id)).map(s=><li key={s.id}>
+          <input aria-label={`Step ${s.order}`} value={editing.actions[s.id]} onChange={e=>setEditing({...editing,actions:{...editing.actions,[s.id]:e.target.value}})}/>
+          {s.capability!=="output_file" && <button disabled={busy} aria-label={`Remove step ${s.order}`} onClick={()=>setEditing({...editing,removed:[...editing.removed,s.id]})}>Remove</button>}
+        </li>)}</ol>
+        <label>Anything to add or change? <span className="muted">(for example “only the five newest”)</span><textarea rows={2} value={editing.note} onChange={e=>setEditing({...editing,note:e.target.value})}/></label>
+        <div className="actions"><button className="primary" disabled={busy||!editing.goal.trim()} onClick={()=>void act(async()=>{
+          const changed=Object.fromEntries(Object.entries(editing.actions).filter(([id,a])=>a.trim()&&a!==understood.steps.find(s=>s.id===id)?.action));
+          setUnderstood(await backend.editRecordingDraft(session!,{goal:editing.goal,step_actions:changed,removed_steps:editing.removed,note:editing.note.trim()||null}));
+          setEditing(null);
+        })}>Save changes</button><button disabled={busy} onClick={()=>setEditing(null)}>Cancel</button></div>
+      </section>}
       <h3>What the tool can do</h3><ol>{understood.steps.filter(s=>s.capability!=="manual").map(s=><li key={s.id}>{s.action}</li>)}</ol>
       {understood.steps.every(s=>s.capability==="manual") && <p className="notice notice-warning">A tool can't do any part of this chore, because it needs clicking, typing or other apps. You can discard this recording.</p>}
       {understood.steps.some(s=>s.capability==="manual") && <><h3>You'll still need to do this part yourself</h3><ul>{understood.steps.filter(s=>s.capability==="manual").map(s=><li key={s.id}>{s.action}. {understood.unsupported_steps.find(u=>u.step_id===s.id)?.reason}</li>)}</ul></>}

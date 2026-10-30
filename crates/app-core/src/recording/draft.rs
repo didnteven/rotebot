@@ -239,6 +239,59 @@ impl TaskDraftV2 {
     }
 }
 
+/// What the person changed on the plan screen: wording only. Steps can be reworded or removed,
+/// but nothing can be added that the recording did not show, and the output step stays.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftEdit {
+    pub goal: String,
+    #[serde(default)]
+    pub step_actions: BTreeMap<String, String>,
+    #[serde(default)]
+    pub removed_steps: Vec<String>,
+    /// Extra instructions for the builder, kept as part of the goal.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl TaskDraftV2 {
+    pub fn edited(&self, edit: &DraftEdit) -> Result<Self, DraftError> {
+        let mut draft = self.clone();
+        let goal = edit.goal.trim();
+        if goal.is_empty() {
+            return Err(DraftError("the goal cannot be empty"));
+        }
+        draft.goal = goal.to_string();
+        if let Some(note) = edit.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            draft.goal = format!("{} {}", draft.goal.trim_end_matches('.'), note);
+        }
+        for step in &mut draft.steps {
+            if let Some(action) = edit.step_actions.get(&step.id) {
+                step.action = action.trim().to_string();
+            }
+        }
+        for id in &edit.removed_steps {
+            let step = draft
+                .steps
+                .iter()
+                .find(|s| &s.id == id)
+                .ok_or(DraftError("unknown step"))?;
+            if step.capability == Capability::OutputFile {
+                return Err(DraftError("the output step cannot be removed"));
+            }
+        }
+        draft.steps.retain(|s| !edit.removed_steps.contains(&s.id));
+        draft
+            .unsupported_steps
+            .retain(|u| !edit.removed_steps.contains(&u.step_id));
+        for (i, step) in draft.steps.iter_mut().enumerate() {
+            step.order = i as u32 + 1;
+        }
+        draft.validate()?;
+        Ok(draft)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClarifiedTask {
     /// Review this text before passing it to AppCore::draft_task_no_input.
@@ -337,4 +390,56 @@ pub fn apply_answers(
         description,
         example_output: draft.example_output.clone(),
     })
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    fn step(id: &str, order: u32, capability: Capability) -> DraftStep {
+        DraftStep { id: id.into(), order, app: "App".into(), action: format!("Do {id}"), capability, evidence_frames: vec![1] }
+    }
+    fn question(id: &str) -> DraftQuestion {
+        let opt = |o: &str, any| DraftOption { id: o.into(), label: o.into(), any_is_fine: any };
+        DraftQuestion { id: id.into(), prompt: "Which?".into(), evidence_frames: vec![1], options: vec![opt("a", false), opt("b", true)], default: "a".into() }
+    }
+    fn draft() -> TaskDraftV2 {
+        TaskDraftV2 {
+            schema_version: 2,
+            goal: "Summarise the inbox.".into(),
+            steps: vec![step("read", 1, Capability::Connection), step("open", 2, Capability::Manual), step("save", 3, Capability::OutputFile)],
+            variables: vec![],
+            constants: vec![],
+            output_description: "A text file".into(),
+            example_output: None,
+            trigger: "On demand".into(),
+            unsupported_steps: vec![UnsupportedStep { step_id: "open".into(), reason: "Needs clicking".into() }],
+            ambiguities: vec![],
+            questions: vec![question("q1"), question("q2")],
+        }
+    }
+
+    #[test]
+    fn rewording_removing_and_noting_keep_the_plan_valid() {
+        let edit = DraftEdit {
+            goal: "Summarise the newest five emails".into(),
+            step_actions: BTreeMap::from([("read".into(), "Read the five newest emails".into())]),
+            removed_steps: vec!["open".into()],
+            note: Some("Skip newsletters.".into()),
+        };
+        let out = draft().edited(&edit).unwrap();
+        assert_eq!(out.goal, "Summarise the newest five emails Skip newsletters.");
+        assert_eq!(out.steps.iter().map(|s| (s.id.as_str(), s.order)).collect::<Vec<_>>(), [("read", 1), ("save", 2)]);
+        assert_eq!(out.steps[0].action, "Read the five newest emails");
+        assert!(out.unsupported_steps.is_empty());
+    }
+
+    #[test]
+    fn the_output_step_and_unknown_steps_cannot_be_removed_and_goal_cannot_be_empty() {
+        let base = DraftEdit { goal: "Goal".into(), ..DraftEdit::default() };
+        assert!(draft().edited(&DraftEdit { removed_steps: vec!["save".into()], ..base.clone() }).is_err());
+        assert!(draft().edited(&DraftEdit { removed_steps: vec!["nope".into()], ..base.clone() }).is_err());
+        assert!(draft().edited(&DraftEdit { goal: "  ".into(), ..base.clone() }).is_err());
+        assert!(draft().edited(&DraftEdit { step_actions: BTreeMap::from([("read".into(), " ".into())]), ..base }).is_err());
+    }
 }

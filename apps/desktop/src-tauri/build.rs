@@ -48,6 +48,7 @@ fn main() {
         "preview_recording",
         "consent_and_analyze",
         "answer_recording_questions",
+        "edit_recording_draft",
         "approve_recording_draft",
         "discard_recording",
         "answer_question",

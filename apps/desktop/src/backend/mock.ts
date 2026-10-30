@@ -232,6 +232,7 @@ export class MockBackend implements Backend {
   listRecordingFrames: Backend["listRecordingFrames"] = id => this.recording.listRecordingFrames(id);
   previewRecording: Backend["previewRecording"] = id => this.recording.previewRecording(id);
   consentAndAnalyze: Backend["consentAndAnalyze"] = (id, hash) => this.recording.consentAndAnalyze(id, hash);
+  editRecordingDraft: Backend["editRecordingDraft"] = (id, edit) => this.recording.editRecordingDraft(id, edit);
   answerRecordingQuestions: Backend["answerRecordingQuestions"] = (id, answers) => this.recording.answerRecordingQuestions(id, answers);
   approveRecordingDraft: Backend["approveRecordingDraft"] = id => this.recording.approveRecordingDraft(id);
   discardRecording: Backend["discardRecording"] = id => this.recording.discardRecording(id);

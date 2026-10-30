@@ -252,6 +252,14 @@ export interface ToolSummary {
   state: "enabled" | "paused";
 }
 
+/** Wording changes made on the plan screen; steps can be reworded or removed, never added. */
+export interface RecordingPlanEdit {
+  goal: string;
+  step_actions: Record<string, string>;
+  removed_steps: string[];
+  note?: string | null;
+}
+
 /** An unverified suggestion from the public MCP registry. */
 export interface ConnectorCandidate {
   name: string;
@@ -473,6 +481,7 @@ export interface Backend {
   previewRecording(sessionId: string): Promise<RecordingPreview>;
   consentAndAnalyze(sessionId: string, payloadHash: string): Promise<TaskDraftV2>;
   answerRecordingQuestions(sessionId: string, answers: Record<string, string>): Promise<string>;
+  editRecordingDraft(sessionId: string, edit: RecordingPlanEdit): Promise<TaskDraftV2>;
   approveRecordingDraft(sessionId: string): Promise<TaskDraft>;
   discardRecording(sessionId: string): Promise<void>;
   listToday(): Promise<TodayDay[]>;

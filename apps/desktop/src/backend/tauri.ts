@@ -61,6 +61,7 @@ export class TauriBackend implements Backend {
   listRecordingFrames: Backend["listRecordingFrames"] = sessionId => invoke("list_recording_frames", {sessionId});
   previewRecording: Backend["previewRecording"] = sessionId => invoke("preview_recording", {sessionId});
   consentAndAnalyze: Backend["consentAndAnalyze"] = (sessionId, payloadHash) => invoke("consent_and_analyze", {sessionId, payloadHash});
+  editRecordingDraft: Backend["editRecordingDraft"] = (sessionId, edit) => invoke("edit_recording_draft", {sessionId, edit});
   answerRecordingQuestions: Backend["answerRecordingQuestions"] = (sessionId, answers) => invoke("answer_recording_questions", {sessionId, answers});
   approveRecordingDraft: Backend["approveRecordingDraft"] = sessionId => invoke("approve_recording_draft", {sessionId});
   discardRecording: Backend["discardRecording"] = sessionId => invoke("discard_recording", {sessionId});

@@ -743,6 +743,10 @@ fn answer_recording_questions(
     Ok(core.0.answer_recording_questions(&session_id, answers)?)
 }
 #[tauri::command]
+fn edit_recording_draft(core: State<'_, Core>, session_id: String, edit: DraftEdit) -> Cmd<TaskDraftV2> {
+    Ok(core.0.edit_recording_draft(&session_id, edit)?)
+}
+#[tauri::command]
 fn approve_recording_draft(core: State<'_, Core>, session_id: String) -> Cmd<TaskDraft> {
     Ok(core.0.approve_recording_draft(&session_id)?)
 }
@@ -1209,6 +1213,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         preview_recording,
         consent_and_analyze,
         answer_recording_questions,
+        edit_recording_draft,
         approve_recording_draft,
         discard_recording,
         answer_question,

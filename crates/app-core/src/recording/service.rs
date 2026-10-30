@@ -650,6 +650,23 @@ impl AppCore {
         s.clarified = Some(clarified);
         Ok(goal)
     }
+    /// Applies the person's wording changes to the analyzed plan; answers must be given again.
+    pub fn edit_recording_draft(
+        &self,
+        session_id: &str,
+        edit: DraftEdit,
+    ) -> CoreResult<TaskDraftV2> {
+        let mut slots = lock(&self.inner.recordings);
+        let s = slot(&mut slots, session_id, self.now())?;
+        let draft = s
+            .draft
+            .as_ref()
+            .ok_or_else(|| invalid("Analyze the recording first."))?;
+        let edited = draft.edited(&edit).map_err(err)?;
+        s.clarified = None;
+        s.draft = Some(edited.clone());
+        Ok(edited)
+    }
     pub fn approve_recording_draft(&self, session_id: &str) -> CoreResult<TaskDraft> {
         let clarified = {
             let mut slots = lock(&self.inner.recordings);
