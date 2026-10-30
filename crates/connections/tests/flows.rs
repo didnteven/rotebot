@@ -142,7 +142,7 @@ async fn authorize(
     if fake.0.expire_first {
         assert!(!query.contains_key("resource"));
         assert_eq!(query["access_type"], "offline");
-        assert_eq!(query["prompt"], "consent");
+        assert_eq!(query["prompt"], "select_account consent");
     } else {
         assert!(query["resource"].starts_with(&fake.0.origin));
     }
