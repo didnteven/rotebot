@@ -219,6 +219,7 @@ export class MockBackend implements Backend {
   );
   recordingStatus: Backend["recordingStatus"] = () => this.recording.recordingStatus();
   confirmNormalBrowserWindow: Backend["confirmNormalBrowserWindow"] = () => this.recording.confirmNormalBrowserWindow();
+  setRecordingMaskLevel: Backend["setRecordingMaskLevel"] = (id, level) => this.recording.setRecordingMaskLevel(id, level);
   removeRecordingFrame: Backend["removeRecordingFrame"] = (id, seq) => this.recording.removeRecordingFrame(id, seq);
   openPrivacySettings: Backend["openPrivacySettings"] = pane => this.recording.openPrivacySettings(pane);
   requestRecordingPermission: Backend["requestRecordingPermission"] = () => this.recording.requestRecordingPermission();

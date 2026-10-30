@@ -97,6 +97,7 @@ pub struct RecordingFrames {
     pub frames: Vec<MaskedFrameDto>,
     pub dropped: Vec<DroppedFrame>,
     pub stopped: bool,
+    pub mask_level: MaskLevel,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,6 +191,7 @@ fn frames(session: &RecordingSession, stopped: bool) -> RecordingFrames {
             .collect(),
         dropped: session.dropped().to_vec(),
         stopped,
+        mask_level: session.level(),
     }
 }
 fn slot<'a>(
@@ -218,7 +220,7 @@ impl AppCore {
                 "Discard an earlier recording before starting another.",
             ));
         }
-        let capture = RecordingSession::new();
+        let capture = RecordingSession::with_level(MaskLevel::Off);
         let id = capture.id.clone();
         slots.insert(
             id.clone(),
@@ -356,7 +358,8 @@ impl AppCore {
             secure_input_gap: dto.secure_input_gap,
         };
         let capture = s.capture.as_mut().unwrap();
-        let result = capture.record(frame, &regions, &TextDetector::new().map_err(err)?);
+        let detector = TextDetector::with_level(capture.level()).map_err(err)?;
+        let result = capture.record(frame, &regions, &detector);
         s.frames = frames(capture, matches!(result, Err(DropReason::SessionLimit)));
         Ok(s.frames.clone())
     }
@@ -395,6 +398,30 @@ impl AppCore {
         if !capture.remove_frame(seq) {
             return Err(invalid("That frame is no longer in the recording."));
         }
+        s.review = None;
+        s.frames = frames(capture, true);
+        Ok(s.frames.clone())
+    }
+    /// Hides more or less sensitive text in a stopped recording by masking its frames again.
+    pub fn set_recording_mask_level(
+        &self,
+        session_id: &str,
+        level: MaskLevel,
+    ) -> CoreResult<RecordingFrames> {
+        let mut slots = lock(&self.inner.recordings);
+        let s = slot(&mut slots, session_id, self.now())?;
+        if !s.frames.stopped {
+            return Err(invalid("Stop the recording before changing what is hidden."));
+        }
+        if s.analyzing || s.draft.is_some() {
+            return Err(invalid("This recording has already been analyzed."));
+        }
+        let capture = s
+            .capture
+            .as_mut()
+            .ok_or_else(|| invalid("This recording can no longer be changed."))?;
+        let detector = TextDetector::with_level(level).map_err(err)?;
+        capture.set_level(level, &detector);
         s.review = None;
         s.frames = frames(capture, true);
         Ok(s.frames.clone())

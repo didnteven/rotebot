@@ -1,4 +1,5 @@
 use super::{DetectorError, SensitiveDetector, MAX_DETECTOR_BYTES};
+use crate::recording::MaskLevel;
 use regex::Regex;
 use std::ops::Range;
 
@@ -13,10 +14,15 @@ pub struct TextDetector {
     url: Regex,
     assignment: Regex,
     label: Regex,
+    level: MaskLevel,
 }
 
 impl TextDetector {
     pub fn new() -> Result<Self, DetectorError> {
+        Self::with_level(MaskLevel::Standard)
+    }
+
+    pub fn with_level(level: MaskLevel) -> Result<Self, DetectorError> {
         let re = |s| Regex::new(s).map_err(|_| DetectorError);
         Ok(Self {
             email: re(
@@ -38,6 +44,7 @@ impl TextDetector {
             label: re(
                 r"(?i)\b(?:account\s*(?:number|no\.?)|(?:phone|mobile|telephone)\s*number|password|passcode|pin|cvv|cvc|card\s*(?:number|no\.?)|routing(?:\s*number)?|iban|swift(?:\s*(?:code|bic))?|date\s*of\s*birth|dob|tax\s*(?:number|id)|ird(?:\s*number)?|ssn|social\s*security(?:\s*number)?)\b\s*[:=]?\s*",
             )?,
+            level,
         })
     }
 
@@ -47,7 +54,9 @@ impl TextDetector {
         }
         let (text, map) = normalise(input, self.requires_line_context(input));
         let mut spans = Vec::new();
-        for m in self.email.find_iter(&text) {
+        let standard = self.level >= MaskLevel::Standard;
+        let strict = self.level == MaskLevel::Strict;
+        for m in self.email.find_iter(&text).filter(|_| standard) {
             // URL query/path delimiters are not part of an email local-part.
             let at = m.as_str().find('@').unwrap();
             let prefix = &m.as_str()[..at];
@@ -63,7 +72,7 @@ impl TextDetector {
             spans.push(m.start() + skip..m.end());
         }
         spans.extend(self.keys.find_iter(&text).map(|m| m.range()));
-        for m in self.iban.find_iter(&text) {
+        for m in self.iban.find_iter(&text).filter(|_| standard) {
             // Structural IBAN plus country-specific lengths. OCR can damage the checksum;
             // requiring mod-97 here would create privacy misses.
             let s: String = m
@@ -161,12 +170,15 @@ impl TextDetector {
                     || groups.len() == 3 && groups[0] == 2 && groups[1] == 3 && groups[2] == 4);
             if !amount
                 && !date
-                && (nz_bank || ssn || luhn(&digits) || !inside_url && (ird || phone))
+                && (luhn(&digits)
+                    || standard
+                        && (nz_bank || ssn || (!inside_url || strict) && (ird || phone))
+                    || strict && n >= 6)
             {
                 spans.push(start..end);
             }
         }
-        for m in self.token.find_iter(&text) {
+        for m in self.token.find_iter(&text).filter(|_| standard) {
             // URL/path separators delimit components. Long readable slugs and ordinary words
             // with a year suffix are not secrets. Hex and high-diversity encoded values are.
             let in_url = self

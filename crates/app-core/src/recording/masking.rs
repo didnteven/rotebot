@@ -273,6 +273,7 @@ pub(super) fn mask(
     regions: &[MaskRegion],
     detector: &impl SensitiveDetector,
     history: &mut MaskHistory,
+    level: MaskLevel,
 ) -> Result<MaskedFrame, DropReason> {
     // A doubtful frame is kept, masked as far as it could be checked, and flagged for the person.
     let unverified = frame.uncertain;
@@ -310,14 +311,18 @@ pub(super) fn mask(
     {
         return Err(DropReason::InvalidGeometry);
     }
+    let off = level == MaskLevel::Off;
     let sensitive = |s: &str| {
+        if off {
+            return Ok(false);
+        }
         detector
             .is_sensitive(s)
             .map_err(|_| DropReason::DetectorError)
     };
     let lines = ocr_lines(&frame.ocr_boxes);
     let mut detected = vec![Vec::new(); frame.ocr_boxes.len()];
-    for line in &lines {
+    for line in lines.iter().filter(|_| !off) {
         let (joined, _) = run_text(&frame.ocr_boxes, line, false)?;
         let contextual = detector.requires_line_context(&joined);
         // Evaluate all adapters for errors even when their standalone decisions
@@ -336,7 +341,9 @@ pub(super) fn mask(
         }
         detect_run(&frame.ocr_boxes, line, detector, &mut detected)?;
     }
-    contextual_values(&frame.ocr_boxes, &lines, detector, &mut detected)?;
+    if !off {
+        contextual_values(&frame.ocr_boxes, &lines, detector, &mut detected)?;
+    }
     let mut text_rects = Vec::new();
     for (b, spans) in frame.ocr_boxes.iter().zip(&mut detected) {
         spans.sort_by_key(|s| (s.start, s.end));

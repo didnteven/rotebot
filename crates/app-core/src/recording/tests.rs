@@ -899,3 +899,49 @@ fn ocr_instruction_injection_remains_inside_untrusted_json_data() {
     assert!(data.get("role").is_none());
     assert_eq!(data.as_object().unwrap().len(), 1);
 }
+
+fn card_frame(seq: u64) -> RecordedFrame {
+    RecordedFrame {
+        seq,
+        ocr_boxes: vec![
+            OcrBox {
+                text: "Card 4111 1111 1111 1111".into(),
+                rect: Rect { x: 0, y: 0, width: 3, height: 1 },
+            },
+            OcrBox {
+                text: "Email jo@example.org".into(),
+                rect: Rect { x: 0, y: 1, width: 3, height: 1 },
+            },
+        ],
+        ..sized_frame(4, 4)
+    }
+}
+
+#[test]
+fn masking_level_is_applied_afterwards_and_can_change() {
+    let mut session = RecordingSession::with_level(MaskLevel::Off);
+    session
+        .record(card_frame(1), &[], &TextDetector::with_level(MaskLevel::Off).unwrap())
+        .unwrap();
+    let masks = |s: &RecordingSession| s.frames()[0].text().masks.len();
+    assert_eq!(masks(&session), 0, "off hides nothing");
+    session.set_level(MaskLevel::Low, &TextDetector::with_level(MaskLevel::Low).unwrap());
+    let low = masks(&session);
+    assert!(low >= 1, "low hides the card number");
+    session.set_level(MaskLevel::Standard, &TextDetector::with_level(MaskLevel::Standard).unwrap());
+    assert!(masks(&session) > low, "standard also hides the email");
+    session.set_level(MaskLevel::Off, &TextDetector::with_level(MaskLevel::Off).unwrap());
+    assert_eq!(masks(&session), 0, "turning it off restores the pixels");
+}
+
+#[test]
+fn password_fields_stay_hidden_when_masking_is_off() {
+    let mut session = RecordingSession::with_level(MaskLevel::Off);
+    let region = MaskRegion { rect: rect(), reason: MaskReason::SecureField };
+    session
+        .record(card_frame(1), &[region], &TextDetector::with_level(MaskLevel::Off).unwrap())
+        .unwrap();
+    assert_eq!(session.frames()[0].text().masks.len(), 1);
+    session.remove_frame(1);
+    assert!(session.frames().is_empty());
+}

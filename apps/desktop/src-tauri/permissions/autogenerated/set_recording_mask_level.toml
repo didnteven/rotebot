@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-recording-mask-level"
+description = "Enables the set_recording_mask_level command without any pre-configured scope."
+commands.allow = ["set_recording_mask_level"]
+
+[[permission]]
+identifier = "deny-set-recording-mask-level"
+description = "Denies the set_recording_mask_level command without any pre-configured scope."
+commands.deny = ["set_recording_mask_level"]

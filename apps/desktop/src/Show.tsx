@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus } from "./backend/types";
+import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
 import { Notice, useAction, useScreenFocus } from "./ui";
 import { CreateFlow } from "./CreateFlow";
 import type { ComponentProps } from "react";
@@ -145,6 +145,12 @@ export function RecordingBar({
   );
 }
 
+const maskLevels: {id: MaskLevel; name: string; help: string}[] = [
+  {id:"off", name:"Off", help:"Nothing is hidden except password fields. Check every image yourself before sending."},
+  {id:"low", name:"Low", help:"Hides clear secrets only: card numbers, keys and tokens, and values next to labels like password or PIN."},
+  {id:"standard", name:"Standard", help:"Also hides emails, bank and tax numbers, phone numbers and long random strings."},
+  {id:"strict", name:"Strict", help:"Hides everything in Standard plus any long number, and emails or phone numbers inside web addresses. May hide harmless content."},
+];
 export function ShowStatus({ state }: { state: ShowState | null }) {
   const [now, setNow] = useState(Date.now());
   const recording = state?.kind === "recording";
@@ -181,13 +187,16 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   backend: Backend; state: ShowState; update: (s: ShowState) => void; close: () => void; createFlow: CreateOptions;
 }) {
   const [step,setStep]=useState(0);
+  const [maskLevel,setMaskLevel]=useState<MaskLevel>(()=>{ try { const v=localStorage.getItem("macroscope.maskLevel"); return v==="low"||v==="standard"||v==="strict"?v:"off"; } catch { return "off"; } });
+  useEffect(()=>{ try { localStorage.setItem("macroscope.maskLevel",maskLevel); } catch { /* remembered only when storage allows */ } },[maskLevel]);
+  const maskIndex=maskLevels.findIndex(l=>l.id===maskLevel);
   const heading=useScreenFocus<HTMLHeadingElement>(step);
   const [captureStatus,setCaptureStatus]=useState<RecordingStatus|null>(null);
   const [session,setSession]=useState<string|null>(null);
   const sessionRef=useRef<string|null>(null);
   const mounted=useRef(true);
   const [pollError,setPollError]=useState<string|null>(null);
-  const [kept,setKept]=useState<RecordingFrames>({frames:[],dropped:[],stopped:false});
+  const [kept,setKept]=useState<RecordingFrames>({frames:[],dropped:[],stopped:false,maskLevel:"off"});
   const [preview,setPreview]=useState<RecordingPreview|null>(null);
   const [understood,setUnderstood]=useState<TaskDraftV2|null>(null);
   const [answers,setAnswers]=useState<Record<string,string>>({});
@@ -244,8 +253,8 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     {busy && <p role="status">{step===2?"Analyzing your recording…":"Working…"}</p>}
     {step===0 && <>
       <p>Choose one window and show Macroscope a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
-      <p>Passwords, card numbers and private windows are excluded. If a frame can't be checked safely, it is left out.</p>
-      <p className="muted">Privacy checks can miss sensitive details. Always check every image before sending.</p>
+      <p>Password fields and private windows are always excluded. After you stop, you can choose how much other sensitive text to hide before anything is sent. That's off until you turn it on.</p>
+      <p className="muted">Hiding text can miss things. Always check every image before sending.</p>
       {captureStatus===null ? <p role="status">Checking screen recording…</p> : captureStatus.captureAvailable ?
         <button className="primary" disabled={busy} onClick={()=>void act(()=>start("window"))}>Choose a window to record</button> : <>
           <p className="notice notice-info">Screen recording isn't set up on this Mac yet</p>
@@ -275,12 +284,22 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       {captureStatus?.pickerState==="recording" && captureStatus.appName && <p>Recording {captureStatus.appName}</p>}
       {kept.stopped && <p role="status">Recording stopped. {captureStatus?.reason==="private_or_unknown_window" ? "This browser window’s public status could not be verified." : captureStatus?.reason==="excluded" ? "This app is excluded for privacy." : captureStatus?.reason==="picker_cancelled" ? "Window selection was cancelled." : captureStatus?.reason==="policy_changed" ? "Your privacy settings changed." : captureStatus?.reason?.startsWith("uncertain_") ? `Frames were skipped because of: ${captureStatus.reason.slice(10)}.` : "Stop to check what was kept."}</p>}
       <button className="primary" disabled={busy} onClick={()=>void act(async()=>{
-        await backend.stopRecording(session!);const p=await backend.previewRecording(session!);setPreview(p);setStep(2);
+        await backend.stopRecording(session!);
+        if (maskLevel!=="off") await backend.setRecordingMaskLevel(session!,maskLevel);
+        const p=await backend.previewRecording(session!);setPreview(p);setStep(2);
       })}>Stop</button>
     </>}
     {step===2 && preview && <>
       <p>Nothing leaves your Mac until you press Send.</p>
       {preview.sample && <p className="notice notice-info">Sample recording · made-up information. Check the recipient below before sending.</p>}
+      <div className="mask-level">
+        <label htmlFor="mask-level">Hide sensitive text: <strong>{maskLevels[maskIndex].name}</strong></label>
+        <input id="mask-level" type="range" min={0} max={3} step={1} value={maskIndex} disabled={busy}
+          aria-valuetext={maskLevels[maskIndex].name}
+          onChange={e=>{ const level=maskLevels[Number(e.target.value)].id; setMaskLevel(level);
+            void act(async()=>{ await backend.setRecordingMaskLevel(session!,level); setPreview(await backend.previewRecording(session!)); }); }}/>
+        <p className="muted">{maskLevels[maskIndex].help}</p>
+      </div>
       <div className="recording-gallery" aria-label="Exact masked frames">
         {preview.frames.map(frame=><figure key={frame.seq}>
           <img src={`data:image/png;base64,${frame.pngBase64}`} width={frame.width} height={frame.height} alt={`Reviewed frame ${frame.seq}${frame.masks.length?", private content hidden in black":""}`}/>

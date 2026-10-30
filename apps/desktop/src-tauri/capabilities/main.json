@@ -31,6 +31,7 @@
     "allow-request-recording-permission",
     "allow-open-privacy-settings",
     "allow-remove-recording-frame",
+    "allow-set-recording-mask-level",
     "allow-confirm-normal-browser-window",
     "allow-start-recording",
     "allow-stop-recording",

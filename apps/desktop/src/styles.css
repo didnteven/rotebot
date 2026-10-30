@@ -537,3 +537,5 @@ ul, ol { padding-left: 24px; }
 .recording-flow pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; background: var(--info-surface); padding: 12px; }
 .recording-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
 .recording-choice input { width: 20px; height: 20px; flex-shrink: 0; }
+.mask-level { margin: 16px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.mask-level input[type="range"] { display: block; width: 100%; max-width: 360px; margin: 8px 0; }

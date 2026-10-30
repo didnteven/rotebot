@@ -39,6 +39,7 @@ fn main() {
         "request_recording_permission",
         "open_privacy_settings",
         "remove_recording_frame",
+        "set_recording_mask_level",
         "confirm_normal_browser_window",
         "start_recording",
         "stop_recording",

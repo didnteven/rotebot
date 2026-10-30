@@ -441,6 +441,7 @@ export interface Backend {
   requestRecordingPermission(): Promise<RecordingStatus>;
   confirmNormalBrowserWindow(): Promise<void>;
   removeRecordingFrame(sessionId: string, seq: number): Promise<RecordingFrames>;
+  setRecordingMaskLevel(sessionId: string, level: MaskLevel): Promise<RecordingFrames>;
   openPrivacySettings(pane: "screen_recording" | "accessibility"): Promise<void>;
   startRecording(source: "sample" | "window"): Promise<string>;
   stopRecording(sessionId: string): Promise<RecordingFrames>;
@@ -596,8 +597,9 @@ export interface RecordingFrame {
   seq: number; pngBase64: string; width: number; height: number; unverified?: boolean;
   masks: {rect: RecordingRect; reason: "secure_field" | "manual" | "sensitive_text"}[];
 }
+export type MaskLevel = "off" | "low" | "standard" | "strict";
 export interface RecordingFrames {
-  frames: RecordingFrame[]; dropped: {seq: number; reason: string}[]; stopped: boolean;
+  frames: RecordingFrame[]; dropped: {seq: number; reason: string}[]; stopped: boolean; maskLevel: MaskLevel;
 }
 export interface RecordingPreview {
   sessionId: string; frames: RecordingFrame[]; dropped: RecordingFrames["dropped"];

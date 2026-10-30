@@ -341,7 +341,7 @@ fn labelled_screen_corpus_old_vs_new() {
     let mut check = |rows: &[&[&str]], sensitive: bool| {
         let f = screen(rows);
         before.add(sensitive, old_detects(&f, &old));
-        let kept = mask(f, &[], &new, &mut MaskHistory::default()).unwrap();
+        let kept = mask(f, &[], &new, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
         let actual = !kept.text().masks.is_empty();
         after.add(sensitive, actual);
         if sensitive != actual {
@@ -464,7 +464,7 @@ fn spans_preserve_labels_and_neighbours_and_burn_every_sensitive_pixel() {
         let f = screen(&[&[&text]]);
         let b = &f.ocr_boxes[0];
         let expected = sub_rect(b, prefix.len()..prefix.len() + secret.len());
-        let masked = mask(f, &[], &detector, &mut MaskHistory::default()).unwrap();
+        let masked = mask(f, &[], &detector, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
         let masks = &masked.text().masks;
         assert!(covered(masks, expected));
         assert_eq!(masks.len(), 1, "{text}");
@@ -499,7 +499,7 @@ fn spans_preserve_labels_and_neighbours_and_burn_every_sensitive_pixel() {
         let f = screen(&rows);
         let label = f.ocr_boxes[0].rect;
         let value = f.ocr_boxes[1].rect;
-        let kept = mask(f, &[], &detector, &mut MaskHistory::default()).unwrap();
+        let kept = mask(f, &[], &detector, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
         assert!(covered(&kept.text().masks, value));
         assert!(!kept.text().masks.iter().any(|m| m.rect.intersects(label)));
         assert_eq!(kept.text().ocr_boxes[0].text, "Account number");
@@ -512,7 +512,7 @@ fn recent_masks_survive_split_merge_and_ocr_damage_and_expire() {
     let mut history = MaskHistory::default();
     let mut first = screen(&[&["Card", "4111 1111", "1111 1111"]]);
     first.mono_ms = 1000;
-    let first = mask(first, &[], &d, &mut history).unwrap();
+    let first = mask(first, &[], &d, &mut history, MaskLevel::Standard).unwrap();
     assert_eq!(first.text().masks.len(), 2);
     for (seq, ms, text, should_mask) in [
         (2, 2000, "Card 4111 1111 1111 1112", true),
@@ -524,7 +524,7 @@ fn recent_masks_survive_split_merge_and_ocr_damage_and_expire() {
         next.seq = seq;
         next.mono_ms = ms;
         next.uncertain = true;
-        let kept = mask(next, &[], &d, &mut history).unwrap();
+        let kept = mask(next, &[], &d, &mut history, MaskLevel::Standard).unwrap();
         assert_eq!(!kept.text().masks.is_empty(), should_mask, "frame {seq}");
         assert!(kept.unverified());
         if should_mask {
@@ -552,7 +552,7 @@ fn history_is_bounded_to_nearby_similar_content_in_this_session_and_geometry() {
         let mut history = MaskHistory::default();
         let mut first = screen(&[&["4111 1111 1111 1111"]]);
         first.mono_ms = 1000;
-        mask(first, &[], &d, &mut history).unwrap();
+        mask(first, &[], &d, &mut history, MaskLevel::Standard).unwrap();
         let mut next = screen(&[&["4111 1111 1111 1112"]]);
         next.seq = 2;
         next.mono_ms = 2000;
@@ -569,7 +569,7 @@ fn history_is_bounded_to_nearby_similar_content_in_this_session_and_geometry() {
             "session" => history = MaskHistory::default(),
             _ => unreachable!(),
         }
-        let kept = mask(next, &[], &d, &mut history).unwrap();
+        let kept = mask(next, &[], &d, &mut history, MaskLevel::Standard).unwrap();
         assert!(kept.text().masks.is_empty(), "{change}");
     }
 }
@@ -580,7 +580,7 @@ fn jittered_geometry_and_confusion_do_not_uncover_old_sensitive_regions() {
     let mut history = MaskHistory::default();
     let mut first = screen(&[&["4111 1111 1111 1111"]]);
     first.mono_ms = 1000;
-    let prior = mask(first, &[], &d, &mut history)
+    let prior = mask(first, &[], &d, &mut history, MaskLevel::Standard)
         .unwrap()
         .text()
         .masks
@@ -591,7 +591,7 @@ fn jittered_geometry_and_confusion_do_not_uncover_old_sensitive_regions() {
     next.seq = 2;
     next.mono_ms = 2000;
     next.uncertain = true;
-    let kept = mask(next, &[], &d, &mut history).unwrap();
+    let kept = mask(next, &[], &d, &mut history, MaskLevel::Standard).unwrap();
     assert!(kept.unverified());
     for m in prior {
         assert!(covered(&kept.text().masks, m.rect));
@@ -611,7 +611,7 @@ fn invalid_adapter_spans_and_errors_never_publish_a_frame_or_history() {
     }
     let mut history = MaskHistory::default();
     assert!(matches!(
-        mask(screen(&[&["é"]]), &[], &Invalid, &mut history),
+        mask(screen(&[&["é"]]), &[], &Invalid, &mut history, MaskLevel::Standard),
         Err(DropReason::DetectorError)
     ));
 }
@@ -634,7 +634,7 @@ fn multiple_labelled_fields_leave_each_label_visible() {
             .filter(|b| b.text.starts_with("PIN") || b.text.starts_with("CVV"))
             .map(|b| (b.text.clone(), b.rect))
             .collect();
-        let kept = mask(f, &[], &d, &mut MaskHistory::default()).unwrap();
+        let kept = mask(f, &[], &d, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
         for (text, rect) in expected {
             assert!(
                 !kept.text().masks.iter().any(|m| m.rect.intersects(rect)),

@@ -677,6 +677,10 @@ fn remove_recording_frame(core: State<'_, Core>, session_id: String, seq: u64) -
     Ok(core.0.remove_recording_frame(&session_id, seq)?)
 }
 #[tauri::command]
+fn set_recording_mask_level(core: State<'_, Core>, session_id: String, level: MaskLevel) -> Cmd<RecordingFrames> {
+    Ok(core.0.set_recording_mask_level(&session_id, level)?)
+}
+#[tauri::command]
 fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
     Ok(core.0.start_recording(source)?)
 }
@@ -1169,6 +1173,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         request_recording_permission,
         open_privacy_settings,
         remove_recording_frame,
+        set_recording_mask_level,
         confirm_normal_browser_window,
         start_recording,
         stop_recording,
