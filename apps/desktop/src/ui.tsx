@@ -85,6 +85,12 @@ export function ModelCostLines({ cost }: { cost: ModelCostSummary }) {
     {cost.runCount > 1 && <li>All {cost.runCount} runs: {dollars(cost.totalMicros)}{cost.unknownCalls ? ` + ${cost.unknownCalls} unpriced` : ""}</li>}
   </ul>;
 }
+/** 4110073 -> "4.1 MB"; small sizes stay in KB or bytes. */
+export function formatBytes(bytes: number) {
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(bytes >= 10_000_000 ? 0 : 1)} MB`;
+  if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`;
+  return `${bytes} bytes`;
+}
 export const rowCount = (count: number) => `${count} ${count === 1 ? "row" : "rows"}`;
 
 export function friendlyFailure(message: string, kind?: string): string {

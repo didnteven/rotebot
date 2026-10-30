@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
-import { Notice, useAction, useScreenFocus } from "./ui";
+import { formatBytes, Notice, useAction, useScreenFocus } from "./ui";
 import { CreateFlow } from "./CreateFlow";
 import type { ComponentProps } from "react";
 
@@ -321,7 +321,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       {preview.dropped.length>0 && <><p>{preview.dropped.length} frame(s) left out for privacy.</p>
         <p className="muted">Why: {dropSummary(preview.dropped)}</p></>}
       <h3>The text that goes with the images</h3><pre tabIndex={0} aria-label="Cleared recording text">{preview.clearedTextJson}</pre>
-      <dl><dt>Recipient</dt><dd>{preview.recipient}</dd><dt>Model</dt><dd>{preview.model}</dd><dt>Size</dt><dd>{preview.totalBytes.toLocaleString()} bytes before delivery packaging</dd><dt>Estimated cost</dt><dd>${(preview.cost.estimated_micros/1_000_000).toFixed(4)}</dd></dl>
+      <dl><dt>Recipient</dt><dd>{preview.recipient}</dd><dt>Model</dt><dd>{preview.model}</dd><dt>Size</dt><dd>{formatBytes(preview.totalBytes)} before delivery packaging</dd><dt>Estimated cost</dt><dd>${(preview.cost.estimated_micros/1_000_000).toFixed(4)}</dd></dl>
       <p>{preview.cost.caveat}</p>
       <details><summary>Instructions and response format</summary><h3>System instructions</h3><pre tabIndex={0}>{preview.systemInstructions}</pre><h3>Response schema</h3><pre tabIndex={0}>{preview.schemaJson}</pre><h3>Exact text fields</h3><pre tabIndex={0}>{preview.payloadText}</pre></details>
       <p>Pressing Send gives permission for this exact recording and model only.</p>
