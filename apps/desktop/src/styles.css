@@ -545,3 +545,6 @@ ul, ol { padding-left: 24px; }
 /* An opened connection takes the full row so its setup form has room, inside its own card. */
 .connector-grid .card-open { grid-column: 1 / -1; }
 .connection-detail { margin: 16px 0; padding-top: 16px; border-top: 1px solid var(--border); }
+.file-import { display: inline-block; min-height: 44px; padding: 10px 16px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.file-import input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-import:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }

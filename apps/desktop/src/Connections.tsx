@@ -6,6 +6,7 @@ import type {
   ConnectorTool,
 } from "./backend/types";
 import { Field, isHttpsUrl, Notice, useAction } from "./ui";
+import { googleConnectorIds, parseGoogleClientFile } from "./clientFile";
 
 const stateName = (c: ConnectorInfo) =>
   c.state.kind === "connected"
@@ -157,6 +158,19 @@ function ConnectionDetail({
     attempt = useRef(0);
   const { act, busy, error, setError } = useAction();
   const heading = useRef<HTMLHeadingElement>(null);
+  const google = googleConnectorIds.includes(connector.id);
+  const [shareGoogle, setShareGoogle] = useState(true);
+  // One Google client works for Gmail, Calendar and Drive; each API still has to be switched on in Google Cloud.
+  async function saveClient(id: string, secret: string | null) {
+    await backend.setClientCredentials(connector.id, id, secret);
+    if (google && shareGoogle) {
+      for (const other of googleConnectorIds.filter((g) => g !== connector.id)) {
+        try { await backend.setClientCredentials(other, id, secret); } catch { /* that service may be unavailable */ }
+      }
+    }
+    setNotice(google && shareGoogle ? "Client credentials saved for Gmail, Calendar and Drive" : "Client credentials saved");
+    await changed();
+  }
   // Choosing a card opens its details inside the card: keep them in view.
   useEffect(() => {
     heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
@@ -265,17 +279,40 @@ function ConnectionDetail({
             if (clientId.current) clientId.current.value = "";
             if (clientSecret.current) clientSecret.current.value = "";
             void act(async () => {
-              await backend.setClientCredentials(
-                connector.id,
-                id,
-                secret || null,
-              );
-              setNotice("Client credentials saved");
-              await changed();
+              await saveClient(id, secret || null);
             });
           }}
         >
-          {connector.clientSetup && <p>{connector.clientSetup}</p>}
+          {google ? (
+            <>
+              <h4>Set up Google sign-in (once)</h4>
+              <ol>
+                <li>In <strong>console.cloud.google.com</strong>, create a project.</li>
+                <li>APIs &amp; Services → Library: turn on the {connector.name.replace("Google ", "")} API and its MCP API.</li>
+                <li>OAuth consent screen: choose External, add your own address under Test users, and add the scopes this service lists.</li>
+                <li>Credentials → Create credentials → OAuth client ID → <strong>Desktop app</strong>.</li>
+                <li>Download the JSON file and import it below, or copy the client ID and secret into the fields.</li>
+              </ol>
+              <p className="muted">This stays on your Mac. Until you publish the app in Google Cloud, Google asks you to sign in again about every 7 days.</p>
+              <div>
+                <label className="file-import">Import client file
+                  <input type="file" accept=".json,application/json" disabled={busy} onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    void act(async () => {
+                      const parsed = parseGoogleClientFile(await file.text());
+                      if (!parsed) throw new Error("That isn't a Google OAuth client file. Download the JSON from Credentials in Google Cloud.");
+                      await saveClient(parsed.clientId, parsed.clientSecret);
+                    });
+                  }} />
+                </label>
+              </div>
+              <label className="recording-choice"><input type="checkbox" checked={shareGoogle} onChange={(e) => setShareGoogle(e.target.checked)} />Use the same client for Gmail, Calendar and Drive</label>
+            </>
+          ) : (
+            connector.clientSetup && <p>{connector.clientSetup}</p>
+          )}
           {connector.redirectUri && (
             <div>
               <Field label="Redirect URI">

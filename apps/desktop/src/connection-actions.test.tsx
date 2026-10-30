@@ -108,3 +108,37 @@ it("explains why Gmail cannot connect yet and moves focus to its details", async
   expect(screen.getByText("Connect turns on after you save a client ID above.")).toBeVisible();
   expect(screen.getAllByRole("button", { name: "Connect" })[0]).toBeDisabled();
 });
+
+it("imports Google's client file and saves it for Gmail, Calendar and Drive", async () => {
+  const backend = new MockBackend();
+  const connectors = await backend.listConnectors();
+  const save = vi.spyOn(backend, "setClientCredentials");
+  const user = userEvent.setup();
+  const Harness = () => {
+    const [selected, setSelected] = useState<string | null>(null);
+    return <Connections backend={backend} connectors={connectors} selected={selected} select={setSelected} changed={async () => {}} />;
+  };
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Connect Gmail" }));
+  const file = new File([JSON.stringify({ installed: { client_id: "9-x.apps.googleusercontent.com", client_secret: "sec" } })], "client.json", { type: "application/json" });
+  await user.upload(screen.getByLabelText("Import client file"), file);
+  await screen.findByText("Client credentials saved for Gmail, Calendar and Drive");
+  expect(save.mock.calls.map((c) => c[0]).sort()).toEqual(["gmail", "google-calendar", "google-drive"]);
+  expect(save).toHaveBeenCalledWith("gmail", "9-x.apps.googleusercontent.com", "sec");
+});
+
+it("refuses a file that is not a Google OAuth client", async () => {
+  const backend = new MockBackend();
+  const connectors = await backend.listConnectors();
+  const save = vi.spyOn(backend, "setClientCredentials");
+  const user = userEvent.setup();
+  const Harness = () => {
+    const [selected, setSelected] = useState<string | null>(null);
+    return <Connections backend={backend} connectors={connectors} selected={selected} select={setSelected} changed={async () => {}} />;
+  };
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Connect Gmail" }));
+  await user.upload(screen.getByLabelText("Import client file"), new File(["{}"], "other.json", { type: "application/json" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("isn't a Google OAuth client file");
+  expect(save).not.toHaveBeenCalled();
+});
