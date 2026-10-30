@@ -24,4 +24,5 @@ it("ignores steps that are not connections and flags unknown services", () => {
   );
   expect(found.connectors).toEqual([]);
   expect(found.other).toBe(true);
+  expect(found.otherNames).toEqual(["Airtable"]);
 });

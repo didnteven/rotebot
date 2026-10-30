@@ -76,6 +76,7 @@
     "allow-stop-show",
     "allow-list-connectors",
     "allow-set-connector-url",
+    "allow-find-connectors",
     "allow-set-client-credentials",
     "allow-begin-connect",
     "allow-complete-connect",

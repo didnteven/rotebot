@@ -135,6 +135,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["commitRun", ["r", "hash"], { runId: "r", planHash: "hash", actionsReviewed: false }],
     ["commitRun", ["r", "hash", true], { runId: "r", planHash: "hash", actionsReviewed: true }],
     ["selectTaskConnections", ["d", ["gmail"]], { draftId:"d", connectorIds:["gmail"] }],
+    ["findConnectors", ["airtable"], { query: "airtable" }],
     ["discardRun", ["r"], { runId: "r" }],
     ["revealOutput", ["r"], { receiptRunId: "r" }],
     ["listActivity", [], undefined],

@@ -399,6 +399,17 @@ pub struct ModelCostSummary {
     pub unknown_calls: u32,
 }
 
+/// An unverified suggestion from the public MCP registry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorCandidate {
+    pub name: String,
+    pub description: String,
+    pub url: String,
+    /// Domain the registry name belongs to, for example "airtable.com".
+    pub publisher: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedRun {

@@ -84,6 +84,7 @@ fn main() {
         "stop_show",
         "list_connectors",
         "set_connector_url",
+        "find_connectors",
         "set_client_credentials",
         "begin_connect",
         "complete_connect",

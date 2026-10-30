@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Backend, ConnectorInfo, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
+import type { Backend, ConnectorCandidate, ConnectorInfo, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
 import { formatBytes, Notice, useAction, useScreenFocus } from "./ui";
 import { CreateFlow } from "./CreateFlow";
 import type { ComponentProps } from "react";
@@ -185,13 +185,13 @@ export function ShowStatus({ state }: { state: ShowState | null }) {
 /** Connectors the plan's connection steps read from, matched by service name in the step. */
 export function neededConnectors(steps: TaskDraftV2["steps"], connectors: ConnectorInfo[]) {
   const found = new Map<string, ConnectorInfo>();
-  let other = false;
+  const others = new Set<string>();
   for (const step of steps.filter(s => s.capability === "connection")) {
     const text = `${step.app} ${step.action}`.toLowerCase();
     const hit = connectors.find(c => c.id !== "custom" && text.includes(c.name.split(" (")[0].toLowerCase()));
-    if (hit) found.set(hit.id, hit); else other = true;
+    if (hit) found.set(hit.id, hit); else others.add(step.app.trim());
   }
-  return { connectors: [...found.values()], other };
+  return { connectors: [...found.values()], other: others.size > 0, otherNames: [...others] };
 }
 
 type CreateOptions = Omit<ComponentProps<typeof CreateFlow>, "backend" | "initialInput" | "initialGoal" | "initialDraft">;
@@ -213,6 +213,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   const [kept,setKept]=useState<RecordingFrames>({frames:[],dropped:[],stopped:false,maskLevel:"off"});
   const [preview,setPreview]=useState<RecordingPreview|null>(null);
   const [understood,setUnderstood]=useState<TaskDraftV2|null>(null);
+  const [found,setFound]=useState<Record<string,ConnectorCandidate[]>>({});
   const [answers,setAnswers]=useState<Record<string,string>>({});
   const [draft,setDraft]=useState<TaskDraft|null>(null);
   const [started,setStarted]=useState(0),[elapsed,setElapsed]=useState(0);
@@ -356,7 +357,9 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
         return <section aria-label="Connections this plan needs"><h3>Connections this plan needs</h3>
           <p>The tool reads this through a read-only connection, so it doesn’t need to open or click anything. You approve what it can read before it is built.</p>
           <ul>{need.connectors.map(c=><li key={c.id}>{c.name}: {c.state.kind==="connected"?"connected":"not connected yet"}{c.state.kind!=="connected" && <> <button disabled={busy} onClick={()=>createFlow.connect(c.id)}>Connect {c.name}</button></>}</li>)}
-          {need.other && <li>Another service: add it as a custom connection on the Connections page.</li>}</ul>
+          {need.otherNames.map(n=><li key={n}>{n}: no built-in connection. <button disabled={busy} onClick={()=>void act(async()=>{ const r=await backend.findConnectors(n); setFound(f=>({...f,[n]:r})); })}>Find a connector for {n}</button>
+            {found[n] && (found[n].length===0 ? <p className="muted">No connector found in the public registry. You can add one by its address on the Connections page.</p> : <><p className="muted">From the public MCP registry. These are not verified by Macroscope: check the publisher before you sign in.</p>
+              <ul>{found[n].map(c=><li key={c.url}><strong>{c.name}</strong> · published by {c.publisher}<br/>{c.description}<br/><code>{c.url}</code> <button disabled={busy} onClick={()=>void act(async()=>{ await backend.setConnectorUrl("custom",c.url); createFlow.connect("custom"); })}>Use this address</button></li>)}</ul></>)}</li>)}</ul>
           {need.connectors.some(c=>c.state.kind!=="connected") && <p className="muted">Connect it, then come back here. Your recording stays on this screen.</p>}
         </section>; })()}
       <h3>This changes each time</h3>{understood.variables.length?<ul>{understood.variables.map(v=><li key={v.name}>{v.name}: {v.description}</li>)}</ul>:<p>No changing details were found.</p>}

@@ -581,6 +581,11 @@ fn list_connectors(conns: State<'_, Conns>) -> Vec<ConnectorInfo> {
 }
 
 #[tauri::command]
+async fn find_connectors(core: State<'_, Core>, query: String) -> Cmd<Vec<ConnectorCandidate>> {
+    Ok(core.0.find_connectors(&query).await?)
+}
+
+#[tauri::command]
 async fn set_connector_url(
     conns: State<'_, Conns>,
     connector_id: String,
@@ -1240,6 +1245,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         stop_show,
         list_connectors,
         set_connector_url,
+        find_connectors,
         set_client_credentials,
         begin_connect,
         complete_connect,

@@ -252,6 +252,14 @@ export interface ToolSummary {
   state: "enabled" | "paused";
 }
 
+/** An unverified suggestion from the public MCP registry. */
+export interface ConnectorCandidate {
+  name: string;
+  description: string;
+  url: string;
+  publisher: string;
+}
+
 /** Micro-dollars of model calls with a known price; unknown-price calls are counted apart. */
 export interface ModelCostSummary {
   testMicros: number | null;
@@ -577,6 +585,7 @@ export interface Backend {
   // Connections
   listConnectors(): Promise<ConnectorInfo[]>;
   setConnectorUrl(connectorId: string, url: string): Promise<ConnectorInfo>;
+  findConnectors(query: string): Promise<ConnectorCandidate[]>;
   setClientCredentials(
     connectorId: string,
     clientId: string,

@@ -14,6 +14,7 @@ pub mod drafts;
 pub mod dto;
 pub mod eval;
 #[cfg(feature = "generated-runtime")]
+mod connector_search;
 mod model_step;
 mod privacy;
 pub mod recording;
