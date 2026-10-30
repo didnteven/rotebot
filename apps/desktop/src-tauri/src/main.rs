@@ -677,7 +677,7 @@ fn remove_recording_frame(core: State<'_, Core>, session_id: String, seq: u64) -
     Ok(core.0.remove_recording_frame(&session_id, seq)?)
 }
 #[tauri::command]
-fn set_recording_mask_level(core: State<'_, Core>, session_id: String, level: MaskLevel) -> Cmd<RecordingFrames> {
+async fn set_recording_mask_level(core: State<'_, Core>, session_id: String, level: MaskLevel) -> Cmd<()> {
     Ok(core.0.set_recording_mask_level(&session_id, level)?)
 }
 #[tauri::command]

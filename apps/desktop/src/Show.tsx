@@ -195,6 +195,8 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   const [session,setSession]=useState<string|null>(null);
   const sessionRef=useRef<string|null>(null);
   const mounted=useRef(true);
+  const maskTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(()=>()=>clearTimeout(maskTimer.current),[]);
   const [pollError,setPollError]=useState<string|null>(null);
   const [kept,setKept]=useState<RecordingFrames>({frames:[],dropped:[],stopped:false,maskLevel:"off"});
   const [preview,setPreview]=useState<RecordingPreview|null>(null);
@@ -294,10 +296,12 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       {preview.sample && <p className="notice notice-info">Sample recording · made-up information. Check the recipient below before sending.</p>}
       <div className="mask-level">
         <label htmlFor="mask-level">Hide sensitive text: <strong>{maskLevels[maskIndex].name}</strong></label>
-        <input id="mask-level" type="range" min={0} max={3} step={1} value={maskIndex} disabled={busy}
+        <input id="mask-level" type="range" min={0} max={3} step={1} value={maskIndex}
           aria-valuetext={maskLevels[maskIndex].name}
           onChange={e=>{ const level=maskLevels[Number(e.target.value)].id; setMaskLevel(level);
-            void act(async()=>{ await backend.setRecordingMaskLevel(session!,level); setPreview(await backend.previewRecording(session!)); }); }}/>
+            // Masking every frame again is slow, so wait until the slider rests.
+            clearTimeout(maskTimer.current);
+            maskTimer.current=setTimeout(()=>void act(async()=>{ await backend.setRecordingMaskLevel(session!,level); setPreview(await backend.previewRecording(session!)); }),300); }}/>
         <p className="muted">{maskLevels[maskIndex].help}</p>
       </div>
       <div className="recording-gallery" aria-label="Exact masked frames">

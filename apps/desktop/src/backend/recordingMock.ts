@@ -48,7 +48,7 @@ export class RecordingMock {
   }
   async listRecordingFrames(id:string) { return copy(this.get(id).frames); }
   async removeRecordingFrame(id:string, seq:number) { const s=this.get(id); s.frames.frames=s.frames.frames.filter(f=>f.seq!==seq); delete s.preview; return copy(s.frames); }
-  async setRecordingMaskLevel(id:string, level:"off"|"low"|"standard"|"strict") { const s=this.get(id); s.frames.maskLevel=level; delete s.preview; return copy(s.frames); }
+  async setRecordingMaskLevel(id:string, level:"off"|"low"|"standard"|"strict") { const s=this.get(id); s.frames.maskLevel=level; delete s.preview; }
   async stopRecording(id:string) { const s=this.get(id); s.frames.stopped=true; return copy(s.frames); }
   async previewRecording(id:string) {
     const s=this.get(id); if (!s.frames.stopped) throw new Error("Stop the recording before reviewing it.");

@@ -407,7 +407,7 @@ impl AppCore {
         &self,
         session_id: &str,
         level: MaskLevel,
-    ) -> CoreResult<RecordingFrames> {
+    ) -> CoreResult<()> {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         if !s.frames.stopped {
@@ -423,8 +423,8 @@ impl AppCore {
         let detector = TextDetector::with_level(level).map_err(err)?;
         capture.set_level(level, &detector);
         s.review = None;
-        s.frames = frames(capture, true);
-        Ok(s.frames.clone())
+        // The preview that follows encodes the frames; doing it here too doubled the wait.
+        Ok(())
     }
     pub fn discard_recording(&self, session_id: &str) -> CoreResult<()> {
         self.stop_native_capture(Some(session_id), "discarded");
