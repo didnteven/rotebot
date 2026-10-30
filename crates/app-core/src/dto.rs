@@ -626,7 +626,37 @@ pub struct ConnectorInfo {
     pub has_client_credentials: bool,
     pub client_setup: Option<String>,
     pub redirect_uri: Option<String>,
+    /// Set for email connectors that sign in with an address and an app password.
+    #[serde(default)]
+    pub mail: Option<MailInfo>,
 }
+
+/// Server names a person types for a custom mail provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailServerInput {
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    #[serde(default)]
+    pub smtp_starttls: bool,
+}
+
+/// Mail server defaults and, once connected, the saved address. Never the password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailInfo {
+    pub help: String,
+    pub custom_server: bool,
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_starttls: bool,
+    pub email: Option<String>,
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

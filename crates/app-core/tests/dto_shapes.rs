@@ -255,6 +255,7 @@ fn connector_info_matches_the_contract() {
         registration: "preregistered".into(),
         verification: "verified-live".into(),
         docs_url: None,
+        mail: None,
         state: ConnectionState::Connected {
             since_ms: 5,
             tool_count: 12,

@@ -3,6 +3,120 @@
   "version": 1,
   "connectors": [
     {
+      "id": "mail-gmail",
+      "name": "Gmail (app password)",
+      "category": "communication",
+      "mcp_url": "https://imap.gmail.com",
+      "transport": "imap",
+      "auth": {
+        "kind": "app_password",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://support.google.com/accounts/answer/185833",
+        "extra_authorize_params": {},
+        "send_resource_indicator": false
+      },
+      "verification": "verified-docs",
+      "source": "Provider documentation, 2026-10-30",
+      "notes": "Email over IMAP and SMTP with an app password. Reads run in tools; every change is a planned action the person reviews first.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [],
+        "window_titles": [],
+        "keywords": [
+          "email",
+          "emails",
+          "e-mail",
+          "inbox"
+        ]
+      },
+      "mail": {
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 465,
+        "smtp_starttls": false,
+        "app_password_help": "Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords and paste the 16 letters here.",
+        "custom_server": false
+      }
+    },
+    {
+      "id": "mail-yahoo",
+      "name": "Yahoo Mail",
+      "category": "communication",
+      "mcp_url": "https://imap.mail.yahoo.com",
+      "transport": "imap",
+      "auth": {
+        "kind": "app_password",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://help.yahoo.com/kb/SLN15241.html",
+        "extra_authorize_params": {},
+        "send_resource_indicator": false
+      },
+      "verification": "verified-docs",
+      "source": "Provider documentation, 2026-10-30",
+      "notes": "Email over IMAP and SMTP with an app password. Reads run in tools; every change is a planned action the person reviews first.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "mail.yahoo.com"
+        ],
+        "window_titles": [],
+        "keywords": [
+          "yahoo mail",
+          "yahoo"
+        ]
+      },
+      "mail": {
+        "imap_host": "imap.mail.yahoo.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.mail.yahoo.com",
+        "smtp_port": 465,
+        "smtp_starttls": false,
+        "app_password_help": "In Yahoo Account Security, turn on two-step verification, choose Generate app password, and paste it here. Use your full Yahoo address.",
+        "custom_server": false
+      }
+    },
+    {
+      "id": "mail-icloud",
+      "name": "iCloud Mail",
+      "category": "communication",
+      "mcp_url": "https://imap.mail.me.com",
+      "transport": "imap",
+      "auth": {
+        "kind": "app_password",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://support.apple.com/102654",
+        "extra_authorize_params": {},
+        "send_resource_indicator": false
+      },
+      "verification": "verified-docs",
+      "source": "Provider documentation, 2026-10-30",
+      "notes": "Email over IMAP and SMTP with an app password. Reads run in tools; every change is a planned action the person reviews first.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [
+          "www.icloud.com"
+        ],
+        "window_titles": [],
+        "keywords": [
+          "icloud mail",
+          "icloud"
+        ]
+      },
+      "mail": {
+        "imap_host": "imap.mail.me.com",
+        "imap_port": 993,
+        "smtp_host": "smtp.mail.me.com",
+        "smtp_port": 587,
+        "smtp_starttls": true,
+        "app_password_help": "At account.apple.com, open Sign-In and Security → App-Specific Passwords, create one, and paste it here. Use your full iCloud address.",
+        "custom_server": false
+      }
+    },
+    {
       "id": "gmail",
       "name": "Gmail",
       "category": "communication",
@@ -44,11 +158,7 @@
           }
         ],
         "keywords": [
-          "gmail",
-          "email",
-          "emails",
-          "e-mail",
-          "inbox"
+          "gmail"
         ]
       }
     },
@@ -312,6 +422,39 @@
         "keywords": [
           "jira"
         ]
+      }
+    },
+    {
+      "id": "mail-custom",
+      "name": "Other email (IMAP)",
+      "category": "communication",
+      "mcp_url": "",
+      "transport": "imap",
+      "auth": {
+        "kind": "app_password",
+        "registration": "dynamic",
+        "scopes": [],
+        "docs_url": "https://support.google.com/mail/answer/7126229",
+        "extra_authorize_params": {},
+        "send_resource_indicator": false
+      },
+      "verification": "verified-docs",
+      "source": "Provider documentation, 2026-10-30",
+      "notes": "Email over IMAP and SMTP with an app password. Reads run in tools; every change is a planned action the person reviews first.",
+      "signatures": {
+        "bundle_ids": [],
+        "browser_hosts": [],
+        "window_titles": [],
+        "keywords": []
+      },
+      "mail": {
+        "imap_host": "",
+        "imap_port": 993,
+        "smtp_host": "",
+        "smtp_port": 465,
+        "smtp_starttls": false,
+        "app_password_help": "Enter your mail provider's IMAP and SMTP server names, your address and an app password (or the account password if your provider has no app passwords).",
+        "custom_server": true
       }
     },
     {

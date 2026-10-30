@@ -181,6 +181,7 @@ function ConnectionDetail({
   useEffect(() => {
     const ready =
       startTick > 0 &&
+      !connector.mail &&
       connector.state.kind !== "connected" &&
       !!connector.mcpUrl &&
       (connector.registration !== "preregistered" || connector.hasClientCredentials);
@@ -208,6 +209,9 @@ function ConnectionDetail({
         throw e;
       }
     }
+  }
+  if (connector.mail) {
+    return <MailDetail backend={backend} connector={connector} changed={changed} focusTick={focusTick} />;
   }
   return (
     <section
@@ -436,6 +440,95 @@ function ConnectionDetail({
       {connector.state.kind === "error" && (
         <p role="alert">{connector.state.message}</p>
       )}
+    </section>
+  );
+}
+
+/** Email with an address and app password: one form, no browser sign-in. */
+function MailDetail({ backend, connector, changed, focusTick }: {
+  backend: Backend;
+  connector: ConnectorInfo;
+  changed: () => Promise<void>;
+  focusTick: number;
+}) {
+  const mail = connector.mail!;
+  const { act, busy, error } = useAction();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [imapHost, setImapHost] = useState(mail.imapHost);
+  const [imapPort, setImapPort] = useState(String(mail.imapPort));
+  const [smtpHost, setSmtpHost] = useState(mail.smtpHost);
+  const [smtpPort, setSmtpPort] = useState(String(mail.smtpPort));
+  const [starttls, setStarttls] = useState(mail.smtpStarttls);
+  const [confirmDocs, setConfirmDocs] = useState(false);
+  useEffect(() => {
+    heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    heading.current?.focus({ preventScroll: true });
+  }, [focusTick]);
+  const connected = connector.state.kind === "connected";
+  return (
+    <section className="connection-detail" aria-label={`${connector.name} connection details`}>
+      <h3 ref={heading} tabIndex={-1}>{connector.name} connection</h3>
+      <Notice error={error} />
+      {notice && <p className="notice notice-success" role="status">{notice}</p>}
+      {connected ? (
+        <>
+          <p>Signed in as <strong>{mail.email ?? "your mailbox"}</strong>. The password stays in your Mac's keychain.</p>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void act(async () => { await backend.testConnection(connector.id); setNotice("Connection test passed"); await changed(); })}>Test</button>
+            <button disabled={busy} onClick={() => void act(async () => { await backend.disconnect(connector.id); setNotice("Disconnected"); await changed(); })}>Disconnect</button>
+          </div>
+        </>
+      ) : (
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          const pw = password;
+          void act(async () => {
+            const server = mail.customServer ? { imapHost, imapPort: Number(imapPort), smtpHost, smtpPort: Number(smtpPort), smtpStarttls: starttls } : null;
+            const result = await backend.connectMail(connector.id, email, pw, server);
+            setPassword("");
+            setNotice(result.state.kind === "connected" ? `Connected · ${result.state.toolCount} tools available` : "Signed in. Check connection status.");
+            await changed();
+          });
+        }}>
+          <p>{mail.help}</p>
+          <p className="muted">Nothing leaves your Mac except the sign-in to your mail provider. Every send, draft or change is shown to you for approval before it runs.</p>
+          <Field label="Email address">
+            <input type="email" required autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          <Field label="App password">
+            <input type="password" required autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+          {mail.customServer && (
+            <>
+              <Field label="IMAP server"><input required value={imapHost} onChange={(e) => setImapHost(e.target.value)} placeholder="imap.example.com" /></Field>
+              <Field label="IMAP port"><input required inputMode="numeric" value={imapPort} onChange={(e) => setImapPort(e.target.value)} /></Field>
+              <Field label="SMTP server"><input required value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" /></Field>
+              <Field label="SMTP port"><input required inputMode="numeric" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} /></Field>
+              <label className="recording-choice"><input type="checkbox" checked={starttls} onChange={(e) => setStarttls(e.target.checked)} />Start encryption after connecting (usually port 587)</label>
+            </>
+          )}
+          <div className="actions">
+            <button className="primary" disabled={busy || !email.trim() || !password}>Connect</button>
+          </div>
+          {connector.docsUrl && isHttpsUrl(connector.docsUrl) && (
+            <p><button type="button" onClick={() => setConfirmDocs(true)}>How to get an app password</button></p>
+          )}
+        </form>
+      )}
+      {confirmDocs && connector.docsUrl && (
+        <div className="notice notice-info" role="region" aria-label="Open documentation">
+          <p>Open this address in your browser?</p>
+          <p><code>{connector.docsUrl}</code></p>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void act(async () => { await backend.openExternal(connector.docsUrl!); setConfirmDocs(false); })}>Open documentation in browser</button>
+            <button onClick={() => setConfirmDocs(false)}>Keep here</button>
+          </div>
+        </div>
+      )}
+      {connector.state.kind === "error" && <p role="alert">{connector.state.message}</p>}
     </section>
   );
 }

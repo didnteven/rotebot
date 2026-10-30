@@ -581,6 +581,17 @@ fn list_connectors(conns: State<'_, Conns>) -> Vec<ConnectorInfo> {
 }
 
 #[tauri::command]
+async fn connect_mail(
+    conns: State<'_, Conns>,
+    connector_id: String,
+    email: String,
+    password: String,
+    server: Option<MailServerInput>,
+) -> Cmd<ConnectorInfo> {
+    Ok(conns.0.connect_mail(&connector_id, &email, &password, server).await?)
+}
+
+#[tauri::command]
 async fn find_connectors(core: State<'_, Core>, query: String) -> Cmd<Vec<ConnectorCandidate>> {
     Ok(core.0.find_connectors(&query).await?)
 }
@@ -839,6 +850,9 @@ fn allowed_external(url: &str) -> bool {
         "docs.slack.dev",
         "support.atlassian.com",
         "modelcontextprotocol.io",
+        "support.google.com",
+        "help.yahoo.com",
+        "support.apple.com",
     ];
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
@@ -1251,6 +1265,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         list_connectors,
         set_connector_url,
         find_connectors,
+        connect_mail,
         set_client_credentials,
         begin_connect,
         complete_connect,
@@ -1695,7 +1710,7 @@ mod tests {
         assert_eq!(paused["kind"], "unavailable");
 
         let connectors = invoke(&w, "list_connectors", json!({})).unwrap();
-        assert_eq!(connectors.as_array().unwrap().len(), 9);
+        assert_eq!(connectors.as_array().unwrap().len(), 13);
         let gmail = connectors
             .as_array()
             .unwrap()

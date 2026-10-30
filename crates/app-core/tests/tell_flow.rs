@@ -88,7 +88,7 @@ async fn sample_tell_flow_creates_exactly_the_expected_csv() {
     );
     assert!(draft.ready_to_build, "{:?}", draft.blockers);
     assert_eq!(draft.output_name, "orders_ready.csv");
-    assert_eq!(draft.mentioned_connectors, ["gmail"]);
+    assert_eq!(draft.mentioned_connectors, ["gmail", "mail-gmail"]);
 
     let outbound = core.outbound_preview(&draft.draft_id).await.unwrap();
     assert_eq!(outbound.route, ModelRoute::OfflineDemo);

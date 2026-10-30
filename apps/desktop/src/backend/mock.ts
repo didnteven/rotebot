@@ -326,6 +326,12 @@ export class MockBackend implements Backend {
           : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
       state: { kind: "not_connected" },
       hasClientCredentials: false,
+      mail: (c as { mail?: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail
+        ? (() => {
+            const m = (c as unknown as { mail: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail;
+            return { help: m.app_password_help, customServer: !!m.custom_server, imapHost: m.imap_host, imapPort: m.imap_port, smtpHost: m.smtp_host, smtpPort: m.smtp_port, smtpStarttls: !!m.smtp_starttls, email: null };
+          })()
+        : null,
     }),
   );
 
@@ -1615,6 +1621,18 @@ export class MockBackend implements Backend {
     c.hasClientCredentials = true;
     return clone(c);
   }
+  async connectMail(connectorId: string, email: string, password: string, server?: { imapHost: string; smtpHost: string } | null) {
+    const c = this.connector(connectorId);
+    if (!c.mail) throw new Error("Unknown connection.");
+    if (!email.includes("@")) throw new Error("Enter the full email address.");
+    if (!password) throw new Error("Enter the app password.");
+    if (c.mail.customServer && (!server?.imapHost || !server.smtpHost)) throw new Error("Enter valid mail server names and ports.");
+    if (password === "wrong") throw new Error("The server did not accept that email address and app password.");
+    c.state = { kind: "connected", sinceMs: Date.now(), toolCount: 8 };
+    c.mail = { ...c.mail, email };
+    this.log("connection", `${c.name} connected`, "8 tools available");
+    return clone(c);
+  }
   async beginConnect(connectorId: string) {
     const c = this.connector(connectorId);
     if (!c.mcpUrl) throw new Error("Save an HTTPS MCP URL first.");
@@ -1654,6 +1672,7 @@ export class MockBackend implements Backend {
     for (const [pendingId, id] of this.pending)
       if (id === connectorId) this.pending.delete(pendingId);
     c.state = { kind: "not_connected" };
+    if (c.mail) c.mail = { ...c.mail, email: null };
     return clone(c);
   }
   async connectionSuggestions() {

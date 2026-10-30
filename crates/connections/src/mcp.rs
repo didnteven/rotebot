@@ -68,6 +68,8 @@ pub struct McpClient {
     session: Option<HeaderValue>,
     protocol: Option<String>,
     next_id: u64,
+    /// Set for email connectors: tools run over IMAP and SMTP, not an MCP server.
+    mail: Option<crate::mail::MailConfig>,
 }
 impl std::fmt::Debug for McpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -86,7 +88,20 @@ impl McpClient {
             session: None,
             protocol: None,
             next_id: 1,
+            mail: None,
         })
+    }
+    /// An email connection; nothing is contacted until a tool runs.
+    pub fn for_mail(config: crate::mail::MailConfig) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            url: String::new(),
+            auth: None,
+            session: None,
+            protocol: Some("mail".into()),
+            next_id: 1,
+            mail: Some(config),
+        }
     }
     /// Probe initialize only, without credentials or any authorization request.
     pub(crate) async fn probe_auth(
@@ -230,6 +245,9 @@ impl McpClient {
             .ok_or(McpError::InvalidResponse)
     }
     pub async fn list_tools(&mut self) -> Result<Vec<Tool>, McpError> {
+        if self.mail.is_some() {
+            return Ok(crate::mail::tools());
+        }
         if self.is_rest() {
             return Ok(crate::gmail_rest::tools());
         }
@@ -269,6 +287,9 @@ impl McpClient {
         name: &str,
         args: Value,
     ) -> Result<Value, McpError> {
+        if let Some(config) = &self.mail {
+            return crate::mail::call(config, name, &args).await;
+        }
         if self.is_rest() {
             return self.rest_call(name, &args, true).await;
         }
@@ -282,6 +303,13 @@ impl McpClient {
     /// The ConnectionsService verifies using initialize/list only; no generated-code API.
     #[allow(dead_code)]
     pub(crate) async fn call_tool(&mut self, name: &str, args: Value) -> Result<Value, McpError> {
+        if let Some(config) = &self.mail {
+            // Reads only: a change must arrive through the broker as an approved action.
+            if !crate::mail::is_read_only(name) {
+                return Err(McpError::ToolNotReadOnly);
+            }
+            return crate::mail::call(config, name, &args).await;
+        }
         if self.is_rest() {
             return self.rest_call(name, &args, false).await;
         }

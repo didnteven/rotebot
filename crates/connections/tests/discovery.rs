@@ -432,6 +432,12 @@ fn catalog_live_facts_and_defaults() {
         if connector.id == "custom" {
             continue;
         }
+        if connector.mail.is_some() {
+            // Email over IMAP and SMTP with an app password: documented by the provider, not an MCP probe.
+            assert_eq!(connector.transport, "imap");
+            assert_eq!(connector.auth.kind, "app_password");
+            continue;
+        }
         if connector.id == "gmail" {
             // Gmail uses Google's regular REST API (documented, not an MCP probe).
             assert_eq!(connector.verification, Verification::VerifiedDocs);

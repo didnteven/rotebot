@@ -400,7 +400,29 @@ export interface ConnectorInfo {
   state: ConnectionState;
   /** For preregistered servers: whether the user has stored a client id. */
   hasClientCredentials: boolean;
+  /** Set for email connectors that sign in with an address and an app password. */
+  mail?: MailInfo | null;
 }
+
+/** Mail server defaults and, once connected, the saved address (never the password). */
+export interface MailInfo {
+  help: string;
+  customServer: boolean;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpStarttls: boolean;
+  email: string | null;
+}
+export interface MailServerInput {
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpStarttls: boolean;
+}
+
 
 export interface ConnectionSuggestion {
   connectorId: string;
@@ -594,6 +616,7 @@ export interface Backend {
   // Connections
   listConnectors(): Promise<ConnectorInfo[]>;
   setConnectorUrl(connectorId: string, url: string): Promise<ConnectorInfo>;
+  connectMail(connectorId: string, email: string, password: string, server?: MailServerInput | null): Promise<ConnectorInfo>;
   findConnectors(query: string): Promise<ConnectorCandidate[]>;
   setClientCredentials(
     connectorId: string,

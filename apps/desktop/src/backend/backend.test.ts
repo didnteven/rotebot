@@ -202,7 +202,7 @@ it("provides verified catalog metadata and public Gmail tool previews", async ()
   const connectors = await backend.listConnectors();
   for (const connector of connectors) {
     expect(connector.verification).toBe(
-      connector.id === "custom" ? "unverified" : connector.id === "gmail" ? "verified-docs" : "verified-live",
+      connector.id === "custom" ? "unverified" : connector.id === "gmail" || connector.mail ? "verified-docs" : "verified-live",
     );
     const preregistered = [
       "gmail",

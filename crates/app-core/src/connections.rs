@@ -9,6 +9,7 @@
 use crate::dto::{
     ConnectStart, ConnectionState, ConnectionSuggestion, ConnectorInfo, ConnectorTool,
 };
+use crate::dto::MailServerInput;
 use crate::{AppCore, CoreError, CoreResult};
 use macroscope_connections::catalog::{Catalog, Registration, Verification};
 use macroscope_connections::oauth::{ClientCredentials, StoreError, TokenStore};
@@ -114,6 +115,7 @@ fn user_error(e: ConnectionError) -> CoreError {
         }
         ConnectionError::StaleHandle => "That sign-in was replaced or cancelled.".into(),
         ConnectionError::UnknownConnector => "Unknown connection.".into(),
+        ConnectionError::Mail(mail) => mail.to_string(),
         other => format!("Connection failed: {other}"),
     };
     CoreError::Invalid(message)
@@ -210,7 +212,28 @@ impl Connections {
                 .auth
                 .fixed_redirect_port
                 .map(|p| format!("http://127.0.0.1:{p}/callback")),
+            mail: c.mail.as_ref().map(|m| crate::dto::MailInfo {
+                help: m.app_password_help.clone(),
+                custom_server: m.custom_server,
+                imap_host: m.imap_host.clone(),
+                imap_port: m.imap_port,
+                smtp_host: m.smtp_host.clone(),
+                smtp_port: m.smtp_port,
+                smtp_starttls: m.smtp_starttls,
+                email: self.saved_mail_address(&c.id),
+            }),
         })
+    }
+
+    /// The saved address of a connected mailbox, read from the secret store (never the password).
+    fn saved_mail_address(&self, id: &str) -> Option<String> {
+        let r = SecretRef::new(format!("mail-account:{id}")).ok()?;
+        let secret = self.vault.get(&r).ok()??;
+        serde_json::from_slice::<serde_json::Value>(secret.expose())
+            .ok()?
+            .get("email")?
+            .as_str()
+            .map(str::to_string)
     }
 
     fn info_for(&self, id: &str) -> CoreResult<ConnectorInfo> {
@@ -413,6 +436,58 @@ impl Connections {
         }
     }
 
+    /// Signs in to a mailbox with an address and app password. Wrong details leave nothing saved.
+    pub async fn connect_mail(
+        &self,
+        id: &str,
+        email: &str,
+        password: &str,
+        server: Option<MailServerInput>,
+    ) -> CoreResult<ConnectorInfo> {
+        let preset = self
+            .catalog
+            .get(id)
+            .and_then(|c| c.mail.clone())
+            .ok_or(CoreError::NotFound("connection"))?;
+        let server = server.unwrap_or(MailServerInput {
+            imap_host: preset.imap_host.clone(),
+            imap_port: preset.imap_port,
+            smtp_host: preset.smtp_host.clone(),
+            smtp_port: preset.smtp_port,
+            smtp_starttls: preset.smtp_starttls,
+        });
+        // Presets are fixed; only a custom server may name its own hosts.
+        let server = if preset.custom_server {
+            server
+        } else {
+            MailServerInput {
+                imap_host: preset.imap_host.clone(),
+                imap_port: preset.imap_port,
+                smtp_host: preset.smtp_host.clone(),
+                smtp_port: preset.smtp_port,
+                smtp_starttls: preset.smtp_starttls,
+            }
+        };
+        let config = macroscope_connections::mail::MailConfig {
+            email: email.trim().to_string(),
+            password: password.to_string(),
+            imap_host: server.imap_host.trim().to_ascii_lowercase(),
+            imap_port: server.imap_port,
+            smtp_host: server.smtp_host.trim().to_ascii_lowercase(),
+            smtp_port: server.smtp_port,
+            smtp_starttls: server.smtp_starttls,
+            tls: true,
+        };
+        let mut service = self.service.lock().await;
+        let result = service.connect_mail(id, config).await;
+        *lock(&self.snapshot) = service.list();
+        drop(service);
+        result.map_err(user_error)?;
+        let name = self.catalog.get(id).map(|c| c.name.clone()).unwrap_or(id.into());
+        self.core.log_activity("connection", &format!("Connected {name}"), None);
+        self.info_for(id)
+    }
+
     /// Cancels any sign-in in progress for a connector.
     pub fn cancel(&self, id: &str) {
         let mut pending = lock(&self.pending);
@@ -457,10 +532,13 @@ impl Connections {
     /// Tools a server lists without signing in (Gmail allows this); empty otherwise.
     pub async fn preview_tools(&self, id: &str) -> CoreResult<Vec<ConnectorTool>> {
         let url = self.info_for(id)?.mcp_url;
-        if url.is_empty() {
+        let is_mail = self.catalog.get(id).is_some_and(|c| c.mail.is_some());
+        if url.is_empty() && !is_mail {
             return Ok(vec![]);
         }
-        let tools = if self.connected_ids().contains(id) {
+        let tools = if is_mail {
+            macroscope_connections::mail::tools()
+        } else if self.connected_ids().contains(id) {
             let mut service = self.service.lock().await;
             let result = service.prepare(id, &url).await;
             *lock(&self.snapshot) = service.list();

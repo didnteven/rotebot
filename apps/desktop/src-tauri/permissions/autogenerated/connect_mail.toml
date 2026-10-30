@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-connect-mail"
+description = "Enables the connect_mail command without any pre-configured scope."
+commands.allow = ["connect_mail"]
+
+[[permission]]
+identifier = "deny-connect-mail"
+description = "Denies the connect_mail command without any pre-configured scope."
+commands.deny = ["connect_mail"]

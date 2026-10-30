@@ -585,6 +585,16 @@ impl OAuthClient {
         }
         Ok(())
     }
+    /// Secrets that are not OAuth tokens (an email app password) use the same private store.
+    pub(crate) fn save_secret<T: Serialize>(&self, key: &str, value: &T) -> Result<(), OAuthError> {
+        self.save(key, value)
+    }
+    pub(crate) fn load_secret<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>, OAuthError> {
+        self.load(key)
+    }
+    pub(crate) fn delete_secret(&self, key: &str) -> Result<(), OAuthError> {
+        self.store.delete(key).map_err(Into::into)
+    }
     fn load<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>, OAuthError> {
         self.store
             .get(key)?

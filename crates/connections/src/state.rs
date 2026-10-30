@@ -111,6 +111,8 @@ pub enum ConnectionError {
     OAuth(#[from] OAuthError),
     #[error(transparent)]
     Store(#[from] StateStoreError),
+    #[error(transparent)]
+    Mail(#[from] crate::mail::MailError),
 }
 pub struct PendingConnect {
     owner: Arc<()>,
@@ -210,11 +212,59 @@ impl ConnectionsService {
     fn persist(&self) -> Result<(), ConnectionError> {
         self.store.save(&self.statuses).map_err(Into::into)
     }
+    fn is_mail(&self, id: &str) -> bool {
+        self.catalog.get(id).is_some_and(|c| c.mail.is_some())
+    }
+    fn mail_config(&self, id: &str) -> Result<crate::mail::MailConfig, ConnectionError> {
+        self.oauth
+            .load_secret::<crate::mail::MailConfig>(&mail_key(id))?
+            .ok_or(OAuthError::NeedsReauth.into())
+    }
+    /// Signs in to the mailbox once to prove the settings work, then keeps them in the secret store.
+    pub async fn connect_mail(
+        &mut self,
+        id: &str,
+        config: crate::mail::MailConfig,
+    ) -> Result<ConnectionStatus, ConnectionError> {
+        let index = self.index(id)?;
+        if !self.is_mail(id) {
+            return Err(ConnectionError::UnknownConnector);
+        }
+        let result = async {
+            crate::mail::verify(&config).await?;
+            self.oauth.save_secret(&mail_key(id), &config)?;
+            Ok::<_, ConnectionError>(crate::mail::tools().len())
+        }
+        .await;
+        match result {
+            Ok(tool_count) => {
+                self.statuses[index].state = ConnectionState::Connected { since_ms: now_ms(), tool_count };
+                self.statuses[index].last_checked_ms = Some(now_ms());
+                self.persist()?;
+                Ok(self.statuses[index].clone())
+            }
+            Err(error) => {
+                // A wrong password is something the person fixes on the form, not a broken connection.
+                if !matches!(error, ConnectionError::Mail(_)) {
+                    self.failed(index, &error)?;
+                }
+                Err(error)
+            }
+        }
+    }
+    /// The saved address and server names (never the password), for showing on the connection.
+    pub fn mail_summary(&self, id: &str) -> Option<(String, String, String)> {
+        let c = self.mail_config(id).ok()?;
+        Some((c.email.clone(), c.imap_host.clone(), c.smtp_host.clone()))
+    }
     pub async fn begin_connect(
         &mut self,
         id: &str,
         client_credentials: Option<ClientCredentials>,
     ) -> Result<(AuthorizationUrl, PendingConnect), ConnectionError> {
+        if self.is_mail(id) {
+            return Err(ConnectionError::UnknownConnector);
+        }
         let index = self.index(id)?;
         let url = self.statuses[index].mcp_url.clone();
         http::validate_url(&url)?;
@@ -290,6 +340,13 @@ impl ConnectionsService {
         {
             return Err(OAuthError::NeedsReauth.into());
         }
+        if self.is_mail(id) {
+            let config = self.mail_config(id)?;
+            return Ok(PreparedConnection {
+                client: McpClient::for_mail(config),
+                tools: crate::mail::tools(),
+            });
+        }
         let result = async {
             let token = self.oauth.access_token(id, resource).await?;
             let mut client = McpClient::connect(resource, Some(token)).await?;
@@ -304,6 +361,14 @@ impl ConnectionsService {
     }
     pub async fn test(&mut self, id: &str) -> Result<ConnectionStatus, ConnectionError> {
         let index = self.index(id)?;
+        if self.is_mail(id) {
+            let result = async {
+                crate::mail::verify(&self.mail_config(id)?).await?;
+                Ok::<_, ConnectionError>(crate::mail::tools().len())
+            }
+            .await;
+            return self.finish(index, result);
+        }
         let url = self.statuses[index].mcp_url.clone();
         let result = async {
             let token = match self.oauth.access_token(id, &url).await {
@@ -359,6 +424,11 @@ impl ConnectionsService {
     pub async fn disconnect(&mut self, id: &str) -> Result<(), ConnectionError> {
         let index = self.index(id)?;
         self.active.remove(id);
+        if self.is_mail(id) {
+            self.oauth.delete_secret(&mail_key(id))?;
+            self.statuses[index].state = ConnectionState::NotConnected;
+            return self.persist();
+        }
         let result = self.oauth.disconnect(id).await;
         self.statuses[index].state = ConnectionState::NotConnected;
         self.persist()?;
@@ -367,6 +437,9 @@ impl ConnectionsService {
     /// The same transport policy applies everywhere, including explicit local servers.
     /// Changing a URL invalidates tokens and pending flows; credentials never cross servers.
     pub async fn set_url(&mut self, id: &str, url: &str) -> Result<(), ConnectionError> {
+        if self.is_mail(id) {
+            return Err(ConnectionError::UnknownConnector);
+        }
         http::validate_url(url)?;
         let index = self.index(id)?;
         if self.statuses[index].mcp_url != url {
@@ -377,4 +450,8 @@ impl ConnectionsService {
         }
         Ok(())
     }
+}
+
+fn mail_key(id: &str) -> String {
+    format!("mail-account:{id}")
 }

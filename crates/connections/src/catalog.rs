@@ -19,6 +19,24 @@ pub struct Connector {
     pub source: String,
     pub notes: String,
     pub signatures: Signatures,
+    /// Present for email connectors that sign in with an address and app password.
+    #[serde(default)]
+    pub mail: Option<MailPreset>,
+}
+/// Server defaults for a mail provider; a custom server leaves the hosts empty for the person to fill in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MailPreset {
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    #[serde(default)]
+    pub smtp_starttls: bool,
+    /// Where the person creates an app password, in plain words.
+    pub app_password_help: String,
+    /// True when the person types the server names themselves.
+    #[serde(default)]
+    pub custom_server: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Auth {
@@ -96,8 +114,8 @@ impl Catalog {
             || catalog.connectors.iter().any(|c| {
                 c.id.is_empty()
                     || !ids.insert(&c.id)
-                    || c.auth.kind != "oauth"
-                    || c.transport != "streamable-http"
+                    || !((c.transport == "streamable-http" && c.auth.kind == "oauth" && c.mail.is_none())
+                        || (c.transport == "imap" && c.auth.kind == "app_password" && c.mail.is_some()))
                     || c.auth.fixed_redirect_port == Some(0)
                     || c.auth
                         .authorization_server

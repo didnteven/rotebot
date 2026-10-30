@@ -62,7 +62,7 @@ it("shows action receipts as inert text and disables Finder for action-only runs
 it("offers explicit access to connected services in Create and lists their untrusted tools", async () => {
   const backend = new MockBackend();
   const input = backend.importText("message.txt", "hello");
-  const connector = (await backend.listConnectors())[0];
+  const connector = (await backend.listConnectors()).find(c=>c.id==="gmail")!;
   connector.state = {kind:"connected",sinceMs:1,toolCount:1};
   vi.spyOn(backend,"listConnectors").mockResolvedValue([connector]);
   vi.spyOn(backend,"previewConnectorTools").mockResolvedValue([{name:"create_draft",description:"<script>server instructions</script>",inputSchema:{type:"object"},readOnly:false,destructive:false}]);
@@ -142,4 +142,56 @@ it("refuses a file that is not a Google OAuth client", async () => {
   await user.upload(screen.getByLabelText("Import client file"), new File(["{}"], "other.json", { type: "application/json" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("isn't a Google OAuth client file");
   expect(save).not.toHaveBeenCalled();
+});
+
+function MailHarness({ backend, connectors }: { backend: MockBackend; connectors: Awaited<ReturnType<MockBackend["listConnectors"]>> }) {
+  const [list, setList] = useState(connectors);
+  const [selected, setSelected] = useState<string | null>(null);
+  return <Connections backend={backend} connectors={list} selected={selected} select={setSelected} changed={async () => setList(await backend.listConnectors())} />;
+}
+
+it("connects a mailbox with an address and app password, shows who is signed in, and disconnects", async () => {
+  const backend = new MockBackend();
+  const connect = vi.spyOn(backend, "connectMail");
+  const user = userEvent.setup();
+  render(<MailHarness backend={backend} connectors={await backend.listConnectors()} />);
+  await user.click(screen.getByRole("button", { name: "Connect Gmail (app password)" }));
+  expect(screen.getByText(/create an app password at myaccount\.google\.com\/apppasswords/)).toBeVisible();
+  expect(screen.getByLabelText("App password")).toHaveAttribute("type", "password");
+  await user.type(screen.getByLabelText("Email address"), "me@gmail.com");
+  await user.type(screen.getByLabelText("App password"), "abcd efgh ijkl mnop");
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  expect(await screen.findByText("Connected · 8 tools available")).toBeVisible();
+  expect(connect).toHaveBeenCalledWith("mail-gmail", "me@gmail.com", "abcd efgh ijkl mnop", null);
+  expect(await screen.findByText("me@gmail.com")).toBeVisible();
+  expect(screen.queryByLabelText("App password")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Disconnect" }));
+  expect(await screen.findByLabelText("App password")).toHaveValue("");
+});
+
+it("shows the provider's refusal for a wrong app password and keeps the form", async () => {
+  const backend = new MockBackend();
+  const user = userEvent.setup();
+  render(<MailHarness backend={backend} connectors={await backend.listConnectors()} />);
+  await user.click(screen.getByRole("button", { name: "Connect Yahoo Mail" }));
+  await user.type(screen.getByLabelText("Email address"), "me@yahoo.com");
+  await user.type(screen.getByLabelText("App password"), "wrong");
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("did not accept that email address and app password");
+  expect(screen.getByLabelText("Email address")).toHaveValue("me@yahoo.com");
+});
+
+it("asks for server names only for a custom mail provider", async () => {
+  const backend = new MockBackend();
+  const connect = vi.spyOn(backend, "connectMail");
+  const user = userEvent.setup();
+  render(<MailHarness backend={backend} connectors={await backend.listConnectors()} />);
+  await user.click(screen.getByRole("button", { name: "Connect Other email (IMAP)" }));
+  await user.type(screen.getByLabelText("Email address"), "me@fastmail.com");
+  await user.type(screen.getByLabelText("App password"), "pw");
+  await user.type(screen.getByLabelText("IMAP server"), "imap.fastmail.com");
+  await user.type(screen.getByLabelText("SMTP server"), "smtp.fastmail.com");
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  await screen.findByText("Connected · 8 tools available");
+  expect(connect).toHaveBeenCalledWith("mail-custom", "me@fastmail.com", "pw", { imapHost: "imap.fastmail.com", imapPort: 993, smtpHost: "smtp.fastmail.com", smtpPort: 465, smtpStarttls: false });
 });

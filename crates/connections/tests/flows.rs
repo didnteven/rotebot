@@ -619,7 +619,7 @@ async fn secrets_are_absent_from_debug_and_transport_errors() {
 #[test]
 fn catalog_and_atomic_state_store_round_trip() {
     let catalog = Catalog::embedded();
-    assert_eq!(catalog.connectors.len(), 9);
+    assert_eq!(catalog.connectors.len(), 13);
     assert_eq!(catalog.get("gmail").unwrap().auth.scopes, ["https://www.googleapis.com/auth/gmail.modify"]);
     assert!(Catalog::from_json("{\"schema\":\"other\",\"version\":1,\"connectors\":[]}").is_err());
     // Keep all task-created files inside the owned crate and put JSON under data/.

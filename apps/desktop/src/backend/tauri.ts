@@ -51,6 +51,7 @@ export class TauriBackend implements Backend {
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
   confirmNormalBrowserWindow: Backend["confirmNormalBrowserWindow"] = () => invoke("confirm_normal_browser_window");
   saveRecordingFrame: Backend["saveRecordingFrame"] = (sessionId, seq) => invoke("save_recording_frame", { sessionId, seq });
+  connectMail: Backend["connectMail"] = (connectorId, email, password, server) => invoke("connect_mail", { connectorId, email, password, server: server ?? null });
   findConnectors: Backend["findConnectors"] = (query) => invoke("find_connectors", { query });
   setRecordingMaskLevel: Backend["setRecordingMaskLevel"] = (sessionId, level) => invoke("set_recording_mask_level", { sessionId, level });
   removeRecordingFrame: Backend["removeRecordingFrame"] = (sessionId, seq) => invoke("remove_recording_frame", { sessionId, seq });

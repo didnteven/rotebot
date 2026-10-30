@@ -14,6 +14,8 @@ it("mock connector DTOs match every catalog field exposed by the core", async ()
     docsUrl: c.auth.docs_url || null, clientSetup: c.auth.client_setup ?? null,
     redirectUri: c.auth.fixed_redirect_port == null ? null : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
     state: { kind: "not_connected" }, hasClientCredentials: false,
+    mail: c.mail ? { help: c.mail.app_password_help, customServer: !!c.mail.custom_server, imapHost: c.mail.imap_host, imapPort: c.mail.imap_port,
+      smtpHost: c.mail.smtp_host, smtpPort: c.mail.smtp_port, smtpStarttls: !!c.mail.smtp_starttls, email: null } : null,
   })));
 });
 

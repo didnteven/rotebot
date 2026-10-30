@@ -152,7 +152,7 @@ async fn connect_custom_server_end_to_end_with_tokens_only_in_the_vault() {
     let vault: Arc<dyn SecretStore> = Arc::new(MemoryStore::default());
     let core = core(tmp.path(), vault.clone());
     let conns = Connections::new(core.clone(), vault.clone()).unwrap();
-    assert_eq!(conns.list().len(), 9);
+    assert_eq!(conns.list().len(), 13);
     let gmail = conns.list().into_iter().find(|c| c.id == "gmail").unwrap();
     assert_eq!(gmail.registration, "preregistered");
     assert_eq!(gmail.verification, "verified-docs");
