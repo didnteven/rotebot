@@ -2202,5 +2202,113 @@
     ]
    }
   ]
+ },
+ {
+  "name": "gmail_summary",
+  "expect": "connection step for Gmail (not manual); output file with subject and sender summary",
+  "frames": [
+   {
+    "title": "Inbox (1,204) - Gmail",
+    "url": "mail.google.com/mail/u/0/#inbox",
+    "lines": [
+     {
+      "t": "Inbox",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "ChatGPT   Your new image styles are here   10:12 am",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "OpenRouter   Welcome to your jev-router key   9:40 am",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Supabase   Your project has been paused   Yesterday",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   },
+   {
+    "title": "Your new image styles are here - Gmail",
+    "url": "mail.google.com/mail/u/0/#inbox/abc",
+    "lines": [
+     {
+      "t": "Your new image styles are here",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "From: ChatGPT",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "Try the new styles in ChatGPT images today.",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ],
+  "steps_note": "user typed a short summary of each email in a note"
+ },
+ {
+  "name": "calendar_today",
+  "expect": "connection step for Google Calendar; output text file listing todays events",
+  "frames": [
+   {
+    "title": "Google Calendar - Week of 30 Oct",
+    "url": "calendar.google.com/calendar/u/0/r/week",
+    "lines": [
+     {
+      "t": "Friday 30 October",
+      "x": 40,
+      "y": 104,
+      "s": 28,
+      "b": true
+     },
+     {
+      "t": "9:00  Team standup",
+      "x": 40,
+      "y": 156,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "11:30  Dentist",
+      "x": 40,
+      "y": 190,
+      "s": 18,
+      "b": false
+     },
+     {
+      "t": "3:00  Plan review",
+      "x": 40,
+      "y": 224,
+      "s": 18,
+      "b": false
+     }
+    ]
+   }
+  ]
  }
 ]

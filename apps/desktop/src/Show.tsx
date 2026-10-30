@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Backend, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
+import type { Backend, ConnectorInfo, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
 import { formatBytes, Notice, useAction, useScreenFocus } from "./ui";
 import { CreateFlow } from "./CreateFlow";
 import type { ComponentProps } from "react";
@@ -182,6 +182,18 @@ export function ShowStatus({ state }: { state: ShowState | null }) {
 }
 
 
+/** Connectors the plan's connection steps read from, matched by service name in the step. */
+export function neededConnectors(steps: TaskDraftV2["steps"], connectors: ConnectorInfo[]) {
+  const found = new Map<string, ConnectorInfo>();
+  let other = false;
+  for (const step of steps.filter(s => s.capability === "connection")) {
+    const text = `${step.app} ${step.action}`.toLowerCase();
+    const hit = connectors.find(c => c.id !== "custom" && text.includes(c.name.split(" (")[0].toLowerCase()));
+    if (hit) found.set(hit.id, hit); else other = true;
+  }
+  return { connectors: [...found.values()], other };
+}
+
 type CreateOptions = Omit<ComponentProps<typeof CreateFlow>, "backend" | "initialInput" | "initialGoal" | "initialDraft">;
 export function ShowPanel({backend, state, update, close, createFlow}: {
   backend: Backend; state: ShowState; update: (s: ShowState) => void; close: () => void; createFlow: CreateOptions;
@@ -340,6 +352,13 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       <h3>What the tool can do</h3><ol>{understood.steps.filter(s=>s.capability!=="manual").map(s=><li key={s.id}>{s.action}</li>)}</ol>
       {understood.steps.every(s=>s.capability==="manual") && <p className="notice notice-warning">A tool can't do any part of this chore, because it needs clicking, typing or other apps. You can discard this recording.</p>}
       {understood.steps.some(s=>s.capability==="manual") && <><h3>You'll still need to do this part yourself</h3><ul>{understood.steps.filter(s=>s.capability==="manual").map(s=><li key={s.id}>{s.action}. {understood.unsupported_steps.find(u=>u.step_id===s.id)?.reason}</li>)}</ul></>}
+      {(()=>{ const need=neededConnectors(understood.steps,createFlow.connectors); if(!need.connectors.length&&!need.other) return null;
+        return <section aria-label="Connections this plan needs"><h3>Connections this plan needs</h3>
+          <p>The tool reads this through a read-only connection, so it doesn’t need to open or click anything. You approve what it can read before it is built.</p>
+          <ul>{need.connectors.map(c=><li key={c.id}>{c.name}: {c.state.kind==="connected"?"connected":"not connected yet"}{c.state.kind!=="connected" && <> <button disabled={busy} onClick={()=>createFlow.connect(c.id)}>Connect {c.name}</button></>}</li>)}
+          {need.other && <li>Another service: add it as a custom connection on the Connections page.</li>}</ul>
+          {need.connectors.some(c=>c.state.kind!=="connected") && <p className="muted">Connect it, then come back here. Your recording stays on this screen.</p>}
+        </section>; })()}
       <h3>This changes each time</h3>{understood.variables.length?<ul>{understood.variables.map(v=><li key={v.name}>{v.name}: {v.description}</li>)}</ul>:<p>No changing details were found.</p>}
       {!!understood.constants.length && <><h3>What stays the same</h3><ul>{understood.constants.map(c=><li key={c.name}>{c.name}: {c.value}</li>)}</ul></>}
       <p>Result: {understood.output_description}</p><p>When: {understood.trigger}</p>
@@ -350,7 +369,11 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       </label>)}</fieldset>)}
       <button className="primary" disabled={busy || understood.questions.some(q=>!q.options.some(o=>o.id===answers[q.id]))} onClick={()=>void act(async()=>{
         await backend.answerRecordingQuestions(session!,answers);
-        const approved=await backend.approveRecordingDraft(session!);sessionRef.current=null;setSession(null);setDraft(approved);setStep(4);
+        let approved=await backend.approveRecordingDraft(session!);
+        // Services the plan reads that are already connected are switched on for the tool.
+        const ready=neededConnectors(understood.steps,createFlow.connectors).connectors.filter(c=>c.state.kind==="connected").map(c=>c.id);
+        if (ready.length) approved=await backend.selectTaskConnections(approved.draftId,ready);
+        sessionRef.current=null;setSession(null);setDraft(approved);setStep(4);
       })}>Looks right</button>
     </>}
     {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard())}>Discard recording</button>}
