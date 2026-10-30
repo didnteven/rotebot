@@ -282,9 +282,47 @@ fn components(text: &str, allow_whole: bool) -> Vec<(usize, &str)> {
     result
 }
 
+/// OCR can run chart axis labels together without spaces ("1am2am3am", "SW35SW39W28"). A run made only
+/// of number+unit or direction+number pairs is a chart row, never a secret.
+fn chart_labels(s: &str) -> bool {
+    const WORDS: [&str; 20] = [
+        "am", "pm", "n", "s", "e", "w", "ne", "nw", "se", "sw", "nne", "ene", "ese", "sse", "ssw",
+        "wsw", "wnw", "nnw", "km", "mm",
+    ];
+    let mut units = 0;
+    let mut rest = s;
+    while !rest.is_empty() {
+        let letters_first = rest.starts_with(|c: char| c.is_ascii_alphabetic());
+        let take = |r: &'_ str, digit: bool| -> usize {
+            r.find(|c: char| c.is_ascii_digit() != digit).unwrap_or(r.len())
+        };
+        let (a, b);
+        if letters_first {
+            a = take(rest, false);
+            b = take(&rest[a..], true);
+            if !WORDS.contains(&rest[..a].to_ascii_lowercase().as_str()) || b == 0 || b > 3 {
+                return false;
+            }
+            rest = &rest[a + b..];
+        } else {
+            a = take(rest, true);
+            b = take(&rest[a..], false);
+            if a > 3 || !WORDS.contains(&rest[a..a + b].to_ascii_lowercase().as_str()) {
+                return false;
+            }
+            rest = &rest[a + b..];
+        }
+        units += 1;
+    }
+    units >= 4
+}
+
 fn token_like(text: &str) -> bool {
     let s = text.trim_end_matches('=');
     if s.len() < 24 {
+        return false;
+    }
+    if chart_labels(s) {
         return false;
     }
     let bytes = s.as_bytes();
