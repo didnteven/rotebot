@@ -291,7 +291,7 @@ function ConnectionDetail({
                   <li>In <strong>console.cloud.google.com</strong>, create a project and turn on the <strong>Gmail API</strong> (APIs &amp; Services → Library).</li>
                   <li>Google Auth Platform → Get started: add an app name and your email. For Audience choose <strong>External</strong> (Internal only works with a Google Workspace organization), add a contact email, then agree and Create.</li>
                   <li>Audience → <strong>Test users</strong> → Add users: enter the exact Google address you will sign in with. Anyone not listed gets “Access blocked: has not completed the Google verification process”.</li>
-                  <li>Data Access → Add or remove scopes: add <strong>gmail.readonly</strong> (read-only; nothing is ever sent or changed).</li>
+                  <li>Data Access → Add or remove scopes: add <strong>gmail.modify</strong> (lets the tool read, draft, send and organise mail; each change is shown to you for approval first). If you connected before, Disconnect and Connect again to grant it.</li>
                   <li>Clients → Create client → <strong>Desktop app</strong>.</li>
                   <li>Download the JSON file and import it below, or copy the client ID and secret into the fields.</li>
                 </ol>

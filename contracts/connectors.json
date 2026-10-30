@@ -12,7 +12,7 @@
         "kind": "oauth",
         "registration": "preregistered",
         "scopes": [
-          "https://www.googleapis.com/auth/gmail.readonly"
+          "https://www.googleapis.com/auth/gmail.modify"
         ],
         "docs_url": "https://developers.google.com/workspace/gmail/api/guides",
         "authorization_server": "https://accounts.google.com",
@@ -25,7 +25,7 @@
       },
       "verification": "verified-docs",
       "source": "Gmail API reference, 2026-10-30",
-      "notes": "2026-10-30: Gmail through the regular Gmail REST API (gmail.googleapis.com), read-only with the gmail.readonly scope, so personal Google accounts work. Google's Gmail MCP server (gmailmcp.googleapis.com) is a Workspace Developer Preview and needs enrollment; add it as a custom connection if you have access. Sign-in uses Google OIDC discovery from the catalog authorization server; no DCR; resource indicator disabled.",
+      "notes": "2026-10-30: Gmail through the regular Gmail REST API (gmail.googleapis.com) with the gmail.modify scope (read, drafts, send, labels, trash; no permanent delete), so personal Google accounts work. Reads run in tools; every change is a planned action the person reviews first. Google's Gmail MCP server (gmailmcp.googleapis.com) is a Workspace Developer Preview; add it as a custom connection if you have access. Sign-in uses Google OIDC discovery from the catalog authorization server; no DCR; resource indicator disabled.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [

@@ -270,7 +270,7 @@ impl McpClient {
         args: Value,
     ) -> Result<Value, McpError> {
         if self.is_rest() {
-            return self.rest_call(name, &args).await;
+            return self.rest_call(name, &args, true).await;
         }
         let result = self
             .request("tools/call", json!({"name": name, "arguments": args}))
@@ -283,7 +283,7 @@ impl McpClient {
     #[allow(dead_code)]
     pub(crate) async fn call_tool(&mut self, name: &str, args: Value) -> Result<Value, McpError> {
         if self.is_rest() {
-            return self.rest_call(name, &args).await;
+            return self.rest_call(name, &args, false).await;
         }
         let tools = self.list_tools().await?;
         let mut matches = tools.iter().filter(|t| t.name == name);
@@ -304,7 +304,11 @@ impl McpClient {
         self.protocol.as_deref() == Some("rest")
     }
     /// Gmail API read: needs the signed-in token, never anonymous.
-    async fn rest_call(&mut self, name: &str, args: &Value) -> Result<Value, McpError> {
+    async fn rest_call(&mut self, name: &str, args: &Value, approved: bool) -> Result<Value, McpError> {
+        // Reads may run freely; any change must arrive through the broker as an approved action.
+        if !approved && !crate::gmail_rest::is_read_only(name) {
+            return Err(McpError::ToolNotReadOnly);
+        }
         let auth = self.auth.as_ref().ok_or(McpError::AuthRequired {
             resource_metadata_url: None,
             scope_hint: None,
