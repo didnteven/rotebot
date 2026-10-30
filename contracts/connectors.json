@@ -20,7 +20,7 @@
         "send_resource_indicator": false,
         "extra_authorize_params": {
           "access_type": "offline",
-          "prompt": "consent"
+          "prompt": "select_account consent"
         },
         "client_setup": "Gmail's MCP server is in Google's Developer Preview. In Google Cloud, enable the Gmail API and Gmail MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },
@@ -66,7 +66,7 @@
         "send_resource_indicator": false,
         "extra_authorize_params": {
           "access_type": "offline",
-          "prompt": "consent"
+          "prompt": "select_account consent"
         },
         "client_setup": "Google Calendar's MCP server is in Google's Developer Preview. In Google Cloud, enable the Calendar API and Calendar MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },
@@ -107,7 +107,7 @@
         "send_resource_indicator": false,
         "extra_authorize_params": {
           "access_type": "offline",
-          "prompt": "consent"
+          "prompt": "select_account consent"
         },
         "client_setup": "Google Drive's MCP server is in Google's Developer Preview. In Google Cloud, enable the Drive API and Drive MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
       },

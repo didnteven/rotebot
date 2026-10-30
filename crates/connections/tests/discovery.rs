@@ -245,7 +245,7 @@ async fn google_catalog_as_html_404_oidc_extra_params_and_open_preview() {
     assert!(!auth.contains_key("resource"));
     assert_eq!(auth["scope"], connector.auth.scopes.join(" "));
     assert_eq!(auth["access_type"], "offline");
-    assert_eq!(auth["prompt"], "consent");
+    assert_eq!(auth["prompt"], "select_account consent");
     let mut callback = Url::parse(&auth["redirect_uri"]).unwrap();
     callback
         .query_pairs_mut()
