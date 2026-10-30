@@ -9,12 +9,14 @@ import type {
   CsvPreview,
   ModelAccessStatus,
   ShowState,
+  ToolDetail,
   ToolSummary,
 } from "./backend/types";
 import { routeLabel } from "./backend/mock";
 import { CreateFlow } from "./CreateFlow";
 import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
+import { ToolVersions } from "./ToolVersions";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
 import { Activity, Privacy } from "./History";
@@ -44,8 +46,11 @@ export function App({ backend }: { backend: Backend }) {
   const [creating, setCreating] = useState(false),
     [initialInput, setInitialInput] = useState<CsvPreview | null>(null),
     [running, setRunning] = useState<ToolSummary | null>(null),
+    [editTool, setEditTool] = useState<ToolDetail | null>(null),
     [showPanel, setShowPanel] = useState(false);
   const { act, error, busy } = useAction();
+  // Leaving the create flow, by saving or going back, ends an edit.
+  useEffect(() => { if (!creating) setEditTool(null); }, [creating]);
   async function refreshTools() {
     try {
       setTools(await backend.listTools());
@@ -148,8 +153,12 @@ export function App({ backend }: { backend: Backend }) {
     return () => { active = false; };
   }, [backend, tools]);
   const [exported, setExported] = useState<string | null>(null);
+  // Asked for from a plan or a suggestion: open the service and start its sign-in when it can.
+  const [autoConnect, setAutoConnect] = useState(false);
+  useEffect(() => { if (autoConnect && destination === "Connections") setAutoConnect(false); }, [autoConnect, destination]);
   function connect(id: string) {
     setSelectedConnector(id);
+    setAutoConnect(true);
     setDestination("Connections");
   }
   const openSettings = () => setDestination("Settings");
@@ -233,6 +242,7 @@ export function App({ backend }: { backend: Backend }) {
                 <CreateFlow
                   backend={backend}
                   initialInput={initialInput}
+                  editTool={editTool ?? undefined}
                   status={status}
                   connectors={connectors}
                   openSettings={openSettings}
@@ -334,7 +344,7 @@ export function App({ backend }: { backend: Backend }) {
                               </h2>
                               <p>{toolDescriptions[tool.id] || tool.name}</p>
                               <p className="muted">{friendlyLastRun(tool.lastRunAtMs)}{tool.state === "paused" ? " · Paused. Resume this tool before running it." : ""}</p>
-                              <details><summary>Details</summary><p>{tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version}</p></details>
+                              <details><summary>Details</summary><p>{tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version}</p>{!tool.sample && <ToolVersions backend={backend} toolId={tool.id} name={displayName} changed={refreshTools} />}</details>
                             </div>
                             <button
                               className="quiet"
@@ -378,6 +388,19 @@ export function App({ backend }: { backend: Backend }) {
                             ) : (
                               <button className="quiet" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => setConfirmDelete(tool.id)}>Delete</button>
                             )}
+                            {!tool.sample && <button
+                              className="quiet"
+                              disabled={busy}
+                              aria-label={`Edit: ${displayName}`}
+                              onClick={() => void act(async () => {
+                                setEditTool(await backend.getTool(tool.id));
+                                setInitialInput(null);
+                                setRunning(null);
+                                setCreating(true);
+                              })}
+                            >
+                              Edit
+                            </button>}
                             <button
                               disabled={tool.state === "paused"}
                               aria-label={`Run now: ${displayName}`}
@@ -404,6 +427,7 @@ export function App({ backend }: { backend: Backend }) {
                 selected={selectedConnector}
                 select={setSelectedConnector}
                 changed={refreshConnections}
+                autoStart={autoConnect}
               />
             </>
           )}

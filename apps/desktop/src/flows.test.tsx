@@ -336,8 +336,8 @@ describe("Settings, connections, Show and privacy", () => {
   it("cancels an in-flight connection without reconnecting", async () => {
     const { user, backend } = await open();
     await user.click(button("Connections"));
+    // Choosing a service that can sign in starts its browser sign-in at once.
     await user.click(button("Connect Notion"));
-    await user.click(button("Connect"));
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(button("Connect")).toBeEnabled(), {
       timeout: 2500,

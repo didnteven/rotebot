@@ -23,15 +23,19 @@ export function Connections({
   selected,
   select,
   changed,
+  autoStart = false,
 }: {
   backend: Backend;
   connectors: ConnectorInfo[];
   selected: string | null;
   select: (id: string) => void;
   changed: () => Promise<void>;
+  /** Start signing in to the selected service as soon as it opens (set when it was chosen elsewhere). */
+  autoStart?: boolean;
 }) {
   // Every click on a card, even the one already open, brings its details into view.
   const [tick, setTick] = useState(0);
+  const [startTick, setStartTick] = useState(autoStart ? 1 : 0);
   return (
     <section>
       {connectors.length === 0 && <p role="status">Loading connections…</p>}
@@ -59,6 +63,7 @@ export function Connections({
                 connector={c}
                 changed={changed}
                 focusTick={tick}
+                startTick={startTick}
               />
             )}
             <button
@@ -66,6 +71,8 @@ export function Connections({
               onClick={() => {
                 select(c.id);
                 setTick((t) => t + 1);
+                // Choosing a service that isn't connected starts its sign-in when it can.
+                if (c.state.kind !== "connected") setStartTick((t) => t + 1);
               }}
             >
               {c.state.kind === "connected"
@@ -133,11 +140,13 @@ function ConnectionDetail({
   connector,
   changed,
   focusTick,
+  startTick,
 }: {
   backend: Backend;
   connector: ConnectorInfo;
   changed: () => Promise<void>;
   focusTick: number;
+  startTick: number;
 }) {
   const [url, setUrl] = useState(connector.mcpUrl),
     [confirmDocs, setConfirmDocs] = useState(false),
@@ -154,6 +163,16 @@ function ConnectionDetail({
     heading.current?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTick]);
+  // Opens the service's own sign-in page in the browser as soon as nothing else is needed first.
+  useEffect(() => {
+    const ready =
+      startTick > 0 &&
+      connector.state.kind !== "connected" &&
+      !!connector.mcpUrl &&
+      (connector.registration !== "preregistered" || connector.hasClientCredentials);
+    if (ready && !pending) void act(connect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTick]);
   async function connect() {
     setNotice(null);
     const start = await backend.beginConnect(connector.id);

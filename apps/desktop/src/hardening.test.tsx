@@ -61,15 +61,13 @@ it("connection Cancel disconnects the pending connector and failed connect shows
   await user.click(screen.getByRole("button", { name: "Connections" }));
   await user.click(screen.getByRole("button", { name: "Connect Notion" }));
   let details = within(screen.getByRole("region", { name: "Notion connection details" }));
-  await user.click(details.getByRole("button", { name: "Connect" }));
   await details.findByText("Finish signing in in your browser…");
   await user.click(details.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(disconnect).toHaveBeenCalledWith("notion"));
   // Switch detail to release the deliberately unresolved UI call.
-  await user.click(screen.getByRole("button", { name: "Connect Linear" }));
   vi.spyOn(backend, "beginConnect").mockRejectedValueOnce(new BackendError("OAuth client is missing.", "invalid"));
+  await user.click(screen.getByRole("button", { name: "Connect Linear" }));
   details = within(screen.getByRole("region", { name: "Linear connection details" }));
-  await user.click(details.getByRole("button", { name: "Connect" }));
   expect(await details.findByRole("alert")).toHaveTextContent("OAuth client is missing.");
 });
 
@@ -88,6 +86,5 @@ it("successful connections show the tool count reported by the backend", async (
   await screen.findByRole("button", { name: "Try a sample" });
   await user.click(screen.getByRole("button", { name: "Connections" }));
   await user.click(screen.getByRole("button", { name: "Connect Notion" }));
-  await user.click(within(screen.getByRole("region", { name: "Notion connection details" })).getByRole("button", { name: "Connect" }));
   expect(await screen.findByText("Connected · 2 tools available")).toBeVisible();
 });

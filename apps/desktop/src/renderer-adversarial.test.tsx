@@ -210,15 +210,14 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     // Select the catalog action rather than the suggestion's action.
     const catalog = screen.getByText(v("connector"), textOptions).closest("article")!;
     await user.click(within(catalog).getByRole("button"));
+    // Choosing the service starts its sign-in once; the hostile text stays inert.
+    await screen.findByLabelText("Authorization URL");
+    expect(connect).toHaveBeenCalledTimes(1);
     inputLiteral("MCP URL", payload);
     literal(root, payload); // URL-like strings must remain inspectable as text.
     literal(screen.getByText("Documentation:", textOptions), payload);
     literal(root, v("connector error"));
-    inert();
     expect(external).not.toHaveBeenCalled();
-    expect(connect).not.toHaveBeenCalled();
-    await user.click(button("Connect"));
-    await screen.findByLabelText("Authorization URL");
     inputLiteral("Authorization URL", payload);
     inert({ beginConnect: 1, completeConnect: 1 });
   });
@@ -305,19 +304,22 @@ it("opens HTTPS documentation only after reviewing the address and confirming", 
   const { user, root, inert } = await open(backend);
   await user.click(button("Connections"));
   const catalog = screen.getByText(v("connector"), textOptions).closest("article")!;
+  // Choosing the service starts sign-in; fail it quickly so the page is not busy while documentation is reviewed.
+  vi.spyOn(backend, "beginConnect").mockRejectedValue(new Error("Sign-in unavailable in this test."));
   await user.click(within(catalog).getByRole("button"));
+  await waitFor(() => expect(backend.beginConnect).toHaveBeenCalledOnce());
   await user.click(button("Documentation"));
   literal(screen.getByRole("region", { name: "Open documentation" }), address);
-  inert();
+  inert({ beginConnect: 1 });
   await user.click(button("Keep here"));
   expect(screen.queryByRole("region", { name: "Open documentation" })).toBeNull();
-  inert();
+  inert({ beginConnect: 1 });
   await user.click(button("Documentation"));
   await user.click(button("Open documentation in browser"));
   expect(backend.openExternal).toHaveBeenCalledExactlyOnceWith(address);
   expect(root.querySelectorAll("a")).toHaveLength(1);
   expect(root.querySelector("a")).toHaveAttribute("href", "#main-content");
-  inert({ openExternal: 1 });
+  inert({ openExternal: 1, beginConnect: 1 });
 });
 
 async function open(backend: Backend) {
