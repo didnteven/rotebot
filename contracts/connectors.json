@@ -6,27 +6,26 @@
       "id": "gmail",
       "name": "Gmail",
       "category": "communication",
-      "mcp_url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "mcp_url": "https://gmail.googleapis.com/gmail/v1",
       "transport": "streamable-http",
       "auth": {
         "kind": "oauth",
         "registration": "preregistered",
         "scopes": [
-          "https://www.googleapis.com/auth/gmail.readonly",
-          "https://www.googleapis.com/auth/gmail.compose"
+          "https://www.googleapis.com/auth/gmail.readonly"
         ],
-        "docs_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
+        "docs_url": "https://developers.google.com/workspace/gmail/api/guides",
         "authorization_server": "https://accounts.google.com",
         "send_resource_indicator": false,
         "extra_authorize_params": {
           "access_type": "offline",
           "prompt": "select_account consent"
         },
-        "client_setup": "Gmail's MCP server is in Google's Developer Preview. In Google Cloud, enable the Gmail API and Gmail MCP API, create an OAuth client for a desktop app, and paste its client ID and secret here."
+        "client_setup": "In Google Cloud, enable the Gmail API, create an OAuth client for a desktop app, and paste its client ID and secret here (or import the downloaded file)."
       },
-      "verification": "verified-live",
-      "source": "unauthenticated probe 2026-10-27",
-      "notes": "2026-10-27: Developer Preview; initialize and tools/list accept unauthenticated requests; PRM is absent (404 HTML). Google OIDC discovery supplies authorize https://accounts.google.com/o/oauth2/v2/auth, token https://oauth2.googleapis.com/token and revoke https://oauth2.googleapis.com/revoke; no DCR. UNVERIFIED: resource indicator disabled because Google OAuth is not documented to accept RFC 8707 resource; authenticated OAuth/loopback flow has not been verified. Supplementary live discovery 2026-10-27: path-suffixed PRM at /.well-known/oauth-protected-resource/mcp/v1 responds with the MCP URL as resource and AS https://accounts.google.com/ (root-slash equivalent to the metadata issuer); the origin PRM remains absent. Google also serves RFC 8414 metadata.",
+      "verification": "verified-docs",
+      "source": "Gmail API reference, 2026-10-30",
+      "notes": "2026-10-30: Gmail through the regular Gmail REST API (gmail.googleapis.com), read-only with the gmail.readonly scope, so personal Google accounts work. Google's Gmail MCP server (gmailmcp.googleapis.com) is a Workspace Developer Preview and needs enrollment; add it as a custom connection if you have access. Sign-in uses Google OIDC discovery from the catalog authorization server; no DCR; resource indicator disabled.",
       "signatures": {
         "bundle_ids": [],
         "browser_hosts": [

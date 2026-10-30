@@ -155,7 +155,7 @@ async fn connect_custom_server_end_to_end_with_tokens_only_in_the_vault() {
     assert_eq!(conns.list().len(), 9);
     let gmail = conns.list().into_iter().find(|c| c.id == "gmail").unwrap();
     assert_eq!(gmail.registration, "preregistered");
-    assert_eq!(gmail.verification, "verified-live");
+    assert_eq!(gmail.verification, "verified-docs");
     assert!(
         conns.begin_connect("gmail").await.is_err(),
         "Gmail needs the user's OAuth client first"

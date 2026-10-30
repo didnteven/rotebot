@@ -1,6 +1,7 @@
 //! Host-owned connection setup. Server strings are untrusted data, never instructions.
 pub mod catalog;
 pub mod detect;
+mod gmail_rest;
 mod http;
 pub mod mcp;
 pub mod oauth;

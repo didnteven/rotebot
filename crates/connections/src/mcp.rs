@@ -92,6 +92,11 @@ impl McpClient {
     pub(crate) async fn probe_auth(
         url: &str,
     ) -> Result<(Option<String>, Option<String>), McpError> {
+        // Google's regular Gmail API has no MCP handshake to probe; sign-in uses the catalog's server.
+        if crate::gmail_rest::is_gmail_api(url) {
+            http::validate_url(url)?;
+            return Ok((None, None));
+        }
         match Self::new(url, None)?.initialize().await {
             Ok(_) => Ok((None, None)),
             Err(McpError::AuthRequired {
@@ -113,6 +118,10 @@ impl McpClient {
     }
     pub async fn connect(url: &str, auth: Option<AccessToken>) -> Result<Self, McpError> {
         let mut client = Self::new(url, auth)?;
+        if crate::gmail_rest::is_gmail_api(url) {
+            client.protocol = Some("rest".into());
+            return Ok(client);
+        }
         let result = client.initialize().await?;
         let version = result["protocolVersion"]
             .as_str()
@@ -221,6 +230,9 @@ impl McpClient {
             .ok_or(McpError::InvalidResponse)
     }
     pub async fn list_tools(&mut self) -> Result<Vec<Tool>, McpError> {
+        if self.is_rest() {
+            return Ok(crate::gmail_rest::tools());
+        }
         let mut tools = Vec::new();
         let mut cursor = None;
         let mut seen = HashSet::new();
@@ -257,6 +269,9 @@ impl McpClient {
         name: &str,
         args: Value,
     ) -> Result<Value, McpError> {
+        if self.is_rest() {
+            return self.rest_call(name, &args).await;
+        }
         let result = self
             .request("tools/call", json!({"name": name, "arguments": args}))
             .await?;
@@ -267,6 +282,9 @@ impl McpClient {
     /// The ConnectionsService verifies using initialize/list only; no generated-code API.
     #[allow(dead_code)]
     pub(crate) async fn call_tool(&mut self, name: &str, args: Value) -> Result<Value, McpError> {
+        if self.is_rest() {
+            return self.rest_call(name, &args).await;
+        }
         let tools = self.list_tools().await?;
         let mut matches = tools.iter().filter(|t| t.name == name);
         let safe = matches.next().is_some_and(|t| {
@@ -279,6 +297,19 @@ impl McpClient {
         let result = self
             .request("tools/call", json!({"name":name,"arguments":args}))
             .await?;
+        self.reject_token_echo(&result)?;
+        Ok(result)
+    }
+    fn is_rest(&self) -> bool {
+        self.protocol.as_deref() == Some("rest")
+    }
+    /// Gmail API read: needs the signed-in token, never anonymous.
+    async fn rest_call(&mut self, name: &str, args: &Value) -> Result<Value, McpError> {
+        let auth = self.auth.as_ref().ok_or(McpError::AuthRequired {
+            resource_metadata_url: None,
+            scope_hint: None,
+        })?;
+        let result = crate::gmail_rest::call(&self.http, auth, name, args).await?;
         self.reject_token_echo(&result)?;
         Ok(result)
     }
