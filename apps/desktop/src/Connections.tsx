@@ -289,8 +289,10 @@ function ConnectionDetail({
               <ol>
                 <li>In <strong>console.cloud.google.com</strong>, create a project.</li>
                 <li>APIs &amp; Services → Library: turn on the {connector.name.replace("Google ", "")} API and its MCP API.</li>
-                <li>OAuth consent screen: choose External, add your own address under Test users, and add the scopes this service lists.</li>
-                <li>Credentials → Create credentials → OAuth client ID → <strong>Desktop app</strong>.</li>
+                <li>Google Auth Platform → Get started: add an app name and your email. For Audience choose <strong>External</strong> (Internal only works with a Google Workspace organization), add a contact email, then agree and Create.</li>
+                <li>Audience: add your own Google address under <strong>Test users</strong>.</li>
+                <li>Data Access → Add or remove scopes: add the scopes this service needs (Gmail: gmail.readonly and gmail.compose).</li>
+                <li>Clients → Create client → <strong>Desktop app</strong>.</li>
                 <li>Download the JSON file and import it below, or copy the client ID and secret into the fields.</li>
               </ol>
               <p className="muted">This stays on your Mac. Until you publish the app in Google Cloud, Google asks you to sign in again about every 7 days.</p>
