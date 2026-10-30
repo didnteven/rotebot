@@ -73,8 +73,9 @@ it("offers explicit access to connected services in Create and lists their untru
   await user.click(screen.getByRole("button", {name:"Check the plan"}));
   await user.click(screen.getByText("Details"));
   const use = await screen.findByRole("checkbox", {name:`Let this tool use ${connector.name}`});
-  expect(use).not.toBeChecked();
-  await user.click(use);
+  // The description mentions Gmail and it is connected, so it is switched on for the tool already.
+  expect(await screen.findByText(/Using your .* connection \(read-only\)/)).toBeVisible();
+  expect(use).toBeChecked();
   expect(await screen.findByText("create_draft")).toBeVisible();
   expect(select).toHaveBeenCalledWith(expect.any(String), [connector.id]);
   expect(screen.getByText(/<script>server instructions<\/script>/)).toBeVisible();

@@ -45,7 +45,11 @@
           }
         ],
         "keywords": [
-          "gmail"
+          "gmail",
+          "email",
+          "emails",
+          "e-mail",
+          "inbox"
         ]
       }
     },
@@ -86,7 +90,8 @@
           }
         ],
         "keywords": [
-          "google calendar"
+          "google calendar",
+          "calendar"
         ]
       }
     },
