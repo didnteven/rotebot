@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Backend,
   ConnectStart,
@@ -140,6 +140,12 @@ function ConnectionDetail({
     clientSecret = useRef<HTMLInputElement>(null),
     attempt = useRef(0);
   const { act, busy, error, setError } = useAction();
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Choosing a card opens this section below the grid: bring it into view so it is clear something happened.
+  useEffect(() => {
+    heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    heading.current?.focus({ preventScroll: true });
+  }, []);
   async function connect() {
     setNotice(null);
     const start = await backend.beginConnect(connector.id);
@@ -167,7 +173,12 @@ function ConnectionDetail({
       className="card connection-detail"
       aria-label={`${connector.name} connection details`}
     >
-      <h2>{connector.name} connection</h2>
+      <h2 ref={heading} tabIndex={-1}>{connector.name} connection</h2>
+      {connector.registration === "preregistered" && !connector.hasClientCredentials && connector.state.kind !== "connected" && (
+        <p className="notice notice-info" role="status">
+          {connector.name} needs your own OAuth client before it can connect. Follow the steps below, save the client ID, then press Connect.
+        </p>
+      )}
       <Notice error={error} />
       {notice && (
         <p className="notice notice-success" role="status">
@@ -339,6 +350,9 @@ function ConnectionDetail({
             >
               Connect
             </button>
+          )}
+          {connector.state.kind !== "connected" && connector.registration === "preregistered" && !connector.hasClientCredentials && (
+            <p className="muted">Connect turns on after you save a client ID above.</p>
           )}
         </div>
       )}

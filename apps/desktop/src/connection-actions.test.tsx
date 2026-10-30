@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { expect, it, vi } from "vitest";
 import { RunFlow } from "./RunFlow";
 import { CreateFlow } from "./CreateFlow";
+import { Connections } from "./Connections";
 import { ReceiptCard } from "./ui";
 import { MockBackend } from "./backend/mock";
 import type { PlannedAction, Receipt, StagedRun } from "./backend/types";
@@ -89,4 +91,20 @@ it("keeps every external field visible in plain words and hides only the exact a
   expect(screen.getByLabelText("Exact action arguments 1")).not.toBeVisible();
   await userEvent.setup().click(screen.getByText("Advanced details"));
   expect(screen.getByLabelText("Exact action arguments 1")).toHaveTextContent(JSON.stringify(change.call.args,null,2).replace(/\s+/g," "));
+});
+
+it("explains why Gmail cannot connect yet and moves focus to its details", async () => {
+  const backend = new MockBackend();
+  const connectors = await backend.listConnectors();
+  const user = userEvent.setup();
+  const Harness = () => {
+    const [selected, setSelected] = useState<string | null>(null);
+    return <Connections backend={backend} connectors={connectors} selected={selected} select={setSelected} changed={async () => {}} />;
+  };
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Connect Gmail" }));
+  expect(await screen.findByText(/needs your own OAuth client before it can connect/)).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Gmail connection" })).toHaveFocus();
+  expect(screen.getByText("Connect turns on after you save a client ID above.")).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Connect" })[0]).toBeDisabled();
 });
