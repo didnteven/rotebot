@@ -14,6 +14,8 @@ pub struct TextDetector {
     url: Regex,
     assignment: Regex,
     label: Regex,
+    street: Regex,
+    postcode: Regex,
     level: MaskLevel,
 }
 
@@ -44,6 +46,12 @@ impl TextDetector {
             label: re(
                 r"(?i)\b(?:account\s*(?:number|no\.?)|(?:phone|mobile|telephone)\s*number|password|passcode|pin|cvv|cvc|card\s*(?:number|no\.?)|routing(?:\s*number)?|iban|swift(?:\s*(?:code|bic))?|date\s*of\s*birth|dob|tax\s*(?:number|id)|ird(?:\s*number)?|ssn|social\s*security(?:\s*number)?)\b\s*[:=]?\s*",
             )?,
+            // House number, up to three capitalised words, then a street type: "100 Clarence Street".
+            street: re(
+                r"\b\d{1,5}[A-Za-z]?(?:[/-]\d{1,5})?\s+(?:[A-Z][\p{L}'-]+\s+){0,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Terrace|Tce|Crescent|Cres|Court|Boulevard|Blvd|Highway|Hwy|Parade|Close|Grove|Square|Quay|Esplanade|STREET|ROAD|AVENUE|DRIVE|LANE|TERRACE)\b\.?",
+            )?,
+            // "Auckland 1011" / "NY 10001": a place name followed by a postcode.
+            postcode: re(r"\b(?:[A-Z][\p{L}'-]+(?:\s[A-Z][\p{L}'-]+)?\s\d{4}|[A-Z]{2}\s\d{5}(?:-\d{4})?)\b")?,
             level,
         })
     }
@@ -189,6 +197,18 @@ impl TextDetector {
                 if token_like(component) {
                     spans.push(m.start() + offset..m.start() + offset + component.len());
                 }
+            }
+        }
+        for m in self.street.find_iter(&text).filter(|_| standard) {
+            spans.push(m.range());
+        }
+        for m in self.postcode.find_iter(&text).filter(|_| strict) {
+            // A bare year after a capitalised word ("Season 2024") is not a postcode.
+            let year = m.as_str().rsplit(' ').next().is_some_and(|y| {
+                y.len() == 4 && (y.starts_with("19") || y.starts_with("20"))
+            });
+            if !year {
+                spans.push(m.range());
             }
         }
         for captures in self.assignment.captures_iter(&text) {

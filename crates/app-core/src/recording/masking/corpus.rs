@@ -3,6 +3,11 @@ use super::*;
 use legacy::LegacyDetector;
 
 const HARMLESS: &[&str] = &[
+    "Sold 30 Oct 7:03 pm",
+    "5 items in the queue",
+    "2 new Messages",
+    "Qty 1 Sale price $49.00",
+    "Level 3 Street Fighter",
     "1am2am3am4am5am6am7am8am9am10am11am12pm",
     "1am 2am 3am 4am 5am 6am 7am 8am 9am 10am 11am 12pm 1pm 2pm",
     "SW35SW39SW35SW37SW33SW31W28SW39SW43",
@@ -155,6 +160,11 @@ const HARMLESS: &[&str] = &[
 ];
 
 const MUST_MASK: &[&str] = &[
+    "100 Clarence Street",
+    "Ship to 42 Queen St",
+    "12B Great North Road",
+    "3/45 Ponsonby Terrace",
+    "221 Baker Street, London",
     "alex@example.test",
     "josé@example.test",
     "foo/bar=baz@example.test",
@@ -648,4 +658,15 @@ fn multiple_labelled_fields_leave_each_label_visible() {
             .iter()
             .any(|b| b.text == "1234" || b.text == "456"));
     }
+}
+
+#[test]
+fn postcodes_after_a_place_name_are_hidden_on_strict_only() {
+    let strict = TextDetector::with_level(MaskLevel::Strict).unwrap();
+    let standard = TextDetector::with_level(MaskLevel::Standard).unwrap();
+    for line in ["Auckland 1011", "Hamilton East 3216", "NY 10001"] {
+        assert!(strict.is_sensitive(line).unwrap(), "{line}");
+        assert!(!standard.is_sensitive(line).unwrap(), "{line}");
+    }
+    assert!(!strict.is_sensitive("Season 2024").unwrap());
 }
