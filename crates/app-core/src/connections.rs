@@ -212,6 +212,7 @@ impl Connections {
                 .auth
                 .fixed_redirect_port
                 .map(|p| format!("http://127.0.0.1:{p}/callback")),
+            service: self.catalog.service_of(&c.id),
             mail: c.mail.as_ref().map(|m| crate::dto::MailInfo {
                 help: m.app_password_help.clone(),
                 custom_server: m.custom_server,
@@ -706,6 +707,8 @@ impl Connections {
             .into_iter()
             .collect();
         let connected = self.connected_ids();
+        let connected_services: HashSet<String> =
+            connected.iter().map(|id| self.catalog.service_of(id)).collect();
         // connector -> (total count, strongest signal kind); recording signals win over text.
         let mut seen: BTreeMap<String, (i64, String)> = BTreeMap::new();
         for d in self.core.database().detections()? {
@@ -719,7 +722,11 @@ impl Connections {
         }
         let mut out: Vec<ConnectionSuggestion> = seen
             .into_iter()
-            .filter(|(id, _)| !hidden.contains(id) && !connected.contains(id))
+            .filter(|(id, _)| {
+                !hidden.contains(id)
+                    && !connected.contains(id)
+                    && !connected_services.contains(&self.catalog.service_of(id))
+            })
             .filter_map(|(id, (count, kind))| {
                 let name = self.catalog.get(&id)?.name.clone();
                 let message = if kind == "task_text" {
@@ -735,6 +742,9 @@ impl Connections {
                 .cmp(&a.count)
                 .then(a.connector_id.cmp(&b.connector_id))
         });
+        // One suggestion per service: Gmail by Google sign-in and by app password are one ask.
+        let mut services = HashSet::new();
+        out.retain(|s| services.insert(self.catalog.service_of(&s.connector_id)));
         Ok(out)
     }
 

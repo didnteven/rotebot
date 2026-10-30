@@ -400,6 +400,8 @@ export interface ConnectorInfo {
   state: ConnectionState;
   /** For preregistered servers: whether the user has stored a client id. */
   hasClientCredentials: boolean;
+  /** Connections to the same service share this name (Gmail by app password and by Google sign-in). */
+  service?: string;
   /** Set for email connectors that sign in with an address and an app password. */
   mail?: MailInfo | null;
 }

@@ -22,6 +22,10 @@ pub struct Connector {
     /// Present for email connectors that sign in with an address and app password.
     #[serde(default)]
     pub mail: Option<MailPreset>,
+    /// Connections that reach the same service (Gmail by Google sign-in or by app password)
+    /// share this name; connecting either one satisfies a task that mentions the service.
+    #[serde(default)]
+    pub service: Option<String>,
 }
 /// Server defaults for a mail provider; a custom server leaves the hosts empty for the person to fill in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +147,12 @@ impl Catalog {
             return Err(CatalogError);
         }
         Ok(catalog)
+    }
+    /// The service a connector reaches: its `service`, or its own id.
+    pub fn service_of(&self, id: &str) -> String {
+        self.get(id)
+            .and_then(|c| c.service.clone())
+            .unwrap_or_else(|| id.to_string())
     }
     pub fn get(&self, id: &str) -> Option<&Connector> {
         self.connectors.iter().find(|c| c.id == id)

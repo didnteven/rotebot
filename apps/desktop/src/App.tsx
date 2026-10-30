@@ -227,7 +227,7 @@ export function App({ backend }: { backend: Backend }) {
           {!status && !error && <p role="status">Loading Macroscope…</p>}
           {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} run={id => void act(async () => { const tool = await backend.getTool(id); setCreating(false); setShowPanel(false); setRunning(tool); setDestination("Tools"); })} create={() => { setDestination("Tools"); setInitialInput(null); setCreating(true); }} />}
           <div hidden={destination !== "Tools"}>
-            {destination === "Tools" && commonSuggestions}
+            {destination === "Tools" && !creating && commonSuggestions}
             {showPanel && show && status && (
               <ShowPanel
                 backend={backend}

@@ -12,6 +12,7 @@ import type {
   TaskDraft,
   Transform,
 } from "./backend/types";
+import { connectOffers, readyConnectors } from "./mentionedServices";
 import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, ModelCostLines, rowCount, useAction, useScreenFocus } from "./ui";
 
 const formats: DateFormat[] = [
@@ -228,8 +229,7 @@ export function CreateFlow({
       : await backend.draftTask(input!.handle, description);
     // A service the description mentions that is already connected is switched on for this tool
     // (read-only; the exact reads are still approved before anything is read).
-    const ready = next.mentionedConnectors.filter(id =>
-      connectors.some(c => c.id === id && c.state.kind === "connected") && !next.requiredConnections?.some(s => s.connectorId === id));
+    const ready = readyConnectors(next.mentionedConnectors, connectors, (next.requiredConnections ?? []).map(s => s.connectorId));
     if (ready.length) next = await backend.selectTaskConnections(next.draftId, [...(next.requiredConnections ?? []).map(s => s.connectorId), ...ready].slice(0, 5));
     acceptDraft(next);
     setEditing(false);
@@ -622,9 +622,7 @@ export function CreateFlow({
           </fieldset>}
           </details>
           {!!draft.requiredConnections?.length && <p className="notice notice-info" role="note">Using your {draft.requiredConnections.map(s => s.name).join(", ")} connection (read-only). You approve exactly what it reads before the tool is built.</p>}
-          {draft.mentionedConnectors
-            .map((id) => connectors.find((c) => c.id === id))
-            .filter((c) => c && c.state.kind !== "connected")
+          {connectOffers(draft.mentionedConnectors, connectors)
             .map(
               (c) =>
                 c && (

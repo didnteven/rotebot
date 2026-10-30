@@ -626,6 +626,9 @@ pub struct ConnectorInfo {
     pub has_client_credentials: bool,
     pub client_setup: Option<String>,
     pub redirect_uri: Option<String>,
+    /// Connections to the same service share this name (see the catalog).
+    #[serde(default)]
+    pub service: String,
     /// Set for email connectors that sign in with an address and an app password.
     #[serde(default)]
     pub mail: Option<MailInfo>,

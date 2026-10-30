@@ -326,6 +326,7 @@ export class MockBackend implements Backend {
           : `http://127.0.0.1:${c.auth.fixed_redirect_port}/callback`,
       state: { kind: "not_connected" },
       hasClientCredentials: false,
+      service: (c as { service?: string }).service ?? c.id,
       mail: (c as { mail?: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail
         ? (() => {
             const m = (c as unknown as { mail: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail;
