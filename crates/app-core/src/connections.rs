@@ -878,7 +878,25 @@ impl Connections {
 
 pub fn source_text(result: &serde_json::Value) -> Result<String, String> {
     if result["isError"] == true {
-        return Err("Connection read was rejected by the service".into());
+        // The service says why (a bad argument, a missing permission). Show a short, plain version
+        // of it; the text is untrusted, so only printable characters and a bounded length are kept.
+        let why: String = result["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|p| p["type"] == "text")
+            .filter_map(|p| p["text"].as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(300)
+            .collect();
+        return Err(if why.trim().is_empty() {
+            "Connection read was rejected by the service".into()
+        } else {
+            format!("Connection read was rejected by the service: {}", why.trim())
+        });
     }
     let text = if let Some(v) = result.get("structuredContent") {
         v.to_string()
@@ -902,6 +920,22 @@ pub fn source_text(result: &serde_json::Value) -> Result<String, String> {
 mod action_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_rejected_read_shows_the_services_reason_trimmed_and_without_control_characters() {
+        let result = json!({"isError": true, "content": [{"type": "text", "text": "Invalid argument:\n pageSize must be <= 50"}]});
+        assert_eq!(
+            source_text(&result).unwrap_err(),
+            "Connection read was rejected by the service: Invalid argument: pageSize must be <= 50"
+        );
+        let long = json!({"isError": true, "content": [{"type": "text", "text": "x".repeat(900)}]});
+        assert!(source_text(&long).unwrap_err().len() < 400);
+        assert_eq!(
+            source_text(&json!({"isError": true})).unwrap_err(),
+            "Connection read was rejected by the service"
+        );
+    }
+
     #[test]
     fn undeclared_connectors_tools_invalid_schemas_and_excess_calls_fail_closed() {
         let selected = vec![crate::dto::SelectedConnection {
