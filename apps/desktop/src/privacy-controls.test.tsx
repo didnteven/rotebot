@@ -118,3 +118,18 @@ it("mock grant revisions refuse stale staged approvals even after resume", async
     failure: { kind: "revoked" },
   });
 });
+
+it("deletes a tool from the library only after confirming, and Keep cancels", async () => {
+  const backend = new MockBackend();
+  const tool = await backend.installSampleTool();
+  const remove = vi.spyOn(backend, "deleteTool");
+  const user = userEvent.setup();
+  render(<App backend={backend} />);
+  await user.click(await screen.findByRole("button", { name: `Delete: ${tool.name}` }));
+  await user.click(button("Keep tool"));
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(button(`Delete: ${tool.name}`));
+  await user.click(button("Delete tool"));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(tool.id));
+  expect(await screen.findByRole("button", { name: "Try a sample" })).toBeVisible();
+});

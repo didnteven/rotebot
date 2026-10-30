@@ -32,6 +32,7 @@ const destinations = [
 type Destination = (typeof destinations)[number];
 export function App({ backend }: { backend: Backend }) {
   const [destination, setDestination] = useState<Destination>("Tools");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [tools, setTools] = useState<ToolSummary[] | null>(null),
     [libraryFailed, setLibraryFailed] = useState(false);
   const [status, setStatus] = useState<ModelAccessStatus | null>(null),
@@ -364,6 +365,19 @@ export function App({ backend }: { backend: Backend }) {
                                 ? "Resume tool"
                                 : "Pause tool"}
                             </button>
+                            {confirmDelete === tool.id ? (
+                              <div role="alertdialog" aria-label={`Delete ${displayName}`}>
+                                <p>Delete “{displayName}”? Its runs and costs are removed. Files it already created stay where they are.</p>
+                                <button disabled={busy} onClick={() => void act(async () => {
+                                  await backend.deleteTool(tool.id);
+                                  setConfirmDelete(null);
+                                  await refreshTools();
+                                })}>Delete tool</button>
+                                <button className="quiet" onClick={() => setConfirmDelete(null)}>Keep tool</button>
+                              </div>
+                            ) : (
+                              <button className="quiet" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => setConfirmDelete(tool.id)}>Delete</button>
+                            )}
                             <button
                               disabled={tool.state === "paused"}
                               aria-label={`Run now: ${displayName}`}
