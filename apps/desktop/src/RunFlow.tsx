@@ -19,6 +19,7 @@ import {
   FileNameInput,
   FileText,
   FailureNotice,
+  ModelCostLines,
   rowCount,
   useScreenFocus,
   ReceiptCard,
@@ -271,6 +272,7 @@ export function RunFlow({
           </button>
         </>
       )}
+      {detail?.modelCost && <section aria-label="Model cost"><h3>Model cost</h3><ModelCostLines cost={detail.modelCost}/><p className="muted">Billed to your model route. Each run's cost is added after it finishes.</p></section>}
       <details><summary>Details</summary>
         <p>{detail?.program ? "Program (sandboxed) · " : ""}Version {tool.version}</p>
         {detail?.program?.modelStep && <label>Monthly model-step cap<input aria-label="Monthly model-step cap" type="number" min={0} max={10000} value={detail.modelStepCap} onChange={e=>{const cap=Number(e.target.value);void act(async()=>setDetail(await backend.setModelStepCap(tool.id,cap)));}}/></label>}

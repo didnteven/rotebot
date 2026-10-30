@@ -90,6 +90,12 @@ CREATE TABLE deletion_journal (id INTEGER PRIMARY KEY CHECK (id = 1), include_to
 CREATE TABLE schedules (id TEXT PRIMARY KEY, tool_id TEXT NOT NULL UNIQUE REFERENCES tools(id) ON DELETE CASCADE, data_json TEXT NOT NULL);
 CREATE TABLE today (id TEXT PRIMARY KEY, data_json TEXT NOT NULL);
 "#,
+    r#"
+CREATE TABLE model_costs (
+  owner_id TEXT PRIMARY KEY, tool_id TEXT, kind TEXT NOT NULL, at_ms INTEGER NOT NULL,
+  calls INTEGER NOT NULL, cost_micros INTEGER NOT NULL, unknown_calls INTEGER NOT NULL);
+CREATE INDEX model_costs_by_tool ON model_costs(tool_id, at_ms);
+"#,
 ];
 
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
@@ -136,6 +142,19 @@ pub struct RunRow {
     pub created_ms: i64,
     /// Private staging directory holding the run's journal, for crash reconciliation.
     pub run_dir: Option<String>,
+}
+
+/// What a test run (kind "test", owner = build id) or a real run (kind "run", owner = run id)
+/// spent on model calls. `cost_micros` covers the calls whose price was known.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelCostRow {
+    pub owner_id: String,
+    pub tool_id: Option<String>,
+    pub kind: String,
+    pub at_ms: i64,
+    pub calls: i64,
+    pub cost_micros: i64,
+    pub unknown_calls: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -360,6 +379,7 @@ impl Db {
     pub fn delete_tool(&self, id: &str) -> Result<(), DbError> {
         self.with(|c| {
             c.execute("DELETE FROM runs WHERE tool_id = ?1", [id])?;
+            c.execute("DELETE FROM model_costs WHERE tool_id = ?1", [id])?;
             c.execute("DELETE FROM tools WHERE id = ?1", [id])?;
             Ok(())
         })
@@ -503,7 +523,7 @@ impl Db {
                 DELETE FROM activity; DELETE FROM today; DELETE FROM schedules;",
             )?;
             if include_tools {
-                tx.execute_batch("DELETE FROM runs; DELETE FROM tools;")?;
+                tx.execute_batch("DELETE FROM runs; DELETE FROM model_costs; DELETE FROM tools;")?;
             } else {
                 tx.execute_batch(
                     "UPDATE runs SET run_dir = NULL,
@@ -823,6 +843,75 @@ impl Db {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )?;
             Ok((count > 0 && unknown == 0).then_some(total))
+        })
+    }
+
+    // ---------- model costs ----------
+
+    pub fn put_model_cost(&self, r: &ModelCostRow) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute(
+                "INSERT OR REPLACE INTO model_costs
+                   (owner_id, tool_id, kind, at_ms, calls, cost_micros, unknown_calls)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![r.owner_id, r.tool_id, r.kind, r.at_ms, r.calls, r.cost_micros, r.unknown_calls],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Links the cost of a build's test run to the tool saved from it.
+    pub fn attach_model_cost(&self, owner_id: &str, tool_id: &str) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE model_costs SET tool_id = ?2 WHERE owner_id = ?1",
+                params![owner_id, tool_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn model_costs_for_tool(&self, tool_id: &str) -> Result<Vec<ModelCostRow>, DbError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT owner_id, tool_id, kind, at_ms, calls, cost_micros, unknown_calls
+                 FROM model_costs WHERE tool_id = ?1 ORDER BY at_ms DESC, owner_id",
+            )?;
+            let rows = stmt
+                .query_map([tool_id], |r| {
+                    Ok(ModelCostRow {
+                        owner_id: r.get(0)?,
+                        tool_id: r.get(1)?,
+                        kind: r.get(2)?,
+                        at_ms: r.get(3)?,
+                        calls: r.get(4)?,
+                        cost_micros: r.get(5)?,
+                        unknown_calls: r.get(6)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    pub fn model_cost(&self, owner_id: &str) -> Result<Option<ModelCostRow>, DbError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT owner_id, tool_id, kind, at_ms, calls, cost_micros, unknown_calls
+                 FROM model_costs WHERE owner_id = ?1",
+            )?;
+            let mut rows = stmt.query_map([owner_id], |r| {
+                Ok(ModelCostRow {
+                    owner_id: r.get(0)?,
+                    tool_id: r.get(1)?,
+                    kind: r.get(2)?,
+                    at_ms: r.get(3)?,
+                    calls: r.get(4)?,
+                    cost_micros: r.get(5)?,
+                    unknown_calls: r.get(6)?,
+                })
+            })?;
+            Ok(rows.next().transpose()?)
         })
     }
 

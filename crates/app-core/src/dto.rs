@@ -338,6 +338,9 @@ pub struct BuildState {
     pub spent_micros: Option<i64>,
     pub failure: Option<BuildFailure>,
     pub route_label: String,
+    /// What the test run's model calls cost, once it has made any. Filled when read.
+    #[serde(default)]
+    pub test_model_cost: Option<ModelCostSummary>,
 }
 
 // ---------- tools and runs ----------
@@ -363,6 +366,9 @@ pub struct ToolDetail {
     pub model_step_cap: u32,
     #[serde(default)]
     pub program: Option<macroscope_builder::Program>,
+    /// Model spend of the test run and the runs so far (micro-dollars). Absent without model calls.
+    #[serde(default)]
+    pub model_cost: Option<ModelCostSummary>,
     #[serde(flatten)]
     pub summary_row: ToolSummary,
     pub summary: Vec<String>,
@@ -375,6 +381,22 @@ pub struct ToolDetail {
     /// input file. Runs then stage without an input handle.
     #[serde(default)]
     pub no_input: bool,
+}
+
+/// Amounts are micro-dollars of calls whose price was known; `*_unknown_calls` counts calls
+/// the route did not price (shown as "price unknown", never as zero).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCostSummary {
+    pub test_micros: Option<i64>,
+    pub test_calls: u32,
+    pub test_unknown_calls: u32,
+    pub last_run_micros: Option<i64>,
+    pub last_run_calls: u32,
+    pub last_run_unknown_calls: u32,
+    pub run_count: u32,
+    pub total_micros: i64,
+    pub unknown_calls: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

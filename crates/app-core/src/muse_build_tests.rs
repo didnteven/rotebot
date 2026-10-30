@@ -123,6 +123,7 @@ async fn exercise_long_call(stop_mode: u8) {
                     comparison: None,
                     spent_micros: None,
                     failure: None,
+                    test_model_cost: None,
                     route_label: "Muse plan".into(),
                 },
                 tx: broadcast::channel(64).0,

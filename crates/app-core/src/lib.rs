@@ -1568,6 +1568,17 @@ impl AppCore {
     }
 
     pub fn build_state(&self, build_id: &str) -> CoreResult<BuildState> {
+        let mut state = self.build_state_stored(build_id)?;
+        state.test_model_cost = self.db().model_cost(build_id)?.map(|r| ModelCostSummary {
+            test_micros: Some(r.cost_micros),
+            test_calls: r.calls as u32,
+            test_unknown_calls: r.unknown_calls as u32,
+            ..ModelCostSummary::default()
+        });
+        Ok(state)
+    }
+
+    fn build_state_stored(&self, build_id: &str) -> CoreResult<BuildState> {
         if let Some(slot) = lock(&self.inner.builds).get(build_id) {
             return Ok(slot.state.clone());
         }
@@ -1795,6 +1806,7 @@ impl AppCore {
             spent_micros: None,
             failure: None,
             route_label,
+            test_model_cost: None,
         };
         let (tx, _) = broadcast::channel(64);
         let (cancel, mut cancelled) = tokio::sync::watch::channel(false);
@@ -2118,7 +2130,10 @@ impl AppCore {
                 result = self.resolve_model_answers(p, &snapshot, &fetched, !draft.no_input, None) => result,
             };
             match result {
-                Ok(a) => a,
+                Ok((a, spend)) => {
+                    self.record_model_spend(&build_id, None, "test", spend)?;
+                    a
+                }
                 Err(e) => {
                     self.fail_build(&build_id, BuildFailureKind::Checks, e.to_string())?;
                     return Ok(());
@@ -2656,7 +2671,35 @@ impl AppCore {
             version_hash: hash,
             no_input: d.get("noInput").and_then(Value::as_bool).unwrap_or(false),
             model_step_cap: d.get("modelStepCap").and_then(Value::as_u64).unwrap_or(60) as u32,
+            model_cost: self.model_cost_summary(&row.id)?,
         })
+    }
+
+    /// Model spend of a tool's test run and real runs; `None` when it never called a model.
+    fn model_cost_summary(&self, tool_id: &str) -> CoreResult<Option<ModelCostSummary>> {
+        let rows = self.db().model_costs_for_tool(tool_id)?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let mut s = ModelCostSummary::default();
+        // Newest first, so the first "run" row is the latest run.
+        for r in &rows {
+            if r.kind == "test" {
+                s.test_micros = Some(r.cost_micros);
+                s.test_calls = r.calls as u32;
+                s.test_unknown_calls = r.unknown_calls as u32;
+            } else {
+                if s.run_count == 0 {
+                    s.last_run_micros = Some(r.cost_micros);
+                    s.last_run_calls = r.calls as u32;
+                    s.last_run_unknown_calls = r.unknown_calls as u32;
+                }
+                s.run_count += 1;
+                s.total_micros += r.cost_micros;
+                s.unknown_calls += r.unknown_calls as u32;
+            }
+        }
+        Ok(Some(s))
     }
 
     fn tool_summary(&self, row: &db::ToolRow) -> ToolSummary {
@@ -2936,7 +2979,7 @@ impl AppCore {
         } else {
             DEFAULT_MODEL.to_string()
         };
-        self.create_tool(NewTool {
+        let saved = self.create_tool(NewTool {
             name,
             contract: &contract,
             mapping: &mapping,
@@ -2947,7 +2990,14 @@ impl AppCore {
             program: state.program.as_ref(),
             no_input: draft.no_input,
             connections: &draft.required_connections,
-        })
+        })?;
+        // The test run's model spend now belongs to the saved tool; show it on the detail.
+        self.db().attach_model_cost(build_id, &saved.summary_row.id)?;
+        let row = self
+            .db()
+            .tool(&saved.summary_row.id)?
+            .ok_or(CoreError::NotFound("tool"))?;
+        self.tool_detail(&row)
     }
 
     pub fn install_sample_tool(&self) -> CoreResult<ToolDetail> {
@@ -3261,18 +3311,22 @@ impl AppCore {
             let reads = self.fetch_connection_sources(p, &selected).await?;
             fetched.get_or_insert_with(BTreeMap::new).extend(reads);
         }
+        let mut run_spend = model_step::ModelSpend::default();
         #[cfg(feature = "generated-runtime")]
         let model_answers =
             if let Some(p) = detail.program.as_ref().filter(|p| p.model_step.is_some()) {
                 let snapshot = Self::read_limited(&input_path)?;
-                self.resolve_model_answers(
-                    p,
-                    &snapshot,
-                    fetched.as_ref().unwrap_or(&BTreeMap::new()),
-                    !detail.no_input,
-                    Some(&detail),
-                )
-                .await?
+                let (answers, spend) = self
+                    .resolve_model_answers(
+                        p,
+                        &snapshot,
+                        fetched.as_ref().unwrap_or(&BTreeMap::new()),
+                        !detail.no_input,
+                        Some(&detail),
+                    )
+                    .await?;
+                run_spend = spend;
+                answers
             } else {
                 BTreeMap::new()
             };
@@ -3451,6 +3505,7 @@ impl AppCore {
             created_ms: self.now(),
             run_dir: Some(staged.run_dir().to_string_lossy().into_owned()),
         })?;
+        self.record_model_spend(&run_id, Some(tool_id), "run", run_spend)?;
         {
             let mut staged_runs = lock(&self.inner.staged);
             if staged_runs.len() >= 2 || staged_runs.values().any(|s| s.dto.tool_id == tool_id) {

@@ -12,7 +12,7 @@ import type {
   TaskDraft,
   Transform,
 } from "./backend/types";
-import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, rowCount, useAction, useScreenFocus } from "./ui";
+import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, ModelCostLines, rowCount, useAction, useScreenFocus } from "./ui";
 
 const formats: DateFormat[] = [
   "mm_dd_yy",
@@ -688,6 +688,7 @@ export function CreateFlow({
               {build.comparison.outputText !== undefined ? <div className={`result-answer preserve-lines${build.comparison.outputText.length>200?" long":""}`} tabIndex={0} aria-label="Answer">{build.comparison.outputText}</div> : <DataTable columns={build.comparison.outputColumns} rows={build.comparison.outputRows} caption="Result · first 8 rows" />}
               {!draft?.noInput && !sites.length && <p>{rowCount(build.comparison.rowsIn)} → {rowCount(build.comparison.rowsOut)}</p>}
               {build.route === "offline_demo" && <p className="muted">Offline demo</p>}
+              {build.testModelCost && <ModelCostLines cost={build.testModelCost} />}
               <p>The tool creates a new output file in the folder you choose. Existing files stay unchanged.</p>
               {build.program && <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} connections={draft?.requiredConnections} />}
               <Field label="Tool name">

@@ -4,6 +4,7 @@ import type {
   Backend,
   ConnectionSuggestion,
   CsvPreview,
+  ModelCostSummary,
   Receipt,
 } from "./backend/types";
 
@@ -69,6 +70,20 @@ export function useScreenFocus<T extends HTMLElement>(screen: unknown) {
     ref.current?.closest("main")?.scrollTo?.({ top: 0, behavior: "instant" });
   }, [screen]);
   return ref;
+}
+const dollars = (micros: number) => `$${(micros / 1_000_000).toFixed(micros < 10_000 ? 4 : 2)}`;
+const callsText = (calls: number) => `${calls} model ${calls === 1 ? "call" : "calls"}`;
+/** "$0.0021 (2 model calls)", saying so when the route did not report a price. */
+export function costText(micros: number | null, calls: number, unknown: number) {
+  const price = unknown >= calls ? "price unknown" : `${dollars(micros ?? 0)}${unknown ? " + unpriced calls" : ""}`;
+  return `${price} (${callsText(calls)})`;
+}
+export function ModelCostLines({ cost }: { cost: ModelCostSummary }) {
+  return <ul className="model-cost" aria-label="Model cost">
+    {cost.testMicros !== null && <li>Test run: {costText(cost.testMicros, cost.testCalls, cost.testUnknownCalls)}</li>}
+    {cost.runCount > 0 && <li>Last run: {costText(cost.lastRunMicros, cost.lastRunCalls, cost.lastRunUnknownCalls)}</li>}
+    {cost.runCount > 1 && <li>All {cost.runCount} runs: {dollars(cost.totalMicros)}{cost.unknownCalls ? ` + ${cost.unknownCalls} unpriced` : ""}</li>}
+  </ul>;
 }
 export const rowCount = (count: number) => `${count} ${count === 1 ? "row" : "rows"}`;
 

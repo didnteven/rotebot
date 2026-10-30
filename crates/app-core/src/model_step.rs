@@ -3,7 +3,38 @@ use crate::*;
 use macroscope_model_gateway::{CostEstimator, StructuredRequest};
 use macroscope_runner::{ModelRequest, Response};
 
+/// What the model calls of one test run or run cost. `micros` covers calls with a known price.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ModelSpend {
+    pub calls: i64,
+    pub micros: i64,
+    pub unknown_calls: i64,
+}
+
 impl AppCore {
+    /// Stores a test run's (owner = build id) or run's (owner = run id) model spend.
+    pub(crate) fn record_model_spend(
+        &self,
+        owner_id: &str,
+        tool_id: Option<&str>,
+        kind: &str,
+        spend: ModelSpend,
+    ) -> CoreResult<()> {
+        if spend.calls == 0 {
+            return Ok(());
+        }
+        self.db().put_model_cost(&db::ModelCostRow {
+            owner_id: owner_id.into(),
+            tool_id: tool_id.map(str::to_string),
+            kind: kind.into(),
+            at_ms: self.now(),
+            calls: spend.calls,
+            cost_micros: spend.micros,
+            unknown_calls: spend.unknown_calls,
+        })?;
+        Ok(())
+    }
+
     pub(crate) async fn resolve_model_answers(
         &self,
         p: &macroscope_builder::Program,
@@ -11,9 +42,10 @@ impl AppCore {
         sources: &BTreeMap<String, String>,
         has_input: bool,
         tool: Option<&ToolDetail>,
-    ) -> CoreResult<BTreeMap<String, Value>> {
+    ) -> CoreResult<(BTreeMap<String, Value>, ModelSpend)> {
         let engine = self.runtime()?;
         let mut answers = BTreeMap::new();
+        let mut spend = ModelSpend::default();
         let epoch = self.inner.policy.epoch();
         let declared = p.model_step.as_ref().map(|m| m.prompt.as_str());
         for round in 0..=3 {
@@ -29,7 +61,7 @@ impl AppCore {
                 )
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;
             match response {
-                Response::Success { .. } => return Ok(answers),
+                Response::Success { .. } => return Ok((answers, spend)),
                 Response::Error { error } => {
                     return Err(CoreError::Runtime(format!(
                         "{}: {}",
@@ -72,11 +104,16 @@ impl AppCore {
                         if self.web_fetch_blocked().is_some() {
                             return Err(CoreError::Invalid("Local only blocks model steps".into()));
                         }
-                        let value = tokio::select! {
+                        let (value, cost) = tokio::select! {
                             biased;
                             _ = self.inner.policy.revoked(epoch) => return Err(CoreError::Invalid("Model step cancelled".into())),
                             result = self.model_answer(&request, tool) => result?,
                         };
+                        spend.calls += 1;
+                        match cost {
+                            Some(c) => spend.micros += c,
+                            None => spend.unknown_calls += 1,
+                        }
                         if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > 65_536) {
                             return Err(CoreError::Invalid("Model answer exceeds 64 KiB".into()));
                         }
@@ -94,7 +131,11 @@ impl AppCore {
         }
         Err(CoreError::Invalid("Model replay did not finish".into()))
     }
-    async fn model_answer(&self, r: &ModelRequest, tool: Option<&ToolDetail>) -> CoreResult<Value> {
+    async fn model_answer(
+        &self,
+        r: &ModelRequest,
+        tool: Option<&ToolDetail>,
+    ) -> CoreResult<(Value, Option<i64>)> {
         let access = self.model_access().await;
         let route = access
             .effective_route
@@ -292,6 +333,6 @@ impl AppCore {
             created_ms: self.now(),
             updated_ms: self.now(),
         })?;
-        Ok(value)
+        Ok((value, cost))
     }
 }

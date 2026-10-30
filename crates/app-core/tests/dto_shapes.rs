@@ -111,6 +111,7 @@ fn tool_detail_flattens_the_summary_fields() {
     let detail = ToolDetail {
         model_step_cap: 60,
         program: None,
+        model_cost: None,
         summary_row: ToolSummary {
             id: "t".into(),
             name: "n".into(),
@@ -180,6 +181,7 @@ fn build_state_uses_camel_case_and_snake_case_phases() {
             message: "m".into(),
         }),
         route_label: "Muse plan".into(),
+        test_model_cost: None,
     };
     let v = serde_json::to_value(&state).unwrap();
     assert_eq!(v["phase"], "candidate");

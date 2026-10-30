@@ -202,6 +202,7 @@ export interface BuildEvent {
 }
 
 export interface BuildState {
+  testModelCost?: ModelCostSummary | null;
   program?: Program | null;
   buildId: string;
   draftId: string;
@@ -251,7 +252,21 @@ export interface ToolSummary {
   state: "enabled" | "paused";
 }
 
+/** Micro-dollars of model calls with a known price; unknown-price calls are counted apart. */
+export interface ModelCostSummary {
+  testMicros: number | null;
+  testCalls: number;
+  testUnknownCalls: number;
+  lastRunMicros: number | null;
+  lastRunCalls: number;
+  lastRunUnknownCalls: number;
+  runCount: number;
+  totalMicros: number;
+  unknownCalls: number;
+}
+
 export interface ToolDetail extends ToolSummary {
+  modelCost?: ModelCostSummary | null;
   modelStepCap: number;
   program?: Program | null;
   summary: string[];
