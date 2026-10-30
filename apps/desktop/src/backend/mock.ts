@@ -329,7 +329,7 @@ export class MockBackend implements Backend {
       mail: (c as { mail?: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail
         ? (() => {
             const m = (c as unknown as { mail: { app_password_help: string; custom_server?: boolean; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; smtp_starttls?: boolean } }).mail;
-            return { help: m.app_password_help, customServer: !!m.custom_server, imapHost: m.imap_host, imapPort: m.imap_port, smtpHost: m.smtp_host, smtpPort: m.smtp_port, smtpStarttls: !!m.smtp_starttls, email: null };
+            return { help: m.app_password_help, customServer: !!m.custom_server, imapHost: m.imap_host, imapPort: m.imap_port, smtpHost: m.smtp_host, smtpPort: m.smtp_port, smtpStarttls: !!m.smtp_starttls, email: null, appPasswordUrl: (m as { app_password_url?: string }).app_password_url ?? null };
           })()
         : null,
     }),

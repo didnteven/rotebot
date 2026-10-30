@@ -37,6 +37,9 @@ pub struct MailPreset {
     /// True when the person types the server names themselves.
     #[serde(default)]
     pub custom_server: bool,
+    /// The provider's own page for creating an app password (checked against its documentation).
+    #[serde(default)]
+    pub app_password_url: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Auth {

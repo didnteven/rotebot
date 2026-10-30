@@ -195,3 +195,19 @@ it("asks for server names only for a custom mail provider", async () => {
   await screen.findByText("Connected · 8 tools available");
   expect(connect).toHaveBeenCalledWith("mail-custom", "me@fastmail.com", "pw", { imapHost: "imap.fastmail.com", imapPort: 993, smtpHost: "smtp.fastmail.com", smtpPort: 465, smtpStarttls: false });
 });
+
+it("links each mail provider's own app password page, opened only after confirming the address", async () => {
+  const backend = new MockBackend();
+  const open = vi.spyOn(backend, "openExternal").mockResolvedValue();
+  const user = userEvent.setup();
+  render(<MailHarness backend={backend} connectors={await backend.listConnectors()} />);
+  await user.click(screen.getByRole("button", { name: "Connect Gmail (app password)" }));
+  await user.click(screen.getByRole("button", { name: "Open the app password page" }));
+  expect(screen.getByText("https://myaccount.google.com/apppasswords")).toBeVisible();
+  expect(open).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Open in browser" }));
+  expect(open).toHaveBeenCalledExactlyOnceWith("https://myaccount.google.com/apppasswords");
+  await user.click(screen.getByRole("button", { name: "Connect Yahoo Mail" }));
+  await user.click(screen.getByRole("button", { name: "Open the app password page" }));
+  expect(screen.getByText("https://login.yahoo.com/account/security")).toBeVisible();
+});

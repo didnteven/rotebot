@@ -655,6 +655,9 @@ pub struct MailInfo {
     pub smtp_port: u16,
     pub smtp_starttls: bool,
     pub email: Option<String>,
+    /// The provider's page for creating an app password.
+    #[serde(default)]
+    pub app_password_url: Option<String>,
 }
 
 

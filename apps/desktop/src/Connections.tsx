@@ -462,7 +462,7 @@ function MailDetail({ backend, connector, changed, focusTick }: {
   const [smtpHost, setSmtpHost] = useState(mail.smtpHost);
   const [smtpPort, setSmtpPort] = useState(String(mail.smtpPort));
   const [starttls, setStarttls] = useState(mail.smtpStarttls);
-  const [confirmDocs, setConfirmDocs] = useState(false);
+  const [confirmLink, setConfirmLink] = useState<string | null>(null);
   useEffect(() => {
     heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     heading.current?.focus({ preventScroll: true });
@@ -513,18 +513,23 @@ function MailDetail({ backend, connector, changed, focusTick }: {
           <div className="actions">
             <button className="primary" disabled={busy || !email.trim() || !password}>Connect</button>
           </div>
-          {connector.docsUrl && isHttpsUrl(connector.docsUrl) && (
-            <p><button type="button" onClick={() => setConfirmDocs(true)}>How to get an app password</button></p>
-          )}
+          <p>
+            {mail.appPasswordUrl && isHttpsUrl(mail.appPasswordUrl) && (
+              <button type="button" onClick={() => setConfirmLink(mail.appPasswordUrl!)}>Open the app password page</button>
+            )}{" "}
+            {connector.docsUrl && isHttpsUrl(connector.docsUrl) && (
+              <button type="button" onClick={() => setConfirmLink(connector.docsUrl!)}>Read the provider's instructions</button>
+            )}
+          </p>
         </form>
       )}
-      {confirmDocs && connector.docsUrl && (
-        <div className="notice notice-info" role="region" aria-label="Open documentation">
+      {confirmLink && (
+        <div className="notice notice-info" role="region" aria-label="Open link">
           <p>Open this address in your browser?</p>
-          <p><code>{connector.docsUrl}</code></p>
+          <p><code>{confirmLink}</code></p>
           <div className="actions">
-            <button disabled={busy} onClick={() => void act(async () => { await backend.openExternal(connector.docsUrl!); setConfirmDocs(false); })}>Open documentation in browser</button>
-            <button onClick={() => setConfirmDocs(false)}>Keep here</button>
+            <button disabled={busy} onClick={() => void act(async () => { await backend.openExternal(confirmLink); setConfirmLink(null); })}>Open in browser</button>
+            <button onClick={() => setConfirmLink(null)}>Keep here</button>
           </div>
         </div>
       )}

@@ -221,6 +221,7 @@ impl Connections {
                 smtp_port: m.smtp_port,
                 smtp_starttls: m.smtp_starttls,
                 email: self.saved_mail_address(&c.id),
+                app_password_url: m.app_password_url.clone(),
             }),
         })
     }

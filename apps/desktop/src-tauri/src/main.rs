@@ -853,6 +853,9 @@ fn allowed_external(url: &str) -> bool {
         "support.google.com",
         "help.yahoo.com",
         "support.apple.com",
+        "myaccount.google.com",
+        "login.yahoo.com",
+        "account.apple.com",
     ];
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
@@ -1815,6 +1818,9 @@ mod tests {
         for c in catalog["connectors"].as_array().unwrap() {
             let docs = c["auth"]["docs_url"].as_str().unwrap();
             assert!(allowed_external(docs), "{docs}");
+            if let Some(page) = c["mail"]["app_password_url"].as_str() {
+                assert!(allowed_external(page), "{page}");
+            }
         }
     }
 

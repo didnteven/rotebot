@@ -414,6 +414,8 @@ export interface MailInfo {
   smtpPort: number;
   smtpStarttls: boolean;
   email: string | null;
+  /** The provider's own page for creating an app password. */
+  appPasswordUrl?: string | null;
 }
 export interface MailServerInput {
   imapHost: string;
