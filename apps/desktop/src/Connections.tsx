@@ -292,7 +292,8 @@ function ConnectionDetail({
                 <li>Google Auth Platform → Get started: add an app name and your email. For Audience choose <strong>External</strong> (Internal only works with a Google Workspace organization), add a contact email, then agree and Create.</li>
                 <li>Audience → <strong>Test users</strong> → Add users: enter the exact Google address you will sign in with. Anyone not listed gets “Access blocked: has not completed the Google verification process”.</li>
                 <li>Data Access → Add or remove scopes: add the scopes this service needs (Gmail: gmail.readonly and gmail.compose).</li>
-                <li>Clients → Create client → <strong>Desktop app</strong>.</li>
+                <li>Clients → Create client → <strong>Web application</strong>, tick <strong>Use this client for an AI-powered agent</strong>, and add the Redirect URI shown below under Authorized redirect URIs.</li>
+                <li>Google lists these connections as a Developer Preview for <strong>Google Workspace</strong> accounts: join at developers.google.com/workspace/preview with your Workspace account and Cloud project number (approval takes a couple of days). Personal @gmail.com accounts don’t appear to be eligible.</li>
                 <li>Download the JSON file and import it below, or copy the client ID and secret into the fields.</li>
               </ol>
               <p className="muted">At sign-in Google may say it hasn’t verified the app: that is expected while it is in Testing mode, so choose Continue. This stays on your Mac. Until you publish the app in Google Cloud, Google asks you to sign in again about every 7 days.</p>

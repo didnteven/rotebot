@@ -94,6 +94,12 @@ export function formatBytes(bytes: number) {
 export const rowCount = (count: number) => `${count} ${count === 1 ? "row" : "rows"}`;
 
 export function friendlyFailure(message: string, kind?: string): string {
+  // A connected service's own refusal is not a website problem, even when its message names a web address.
+  if (/^Connection read was rejected by the service/i.test(message)) {
+    return /developer preview/i.test(message)
+      ? "The service won't let this tool read yet: your Google Cloud project isn't enrolled in the Developer Preview. Try again once it is, or change what the tool should do."
+      : "The connected service refused to let the tool read that. Check the details below, then try again or change what the tool should do.";
+  }
   const site = message.match(/(?:https?:\/\/)?([a-z0-9](?:[a-z0-9-]*\.)+[a-z]{2,})(?=[/:\s)]|$)/i)?.[1]?.toLowerCase();
   if (site) {
     const reason = /403|401|forbidden|refus|denied/i.test(message) ? " (the site refused the request)"
