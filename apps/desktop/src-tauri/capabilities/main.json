@@ -32,6 +32,7 @@
     "allow-open-privacy-settings",
     "allow-remove-recording-frame",
     "allow-set-recording-mask-level",
+    "allow-save-recording-frame",
     "allow-confirm-normal-browser-window",
     "allow-start-recording",
     "allow-stop-recording",

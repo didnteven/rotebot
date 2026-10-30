@@ -50,6 +50,7 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export class TauriBackend implements Backend {
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
   confirmNormalBrowserWindow: Backend["confirmNormalBrowserWindow"] = () => invoke("confirm_normal_browser_window");
+  saveRecordingFrame: Backend["saveRecordingFrame"] = (sessionId, seq) => invoke("save_recording_frame", { sessionId, seq });
   setRecordingMaskLevel: Backend["setRecordingMaskLevel"] = (sessionId, level) => invoke("set_recording_mask_level", { sessionId, level });
   removeRecordingFrame: Backend["removeRecordingFrame"] = (sessionId, seq) => invoke("remove_recording_frame", { sessionId, seq });
   openPrivacySettings: Backend["openPrivacySettings"] = pane => invoke("open_privacy_settings", { pane });

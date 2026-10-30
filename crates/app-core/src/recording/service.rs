@@ -426,6 +426,21 @@ impl AppCore {
         s.frames = frames(capture, true);
         Ok(())
     }
+    /// The masked PNG exactly as it will be sent, for the person to save and inspect.
+    pub fn recording_frame_png(&self, session_id: &str, seq: u64) -> CoreResult<Vec<u8>> {
+        let mut slots = lock(&self.inner.recordings);
+        let s = slot(&mut slots, session_id, self.now())?;
+        let capture = s
+            .capture
+            .as_ref()
+            .ok_or_else(|| invalid("This recording can no longer be changed."))?;
+        capture
+            .frames()
+            .iter()
+            .find(|f| f.text().seq == seq)
+            .map(|f| f.png().to_vec())
+            .ok_or_else(|| invalid("That frame is no longer in the recording."))
+    }
     pub fn discard_recording(&self, session_id: &str) -> CoreResult<()> {
         self.stop_native_capture(Some(session_id), "discarded");
         lock(&self.inner.recordings).remove(session_id);

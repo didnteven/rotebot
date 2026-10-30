@@ -681,6 +681,28 @@ async fn set_recording_mask_level(core: State<'_, Core>, session_id: String, lev
     Ok(core.0.set_recording_mask_level(&session_id, level)?)
 }
 #[tauri::command]
+async fn save_recording_frame<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    session_id: String,
+    seq: u64,
+) -> Cmd<Option<String>> {
+    let png = core.0.recording_frame_png(&session_id, seq)?;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Save the masked frame")
+        .set_file_name(format!("frame-{seq}.png"))
+        .add_filter("PNG image", &["png"])
+        .blocking_save_file();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    std::fs::write(&path, png)
+        .map_err(|_| macroscope_app_core::CoreError::Invalid("Couldn't save the frame there.".into()))?;
+    Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()))
+}
+#[tauri::command]
 fn start_recording(core: State<'_, Core>, source: RecordingSource) -> Cmd<String> {
     Ok(core.0.start_recording(source)?)
 }
@@ -1174,6 +1196,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         open_privacy_settings,
         remove_recording_frame,
         set_recording_mask_level,
+        save_recording_frame,
         confirm_normal_browser_window,
         start_recording,
         stop_recording,

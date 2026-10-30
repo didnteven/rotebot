@@ -441,6 +441,7 @@ export interface Backend {
   requestRecordingPermission(): Promise<RecordingStatus>;
   confirmNormalBrowserWindow(): Promise<void>;
   removeRecordingFrame(sessionId: string, seq: number): Promise<RecordingFrames>;
+  saveRecordingFrame(sessionId: string, seq: number): Promise<string | null>;
   setRecordingMaskLevel(sessionId: string, level: MaskLevel): Promise<void>;
   openPrivacySettings(pane: "screen_recording" | "accessibility"): Promise<void>;
   startRecording(source: "sample" | "window"): Promise<string>;

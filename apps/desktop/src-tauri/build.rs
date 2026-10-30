@@ -32,6 +32,7 @@ fn main() {
         "set_muse_unverified_ok",
         "set_local_only",
         "pick_csv",
+        "save_recording_frame",
         "load_sample_csv",
         "draft_task",
         "draft_task_no_input",
