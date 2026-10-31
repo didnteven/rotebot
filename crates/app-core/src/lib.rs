@@ -306,6 +306,8 @@ struct NewTool<'a> {
     program: Option<&'a macroscope_builder::Program>,
     no_input: bool,
     connections: &'a [SelectedConnection],
+    /// The saved tool this build replaces: the new version is added to it, keeping its history.
+    replace: Option<&'a db::ToolRow>,
 }
 
 struct HostValidator;
@@ -683,6 +685,7 @@ impl AppCore {
             .unwrap_or_else(|| "output".into());
         let mut draft = TaskDraft {
             access_plan: None,
+            replaces_tool_id: None,
             required_connections: vec![],
             kind,
             example_output: None,
@@ -724,6 +727,7 @@ impl AppCore {
         let goal: String = description.trim().chars().take(GOAL_LIMIT).collect();
         let mut draft = TaskDraft {
             access_plan: None,
+            replaces_tool_id: None,
             kind: TaskKind::Program,
             example_output: None,
             synthetic_shape: String::new(),
@@ -2758,6 +2762,11 @@ impl AppCore {
             access: strings("access"),
             version_hash: hash,
             no_input: d.get("noInput").and_then(Value::as_bool).unwrap_or(false),
+            goal: d
+                .pointer("/contract/goal")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .into(),
             model_step_cap: d.get("modelStepCap").and_then(Value::as_u64).unwrap_or(60) as u32,
             model_cost: self.model_cost_summary(&row.id)?,
         })
@@ -2825,6 +2834,7 @@ impl AppCore {
             program,
             no_input,
             connections,
+            replace,
         } = new;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 {
@@ -2838,6 +2848,7 @@ impl AppCore {
             .db()
             .list_tools()?
             .into_iter()
+            .filter(|t| Some(t.id.as_str()) != replace.map(|r| r.id.as_str()))
             .map(|t| t.name)
             .collect();
         let unique_name = if taken.iter().any(|n| n == name) {
@@ -2849,7 +2860,23 @@ impl AppCore {
             name.to_string()
         };
         let name = unique_name.as_str();
-        let tool_id = ToolId(new_id("tool"));
+        let tool_id = ToolId(
+            replace
+                .map(|r| r.id.clone())
+                .unwrap_or_else(|| new_id("tool")),
+        );
+        let version_number: u32 = match replace {
+            Some(r) => {
+                self.db()
+                    .list_versions(&r.id)?
+                    .iter()
+                    .map(|v| self.version_number(&r.id, &v.hash))
+                    .max()
+                    .unwrap_or(1)
+                    + 1
+            }
+            None => 1,
+        };
         let contract_hash = format!(
             "sha256:{}",
             hash_hex(
@@ -2861,7 +2888,7 @@ impl AppCore {
             "schema": "macroscope.tool/v1",
             "id": tool_id.0,
             "name": name,
-            "version": 1,
+            "version": version_number,
             "runtime": {"engine": "csv-mapping", "pin": "csv-mapping-1", "sdk": "1.0", "entry": "mapping.json"},
             "platforms": ["macos"],
             "inputs": {
@@ -2983,27 +3010,45 @@ impl AppCore {
                     .join(", ")
             ));
         }
+        // An edit starts from the saved row so settings such as the model-step cap carry over.
+        let mut detail = replace
+            .map(|r| r.detail.clone())
+            .filter(Value::is_object)
+            .unwrap_or_else(|| json!({}));
+        for (key, value) in [
+            ("version", json!(version_number)),
+            (
+                "engine",
+                json!(if program.is_some() {
+                    "js-quickjs"
+                } else {
+                    "csv-mapping"
+                }),
+            ),
+            ("summary", json!(summary)),
+            ("inputColumns", json!(contract.input_schema)),
+            ("outputColumns", json!(contract.output_columns)),
+            ("access", json!(access)),
+            ("contract", json!(contract)),
+            ("noInput", json!(no_input)),
+            ("connections", json!(connections)),
+        ] {
+            detail[key] = value;
+        }
         let row = db::ToolRow {
             id: tool_id.0.clone(),
             name: name.into(),
             active_version: Some(version_hash.clone()),
-            state: "enabled".into(),
+            state: replace
+                .map(|r| r.state.clone())
+                .unwrap_or_else(|| "enabled".into()),
             sample,
-            created_ms: now,
-            last_run_ms: None,
-            run_count: 0,
-            detail: json!({
-                "version": 1,
-                "engine": if program.is_some() { "js-quickjs" } else { "csv-mapping" },
-                "summary": summary,
-                "inputColumns": contract.input_schema,
-                "outputColumns": contract.output_columns,
-                "access": access,
-                "contract": contract,
-                "noInput": no_input,
-                "connections": connections,
-            }),
+            created_ms: replace.map(|r| r.created_ms).unwrap_or(now),
+            last_run_ms: replace.and_then(|r| r.last_run_ms),
+            run_count: replace.map(|r| r.run_count).unwrap_or(0),
+            detail,
         };
+        let grant_scope = json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts, "mcp": mcp, "connectionSources": program.map(|p| &p.connection_sources), "modelStep": program.and_then(|p| p.model_step.as_ref())});
         self.db().put_tool(&row)?;
         self.db().insert_version(&db::VersionRow {
             tool_id: tool_id.0.clone(),
@@ -3016,14 +3061,135 @@ impl AppCore {
             },
             created_ms: now,
         })?;
+        let mut snapshot = row.detail.clone();
+        snapshot["grantScope"] = grant_scope.clone();
+        self.db()
+            .put_version_detail(&tool_id.0, &version_hash, &snapshot)?;
+        let revision = self.db().next_grant_revision(&tool_id.0)?;
         self.db().put_grant(
             &new_id("grant"),
             &tool_id.0,
             &version_hash,
-            1,
-            &json!({"read": "selected_input", "create": "one_output_in_selected_root", "webHosts": web_hosts, "mcp": mcp, "connectionSources": program.map(|p| &p.connection_sources), "modelStep": program.and_then(|p| p.model_step.as_ref())}),
+            revision,
+            &grant_scope,
         )?;
-        self.activity("build", format!("Saved tool “{name}”"), None);
+        if row.state != "enabled" {
+            // A paused tool stays paused; resuming grants the active version.
+            self.db().revoke_grants(&tool_id.0, now)?;
+        }
+        if replace.is_some() {
+            self.activity(
+                "build",
+                format!("Updated tool “{name}” to version {version_number}"),
+                None,
+            );
+        } else {
+            self.activity("build", format!("Saved tool “{name}”"), None);
+        }
+        self.tool_detail(&row)
+    }
+
+    /// The number a version carries; versions saved before history existed are number 1.
+    fn version_number(&self, tool_id: &str, hash: &str) -> u32 {
+        self.db()
+            .version_detail(tool_id, hash)
+            .ok()
+            .flatten()
+            .and_then(|d| d.get("version").and_then(Value::as_u64))
+            .unwrap_or(1) as u32
+    }
+
+    /// Marks a draft as an edit of a saved tool: saving its build adds a new version to that tool.
+    pub fn set_draft_replaces(&self, draft_id: &str, tool_id: &str) -> CoreResult<TaskDraft> {
+        let _admission = self.admit_local()?;
+        let row = self
+            .db()
+            .tool(tool_id)?
+            .ok_or(CoreError::NotFound("tool"))?;
+        if row.sample {
+            return Err(CoreError::Invalid(
+                "The sample tool can't be edited. Create your own task instead.".into(),
+            ));
+        }
+        let mut draft = self.load_draft(draft_id)?;
+        draft.replaces_tool_id = Some(tool_id.into());
+        self.save_draft(&draft)?;
+        Ok(draft)
+    }
+
+    /// Saved versions of a tool, newest first.
+    pub fn list_tool_versions(&self, tool_id: &str) -> CoreResult<Vec<ToolVersionInfo>> {
+        let row = self
+            .db()
+            .tool(tool_id)?
+            .ok_or(CoreError::NotFound("tool"))?;
+        let mut versions: Vec<ToolVersionInfo> = self
+            .db()
+            .list_versions(tool_id)?
+            .into_iter()
+            .map(|v| {
+                let detail = self.db().version_detail(tool_id, &v.hash).ok().flatten();
+                ToolVersionInfo {
+                    number: detail
+                        .as_ref()
+                        .and_then(|d| d.get("version").and_then(Value::as_u64))
+                        .unwrap_or(1) as u32,
+                    goal: detail
+                        .as_ref()
+                        .and_then(|d| d.pointer("/contract/goal"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .into(),
+                    active: row.active_version.as_deref() == Some(v.hash.as_str()),
+                    created_at_ms: v.created_ms,
+                    hash: v.hash,
+                }
+            })
+            .collect();
+        versions.reverse();
+        Ok(versions)
+    }
+
+    /// Makes an older saved version the one that runs. History is kept; nothing is deleted.
+    pub fn restore_tool_version(&self, tool_id: &str, hash: &str) -> CoreResult<ToolDetail> {
+        let _admission = self.admit_local()?;
+        let mut row = self
+            .db()
+            .tool(tool_id)?
+            .ok_or(CoreError::NotFound("tool"))?;
+        self.db()
+            .version(tool_id, hash)?
+            .ok_or(CoreError::NotFound("tool version"))?;
+        if row.active_version.as_deref() == Some(hash) {
+            return self.tool_detail(&row);
+        }
+        let mut snapshot = self.db().version_detail(tool_id, hash)?.ok_or_else(|| {
+            CoreError::Invalid(
+                "This version was saved before version history and can't be restored.".into(),
+            )
+        })?;
+        let scope = snapshot
+            .as_object_mut()
+            .and_then(|o| o.remove("grantScope"))
+            .unwrap_or(Value::Null);
+        if let (Some(current), Some(old)) = (row.detail.as_object_mut(), snapshot.as_object()) {
+            for (key, value) in old {
+                current.insert(key.clone(), value.clone());
+            }
+        }
+        row.active_version = Some(hash.into());
+        self.db().put_tool(&row)?;
+        if row.state == "enabled" {
+            let revision = self.db().next_grant_revision(tool_id)?;
+            self.db()
+                .put_grant(&new_id("grant"), tool_id, hash, revision, &scope)?;
+        }
+        let number = self.version_number(tool_id, hash);
+        self.activity(
+            "build",
+            format!("Restored version {number} of “{}”", row.name),
+            None,
+        );
         self.tool_detail(&row)
     }
 
@@ -3067,6 +3233,11 @@ impl AppCore {
         } else {
             DEFAULT_MODEL.to_string()
         };
+        // An edit adds a version to the saved tool; if that tool was deleted meanwhile, save a new one.
+        let replace = draft
+            .replaces_tool_id
+            .as_deref()
+            .and_then(|id| self.db().tool(id).ok().flatten());
         let saved = self.create_tool(NewTool {
             name,
             contract: &contract,
@@ -3078,6 +3249,7 @@ impl AppCore {
             program: state.program.as_ref(),
             no_input: draft.no_input,
             connections: &draft.required_connections,
+            replace: replace.as_ref(),
         })?;
         // The test run's model spend now belongs to the saved tool; show it on the detail.
         self.db()
@@ -3112,6 +3284,7 @@ impl AppCore {
             program: None,
             no_input: false,
             connections: &[],
+            replace: None,
         })
     }
 

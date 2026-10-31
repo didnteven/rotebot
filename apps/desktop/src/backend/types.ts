@@ -135,6 +135,8 @@ export interface ModelStep {purpose:string;prompt:string;}
 export interface Program { connectionSources?:ConnectionSource[]; modelStep?:ModelStep|null; summary: string; output_name: string; code: string; webSources: WebSource[]; }
 export interface TaskDraft {
   accessPlan?: AccessReport | null;
+  /** Set while editing a saved tool: saving its build adds a new version to that tool. */
+  replacesToolId?: string | null;
   requiredConnections?: SelectedConnection[];
   kind?: TaskKind;
   exampleOutput?: string | null;
@@ -287,7 +289,18 @@ export interface ModelCostSummary {
   unknownCalls: number;
 }
 
+/** One saved version of a tool; the active one is what runs. */
+export interface ToolVersionInfo {
+  hash: string;
+  number: number;
+  createdAtMs: number;
+  active: boolean;
+  goal: string;
+}
+
 export interface ToolDetail extends ToolSummary {
+  /** The description the tool was built from, so it can be edited and rebuilt. */
+  goal: string;
   modelCost?: ModelCostSummary | null;
   modelStepCap: number;
   program?: Program | null;
@@ -433,7 +446,6 @@ export interface MailServerInput {
   smtpStarttls: boolean;
 }
 
-
 export interface ConnectionSuggestion {
   connectorId: string;
   connectorName: string;
@@ -543,6 +555,8 @@ export interface Backend {
   openMuseSignIn(): Promise<void>;
   saveCustomEndpoint(baseUrl: string, model: string): Promise<ModelAccessStatus>;
   saveCustomEndpointToken(): Promise<ModelAccessStatus>;
+  /** Native dialogs ask for the Modal token ID, then the secret; stored as one `ID.SECRET` bearer. */
+  saveCustomEndpointModalToken(): Promise<ModelAccessStatus>;
   setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number): Promise<ModelAccessStatus>;
   testCustomEndpoint(): Promise<ModelAccessStatus>;
   removeCustomEndpoint(): Promise<ModelAccessStatus>;
@@ -555,8 +569,6 @@ export interface Backend {
   loadSampleCsv(): Promise<CsvPreview>;
   draftTask(input: FileHandle, description: string): Promise<TaskDraft>;
   /** Drafts a program task with no input file; the program reads approved web sources. */
-  /** Native dialogs ask for the Modal token ID, then the secret; stored as one `ID.SECRET` bearer. */
-  saveCustomEndpointModalToken(): Promise<ModelAccessStatus>;
   draftTaskNoInput(description: string): Promise<TaskDraft>;
   answerQuestion(
     draftId: string,
@@ -594,6 +606,12 @@ export interface Backend {
   exportTool(toolId: string): Promise<string | null>; // null when the folder picker is canceled
   revokeTool(toolId: string): Promise<ToolDetail>;
   restoreTool(toolId: string): Promise<ToolDetail>;
+  /** Marks a draft as an edit of a saved tool; saving its build then adds a version to that tool. */
+  setDraftReplaces(draftId: string, toolId: string): Promise<TaskDraft>;
+  /** Saved versions of a tool, newest first. */
+  listToolVersions(toolId: string): Promise<ToolVersionInfo[]>;
+  /** Makes an older version the one that runs; nothing is deleted. */
+  restoreToolVersion(toolId: string, hash: string): Promise<ToolDetail>;
   deleteTool(toolId: string): Promise<void>;
   pickOutputDir(): Promise<FileHandle | null>;
   stageRun(

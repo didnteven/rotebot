@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-draft-replaces"
+description = "Enables the set_draft_replaces command without any pre-configured scope."
+commands.allow = ["set_draft_replaces"]
+
+[[permission]]
+identifier = "deny-set-draft-replaces"
+description = "Denies the set_draft_replaces command without any pre-configured scope."
+commands.deny = ["set_draft_replaces"]

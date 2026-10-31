@@ -470,6 +470,29 @@ fn revoke_tool<R: Runtime>(
     Ok(tool)
 }
 
+/// Marks a draft as an edit of a saved tool; saving its build then adds a version to that tool.
+#[tauri::command]
+fn set_draft_replaces(core: State<'_, Core>, draft_id: String, tool_id: String) -> Cmd<TaskDraft> {
+    Ok(core.0.set_draft_replaces(&draft_id, &tool_id)?)
+}
+
+#[tauri::command]
+fn list_tool_versions(core: State<'_, Core>, tool_id: String) -> Cmd<Vec<ToolVersionInfo>> {
+    Ok(core.0.list_tool_versions(&tool_id)?)
+}
+
+#[tauri::command]
+fn restore_tool_version<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+    hash: String,
+) -> Cmd<ToolDetail> {
+    let tool = core.0.restore_tool_version(&tool_id, &hash)?;
+    refresh_tray(&app);
+    Ok(tool)
+}
+
 #[tauri::command]
 fn restore_tool<R: Runtime>(
     app: AppHandle<R>,
@@ -1326,6 +1349,9 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         export_tool,
         revoke_tool,
         restore_tool,
+        list_tool_versions,
+        restore_tool_version,
+        set_draft_replaces,
         delete_preview,
         delete_data,
         app_info,
@@ -1333,6 +1359,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         enter_api_key_native,
         save_custom_endpoint,
         save_custom_endpoint_token,
+        save_custom_endpoint_modal_token,
         set_custom_endpoint_options,
         remove_custom_endpoint,
         test_custom_endpoint,
@@ -1359,7 +1386,6 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         stop_recording,
         list_recording_frames,
         preview_recording,
-        save_custom_endpoint_modal_token,
         consent_and_analyze,
         answer_recording_questions,
         edit_recording_draft,

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-tool-version"
+description = "Enables the restore_tool_version command without any pre-configured scope."
+commands.allow = ["restore_tool_version"]
+
+[[permission]]
+identifier = "deny-restore-tool-version"
+description = "Denies the restore_tool_version command without any pre-configured scope."
+commands.deny = ["restore_tool_version"]

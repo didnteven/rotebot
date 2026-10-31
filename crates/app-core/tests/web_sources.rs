@@ -1016,3 +1016,146 @@ mod schedules {
         assert!(f.core.list_schedules().unwrap().is_empty());
     }
 }
+
+const CODE_V2: &str = r#"function run() {
+    const api = macroscope.source("forecast");
+    const data = JSON.parse(api);
+    macroscope.output("weather.txt", "Auckland low " + data.hourly.temperature_2m[0] + "C\n");
+}"#;
+
+async fn preview_text(core: &AppCore, tool_id: &str) -> String {
+    match core.preview_run_no_input(tool_id).await.unwrap() {
+        StageResult::Staged(p) => p.preview_text.unwrap_or_default().trim().to_string(),
+        other => panic!("{other:?}"),
+    }
+}
+
+async fn edit_and_save(core: &AppCore, goal: &str, replaces: &str) -> ToolDetail {
+    let draft = core.draft_task_no_input(goal).unwrap();
+    let draft = core.set_draft_replaces(&draft.draft_id, replaces).unwrap();
+    assert_eq!(draft.replaces_tool_id.as_deref(), Some(replaces));
+    let draft = core
+        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", None)
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let built = wait(core, &started.build_id).await;
+    assert_eq!(built.phase, BuildPhase::Ready, "{built:?}");
+    core.save_tool(&started.build_id, "Auckland weather")
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn editing_a_saved_tool_adds_a_version_and_older_ones_can_be_restored() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(StandInState {
+        forecast: br#"{"hourly":{"temperature_2m":[21.5]}}"#.to_vec(),
+        redirect_to: String::new(),
+        model: Vec::new(),
+    }));
+    let server = start_stand_in(state.clone());
+    state.lock().unwrap().model = model_body_for(&program_for(&server.base, "/forecast"));
+    let core = core_at(temp.path(), server.base.clone());
+    let v1 = build_weather(&core).await;
+    let id = v1.summary_row.id.clone();
+    assert_eq!(v1.summary_row.version, 1);
+    assert!(v1.goal.contains("Auckland"), "{}", v1.goal);
+    assert_eq!(preview_text(&core, &id).await, "Auckland high 21.5C");
+
+    let mut program = program_for(&server.base, "/forecast");
+    program.code = CODE_V2.into();
+    state.lock().unwrap().model = model_body_for(&program);
+    let v2 = edit_and_save(&core, &format!("{} Show the low instead.", v1.goal), &id).await;
+    assert_eq!(v2.summary_row.id, id, "an edit keeps the same tool");
+    assert_eq!(v2.summary_row.version, 2);
+    assert_eq!(v2.summary_row.name, "Auckland weather");
+    assert_ne!(v2.version_hash, v1.version_hash);
+    assert!(v2.goal.contains("Show the low instead"));
+    assert_eq!(core.list_tools().unwrap().len(), 1);
+    assert_eq!(preview_text(&core, &id).await, "Auckland low 21.5C");
+
+    let numbers = |core: &AppCore| {
+        core.list_tool_versions(&id)
+            .unwrap()
+            .iter()
+            .map(|v| (v.number, v.active))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(numbers(&core), vec![(2, true), (1, false)]);
+
+    let back = core.restore_tool_version(&id, &v1.version_hash).unwrap();
+    assert_eq!(back.version_hash, v1.version_hash);
+    assert_eq!(back.summary_row.version, 1);
+    assert!(!back.goal.contains("Show the low instead"));
+    assert_eq!(preview_text(&core, &id).await, "Auckland high 21.5C");
+    assert_eq!(numbers(&core), vec![(2, false), (1, true)]);
+
+    // Restoring does not lose the newer version, and new edits continue after the highest number.
+    let v3 = edit_and_save(&core, "Auckland low again", &id).await;
+    assert_eq!(v3.summary_row.version, 3);
+    let forward = core.restore_tool_version(&id, &v2.version_hash).unwrap();
+    assert_eq!(forward.summary_row.version, 2);
+    assert!(core.restore_tool_version(&id, "sha-unknown").is_err());
+}
+
+#[tokio::test]
+async fn a_paused_tool_stays_paused_when_edited_and_resumes_on_the_new_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(StandInState {
+        forecast: br#"{"hourly":{"temperature_2m":[21.5]}}"#.to_vec(),
+        redirect_to: String::new(),
+        model: Vec::new(),
+    }));
+    let server = start_stand_in(state.clone());
+    state.lock().unwrap().model = model_body_for(&program_for(&server.base, "/forecast"));
+    let core = core_at(temp.path(), server.base.clone());
+    let v1 = build_weather(&core).await;
+    let id = v1.summary_row.id.clone();
+    core.revoke_tool(&id).unwrap();
+    let mut program = program_for(&server.base, "/forecast");
+    program.code = CODE_V2.into();
+    state.lock().unwrap().model = model_body_for(&program);
+    let v2 = edit_and_save(&core, &v1.goal, &id).await;
+    assert_eq!(v2.summary_row.state, "paused");
+    let resumed = core.restore_tool(&id).unwrap();
+    assert_eq!(resumed.summary_row.state, "enabled");
+    assert_eq!(resumed.version_hash, v2.version_hash);
+}
+
+#[tokio::test]
+async fn the_sample_cannot_be_edited_and_a_deleted_tool_saves_as_a_new_one() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(StandInState {
+        forecast: br#"{"hourly":{"temperature_2m":[21.5]}}"#.to_vec(),
+        redirect_to: String::new(),
+        model: Vec::new(),
+    }));
+    let server = start_stand_in(state.clone());
+    state.lock().unwrap().model = model_body_for(&program_for(&server.base, "/forecast"));
+    let core = core_at(temp.path(), server.base.clone());
+    let sample = core.install_sample_tool().unwrap();
+    let draft = core.draft_task_no_input("anything").unwrap();
+    assert!(core
+        .set_draft_replaces(&draft.draft_id, &sample.summary_row.id)
+        .is_err());
+
+    let v1 = build_weather(&core).await;
+    let draft = core.draft_task_no_input(&v1.goal).unwrap();
+    core.set_draft_replaces(&draft.draft_id, &v1.summary_row.id)
+        .unwrap();
+    let draft = core
+        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", None)
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    assert_eq!(
+        wait(&core, &started.build_id).await.phase,
+        BuildPhase::Ready
+    );
+    core.delete_tool(&v1.summary_row.id).unwrap();
+    let saved = core
+        .save_tool(&started.build_id, "Auckland weather")
+        .await
+        .unwrap();
+    assert_ne!(saved.summary_row.id, v1.summary_row.id);
+    assert_eq!(saved.summary_row.version, 1);
+}

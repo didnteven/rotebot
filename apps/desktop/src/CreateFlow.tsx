@@ -11,6 +11,7 @@ import type {
   ModelAccessStatus,
   OutboundPreview,
   TaskDraft,
+  ToolDetail,
   Transform,
 } from "./backend/types";
 import { connectOffers, readyConnectors } from "./mentionedServices";
@@ -86,6 +87,7 @@ export function CreateFlow({
   initialInput,
   initialGoal,
   initialDraft,
+  editTool,
   status,
   connectors,
   openSettings,
@@ -98,6 +100,8 @@ export function CreateFlow({
   initialInput: CsvPreview | null;
   initialGoal?: string;
   initialDraft?: TaskDraft;
+  /** A saved tool being edited: its description is the starting point, and saving adds a version to it. */
+  editTool?: ToolDetail;
   status: ModelAccessStatus;
   connectors: ConnectorInfo[];
   openSettings: () => void;
@@ -108,9 +112,9 @@ export function CreateFlow({
 }) {
   const [step, setStep] = useState(initialDraft ? 1 : 0),
     [input, setInput] = useState(initialInput),
-    [noInput, setNoInput] = useState(!initialInput),
+    [noInput, setNoInput] = useState(editTool ? editTool.noInput : !initialInput),
     [description, setDescription] = useState(
-      initialGoal ?? (initialInput && initialInput.text === undefined
+      initialGoal ?? editTool?.goal ?? (initialInput && initialInput.text === undefined
         ? "Clean this orders CSV for import: Order, Date, Amount."
         : ""),
     );
@@ -119,7 +123,7 @@ export function CreateFlow({
     [outputName, setOutputName] = useState(initialDraft?.outputName ?? "orders_ready.csv");
   const [preview, setPreview] = useState<OutboundPreview | null>(null),
     [build, setBuild] = useState<BuildState | null>(null),
-    [name, setName] = useState(initialDraft ? toolNameFromGoal(initialDraft.goal) : "Clean import CSV");
+    [name, setName] = useState(initialDraft ? toolNameFromGoal(initialDraft.goal) : editTool?.name ?? "Clean import CSV");
   const [example, setExample] = useState(initialDraft?.exampleOutput ?? "");
   const [editing, setEditing] = useState(false);
   const requestRef = useRef<HTMLTextAreaElement>(null);
@@ -137,7 +141,7 @@ export function CreateFlow({
   useEffect(() => {
     if (!initialGoal || initialDraft || initialGoalStarted.current) return;
     initialGoalStarted.current = true;
-    void act(async () => { acceptDraft(await backend.draftTaskNoInput(initialGoal)); setStep(1); });
+    void act(async () => { await newDraft(() => backend.draftTaskNoInput(initialGoal)); setStep(1); });
   }, [backend, initialGoal, initialDraft]);
   useEffect(() => {
     if (!buildId) return;
@@ -209,7 +213,7 @@ export function CreateFlow({
   }, [step, editing]);
   function acceptDraft(next: TaskDraft) {
     setDraft(next);
-    setName(next.kind === "program" ? toolNameFromGoal(next.goal) : "Clean import CSV");
+    setName(editTool ? editTool.name : next.kind === "program" ? toolNameFromGoal(next.goal) : "Clean import CSV");
     setMap(next.mapping);
     setOutputName(next.outputName);
     setPreview(null);
@@ -227,15 +231,21 @@ export function CreateFlow({
       ),
     });
   }
-  async function describe() {
-    let next = noInput
-      ? await backend.draftTaskNoInput(description)
-      : await backend.draftTask(input!.handle, description);
+  /** Every draft made while editing a saved tool is marked, so saving adds a version to that tool. */
+  async function newDraft(make: () => Promise<TaskDraft>) {
+    let next = await make();
+    if (editTool) next = await backend.setDraftReplaces(next.draftId, editTool.id);
     // A service the description mentions that is already connected is switched on for this tool
     // (read-only; the exact reads are still approved before anything is read).
     const ready = readyConnectors(next.mentionedConnectors, connectors, (next.requiredConnections ?? []).map(s => s.connectorId));
     if (ready.length) next = await backend.selectTaskConnections(next.draftId, [...(next.requiredConnections ?? []).map(s => s.connectorId), ...ready].slice(0, 5));
     acceptDraft(next);
+    if (editTool?.program) setOutputName(editTool.program.output_name);
+  }
+  async function describe() {
+    await newDraft(() => noInput
+      ? backend.draftTaskNoInput(description)
+      : backend.draftTask(input!.handle, description));
     setEditing(false);
     setStep(1);
   }
@@ -278,7 +288,7 @@ export function CreateFlow({
         >
           Back
         </button>
-        <span className="muted">Create tool</span>
+        <span className="muted">{editTool ? `Edit “${editTool.name}”` : "Create tool"}</span>
       </div>
       <ol className="stepper" aria-label="Create progress">
         {[
@@ -301,6 +311,8 @@ export function CreateFlow({
       {step === 0 && (
         <>
           <h2 ref={headingRef} tabIndex={-1}>What should it do?</h2>
+          {editTool && <p role="note" className="notice notice-info">Editing “{editTool.name}”. Change the description, then check the plan and test it. Nothing is replaced until you save, and the current version stays in its version history.</p>}
+          {editTool && !editTool.noInput && !input && <p className="muted">This tool reads a file. Choose a sample file to test the new version.</p>}
           <Field label="What should the tool do?">
             <textarea
               ref={requestRef}
@@ -710,12 +722,13 @@ export function CreateFlow({
               <Field label="Tool name">
                 <input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
+              {editTool && <p role="note" className="notice notice-info">Saving adds a new version of “{editTool.name}”. The current version stays in its version history and can be restored.{editTool.noInput ? " If this tool is scheduled, you will be asked to approve the new version before it runs on its own." : ""}</p>}
               <h3>Is this right?</h3>
-              {!!sites.length && <p id="save-approval" className="notice notice-info">This tool will read data from {sites.join(", ")} each time it runs. Allow? Press “Yes, save this tool” to allow this access and save.</p>}
+              {!!sites.length && <p id="save-approval" className="notice notice-info">This tool will read data from {sites.join(", ")} each time it runs. Allow? Press “{editTool ? "Yes, save changes" : "Yes, save this tool"}” to allow this access and save.</p>}
               {busy && <p role="status">Working…</p>}
               {!name.trim() && <p id="save-reason">Give the tool a name before saving.</p>}
               <div className="actions">
-                <button className="primary" disabled={busy || !name.trim()} aria-describedby={sites.length ? "save-approval" : !name.trim() ? "save-reason" : undefined} onClick={() => void act(async () => { await backend.saveTool(build.buildId, name); await saved(); })}>Yes, save this tool</button>
+                <button className="primary" disabled={busy || !name.trim()} aria-describedby={sites.length ? "save-approval" : !name.trim() ? "save-reason" : undefined} onClick={() => void act(async () => { await backend.saveTool(build.buildId, name); await saved(); })}>{editTool ? "Yes, save changes" : "Yes, save this tool"}</button>
                 <button onClick={changeRequest}>No, change it</button>
               </div>
             </>

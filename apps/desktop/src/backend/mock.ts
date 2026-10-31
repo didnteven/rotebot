@@ -300,6 +300,8 @@ export class MockBackend implements Backend {
   async setLoginEnabled(enabled: boolean) {this.login=enabled;}
   private serial = 0;
   private tools = new Map<string, ToolDetail>();
+  /** Every saved version of each tool, oldest first. */
+  private toolHistory = new Map<string, ToolDetail[]>();
   private files = new Map<string, { preview: CsvPreview; rows: string[][] }>();
   private drafts = new Map<string, TaskDraft>();
   private builds = new Map<string, BuildState>();
@@ -369,6 +371,7 @@ export class MockBackend implements Backend {
   ) {
     for (const seed of seeds)
       this.tools.set(seed.id, {
+        goal: "Clean this orders CSV for import: Order, Date, Amount.",
         modelStepCap:60,
         engine: "csv-mapping",
         createdAtMs: Date.now(),
@@ -479,10 +482,10 @@ export class MockBackend implements Backend {
     Object.assign(c,{baseUrl:u.href,host:u.hostname,model:model.trim()}); return this.resolveRoute();
   }
   async saveCustomEndpointToken() { this.recording.invalidateConsent(); this.status.customEndpoint.tokenPresent=true; this.status.customEndpoint.lastTest=null; return this.resolveRoute(); }
+  async saveCustomEndpointModalToken() { return this.saveCustomEndpointToken(); }
   async setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number) {
     if(!Number.isInteger(monthlyCallCap) || monthlyCallCap<0) throw new Error("Enter a nonnegative whole call cap.");
     Object.assign(this.status.customEndpoint,{displayName,monthlyCallCap}); return this.resolveRoute();
-  async saveCustomEndpointModalToken() { return this.saveCustomEndpointToken(); }
   }
   async testCustomEndpoint() {
     const c=this.status.customEndpoint;
@@ -1118,18 +1121,23 @@ export class MockBackend implements Backend {
     if (this.drafts.get(draft.draftId)?.revision !== draft.revision)
       throw new Error("The task changed after this build. Build it again.");
     const hosts = (build.program?.webSources ?? []).map((s) => new URL(s.url.replace("{today}", "2026-01-01")).hostname);
+    // An edit adds a version to the saved tool; if that tool was deleted meanwhile, save a new one.
+    const replaced = draft.replacesToolId ? this.tools.get(draft.replacesToolId) : undefined;
+    const history = replaced ? this.toolHistory.get(replaced.id) ?? [clone(replaced)] : [];
+    const version = Math.max(0, ...history.map((v) => v.version)) + 1;
     const tool: ToolDetail = {
-      modelStepCap:60,
-      id: this.id("tool"),
+      goal: draft.goal,
+      modelStepCap: replaced?.modelStepCap ?? 60,
+      id: replaced?.id ?? this.id("tool"),
       name: name.trim(),
-      version: 1,
+      version,
       engine: build.program ? "js-quickjs" : "csv-mapping",
       program: build.program,
-      createdAtMs: Date.now(),
-      lastRunAtMs: null,
-      runCount: 0,
+      createdAtMs: replaced?.createdAtMs ?? Date.now(),
+      lastRunAtMs: replaced?.lastRunAtMs ?? null,
+      runCount: replaced?.runCount ?? 0,
       sample: this.sampleInputs.has(draft.input.handle.handleId),
-      state: "enabled",
+      state: replaced?.state ?? "enabled",
       summary: clone(draft.summary),
       mapping: build.candidate,
       inputColumns: draft.input.columns,
@@ -1137,13 +1145,40 @@ export class MockBackend implements Backend {
       access: draft.noInput
         ? ["No input file; reads approved web sources", "Create one new output in the folder you choose", "Never overwrites a file", ...hosts.map((h) => `Fetches from ${h}`)]
         : clone(access),
-      versionHash: digest({mapping:build.candidate, program:build.program}),
+      versionHash: digest({mapping:build.candidate, program:build.program, goal:draft.goal, version}),
       noInput: draft.noInput,
     };
     this.webHosts.set(tool.id, hosts);
     this.tools.set(tool.id, tool);
-    this.log("build", `Saved ${tool.name}`);
+    this.toolHistory.set(tool.id, [...history, clone(tool)]);
+    this.log("build", replaced ? `Updated ${tool.name} to version ${version}` : `Saved ${tool.name}`);
     return clone(tool);
+  }
+  async setDraftReplaces(draftId: string, toolId: string) {
+    const tool = this.tools.get(toolId);
+    if (!tool) throw new Error("Tool unavailable.");
+    if (tool.sample) throw new Error("The sample tool can't be edited. Create your own task instead.");
+    const draft = this.drafts.get(draftId);
+    if (!draft) throw new Error("Draft unavailable.");
+    draft.replacesToolId = toolId;
+    return clone(draft);
+  }
+  async listToolVersions(toolId: string) {
+    const current = this.tools.get(toolId);
+    if (!current) throw new Error("Tool unavailable.");
+    return [...(this.toolHistory.get(toolId) ?? [current])].reverse().map((v) => ({
+      hash: v.versionHash, number: v.version, createdAtMs: v.createdAtMs, active: v.versionHash === current.versionHash, goal: v.goal,
+    }));
+  }
+  async restoreToolVersion(toolId: string, hash: string) {
+    const current = this.tools.get(toolId);
+    if (!current) throw new Error("Tool unavailable.");
+    const old = (this.toolHistory.get(toolId) ?? [current]).find((v) => v.versionHash === hash);
+    if (!old) throw new Error("That version is unavailable.");
+    const restored: ToolDetail = {...clone(old), id: current.id, name: current.name, state: current.state, createdAtMs: current.createdAtMs, lastRunAtMs: current.lastRunAtMs, runCount: current.runCount, modelStepCap: current.modelStepCap};
+    this.tools.set(toolId, restored);
+    this.log("build", `Restored version ${restored.version} of ${restored.name}`);
+    return clone(restored);
   }
   async listTools() {
     return clone([...this.tools.values()]);
@@ -1158,6 +1193,7 @@ export class MockBackend implements Backend {
     const draft = await this.draftTask(input.handle, "Sample orders cleanup");
     await this.answerQuestion(draft.draftId, "date-format", "mm_dd_yy");
     const tool: ToolDetail = {
+      goal: "Sample orders cleanup",
       modelStepCap:60,
       id: this.id("tool"),
       name: "Clean import CSV",
@@ -1211,6 +1247,7 @@ export class MockBackend implements Backend {
   }
   async deleteTool(toolId: string) {
     this.tools.delete(toolId);
+    this.toolHistory.delete(toolId);
     this.webHosts.delete(toolId);
   }
   async pickOutputDir() {

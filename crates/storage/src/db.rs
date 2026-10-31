@@ -96,6 +96,11 @@ CREATE TABLE model_costs (
   calls INTEGER NOT NULL, cost_micros INTEGER NOT NULL, unknown_calls INTEGER NOT NULL);
 CREATE INDEX model_costs_by_tool ON model_costs(tool_id, at_ms);
 "#,
+    r#"
+CREATE TABLE version_details (
+  tool_id TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE, hash TEXT NOT NULL,
+  detail_json TEXT NOT NULL, PRIMARY KEY (tool_id, hash));
+"#,
 ];
 
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
@@ -424,6 +429,65 @@ impl Db {
                     })
                 })
                 .transpose()
+        })
+    }
+
+    /// Every saved version of a tool, oldest first.
+    pub fn list_versions(&self, tool_id: &str) -> Result<Vec<VersionRow>, DbError> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT hash, manifest_json, mapping_json, created_ms FROM versions
+                 WHERE tool_id = ?1 ORDER BY created_ms, rowid",
+            )?;
+            let rows = stmt.query_map([tool_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })?;
+            rows.map(|row| {
+                let (hash, manifest, mapping, created_ms) = row?;
+                Ok(VersionRow {
+                    tool_id: tool_id.into(),
+                    hash,
+                    manifest: json(manifest)?,
+                    mapping: json(mapping)?,
+                    created_ms,
+                })
+            })
+            .collect()
+        })
+    }
+
+    /// What the tool row showed while this version was active, so an older version can be restored.
+    pub fn put_version_detail(
+        &self,
+        tool_id: &str,
+        hash: &str,
+        detail: &Value,
+    ) -> Result<(), DbError> {
+        self.with(|c| {
+            c.execute(
+                "INSERT OR REPLACE INTO version_details (tool_id, hash, detail_json) VALUES (?1,?2,?3)",
+                params![tool_id, hash, detail.to_string()],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// `None` for versions saved before version history existed.
+    pub fn version_detail(&self, tool_id: &str, hash: &str) -> Result<Option<Value>, DbError> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT detail_json FROM version_details WHERE tool_id = ?1 AND hash = ?2",
+                [tool_id, hash],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .map(json)
+            .transpose()
         })
     }
 

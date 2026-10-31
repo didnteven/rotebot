@@ -175,6 +175,9 @@ pub struct RuleQuestion {
 pub struct TaskDraft {
     #[serde(default)]
     pub access_plan: Option<crate::api_discovery::AccessReport>,
+    /// Set while editing a saved tool: saving then adds a new version to that tool.
+    #[serde(default)]
+    pub replaces_tool_id: Option<String>,
     /// Explicit user selection, never inferred authority from a description.
     #[serde(default)]
     pub required_connections: Vec<SelectedConnection>,
@@ -385,6 +388,20 @@ pub struct ToolDetail {
     /// input file. Runs then stage without an input handle.
     #[serde(default)]
     pub no_input: bool,
+    /// The description the tool was built from, so it can be edited and rebuilt.
+    #[serde(default)]
+    pub goal: String,
+}
+
+/// One saved version of a tool; the active one is what runs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolVersionInfo {
+    pub hash: String,
+    pub number: u32,
+    pub created_at_ms: i64,
+    pub active: bool,
+    pub goal: String,
 }
 
 /// Amounts are micro-dollars of calls whose price was known; `*_unknown_calls` counts calls
@@ -666,7 +683,6 @@ pub struct MailInfo {
     #[serde(default)]
     pub app_password_url: Option<String>,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-tool-versions"
+description = "Enables the list_tool_versions command without any pre-configured scope."
+commands.allow = ["list_tool_versions"]
+
+[[permission]]
+identifier = "deny-list-tool-versions"
+description = "Denies the list_tool_versions command without any pre-configured scope."
+commands.deny = ["list_tool_versions"]

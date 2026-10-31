@@ -926,6 +926,7 @@ mod tests {
     fn web_draft() -> crate::dto::TaskDraft {
         crate::dto::TaskDraft {
             access_plan: None,
+            replaces_tool_id: None,
             kind: crate::dto::TaskKind::Program,
             example_output: None,
             synthetic_shape: String::new(),
