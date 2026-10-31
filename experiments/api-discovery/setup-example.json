@@ -1,0 +1,41 @@
+{
+  "schema": "research.api-setup-example/v0",
+  "production_enabled": false,
+  "service": "Airtable",
+  "purpose": "Read records from a base and table selected by the user",
+  "state": "needs_implementation",
+  "fallback_condition": "No existing supported connection or public source covers the task",
+  "evidence": [
+    "https://support.airtable.com/docs/creating-personal-access-tokens",
+    "https://support.airtable.com/articles/6292134965-getting-started-with-airtable-s-web-api",
+    "https://support.airtable.com/articles/2111090641-airtable-api-common-troubleshooting"
+  ],
+  "checked_local_date": "2026-10-31",
+  "operation": {
+    "method": "GET",
+    "origin": "https://api.airtable.com",
+    "path_template": "/v0/{baseId}/{tableIdOrName}",
+    "authentication": "bearer",
+    "credential_storage": "host vault; reference only in tool configuration",
+    "pagination": "Follow documented offsets within approved page and byte budgets; fail explicitly if coverage is incomplete"
+  },
+  "setup_fields": [
+    { "name": "baseId", "kind": "text" },
+    { "name": "tableIdOrName", "kind": "text" },
+    { "name": "credential", "kind": "native_secret_entry", "persist_in_draft": false }
+  ],
+  "instructions": [
+    "Open Airtable's official developer hub and choose Personal access tokens.",
+    "Create a named token with only the record-reading permission required by the operation.",
+    "Restrict resource access to the selected base.",
+    "Enter the token through native secret entry after a host API adapter is available.",
+    "Review the exact destination and one small GET request before testing access."
+  ],
+  "test_status": "Not connected to Airtable; only a synthetic local bearer transport was tested",
+  "unresolved": [
+    "Host adapter and custom API grants",
+    "Verify the exact documented scope identifier in the provider adapter",
+    "User's permissions, plan eligibility and quota",
+    "Full pagination, response validation and scheduling budget"
+  ]
+}

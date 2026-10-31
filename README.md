@@ -9,6 +9,12 @@ the output, shows it to you, and only then creates the new file (never overwriti
 It also suggests **connections** (Gmail, Slack, Notion, …) when you mention a service in a
 task or use it during a **Show** recording, and connects them over MCP with OAuth.
 
+Program plans offer **Send and check access** to reuse suitable connections and known
+public APIs, then research missing API access and show setup instructions. Custom
+API connections support one approved JSON GET with a native-entered bearer token
+or API key header. See [API discovery](docs/adr/0006-api-discovery.md) for supported
+authentication, research providers and limits.
+
 ## Run it
 
 Prerequisites: stable Rust, Node 24 with npm, Xcode command-line tools (macOS).

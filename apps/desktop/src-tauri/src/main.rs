@@ -2,6 +2,8 @@
 //! Thin Tauri layer over `AppCore`: one command per `Backend` method, native pickers and
 //! dialogs, event forwarding, and the tray. Product logic lives in `macroscope-app-core`.
 
+use macroscope_app_core::api::{ApiAuth, ApiConfig};
+use macroscope_app_core::api_discovery::AccessPreview;
 use macroscope_app_core::connections::Connections;
 use macroscope_app_core::dto::*;
 use macroscope_app_core::recording::*;
@@ -588,12 +590,60 @@ async fn connect_mail(
     password: String,
     server: Option<MailServerInput>,
 ) -> Cmd<ConnectorInfo> {
-    Ok(conns.0.connect_mail(&connector_id, &email, &password, server).await?)
+    Ok(conns
+        .0
+        .connect_mail(&connector_id, &email, &password, server)
+        .await?)
 }
 
 #[tauri::command]
 async fn find_connectors(core: State<'_, Core>, query: String) -> Cmd<Vec<ConnectorCandidate>> {
     Ok(core.0.find_connectors(&query).await?)
+}
+
+#[tauri::command]
+async fn access_preview(
+    core: State<'_, Core>,
+    conns: State<'_, Conns>,
+    draft_id: String,
+) -> Cmd<AccessPreview> {
+    Ok(core.0.access_preview(&conns.0, &draft_id).await?)
+}
+#[tauri::command]
+async fn research_task_access(
+    core: State<'_, Core>,
+    conns: State<'_, Conns>,
+    draft_id: String,
+    payload_hash: String,
+) -> Cmd<TaskDraft> {
+    Ok(core
+        .0
+        .research_task_access(&conns.0, &draft_id, &payload_hash)
+        .await?)
+}
+#[tauri::command]
+async fn save_api_connection(core: State<'_, Core>, config: ApiConfig) -> Cmd<ConnectorInfo> {
+    core.0.validate_api_config(&config)?;
+    let secret = if config.auth == ApiAuth::None {
+        None
+    } else {
+        let raw = native_prompt("Enter the credential for the API address you reviewed. It stays in Macroscope's secret store and is never sent to the task model.", true, "Save").await?
+            .ok_or_else(|| invalid("API credential entry cancelled"))?;
+        Some(macroscope_vault::Secret::new(raw.into_bytes()))
+    };
+    Ok(core.0.save_api_connection(config, secret).await?)
+}
+#[tauri::command]
+async fn save_api_search_key(core: State<'_, Core>) -> Cmd<()> {
+    let raw = native_prompt("Enter your Brave Search API key. API research sends service and action search labels to Brave. The key stays in Macroscope's secret store.", true, "Save").await?
+        .ok_or_else(|| invalid("Search credential entry cancelled"))?;
+    Ok(core
+        .0
+        .save_api_search_key(macroscope_vault::Secret::new(raw.into_bytes()))?)
+}
+#[tauri::command]
+fn remove_api_search_key(core: State<'_, Core>) -> Cmd<()> {
+    Ok(core.0.remove_api_search_key()?)
 }
 
 #[tauri::command]
@@ -677,11 +727,24 @@ fn request_recording_permission(core: State<'_, Core>) -> Cmd<RecordingStatus> {
 #[tauri::command]
 fn open_privacy_settings(pane: String) -> Cmd<()> {
     let url = match pane.as_str() {
-        "screen_recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-        "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-        _ => return Err(macroscope_app_core::CoreError::Invalid("Unknown settings pane.".into()).into()),
+        "screen_recording" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        "accessibility" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+        _ => {
+            return Err(
+                macroscope_app_core::CoreError::Invalid("Unknown settings pane.".into()).into(),
+            )
+        }
     };
-    std::process::Command::new("open").arg(url).spawn().map_err(|_| macroscope_app_core::CoreError::Invalid("Couldn't open System Settings.".into()))?;
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|_| {
+            macroscope_app_core::CoreError::Invalid("Couldn't open System Settings.".into())
+        })?;
     Ok(())
 }
 #[tauri::command]
@@ -689,11 +752,19 @@ fn confirm_normal_browser_window(core: State<'_, Core>) -> Cmd<()> {
     Ok(core.0.confirm_normal_browser_window()?)
 }
 #[tauri::command]
-fn remove_recording_frame(core: State<'_, Core>, session_id: String, seq: u64) -> Cmd<RecordingFrames> {
+fn remove_recording_frame(
+    core: State<'_, Core>,
+    session_id: String,
+    seq: u64,
+) -> Cmd<RecordingFrames> {
     Ok(core.0.remove_recording_frame(&session_id, seq)?)
 }
 #[tauri::command]
-async fn set_recording_mask_level(core: State<'_, Core>, session_id: String, level: MaskLevel) -> Cmd<()> {
+async fn set_recording_mask_level(
+    core: State<'_, Core>,
+    session_id: String,
+    level: MaskLevel,
+) -> Cmd<()> {
     Ok(core.0.set_recording_mask_level(&session_id, level)?)
 }
 #[tauri::command]
@@ -714,8 +785,9 @@ async fn save_recording_frame<R: Runtime>(
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
-    std::fs::write(&path, png)
-        .map_err(|_| macroscope_app_core::CoreError::Invalid("Couldn't save the frame there.".into()))?;
+    std::fs::write(&path, png).map_err(|_| {
+        macroscope_app_core::CoreError::Invalid("Couldn't save the frame there.".into())
+    })?;
     Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()))
 }
 #[tauri::command]
@@ -754,7 +826,11 @@ fn answer_recording_questions(
     Ok(core.0.answer_recording_questions(&session_id, answers)?)
 }
 #[tauri::command]
-fn edit_recording_draft(core: State<'_, Core>, session_id: String, edit: DraftEdit) -> Cmd<TaskDraftV2> {
+fn edit_recording_draft(
+    core: State<'_, Core>,
+    session_id: String,
+    edit: DraftEdit,
+) -> Cmd<TaskDraftV2> {
     Ok(core.0.edit_recording_draft(&session_id, edit)?)
 }
 #[tauri::command]
@@ -850,6 +926,7 @@ fn allowed_external(url: &str) -> bool {
         "docs.slack.dev",
         "support.atlassian.com",
         "modelcontextprotocol.io",
+        "api-dashboard.search.brave.com",
         "support.google.com",
         "help.yahoo.com",
         "support.apple.com",
@@ -866,7 +943,10 @@ fn allowed_external(url: &str) -> bool {
 
 #[tauri::command]
 fn open_external<R: Runtime>(app: AppHandle<R>, conns: State<'_, Conns>, url: String) -> Cmd<()> {
-    if !allowed_external(&url) && !conns.0.allow_authorization_url(&url) {
+    if !allowed_external(&url)
+        && !conns.0.allow_authorization_url(&url)
+        && !conns.0.allow_documentation_url(&url)
+    {
         return Err(invalid(
             "That link is not on Macroscope's list of documentation sites.",
         ));
@@ -1268,6 +1348,11 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         list_connectors,
         set_connector_url,
         find_connectors,
+        access_preview,
+        research_task_access,
+        save_api_connection,
+        save_api_search_key,
+        remove_api_search_key,
         connect_mail,
         set_client_credentials,
         begin_connect,

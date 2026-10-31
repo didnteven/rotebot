@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-research-task-access"
+description = "Enables the research_task_access command without any pre-configured scope."
+commands.allow = ["research_task_access"]
+
+[[permission]]
+identifier = "deny-research-task-access"
+description = "Denies the research_task_access command without any pre-configured scope."
+commands.deny = ["research_task_access"]

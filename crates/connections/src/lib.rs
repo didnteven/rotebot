@@ -2,10 +2,11 @@
 pub mod catalog;
 pub mod detect;
 mod gmail_rest;
-pub mod mail;
 mod http;
+pub mod mail;
 pub mod mcp;
 pub mod oauth;
+pub mod rest;
 pub mod state;
 pub mod websource;
 

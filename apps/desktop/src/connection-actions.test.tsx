@@ -78,7 +78,7 @@ it("offers explicit access to connected services in Create and lists their untru
   expect(use).toBeChecked();
   expect(await screen.findByText("create_draft")).toBeVisible();
   expect(select).toHaveBeenCalledWith(expect.any(String), [connector.id]);
-  expect(screen.getByText(/<script>server instructions<\/script>/)).toBeVisible();
+  expect(screen.getAllByText(/<script>server instructions<\/script>/).find(el => el.tagName === "LI")).toBeVisible();
   expect(container.querySelectorAll("script,img,iframe")).toHaveLength(0);
 });
 

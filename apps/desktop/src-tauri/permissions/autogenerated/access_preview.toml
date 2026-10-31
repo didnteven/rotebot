@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-access-preview"
+description = "Enables the access_preview command without any pre-configured scope."
+commands.allow = ["access_preview"]
+
+[[permission]]
+identifier = "deny-access-preview"
+description = "Denies the access_preview command without any pre-configured scope."
+commands.deny = ["access_preview"]

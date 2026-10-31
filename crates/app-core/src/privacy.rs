@@ -216,7 +216,14 @@ impl AppCore {
         lock(&self.inner.builds).clear();
         lock(&self.inner.handles).clear();
         self.db().delete_local_rows(include_tools)?;
-        let mut dirs = vec!["runs", "samples", "builds", "muse", "model-steps"];
+        let mut dirs = vec![
+            "runs",
+            "samples",
+            "builds",
+            "muse",
+            "model-steps",
+            "access-research",
+        ];
         if include_tools {
             dirs.push("tools");
         }

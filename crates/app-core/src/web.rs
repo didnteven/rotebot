@@ -6,6 +6,13 @@ use crate::dto::ModelRoute;
 use macroscope_storage::db::{self, Db};
 use std::collections::BTreeMap;
 
+/// These host transport errors require access/cooldown review, not model retries.
+pub(crate) fn access_failure(message: &str) -> bool {
+    ["HTTP 401", "HTTP 403", "HTTP 429"]
+        .iter()
+        .any(|status| message.contains(status))
+}
+
 /// Local YYYY-MM-DD date for `{today}` query parameters, from the host clock.
 pub fn today_local() -> String {
     // `date` prints the host's local calendar date on macOS and Linux; the

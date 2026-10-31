@@ -1,0 +1,337 @@
+//! Immutable, host-owned custom API connections. The worker sees a read tool,
+//! never a URL override, authentication header, or credential.
+use crate::*;
+use macroscope_connections::rest::{self, ReadError};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiAuth {
+    None,
+    Bearer,
+    Header,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApiConfig {
+    pub name: String,
+    pub url: String,
+    pub auth: ApiAuth,
+    pub header_name: String,
+    pub docs_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedApi {
+    id: String,
+    config: ApiConfig,
+    state: ConnectionState,
+}
+
+const APIS: &str = "custom_api_connections_v1";
+/// Dropping a reqwest future closes dispatch. Unlike a child process it needs no
+/// asynchronous reap, so acknowledge even if an enclosing caller is cancelled.
+pub(crate) struct HttpEpochGuard(pub Option<macroscope_policy::EpochGuard>);
+impl Drop for HttpEpochGuard {
+    fn drop(&mut self) {
+        if let Some(guard) = self.0.take() {
+            guard.acknowledge(true);
+        }
+    }
+}
+pub(crate) fn is_api(id: &str) -> bool {
+    id.starts_with("api_")
+}
+
+pub(crate) fn read_tool() -> ConnectorTool {
+    ConnectorTool {
+        name: "read".into(), description: "Read the approved JSON API endpoint with one GET. No URL, method or header overrides. Known pagination indicators fail; multi-page APIs need a dedicated adapter. Check task coverage before relying on this source.".into(),
+        input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+        read_only: Some(true), destructive: Some(false),
+    }
+}
+
+impl AppCore {
+    fn saved_apis(&self) -> CoreResult<Vec<SavedApi>> {
+        serde_json::from_value(self.db().setting(APIS)?.unwrap_or(json!([])))
+            .map_err(|_| CoreError::Invalid("Saved API connection settings are invalid".into()))
+    }
+    fn api_secret(id: &str) -> CoreResult<SecretRef> {
+        SecretRef::new(format!("api-credential:{id}"))
+            .map_err(|_| CoreError::Invalid("Invalid API connection".into()))
+    }
+    pub fn validate_api_config(&self, config: &ApiConfig) -> CoreResult<()> {
+        let invalid = |s: &str| CoreError::Invalid(s.into());
+        if config.name.trim().is_empty()
+            || config.name.chars().count() > 80
+            || config.name.chars().any(char::is_control)
+        {
+            return Err(invalid("Name this API connection (up to 80 characters)"));
+        }
+        rest::validate_url(&config.url, self.allow_insecure_web())
+            .map_err(|e| invalid(&e.to_string()))?;
+        if config.auth == ApiAuth::Header {
+            rest::validate_header(&config.header_name).map_err(|e| invalid(&e.to_string()))?;
+        }
+        if let Some(url) = &config.docs_url {
+            rest::validate_url(url, self.allow_insecure_web())
+                .map_err(|e| invalid(&e.to_string()))?;
+        }
+        Ok(())
+    }
+    /// Saves locally only; a separate explicit test issues the first GET.
+    /// Configurations are immutable. A replacement gets a new id and needs new grants.
+    pub async fn save_api_connection(
+        &self,
+        mut config: ApiConfig,
+        credential: Option<Secret>,
+    ) -> CoreResult<ConnectorInfo> {
+        self.validate_api_config(&config)?;
+        if config.auth != ApiAuth::None
+            && credential.as_ref().is_none_or(|s| {
+                s.expose().is_empty()
+                    || s.expose().len() > 8192
+                    || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
+            })
+        {
+            return Err(CoreError::Invalid(
+                "Enter an API credential without line breaks".into(),
+            ));
+        }
+        let _io = self.inner.api_io.lock().await;
+        let _local = self.admit_local()?;
+        let mut apis = self.saved_apis()?;
+        if apis.len() >= 20 {
+            return Err(CoreError::Invalid(
+                "Remove an unused API connection before adding another".into(),
+            ));
+        }
+        config.name = config.name.trim().to_string();
+        let id = new_id("api");
+        let reference = Self::api_secret(&id)?;
+        if config.auth != ApiAuth::None {
+            self.inner
+                .cfg
+                .vault
+                .set(&reference, credential.unwrap())
+                .map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
+        }
+        apis.push(SavedApi {
+            id: id.clone(),
+            config,
+            state: ConnectionState::NotConnected,
+        });
+        if let Err(e) = self.db().set_setting(APIS, &json!(apis)) {
+            let _ = self.inner.cfg.vault.delete(&reference);
+            return Err(e.into());
+        }
+        self.api_info(&id)
+    }
+    pub(crate) fn api_infos(&self) -> CoreResult<Vec<ConnectorInfo>> {
+        Ok(self.saved_apis()?.into_iter().map(|a| ConnectorInfo {
+            service: a.id.clone(), id: a.id, name: a.config.name, category: "APIs".into(),
+            mcp_url: a.config.url, registration: "api".into(), verification: "unverified".into(),
+            docs_url: a.config.docs_url, state: a.state, has_client_credentials: false,
+            client_setup: Some("One approved GET read. Your credential stays in the host vault. Test access before selecting this connection.".into()),
+            redirect_uri: None, mail: None,
+        }).collect())
+    }
+    pub(crate) fn api_info(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        self.api_infos()?
+            .into_iter()
+            .find(|a| a.id == id)
+            .ok_or(CoreError::NotFound("API connection"))
+    }
+    pub(crate) fn validate_api_read(
+        &self,
+        id: &str,
+        resource: &str,
+        tool: &str,
+        args: &Value,
+    ) -> CoreResult<()> {
+        let a = self.api_info(id)?;
+        if a.mcp_url != resource
+            || !matches!(a.state, ConnectionState::Connected { .. })
+            || tool != "read"
+            || !args.as_object().is_some_and(|a| a.is_empty())
+        {
+            return Err(CoreError::Invalid(
+                "API access changed; reconnect and rebuild this tool".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn api_origin_key(url: &str) -> CoreResult<String> {
+        let u = url::Url::parse(url).map_err(|_| CoreError::Invalid("Invalid API URL".into()))?;
+        Ok(format!(
+            "api-circuit:{}",
+            hash_hex(u.origin().ascii_serialization().as_bytes())
+        ))
+    }
+    pub(crate) async fn api_read(
+        &self,
+        id: &str,
+        resource: &str,
+        testing: bool,
+    ) -> CoreResult<String> {
+        let _io = self.inner.api_io.lock().await;
+        self.ensure_active()?;
+        if let Some(reason) = self.web_fetch_blocked() {
+            return Err(CoreError::Invalid(reason));
+        }
+        let mut apis = self.saved_apis()?;
+        let index = apis
+            .iter()
+            .position(|a| a.id == id)
+            .ok_or(CoreError::NotFound("API connection"))?;
+        let a = &apis[index];
+        if a.config.url != resource
+            || (!testing && !matches!(a.state, ConnectionState::Connected { .. }))
+        {
+            return Err(CoreError::Invalid(
+                "Reconnect the API and rebuild this tool".into(),
+            ));
+        }
+        let circuit = Self::api_origin_key(resource)?;
+        if let Some(v) = self.db().setting(&circuit)? {
+            if v["retryAtMs"].as_i64().is_some_and(|at| at > self.now()) {
+                return Err(CoreError::Invalid("This service is rate limited. Wait until its retry time before testing or running any connection to it.".into()));
+            }
+            if !testing && v["blocked"].as_bool() == Some(true) {
+                return Err(CoreError::Invalid("This API refused access. Check its permissions and test the connection before running again.".into()));
+            }
+        }
+        let token = self
+            .inner
+            .cfg
+            .vault
+            .get(&Self::api_secret(id)?)
+            .map_err(|_| CoreError::Vault("API credential unavailable".into()))?;
+        if a.config.auth != ApiAuth::None && token.is_none() {
+            return Err(CoreError::Invalid(
+                "Reconnect this API; its credential is unavailable".into(),
+            ));
+        }
+        let mut bytes = Vec::new();
+        let header = match a.config.auth {
+            ApiAuth::None => None,
+            ApiAuth::Bearer => {
+                bytes.extend_from_slice(b"Bearer ");
+                bytes.extend_from_slice(token.as_ref().unwrap().expose());
+                Some("authorization")
+            }
+            ApiAuth::Header => {
+                bytes.extend_from_slice(token.as_ref().unwrap().expose());
+                Some(a.config.header_name.as_str())
+            }
+        };
+        self.db().insert_outbound(&db::OutboundRow {
+            id: new_id("api_read"),
+            at_ms: self.now(),
+            purpose: if testing {
+                "API connection test"
+            } else {
+                "API read"
+            }
+            .into(),
+            destination: web::host_of_url(resource),
+            route: "api_connection".into(),
+            synthetic_only: false,
+            cost_micros: None,
+            payload_text: Some(json!({"connectionId":id,"method":"GET"}).to_string()),
+        })?;
+        let admission = self
+            .inner
+            .policy
+            .admit(macroscope_policy::Job {
+                epoch: self.inner.policy.epoch(),
+            })
+            .map_err(|_| {
+                CoreError::Invalid("Local only or Emergency stop blocks API reads".into())
+            })?;
+        let epoch = admission.epoch;
+        let guard = HttpEpochGuard(Some(admission.guard));
+        let result = tokio::select! { biased;
+            _ = self.inner.policy.revoked(epoch) => Err(ReadError::Transport),
+            r = rest::get(resource, header.map(|h| (h, bytes.as_slice())), self.allow_insecure_web(), 4 * 1024 * 1024, std::time::Duration::from_secs(10)) => r,
+        };
+        drop(guard);
+        let _local = self.admit_local()?;
+        let text = result.and_then(|text| {
+            if token.as_ref().is_some_and(|t| {
+                !t.expose().is_empty()
+                    && text
+                        .as_bytes()
+                        .windows(t.expose().len())
+                        .any(|w| w == t.expose())
+            }) {
+                return Err(ReadError::InvalidResponse);
+            }
+            let value: Value =
+                serde_json::from_str(&text).map_err(|_| ReadError::InvalidResponse)?;
+            if value["offset"].is_string()
+                || value["next"].is_string()
+                || value["has_more"] == true
+                || value["links"]["next"].is_string()
+            {
+                return Err(ReadError::InvalidResponse);
+            }
+            Ok(text)
+        });
+        match &text {
+            Ok(_) => {
+                apis[index].state = ConnectionState::Connected {
+                    since_ms: self.now(),
+                    tool_count: 1,
+                };
+                if testing {
+                    self.db().set_setting(&circuit, &Value::Null)?;
+                }
+            }
+            Err(e) => {
+                apis[index].state = match e { ReadError::Unauthorized => ConnectionState::NeedsReauth,
+                    _ => ConnectionState::Error { message: format!("{e}. Only complete JSON responses are supported; paginated responses require a complete export endpoint.") } };
+                match e {
+                    ReadError::RateLimited { retry_at_ms } => self
+                        .db()
+                        .set_setting(&circuit, &json!({"retryAtMs":retry_at_ms}))?,
+                    ReadError::Unauthorized | ReadError::Forbidden => {
+                        self.db().set_setting(&circuit, &json!({"blocked":true}))?
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.db().set_setting(APIS, &json!(apis))?;
+        if let Some(blocked) = self.web_fetch_blocked() {
+            return Err(CoreError::Invalid(blocked));
+        }
+        text.map_err(|e| CoreError::Invalid(format!("{e}. Nothing ran. Use a complete JSON endpoint; pagination needs a dedicated adapter.")))
+    }
+    pub async fn test_api_connection(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        let info = self.api_info(id)?;
+        self.api_read(id, &info.mcp_url, true).await?;
+        self.api_info(id)
+    }
+    pub async fn disconnect_api(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        let _io = self.inner.api_io.lock().await;
+        let _local = self.admit_local()?;
+        let mut apis = self.saved_apis()?;
+        let index = apis
+            .iter()
+            .position(|a| a.id == id)
+            .ok_or(CoreError::NotFound("API connection"))?;
+        self.inner
+            .cfg
+            .vault
+            .delete(&Self::api_secret(id)?)
+            .map_err(|_| CoreError::Vault("API credential could not be removed".into()))?;
+        let mut info = self.api_info(id)?;
+        info.state = ConnectionState::NotConnected;
+        apis.remove(index);
+        self.db().set_setting(APIS, &json!(apis))?;
+        Ok(info)
+    }
+}

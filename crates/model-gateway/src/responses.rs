@@ -37,12 +37,34 @@ impl MetaResponsesClient {
         &self,
         req: StructuredRequest<'_>,
     ) -> Result<StructuredOutput, GatewayError> {
+        self.generate_inner(req, false)
+            .await
+            .map(|(output, _)| output)
+    }
+    /// Planning research only: the sole enabled tool is provider-hosted web search.
+    /// Build and runtime calls continue to use the zero-tool method above.
+    pub async fn research_structured(
+        &self,
+        req: StructuredRequest<'_>,
+    ) -> Result<(StructuredOutput, Vec<String>), GatewayError> {
+        self.generate_inner(req, true).await
+    }
+    async fn generate_inner(
+        &self,
+        req: StructuredRequest<'_>,
+        search: bool,
+    ) -> Result<(StructuredOutput, Vec<String>), GatewayError> {
         let validator =
             jsonschema::validator_for(req.schema).map_err(|_| GatewayError::MalformedOutput)?;
-        let body = json!({"model":req.model.unwrap_or(DEFAULT_MODEL), "input":[
+        let mut body = json!({"model":req.model.unwrap_or(DEFAULT_MODEL), "input":[
             {"role":"system", "content":req.system}, {"role":"user", "content":req.user}],
             "store":false, "max_output_tokens":req.max_output_tokens, "reasoning":{"effort":req.reasoning_effort},
             "text":{"format":{"type":"json_schema", "name":req.schema_name, "schema":req.schema, "strict":true}}});
+        if search {
+            body["tools"] = json!([{"type":"web_search","search_context_size":"low"}]);
+            body["include"] = json!(["web_search_call.results"]);
+            body["max_tool_calls"] = json!(3);
+        }
         let response = self
             .http
             .post(format!("{}/responses", self.base_url.trim_end_matches('/')))
@@ -92,12 +114,32 @@ impl MetaResponsesClient {
         if !validator.is_valid(&output) {
             return Err(GatewayError::MalformedOutput);
         }
-        Ok(StructuredOutput {
-            value: output,
-            usage: Usage::from_response(&value["usage"]),
-            usage_known: value["usage"]["input_tokens"].is_u64()
-                && value["usage"]["output_tokens"].is_u64(),
-        })
+        let mut sources = Vec::new();
+        if search {
+            for item in value["output"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|i| i["type"] == "web_search_call" && i["status"] == "completed")
+            {
+                for source in item["results"].as_array().into_iter().flatten().take(20) {
+                    if let Some(url) = source["url"].as_str().filter(|u| u.len() <= 4096) {
+                        if !sources.iter().any(|s| s == url) {
+                            sources.push(url.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok((
+            StructuredOutput {
+                value: output,
+                usage: Usage::from_response(&value["usage"]),
+                usage_known: value["usage"]["input_tokens"].is_u64()
+                    && value["usage"]["output_tokens"].is_u64(),
+            },
+            sources,
+        ))
     }
     pub async fn catalog_check(&self, key: &Secret) -> Result<Catalog, GatewayError> {
         let response = self

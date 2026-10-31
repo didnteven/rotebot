@@ -7,6 +7,11 @@
   ],
   "permissions": [
     "allow-app-info",
+    "allow-access-preview",
+    "allow-research-task-access",
+    "allow-save-api-connection",
+    "allow-save-api-search-key",
+    "allow-remove-api-search-key",
     "allow-model-access",
     "allow-enter-api-key-native",
     "allow-save-custom-endpoint",

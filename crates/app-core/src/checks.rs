@@ -197,7 +197,7 @@ fn expand_placeholder_words(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut word = String::new();
     let mut in_braces = false;
-    let mut flush = |word: &mut String, out: &mut String, in_braces: bool| {
+    let flush = |word: &mut String, out: &mut String, in_braces: bool| {
         if !in_braces && PLACEHOLDER_WORDS.contains(&word.to_lowercase().as_str()) {
             out.push_str("{}");
         } else {
@@ -925,6 +925,7 @@ mod tests {
     #[cfg(feature = "generated-runtime")]
     fn web_draft() -> crate::dto::TaskDraft {
         crate::dto::TaskDraft {
+            access_plan: None,
             kind: crate::dto::TaskKind::Program,
             example_output: None,
             synthetic_shape: String::new(),

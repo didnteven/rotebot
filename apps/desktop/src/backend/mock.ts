@@ -208,6 +208,32 @@ function digest(value: unknown): string {
 
 /** Fresh, isolated in-memory product state. No credentials or files persist. */
 export class MockBackend implements Backend {
+  private apiSearchEnabled = false;
+  async accessPreview(draftId: string) {
+    const d = this.draft(draftId); const s = this.resolveRoute();
+    const payloadText = JSON.stringify({ task: d.goal, kind: d.kind, selectedConnections: d.requiredConnections ?? [] });
+    return { payloadText, payloadHash: digest([payloadText, s.effectiveRoute, s.egress]), recipient: routeLabel(s.effectiveRoute), searchAvailable: s.effectiveRoute === "api_key" || this.apiSearchEnabled };
+  }
+  async researchTaskAccess(draftId: string, payloadHash: string) {
+    const p = await this.accessPreview(draftId); const s = this.resolveRoute();
+    if (p.payloadHash !== payloadHash) throw new Error("The task or model access changed. Review access research again.");
+    if (s.egress !== "cloud_allowed" || s.effectiveRoute === "offline_demo") throw new Error("Access research needs cloud model access.");
+    const d = this.draft(draftId);
+    const connection = d.requiredConnections?.[0];
+    d.accessPlan = { state: connection ? "existing_connection" : "needs_research", summary: connection ? `Use your ${connection.name} connection.` : "Browser demo: live API research is available in the desktop app. No search was made.",
+      connectorId: connection?.connectorId ?? null, api: null, sources: [], searched: false, checkedAtMs: Date.now(), binding: digest([d.goal, d.kind, d.requiredConnections]) };
+    d.revision++;
+    return this.validate(d);
+  }
+  async saveApiSearchKey() { this.apiSearchEnabled = true; }
+  async removeApiSearchKey() { this.apiSearchEnabled = false; }
+  async saveApiConnection(config: import("./types").ApiConfig) {
+    const url = new URL(config.url);
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || /[{}]/.test(config.url)) throw new Error("Use a complete HTTPS API URL without credentials.");
+    const info: ConnectorInfo = { id: this.id("api"), service: config.name, name: config.name, category: "APIs", mcpUrl: config.url,
+      registration: "api", verification: "unverified", docsUrl: config.docsUrl, state: { kind: "not_connected" }, hasClientCredentials: false, clientSetup: null, redirectUri: null };
+    this.connectors.push(info); return clone(info);
+  }
   private recording = new RecordingMock(
     () => this.resolveRoute(), description => this.draftTaskNoInput(description), row => this.outbound.unshift(row),
     () => {
@@ -557,6 +583,7 @@ export class MockBackend implements Backend {
   private validate(draft: TaskDraft) {
     draft.blockers = [];
     if (draft.kind === "program") {
+      if (draft.accessPlan && !["local", "public_api", "existing_connection"].includes(draft.accessPlan.state)) draft.blockers.push("Resolve the missing API access before building.");
       if (!/^[^/\\:]+\.(csv|tsv|txt|md|json)$/i.test(draft.outputName)) draft.blockers.push("Choose a .csv, .tsv, .txt, .md or .json output name.");
       draft.readyToBuild = !draft.blockers.length;
       return clone(draft);
@@ -687,6 +714,7 @@ export class MockBackend implements Backend {
   }
   async selectTaskConnections(draftId: string, connectorIds: string[]) {
     const draft = this.draft(draftId);
+    draft.accessPlan = null;
     draft.requiredConnections = [];
     for (const id of connectorIds) {
       const connector = (await this.listConnectors()).find(c => c.id === id && c.state.kind === "connected");
@@ -1565,6 +1593,7 @@ export class MockBackend implements Backend {
   }
   async previewConnectorTools(connectorId: string): Promise<ConnectorTool[]> {
     this.connector(connectorId);
+    if (connectorId.startsWith("api")) return [{ name: "read", description: "Read the approved API endpoint", inputSchema: { type: "object", properties: {}, additionalProperties: false }, readOnly: true, destructive: false }];
     if(connectorId==="google-calendar") return [{name:"list_events",description:"Read calendar events",inputSchema:{type:"object",properties:{start:{type:"string"},end:{type:"string"}},required:["start","end"],additionalProperties:false},readOnly:true,destructive:false}];
     return connectorId === "gmail"
       ? [
@@ -1663,6 +1692,7 @@ export class MockBackend implements Backend {
   }
   async testConnection(connectorId: string) {
     const c = this.connector(connectorId);
+    if (c.registration === "api") c.state = { kind: "connected", sinceMs: Date.now(), toolCount: 1 };
     if (c.state.kind !== "connected")
       throw new Error("Connect before testing.");
     this.log("connection", `${c.name}: connection test passed`);
@@ -1670,6 +1700,7 @@ export class MockBackend implements Backend {
   }
   async disconnect(connectorId: string) {
     const c = this.connector(connectorId);
+    if (c.registration === "api") { this.connectors = this.connectors.filter(c => c.id !== connectorId); return { ...clone(c), state: { kind: "not_connected" as const } }; }
     for (const [pendingId, id] of this.pending)
       if (id === connectorId) this.pending.delete(pendingId);
     c.state = { kind: "not_connected" };

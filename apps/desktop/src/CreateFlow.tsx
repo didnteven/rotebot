@@ -1,4 +1,5 @@
 import { SourceReview, SourceTechnicalDetails } from "./SourceReview";
+import { ApiAccessPanel } from "./ApiAccess";
 import { useEffect, useRef, useState } from "react";
 import type {
   Backend,
@@ -91,6 +92,7 @@ export function CreateFlow({
   connect,
   close,
   saved,
+  connectionsChanged,
 }: {
   backend: Backend;
   initialInput: CsvPreview | null;
@@ -102,6 +104,7 @@ export function CreateFlow({
   connect: (id: string) => void;
   close: () => void;
   saved: () => Promise<void>;
+  connectionsChanged?: () => Promise<void>;
 }) {
   const [step, setStep] = useState(initialDraft ? 1 : 0),
     [input, setInput] = useState(initialInput),
@@ -122,6 +125,7 @@ export function CreateFlow({
   const requestRef = useRef<HTMLTextAreaElement>(null);
   const headingRef = useScreenFocus<HTMLHeadingElement>(step);
   const [planBlockers, setPlanBlockers] = useState<string[]>([]);
+  const [accessBusy, setAccessBusy] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewAttempt, setReviewAttempt] = useState(0);
   const reviewQueue = useRef(Promise.resolve());
@@ -256,7 +260,7 @@ export function CreateFlow({
   }
   const activeBuild = build && !terminal(build);
   const sites = [...new Set(build?.program?.webSources.map(s => hostOf(s.url)) ?? [])];
-  const blocked = busy ? "Working…" : activeBuild ? "Stop the current build before sending another request."
+  const blocked = busy || accessBusy ? "Working…" : activeBuild ? "Stop the current build before sending another request."
     : status.effectiveRoute === null ? "Choose a model in Settings before building."
     : draft?.kind === "program" && preview?.route === "offline_demo" ? "Writing this tool needs a model: sign in to Muse or add a key in Settings."
     : draft && description !== draft.goal ? "Update the plan to use your changed request."
@@ -622,6 +626,7 @@ export function CreateFlow({
           </fieldset>}
           </details>
           {!!draft.requiredConnections?.length && <p className="notice notice-info" role="note">Using your {draft.requiredConnections.map(s => s.name).join(", ")} connection (read-only). You approve exactly what it reads before the tool is built.</p>}
+          {draft.kind === "program" && !editing && !activeBuild && <ApiAccessPanel key={draft.draftId} backend={backend} draft={draft} status={status} accept={acceptDraft} changed={connectionsChanged} onBusy={setAccessBusy} connect={connect} connectors={connectors} />}
           {connectOffers(draft.mentionedConnectors, connectors)
             .map(
               (c) =>

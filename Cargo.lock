@@ -2677,6 +2677,7 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "tokio",
+ "url",
  "uuid",
  "wiremock",
 ]
@@ -2712,6 +2713,7 @@ dependencies = [
  "futures",
  "futures-core",
  "getrandom 0.3.4",
+ "httpdate",
  "mail-parser",
  "reqwest 0.13.5",
  "serde",

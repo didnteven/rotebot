@@ -401,7 +401,10 @@ pub fn text_preview(text: &str) -> String {
         shown += 1;
     }
     if shown < total {
-        out.push_str(&format!("\n… and {} more lines in the full file", total - shown));
+        out.push_str(&format!(
+            "\n… and {} more lines in the full file",
+            total - shown
+        ));
     }
     out
 }
@@ -653,6 +656,27 @@ pub fn example_problems(example: &str) -> Vec<String> {
 pub fn refresh(draft: &mut TaskDraft) {
     let mut blockers = Vec::new();
     if draft.kind == crate::dto::TaskKind::Program {
+        if let Some(plan) = draft
+            .access_plan
+            .as_ref()
+            .filter(|p| crate::api_discovery::applicable(draft, p))
+        {
+            if !matches!(
+                plan.state.as_str(),
+                "local" | "public_api" | "existing_connection"
+            ) {
+                blockers.push(
+                    "Resolve the missing API access or adapter before building this plan.".into(),
+                );
+            } else if plan.state == "existing_connection"
+                && !draft
+                    .required_connections
+                    .iter()
+                    .any(|c| Some(&c.connector_id) == plan.connector_id.as_ref())
+            {
+                blockers.push("Select the suggested existing connection before building.".into());
+            }
+        }
         if macroscope_effect_broker::validate_basename(&draft.output_name).is_err() {
             blockers
                 .push("Use a .csv, .tsv, .txt, .md or .json output name, without folders.".into());

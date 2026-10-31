@@ -6,10 +6,10 @@
 //! to a status snapshot and each completion runs as an abortable task that `cancel` or
 //! `disconnect` can stop.
 
+use crate::dto::MailServerInput;
 use crate::dto::{
     ConnectStart, ConnectionState, ConnectionSuggestion, ConnectorInfo, ConnectorTool,
 };
-use crate::dto::MailServerInput;
 use crate::{AppCore, CoreError, CoreResult};
 use macroscope_connections::catalog::{Catalog, Registration, Verification};
 use macroscope_connections::oauth::{ClientCredentials, StoreError, TokenStore};
@@ -164,8 +164,14 @@ impl Connections {
         saved.or_else(|| {
             // Macroscope's own registered client, when the catalog carries one for this service.
             let auth = &self.catalog.get(id)?.auth;
-            let client_id = auth.bundled_client_id.as_deref().filter(|c| !c.is_empty())?;
-            Some(ClientCredentials::new(client_id, auth.bundled_client_secret.clone()))
+            let client_id = auth
+                .bundled_client_id
+                .as_deref()
+                .filter(|c| !c.is_empty())?;
+            Some(ClientCredentials::new(
+                client_id,
+                auth.bundled_client_secret.clone(),
+            ))
         })
     }
 
@@ -239,6 +245,9 @@ impl Connections {
     }
 
     fn info_for(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        if crate::api::is_api(id) {
+            return self.core.api_info(id);
+        }
         let snapshot = lock(&self.snapshot).clone();
         let status = snapshot
             .iter()
@@ -249,7 +258,9 @@ impl Connections {
 
     pub fn list(&self) -> Vec<ConnectorInfo> {
         let snapshot = lock(&self.snapshot).clone();
-        snapshot.iter().filter_map(|s| self.info(s)).collect()
+        let mut list: Vec<_> = snapshot.iter().filter_map(|s| self.info(s)).collect();
+        list.extend(self.core.api_infos().unwrap_or_default());
+        list
     }
 
     pub async fn set_url(&self, id: &str, url: &str) -> CoreResult<ConnectorInfo> {
@@ -485,8 +496,13 @@ impl Connections {
         *lock(&self.snapshot) = service.list();
         drop(service);
         result.map_err(user_error)?;
-        let name = self.catalog.get(id).map(|c| c.name.clone()).unwrap_or(id.into());
-        self.core.log_activity("connection", &format!("Connected {name}"), None);
+        let name = self
+            .catalog
+            .get(id)
+            .map(|c| c.name.clone())
+            .unwrap_or(id.into());
+        self.core
+            .log_activity("connection", &format!("Connected {name}"), None);
         self.info_for(id)
     }
 
@@ -506,6 +522,9 @@ impl Connections {
     }
 
     pub async fn test(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        if crate::api::is_api(id) {
+            return self.core.test_api_connection(id).await;
+        }
         let mut service = self.service.lock().await;
         let result = service.test(id).await;
         *lock(&self.snapshot) = service.list();
@@ -515,6 +534,9 @@ impl Connections {
     }
 
     pub async fn disconnect(&self, id: &str) -> CoreResult<ConnectorInfo> {
+        if crate::api::is_api(id) {
+            return self.core.disconnect_api(id).await;
+        }
         self.cancel(id);
         let mut service = self.service.lock().await;
         let result = service.disconnect(id).await;
@@ -533,6 +555,10 @@ impl Connections {
 
     /// Tools a server lists without signing in (Gmail allows this); empty otherwise.
     pub async fn preview_tools(&self, id: &str) -> CoreResult<Vec<ConnectorTool>> {
+        if crate::api::is_api(id) {
+            self.core.api_info(id)?;
+            return Ok(vec![crate::api::read_tool()]);
+        }
         let url = self.info_for(id)?.mcp_url;
         let is_mail = self.catalog.get(id).is_some_and(|c| c.mail.is_some());
         if url.is_empty() && !is_mail {
@@ -617,6 +643,9 @@ impl Connections {
         }
         let _admission = self.core.admit_local()?;
         let mut draft = self.core.load_draft(draft_id)?;
+        if draft.required_connections != selected {
+            draft.access_plan = None;
+        }
         draft.required_connections = selected;
         if !draft.required_connections.is_empty() {
             draft.kind = crate::dto::TaskKind::Program;
@@ -707,8 +736,10 @@ impl Connections {
             .into_iter()
             .collect();
         let connected = self.connected_ids();
-        let connected_services: HashSet<String> =
-            connected.iter().map(|id| self.catalog.service_of(id)).collect();
+        let connected_services: HashSet<String> = connected
+            .iter()
+            .map(|id| self.catalog.service_of(id))
+            .collect();
         // connector -> (total count, strongest signal kind); recording signals win over text.
         let mut seen: BTreeMap<String, (i64, String)> = BTreeMap::new();
         for d in self.core.database().detections()? {
@@ -765,6 +796,23 @@ impl Connections {
             .values()
             .any(|p| p.authorization_url.as_deref() == Some(url))
     }
+    pub fn allow_documentation_url(&self, url: &str) -> bool {
+        macroscope_connections::rest::validate_url(url, false).is_ok()
+            && (self
+                .core
+                .api_infos()
+                .unwrap_or_default()
+                .iter()
+                .any(|c| c.docs_url.as_deref() == Some(url))
+                || self
+                    .core
+                    .database()
+                    .setting("api-research-docs")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.as_array().cloned())
+                    .is_some_and(|urls| urls.iter().any(|u| u.as_str() == Some(url))))
+    }
 }
 
 /// Fake connection layer: checks and staging only record and validate, never call a server.
@@ -778,6 +826,11 @@ pub(crate) fn validate_calls(
     calls
         .iter()
         .map(|call| {
+            if crate::api::is_api(&call.connector_id) {
+                return Err(
+                    "Custom APIs are read sources and cannot request external actions".into(),
+                );
+            }
             if !call.args.is_object()
                 || serde_json::to_vec(&call.args).map_or(true, |b| b.len() > 65_536)
             {
@@ -845,6 +898,15 @@ impl AppCore {
             ));
         }
         for c in selected {
+            if crate::api::is_api(&c.connector_id) {
+                self.validate_api_read(
+                    &c.connector_id,
+                    &c.resource,
+                    "read",
+                    &serde_json::json!({}),
+                )?;
+                continue;
+            }
             let state = self
                 .db()
                 .connector_states()?
@@ -903,6 +965,17 @@ impl Connections {
                 .iter()
                 .find(|c| c.connector_id == source.connector_id)
                 .ok_or_else(|| CoreError::Invalid("Unapproved connection source".into()))?;
+            if crate::api::is_api(&c.connector_id) {
+                let args = self.core.source_args(&source.args_json)?;
+                self.core.validate_api_read(
+                    &c.connector_id,
+                    &c.resource,
+                    &source.tool_name,
+                    &args,
+                )?;
+                calls.push((source, c, args));
+                continue;
+            }
             if !prepared.contains_key(&c.connector_id) {
                 let result = service.prepare(&c.connector_id, &c.resource).await;
                 *lock(&self.snapshot) = service.list();
@@ -934,6 +1007,20 @@ impl Connections {
         }
         let mut results = BTreeMap::new();
         for (source, c, args) in calls {
+            if crate::api::is_api(&c.connector_id) {
+                self.core.validate_api_read(
+                    &c.connector_id,
+                    &c.resource,
+                    &source.tool_name,
+                    &args,
+                )?;
+                let text = self
+                    .core
+                    .api_read(&c.connector_id, &c.resource, false)
+                    .await?;
+                results.insert(source.name.clone(), text);
+                continue;
+            }
             self.core.db().insert_outbound(&macroscope_storage::db::OutboundRow {
                 id: crate::new_id("out"), at_ms: self.core.now(), purpose: "Connection read".into(), destination: c.name.clone(),
                 route: "connection".into(), synthetic_only: false, cost_micros: None,
@@ -984,7 +1071,10 @@ pub fn source_text(result: &serde_json::Value) -> Result<String, String> {
         return Err(if why.trim().is_empty() {
             "Connection read was rejected by the service".into()
         } else {
-            format!("Connection read was rejected by the service: {}", why.trim())
+            format!(
+                "Connection read was rejected by the service: {}",
+                why.trim()
+            )
         });
     }
     let text = if let Some(v) = result.get("structuredContent") {

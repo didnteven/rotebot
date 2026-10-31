@@ -48,6 +48,11 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
+  accessPreview: Backend["accessPreview"] = draftId => invoke("access_preview", { draftId });
+  researchTaskAccess: Backend["researchTaskAccess"] = (draftId, payloadHash) => invoke("research_task_access", { draftId, payloadHash });
+  saveApiConnection: Backend["saveApiConnection"] = config => invoke("save_api_connection", { config });
+  saveApiSearchKey: Backend["saveApiSearchKey"] = () => invoke("save_api_search_key");
+  removeApiSearchKey: Backend["removeApiSearchKey"] = () => invoke("remove_api_search_key");
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
   confirmNormalBrowserWindow: Backend["confirmNormalBrowserWindow"] = () => invoke("confirm_normal_browser_window");
   saveRecordingFrame: Backend["saveRecordingFrame"] = (sessionId, seq) => invoke("save_recording_frame", { sessionId, seq });

@@ -173,6 +173,8 @@ pub struct RuleQuestion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskDraft {
+    #[serde(default)]
+    pub access_plan: Option<crate::api_discovery::AccessReport>,
     /// Explicit user selection, never inferred authority from a description.
     #[serde(default)]
     pub required_connections: Vec<SelectedConnection>,

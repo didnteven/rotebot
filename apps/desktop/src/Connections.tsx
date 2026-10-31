@@ -7,6 +7,7 @@ import type {
 } from "./backend/types";
 import { Field, isHttpsUrl, Notice, useAction } from "./ui";
 import { googleConnectorIds, parseGoogleClientFile } from "./clientFile";
+import { ApiSetup } from "./ApiAccess";
 
 const stateName = (c: ConnectorInfo) =>
   c.state.kind === "connected"
@@ -57,7 +58,13 @@ export function Connections({
                 : "Unverified endpoint"}
             </p>
             <ConnectorTools backend={backend} connectorId={c.id} />
-            {selected === c.id && (
+            {c.registration === "api" && <>
+              <p><bdi>{c.mcpUrl}</bdi></p>
+              <p>One approved GET read. Credentials stay in the app's secret store.</p>
+              {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
+              <ApiConnectionActions backend={backend} connector={c} changed={changed} />
+            </>}
+            {selected === c.id && c.registration !== "api" && (
               <ConnectionDetail
                 key={c.id}
                 backend={backend}
@@ -67,7 +74,7 @@ export function Connections({
                 startTick={startTick}
               />
             )}
-            <button
+            {c.registration !== "api" && <button
               aria-expanded={selected === c.id}
               onClick={() => {
                 select(c.id);
@@ -79,12 +86,21 @@ export function Connections({
               {c.state.kind === "connected"
                 ? `Manage ${c.name}`
                 : `Connect ${c.name}`}
-            </button>
+            </button>}
           </article>
         ))}
       </div>
+      <details><summary>Connect a custom API</summary><ApiSetup backend={backend} changed={changed} /></details>
     </section>
   );
+}
+function ApiConnectionActions({ backend, connector, changed }: { backend: Backend; connector: ConnectorInfo; changed: () => Promise<void> }) {
+  const { act, busy, error } = useAction();
+  return <>
+    <button disabled={busy} onClick={() => void act(async () => { try { await backend.testConnection(connector.id); } finally { await changed(); } })}>Test API connection</button>
+    <button disabled={busy} onClick={() => void act(async () => { await backend.disconnect(connector.id); await changed(); })}>Remove API connection</button>
+    {error && <p role="alert">{error}</p>}
+  </>;
 }
 function ConnectorTools({
   backend,

@@ -7,14 +7,16 @@
 //! checks, outbound input samples are synthetic, and runs commit the exact staged bytes
 //! the user approved.
 
+pub mod api;
+pub mod api_discovery;
 pub mod checks;
 pub mod connections;
+#[cfg(feature = "generated-runtime")]
+mod connector_search;
 mod custom_endpoint;
 pub mod drafts;
 pub mod dto;
 pub mod eval;
-#[cfg(feature = "generated-runtime")]
-mod connector_search;
 mod model_step;
 mod privacy;
 pub mod recording;
@@ -189,6 +191,8 @@ struct Inner {
     plan_cache: Mutex<Option<(i64, PlanStatus)>>,
     last_key_test: Mutex<Option<KeyTestResult>>,
     custom_calls: Mutex<()>,
+    api_io: tokio::sync::Mutex<()>,
+    research_io: tokio::sync::Mutex<()>,
     cloud_controls: tokio::sync::Mutex<()>,
     lifecycle: Mutex<()>,
     #[cfg(feature = "generated-runtime")]
@@ -350,6 +354,8 @@ impl AppCore {
                 runtime: Mutex::new(None),
                 deleting: std::sync::atomic::AtomicBool::new(false),
                 allow_insecure_web: Mutex::new(false),
+                api_io: tokio::sync::Mutex::new(()),
+                research_io: tokio::sync::Mutex::new(()),
                 schedule_eval: tokio::sync::Mutex::new(()),
                 notifier: Mutex::new(None),
                 timezone: Mutex::new(None),
@@ -618,6 +624,22 @@ impl AppCore {
         .into_iter()
         .map(|d| d.connector_id)
         .collect();
+        let words = |s: &str| {
+            s.split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+        };
+        let text_words = words(text);
+        for api in self.api_infos().unwrap_or_default() {
+            let name = words(&api.name);
+            if !name.is_empty()
+                && api.name.chars().count() >= 3
+                && text_words.windows(name.len()).any(|w| w == name)
+            {
+                ids.push(api.id);
+            }
+        }
         ids.sort();
         ids.dedup();
         let now = self.now();
@@ -660,6 +682,7 @@ impl AppCore {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "output".into());
         let mut draft = TaskDraft {
+            access_plan: None,
             required_connections: vec![],
             kind,
             example_output: None,
@@ -700,6 +723,7 @@ impl AppCore {
         let _admission = self.admit_local()?;
         let goal: String = description.trim().chars().take(GOAL_LIMIT).collect();
         let mut draft = TaskDraft {
+            access_plan: None,
             kind: TaskKind::Program,
             example_output: None,
             synthetic_shape: String::new(),
@@ -855,6 +879,13 @@ impl AppCore {
         );
         let mut packet: Value = serde_json::from_str(&packet).expect("host packet");
         packet["untrusted_task_data"]["selected_connections"] = json!(draft.required_connections);
+        if let Some(plan) = draft
+            .access_plan
+            .as_ref()
+            .filter(|p| crate::api_discovery::applicable(draft, p))
+        {
+            packet["untrusted_task_data"]["access_research"] = json!(plan);
+        }
         packet["untrusted_task_data"]["connection_read_tools"] = json!(draft.required_connections.iter().map(|c| json!({"connectorId":c.connector_id,"displayName":c.name,"tools":c.tools.iter().filter(|t| t.read_only == Some(true) && t.destructive != Some(true)).map(|t| json!({"name":t.name,"description":t.description,"inputSchema":t.input_schema})).collect::<Vec<_>>()})).collect::<Vec<_>>());
         packet.to_string()
     }
@@ -910,7 +941,7 @@ impl AppCore {
             "approved_connection_sources": previous.map(|p| &p.connection_sources),
             "approved_model_step": previous.and_then(|p| p.model_step.as_ref()),
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. If a failed check says a web source could not be fetched (for example HTTP 401, 403 or 429), the site needs an account, key or cookies: replace it with a different site that answers a plain GET without them. current_output must be a real answer: if it apologises, says it could not determine something, or fills in a detail the task never gave (for example a city), fix the program or make it throw an Error that says what is missing. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. HTTP 401 requires authentication; HTTP 403 is an access refusal; HTTP 429 is rate limiting. Stop and explain the connection or cooldown needed. Do not retry a blocked source, change URLs, switch providers or use a browser to evade the restriction. Do not assume a credential will fix 403 or 429. Prefer suitable approved connections and documented API research. current_output must be a real answer: if it apologises, says it could not determine something, or fills in a detail the task never gave (for example a city), fix the program or make it throw an Error that says what is missing. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
         })
         .to_string()
     }
@@ -1453,6 +1484,13 @@ impl AppCore {
                         detail: Some(example.clone()),
                         real: true,
                     });
+                }
+                if let Some(plan) = draft
+                    .access_plan
+                    .as_ref()
+                    .filter(|p| crate::api_discovery::applicable(&draft, p))
+                {
+                    includes.push(OutboundSummaryItem { label: "The API access research shown on this plan, including endpoint and setup details".into(), detail: Some(plan.summary.clone()), real: true });
                 }
                 includes.push(OutboundSummaryItem {
                     label: "Up to 4,000 characters of each public web page the draft reads, and its output (sent after the first draft so the model can check its work; recorded under Privacy)".into(),
@@ -2099,6 +2137,19 @@ impl AppCore {
                 }
             }
         }
+        if fetch_error.as_deref().is_some_and(web::access_failure) {
+            let message = fetch_error.clone().unwrap();
+            self.update_build(&build_id, |s| {
+                s.checks = vec![CheckResult {
+                    id: "web_sources".into(),
+                    label: "Web source access".into(),
+                    passed: false,
+                    detail: Some(message.clone()),
+                }]
+            })?;
+            self.fail_build(&build_id, BuildFailureKind::Checks, format!("{message} Review API access on the plan. No retry or source substitution was attempted."))?;
+            return Ok(());
+        }
         if let Some(p) = &candidate.program {
             let read = self.fetch_connection_sources(p, &draft.required_connections);
             let result = tokio::select! {
@@ -2547,7 +2598,10 @@ impl AppCore {
                                     return Ok(());
                                 }
                             }
-                            if !passed2 && fix_round < 2 {
+                            if !passed2
+                                && fix_round < 2
+                                && !fetch_error.as_deref().is_some_and(web::access_failure)
+                            {
                                 self.update_build(&build_id, |s| {
                                     s.checks = check_list2.clone();
                                     s.comparison = comparison2.clone();
@@ -2993,7 +3047,8 @@ impl AppCore {
             connections: &draft.required_connections,
         })?;
         // The test run's model spend now belongs to the saved tool; show it on the detail.
-        self.db().attach_model_cost(build_id, &saved.summary_row.id)?;
+        self.db()
+            .attach_model_cost(build_id, &saved.summary_row.id)?;
         let row = self
             .db()
             .tool(&saved.summary_row.id)?

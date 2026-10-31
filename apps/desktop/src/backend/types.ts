@@ -126,10 +126,15 @@ export interface RuleQuestion {
 export type TaskKind = "csv-mapping" | "program";
 /** A web source the host fetches and passes to the program as data (ADR 0004). */
 export interface WebSource { name: string; url: string; }
+export interface ApiConfig { name: string; url: string; auth: "none" | "bearer" | "header"; headerName: string; docsUrl: string | null; }
+export interface ApiProposal { name: string; url: string; auth: string; headerName: string; docsUrl: string; method: string; setupInstructions: string[]; prerequisites: string[]; coverage: string; }
+export interface AccessReport { state: string; summary: string; connectorId: string | null; api: ApiProposal | null; sources: string[]; searched: boolean; checkedAtMs: number; binding: string; }
+export interface AccessPreview { payloadText: string; payloadHash: string; recipient: string; searchAvailable: boolean; }
 export interface ConnectionSource {name:string;connectorId:string;toolName:string;argsJson:string;}
 export interface ModelStep {purpose:string;prompt:string;}
 export interface Program { connectionSources?:ConnectionSource[]; modelStep?:ModelStep|null; summary: string; output_name: string; code: string; webSources: WebSource[]; }
 export interface TaskDraft {
+  accessPlan?: AccessReport | null;
   requiredConnections?: SelectedConnection[];
   kind?: TaskKind;
   exampleOutput?: string | null;
@@ -390,7 +395,7 @@ export interface ConnectorInfo {
   name: string; // "Gmail"
   category: string;
   mcpUrl: string;
-  registration: "dynamic" | "preregistered";
+  registration: "dynamic" | "preregistered" | "api";
   verification: "verified-docs" | "verified-live" | "unverified";
   /** For preregistered servers: one or two sentences on creating an OAuth client. */
   clientSetup: string | null;
@@ -494,6 +499,11 @@ export interface RecordingStatus {
 }
 
 export interface Backend {
+  accessPreview(draftId: string): Promise<AccessPreview>;
+  researchTaskAccess(draftId: string, payloadHash: string): Promise<TaskDraft>;
+  saveApiConnection(config: ApiConfig): Promise<ConnectorInfo>;
+  saveApiSearchKey(): Promise<void>;
+  removeApiSearchKey(): Promise<void>;
   recordingStatus(): Promise<RecordingStatus>;
   requestRecordingPermission(): Promise<RecordingStatus>;
   confirmNormalBrowserWindow(): Promise<void>;

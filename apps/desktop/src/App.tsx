@@ -232,7 +232,7 @@ export function App({ backend }: { backend: Backend }) {
               <ShowPanel
                 backend={backend}
                 state={show}
-                createFlow={{status, connectors, openSettings, connect, close: () => setShowPanel(false), saved: async () => {await refreshTools();setShowPanel(false);}}}
+                createFlow={{status, connectors, connectionsChanged: refreshConnections, openSettings, connect, close: () => setShowPanel(false), saved: async () => {await refreshTools();setShowPanel(false);}}}
                 update={updateShow}
                 close={() => setShowPanel(false)}
               />
@@ -245,6 +245,7 @@ export function App({ backend }: { backend: Backend }) {
                   editTool={editTool ?? undefined}
                   status={status}
                   connectors={connectors}
+                  connectionsChanged={refreshConnections}
                   openSettings={openSettings}
                   connect={connect}
                   close={() => setCreating(false)}
