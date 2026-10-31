@@ -70,6 +70,7 @@ fn main() {
         "stage_run",
         "stage_run_no_input",
         "preview_run_no_input",
+        "stage_actions_no_input",
         "commit_run",
         "discard_run",
         "reveal_output",

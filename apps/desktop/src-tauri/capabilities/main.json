@@ -66,6 +66,7 @@
     "allow-stage-run",
     "allow-stage-run-no-input",
     "allow-preview-run-no-input",
+    "allow-stage-actions-no-input",
     "allow-commit-run",
     "allow-discard-run",
     "allow-reveal-output",

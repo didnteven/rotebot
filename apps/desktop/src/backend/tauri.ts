@@ -153,6 +153,8 @@ export class TauriBackend implements Backend {
     invoke("commit_run", { runId, planHash, actionsReviewed });
   previewRunNoInput: Backend["previewRunNoInput"] = (toolId) =>
     invoke("preview_run_no_input", { toolId });
+  stageActionsNoInput: Backend["stageActionsNoInput"] = (toolId) =>
+    invoke("stage_actions_no_input", { toolId });
   discardRun: Backend["discardRun"] = (runId) =>
     invoke("discard_run", { runId });
   revealOutput: Backend["revealOutput"] = (receiptRunId) =>

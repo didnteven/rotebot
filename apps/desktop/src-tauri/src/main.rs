@@ -513,6 +513,13 @@ async fn preview_run_no_input(core: State<'_, Core>, tool_id: String) -> Cmd<Sta
     Ok(core.0.preview_run_no_input(&tool_id).await?)
 }
 
+/// Stages only a tool's connection actions (an email to send, say), with no
+/// output folder or file.
+#[tauri::command]
+async fn stage_actions_no_input(core: State<'_, Core>, tool_id: String) -> Cmd<StageResult> {
+    Ok(core.0.stage_actions_no_input(&tool_id).await?)
+}
+
 #[tauri::command]
 fn discard_run(core: State<'_, Core>, run_id: String) -> Cmd<()> {
     Ok(core.0.discard_run(&run_id)?)
@@ -1333,6 +1340,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         stage_run_no_input,
         commit_run,
         preview_run_no_input,
+        stage_actions_no_input,
         discard_run,
         reveal_output,
         list_activity,

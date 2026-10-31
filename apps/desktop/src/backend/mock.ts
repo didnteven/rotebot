@@ -1390,6 +1390,14 @@ export class MockBackend implements Backend {
     if (!("failure" in result)) await this.discardRun(result.runId);
     return result;
   }
+  async stageActionsNoInput(toolId: string) {
+    const tool = await this.getTool(toolId);
+    return this.stageRunNoInput(
+      toolId,
+      { handleId: "private", displayName: "private", displayPath: "/private" },
+      tool.program?.output_name ?? "answer.txt",
+    );
+  }
   async commitRun(runId: string, planHash: string) {
     const run = this.staged.get(runId);
     if (!run)

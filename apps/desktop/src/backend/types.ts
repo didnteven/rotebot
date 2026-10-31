@@ -612,6 +612,8 @@ export interface Backend {
   ): Promise<Receipt | { failure: RunFailure }>;
   /** Runs a no-input tool into a discarded scratch folder so its answer can be read first. */
   previewRunNoInput(toolId: string): Promise<StagedRun | { failure: RunFailure }>;
+  /** Stages a no-input tool's connection actions only, with no output folder or file. */
+  stageActionsNoInput(toolId: string): Promise<StagedRun | { failure: RunFailure }>;
   discardRun(runId: string): Promise<void>;
   revealOutput(receiptRunId: string): Promise<void>;
 

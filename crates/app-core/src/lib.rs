@@ -3200,6 +3200,21 @@ impl AppCore {
         output_name: &str,
         schedule: Option<&schedules::Schedule>,
     ) -> CoreResult<StageResult> {
+        self.stage_inner_files(tool_id, input_handle, dir_handle, output_name, schedule, true)
+            .await
+    }
+
+    /// `create_file` false stages only the planned connection actions, so a tool
+    /// that just sends an email needs no output folder.
+    pub(crate) async fn stage_inner_files(
+        &self,
+        tool_id: &str,
+        input_handle: Option<&str>,
+        dir_handle: &str,
+        output_name: &str,
+        schedule: Option<&schedules::Schedule>,
+        create_file: bool,
+    ) -> CoreResult<StageResult> {
         let started_at_ms = self.now();
         let egress_epoch = self.inner.policy.epoch();
         let _active = self.claim_tool_run(tool_id)?;
@@ -3484,7 +3499,7 @@ impl AppCore {
                         sources: source_data,
                         answers: &model_answers,
                         output_name: Some(&program.output_name),
-                        create_file: schedule.is_none_or(|s| s.outputs.folder.is_some()),
+                        create_file: create_file && schedule.is_none_or(|s| s.outputs.folder.is_some()),
                         has_input_file: !detail.no_input,
                         extra_binding: Some(
                             json!({"source_urls": urls, "connection_sources":program.connection_sources,"source_digests": web::digests(source_data), "schedule_grant": schedule}),

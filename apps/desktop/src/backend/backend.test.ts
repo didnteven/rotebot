@@ -132,6 +132,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
       ["t", {}, "weather.txt"],
       { toolId: "t", outputDir: {}, outputName: "weather.txt" },
     ],
+    ["stageActionsNoInput", ["t"], { toolId: "t" }],
     ["commitRun", ["r", "hash"], { runId: "r", planHash: "hash", actionsReviewed: false }],
     ["commitRun", ["r", "hash", true], { runId: "r", planHash: "hash", actionsReviewed: true }],
     ["selectTaskConnections", ["d", ["gmail"]], { draftId:"d", connectorIds:["gmail"] }],

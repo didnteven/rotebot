@@ -1158,3 +1158,20 @@ mod action_tests {
         assert!(validate_calls(&vec![good; 6], &selected).is_err());
     }
 }
+
+impl AppCore {
+    /// Stages a no-input tool for its connection actions alone: no output folder,
+    /// no output file. The private folder only holds the staging area.
+    pub async fn stage_actions_no_input(&self, tool_id: &str) -> CoreResult<crate::StageResult> {
+        let detail = self.get_tool(tool_id)?;
+        let program = detail
+            .program
+            .as_ref()
+            .ok_or_else(|| CoreError::Invalid("Only program tools can send actions.".into()))?;
+        let private = self.inner.cfg.data_dir.join("digest");
+        std::fs::create_dir_all(&private).map_err(|e| CoreError::Internal(e.to_string()))?;
+        let dir = self.register_picked_dir(&private)?;
+        self.stage_inner_files(tool_id, None, &dir.handle_id, &program.output_name, None, false)
+            .await
+    }
+}

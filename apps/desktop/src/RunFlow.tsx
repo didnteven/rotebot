@@ -69,6 +69,14 @@ export function RunFlow({
     else { setStaged(result); setActionsReviewed(false); }
   }
   const previewMode = !!detail?.noInput && !!detail.program;
+  // A tool that plans an email or other change needs no output file: the actions are the point.
+  const sendsOnly = previewMode && !!preview?.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true);
+  async function reviewActions() {
+    setFailure(null);
+    const result = await backend.stageActionsNoInput(tool.id);
+    if ("failure" in result) setFailure(result.failure);
+    else { setStaged(result); setActionsReviewed(false); }
+  }
   async function previewFirst() {
     setFailure(null);
     const result = await backend.previewRunNoInput(tool.id);
@@ -126,10 +134,14 @@ export function RunFlow({
             <section className="card">
               <h3>Result</h3>
               <div className="result-answer preserve-lines" aria-label="Answer">{preview.previewText}</div>
-              <div className="actions"><button disabled={busy} onClick={() => void act(previewFirst)}>Check again</button></div>
+              {sendsOnly && <p>This tool sends or changes something, so it needs your approval. It does not need an output file.</p>}
+              <div className="actions">
+                {sendsOnly && <button className="primary" disabled={busy} onClick={() => void act(reviewActions)}>Review actions</button>}
+                <button disabled={busy} onClick={() => void act(previewFirst)}>Check again</button>
+              </div>
             </section>
           )}
-          {(!detail?.noInput || !!preview || !!staged || !detail.program) && <fieldset disabled={busy || !!staged}>
+          {(!detail?.noInput || (!!preview && !sendsOnly) || !!staged || !detail.program) && <fieldset disabled={busy || !!staged}>
             <legend>{detail?.noInput ? "Save the result" : "Choose files"}</legend>
             <div className="actions">
               {!detail?.noInput && (
@@ -183,7 +195,7 @@ export function RunFlow({
             </Field>
           </fieldset>}
           {input && !staged && !detail?.noInput && <CsvView preview={input} />}
-          {!staged && (!previewMode || !!preview) && (
+          {!staged && !sendsOnly && (!previewMode || !!preview) && (
             <>
             {(busy || !detail || (!detail?.noInput && !input) || !folder || !name.trim()) && <p id="run-reason">{busy ? "Working…" : !detail ? "Loading your tool…" : !detail?.noInput && !input ? "Choose an input file and output folder to continue." : !folder ? "Choose an output folder to continue." : "Give the output file a name."}</p>}
             <button
