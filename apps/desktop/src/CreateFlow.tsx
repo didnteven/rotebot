@@ -690,7 +690,13 @@ export function CreateFlow({
           )}
           {(build.failure || build.phase === "stopped") && <div role="alert" className="notice notice-warning">
             <p>{build.failure ? friendlyFailure(build.failure.message, build.failure.kind) : "Build stopped. Your plan is saved."}</p>
-            <div className="actions"><button className="primary" disabled={busy} onClick={() => void act(sendAndBuild)}>Try again</button><button onClick={changeRequest}>Change the request</button></div>
+            {build.failure?.kind === "missing_data"
+              ? <div className="actions">
+                  <button className="primary" onClick={() => { setError(null); setEditing(false); setStep(1); }}>Check how to get this data</button>
+                  <button onClick={() => { setError(null); setStep(0); }}>Use a file instead</button>
+                  <button onClick={changeRequest}>Change the request</button>
+                </div>
+              : <div className="actions"><button className="primary" disabled={busy} onClick={() => void act(sendAndBuild)}>Try again</button><button onClick={changeRequest}>Change the request</button></div>}
             {build.failure && ["auth", "no_model_access"].includes(build.failure.kind) && <button onClick={openSettings}>Open model settings</button>}
           </div>}
           {build.phase === "ready" && build.comparison && (

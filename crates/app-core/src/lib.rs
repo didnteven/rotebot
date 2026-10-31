@@ -977,6 +977,19 @@ impl AppCore {
 
     /// Trims the trailing period of a failed-check message so the sentence the
     /// caller adds around it does not end in "..".
+    /// The sentence a program threw on purpose (`throw new Error("...")`, the builder's rule for
+    /// missing or unsupported input). Runtime faults carry another name, such as TypeError.
+    fn deliberate_error(detail: &str) -> Option<String> {
+        let rest = detail.split("JavaScript execution failed: Error at line ").nth(1)?;
+        let message = rest.split_once(": ")?.1;
+        let message = message
+            .trim()
+            .trim_end_matches("Edit the rules and build again.")
+            .trim();
+        // A message built from data is redacted to "…"; only a literal sentence is shown to the person.
+        (!message.chars().all(|c| c == '…' || c.is_whitespace())).then(|| message.to_string())
+    }
+
     fn plain_check_failure(detail: &str) -> String {
         detail.trim_end_matches('.').to_string()
     }
@@ -2595,6 +2608,26 @@ impl AppCore {
                                     BuildPhase::Ready,
                                     "Ready to compare (the model's suggested change did not pass the checks, so the version that passed was kept)",
                                 )?;
+                                    return Ok(());
+                                }
+                            }
+                            // The same deliberate "this is missing" error after a correction means
+                            // the program is right and the person has to supply the data.
+                            if !passed2 {
+                                let before: Vec<String> = failed_checks
+                                    .iter()
+                                    .filter_map(|c| c.detail.as_deref().and_then(Self::deliberate_error))
+                                    .collect();
+                                if let Some(message) = failed2
+                                    .iter()
+                                    .find_map(|d| Self::deliberate_error(d))
+                                    .filter(|m| before.contains(m))
+                                {
+                                    self.update_build(&build_id, |s| {
+                                        s.checks = check_list2.clone();
+                                        s.comparison = comparison2.clone();
+                                    })?;
+                                    self.fail_build(&build_id, BuildFailureKind::MissingData, message)?;
                                     return Ok(());
                                 }
                             }

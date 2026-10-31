@@ -38,6 +38,8 @@ export function Connections({
   // Every click on a card, even the one already open, brings its details into view.
   const [tick, setTick] = useState(0);
   const [startTick, setStartTick] = useState(autoStart ? 1 : 0);
+  const [addingApi, setAddingApi] = useState(false);
+  const apis = connectors.filter((c) => c.registration === "api");
   return (
     <section>
       {connectors.length === 0 && <p role="status">Loading connections…</p>}
@@ -46,7 +48,7 @@ export function Connections({
         connections.
       </p>
       <div className="connector-grid">
-        {connectors.map((c) => (
+        {connectors.filter((c) => c.registration !== "api").map((c) => (
           <article className={`card${selected === c.id ? " card-open" : ""}`} key={c.id}>
             <h2>{c.name}</h2>
             <p>{c.category.charAt(0).toUpperCase() + c.category.slice(1)}</p>
@@ -90,7 +92,34 @@ export function Connections({
           </article>
         ))}
       </div>
-      <details><summary>Connect a custom API</summary><ApiSetup backend={backend} changed={changed} /></details>
+      <section aria-labelledby="custom-apis">
+        <h2 id="custom-apis">Custom APIs</h2>
+        <p>
+          Connect any service that offers an API, such as a bank feed, a weather
+          service or your own data. Macroscope can only read from it, never change anything.
+        </p>
+        <p className="muted">
+          Not sure what to connect? Describe your task and choose “Send and check
+          access”. Macroscope looks up the service's API and walks you through each step.
+        </p>
+        {apis.length === 0 && <p>No custom APIs yet.</p>}
+        <div className="connector-grid">
+          {apis.map((c) => (
+            <article className="card" key={c.id}>
+              <h3>{c.name}</h3>
+              <p className="badge">{stateName(c)}</p>
+              <ConnectorTools backend={backend} connectorId={c.id} />
+              <p><bdi>{c.mcpUrl}</bdi></p>
+              <p>Read only. Your keys stay in the app's secret store.</p>
+              {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
+              <ApiConnectionActions backend={backend} connector={c} changed={changed} />
+            </article>
+          ))}
+        </div>
+        {addingApi
+          ? <ApiSetup backend={backend} changed={changed} />
+          : <button onClick={() => setAddingApi(true)}>Add a custom API</button>}
+      </section>
     </section>
   );
 }

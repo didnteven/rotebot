@@ -63,6 +63,7 @@ impl Fixture {
                     auth: ApiAuth::Bearer,
                     header_name: String::new(),
                     docs_url: Some(format!("{}/docs", server.uri())),
+                    extra_header_names: vec![],
                 },
                 Some(Secret::new(b"SYNTHETIC-API-CREDENTIAL-0001".to_vec())),
             )
@@ -79,11 +80,11 @@ fn answer(plan: Value, sources: Vec<String>) -> Value {
     json!({"status":"completed","output":output,"usage":{"input_tokens":100,"output_tokens":100}})
 }
 fn plan(route: &str, id: Option<&str>, api: Value) -> Value {
-    json!({"route":route,"service":"Example","operation":"read records","summary":"Read the records needed by this task.","connectorId":id,"api":api})
+    json!({"route":route,"service":"Example","operation":"read records","summary":"Read the records needed by this task.","connectorId":id,"api":api,"searchQuery":""})
 }
 fn proposal(server: &MockServer, auth: &str) -> Value {
     json!({"name":"Example records","url":format!("{}/records",server.uri()),"auth":auth,"headerName":"X-API-Key","docsUrl":format!("{}/docs",server.uri()),
-        "method":"GET","setupInstructions":["Create a read-only credential in the provider account."],"prerequisites":["Access to the chosen records"],"coverage":"Complete records; verify account permissions and quotas."})
+        "method":"GET","setupInstructions":["Create a read-only credential in the provider account."],"prerequisites":["Access to the chosen records"],"coverage":"Complete records; verify account permissions and quotas.","extraHeaderNames":[],"cost":"unknown"})
 }
 
 #[tokio::test]
@@ -246,6 +247,7 @@ async fn no_auth_and_documented_key_headers_use_get_without_bearer_fallback() {
                     auth,
                     header_name: "X-API-Key".into(),
                     docs_url: None,
+                    extra_header_names: vec![],
                 },
                 if expects_key {
                     Some(Secret::new(b"SYNTHETIC-HEADER-KEY".to_vec()))
@@ -635,7 +637,8 @@ async fn stale_review_and_private_network_targets_fail_before_dispatch() {
                     url: url.into(),
                     auth: ApiAuth::None,
                     header_name: String::new(),
-                    docs_url: None
+                    docs_url: None,
+                    extra_header_names: vec![],
                 },
                 None
             )
@@ -800,4 +803,165 @@ async fn custom_api_is_read_by_the_existing_approved_build_and_saved_tool_pipeli
             .count(),
         4
     );
+}
+
+#[tokio::test]
+async fn an_api_that_needs_an_app_id_header_sends_both_keys_from_the_vault_and_never_echoes_them() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/accounts"))
+        .and(|r: &wiremock::Request| {
+            r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-USER-TOKEN")
+                && r.headers.get("x-app-id").is_some_and(|v| v == "SYNTHETIC-APP-ID")
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"Everyday"}]})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let config = |extras: Vec<&str>| ApiConfig {
+        name: "Bank accounts".into(),
+        url: format!("{}/accounts", server.uri()),
+        auth: ApiAuth::Bearer,
+        header_name: String::new(),
+        docs_url: None,
+        extra_header_names: extras.into_iter().map(String::from).collect(),
+    };
+    // A second header with no value, a repeated header, and a third header are all refused.
+    assert!(f.core.save_api_connection(config(vec!["X-App-Id"]), Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec()))).await.is_err());
+    assert!(f.core.save_api_connection_with_extras(config(vec!["Authorization"]), Some(Secret::new(b"t".to_vec())), vec![Secret::new(b"v".to_vec())]).await.is_err());
+    assert!(f.core.save_api_connection_with_extras(config(vec!["X-A", "X-B", "X-C"]), Some(Secret::new(b"t".to_vec())), (1..=3).map(|n| Secret::new(vec![b'0' + n])).collect()).await.is_err());
+    let a = f
+        .core
+        .save_api_connection_with_extras(
+            config(vec!["X-App-Id"]),
+            Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec())),
+            vec![Secret::new(b"SYNTHETIC-APP-ID".to_vec())],
+        )
+        .await
+        .unwrap();
+    let info = f.conns.test(&a.id).await.unwrap();
+    assert!(matches!(info.state, ConnectionState::Connected { .. }));
+    let outbound = serde_json::to_string(&f.core.list_outbound().unwrap()).unwrap();
+    assert!(!outbound.contains("SYNTHETIC-APP-ID") && !outbound.contains("SYNTHETIC-USER-TOKEN"));
+}
+
+#[tokio::test]
+async fn a_cursor_that_points_to_more_data_fails_instead_of_returning_a_partial_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/transactions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":1}],"cursor":{"next":"abc"}})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/last-page"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":1}],"cursor":{"next":null}})))
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let more = f.api(&server, "/transactions").await;
+    assert!(!matches!(f.conns.test(&more.id).await.map(|i| i.state), Ok(ConnectionState::Connected { .. })));
+    let done = f.api(&server, "/last-page").await;
+    assert!(matches!(f.conns.test(&done.id).await.unwrap().state, ConnectionState::Connected { .. }));
+}
+
+#[tokio::test]
+async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_free_personal_access() {
+    let server = MockServer::start().await;
+    let query = "free personal API to read bank account transactions New Zealand";
+    let mut first = plan("research", None, Value::Null);
+    first["service"] = json!("");
+    first["searchQuery"] = json!(query);
+    Mock::given(path("/responses"))
+        .and(|r: &wiremock::Request| r.body_json::<Value>().unwrap().get("tools").is_none())
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(first, vec![])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut api = proposal(&server, "bearer");
+    api["cost"] = json!("free_personal");
+    Mock::given(path("/responses"))
+        .and(|r: &wiremock::Request| r.body_json::<Value>().unwrap().get("tools").is_some())
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            plan("custom_api", None, api),
+            vec![format!("{}/docs", server.uri())],
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/docs"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!("Official API: {}/records", server.uri())))
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let d = f.core.draft_task_no_input("Get my bank statements").unwrap();
+    let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
+    let report = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap()
+        .access_plan
+        .unwrap();
+    assert!(report.searched, "an empty service must still search by the problem");
+    assert_eq!(report.api.unwrap().cost, "free_personal");
+    let requests = server.received_requests().await.unwrap();
+    let search = requests
+        .iter()
+        .filter_map(|r| r.body_json::<Value>().ok())
+        .find(|v| v.get("tools").is_some())
+        .unwrap();
+    let system = search["input"][0]["content"].as_str().unwrap();
+    let user = search["input"][1]["content"].as_str().unwrap();
+    assert!(user.contains(query), "the search runs on the problem phrase");
+    assert!(user.contains("prefer a free option"));
+    assert!(system.contains("free personal-access API") && system.contains("paid, partner-only or approval/accreditation-required"));
+    assert!(system.contains("never by guessing a brand"));
+}
+
+#[tokio::test]
+async fn a_chatty_answer_wrapped_in_prose_is_trimmed_not_rejected() {
+    let server = MockServer::start().await;
+    let mut api = proposal(&server, "bearer");
+    api["setupInstructions"] = json!((0..12).map(|n| format!("Step {n}: {}", "x".repeat(700))).collect::<Vec<_>>());
+    let mut chatty = plan("custom_api", None, api);
+    chatty["summary"] = json!("s".repeat(2000));
+    // The searching call answers with a sentence and a code fence around the JSON.
+    let wrapped = format!("Here is what I found:\n```json\n{chatty}\n```\nHope that helps.");
+    Mock::given(path("/responses"))
+        .and(|r: &wiremock::Request| r.body_json::<Value>().unwrap().get("tools").is_none())
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("research", None, Value::Null), vec![])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/responses"))
+        .and(|r: &wiremock::Request| r.body_json::<Value>().unwrap().get("tools").is_some())
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":"completed",
+            "output":[
+                {"type":"web_search_call","status":"completed","results":[{"url":format!("{}/docs",server.uri()),"type":"text_result"}]},
+                {"type":"message","content":[{"type":"output_text","text":wrapped}]}],
+            "usage":{"input_tokens":100,"output_tokens":100}})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/docs"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!("Official API: {}/records", server.uri())))
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let d = f.core.draft_task_no_input("Read Example records").unwrap();
+    let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
+    let report = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .expect("a verbose, wrapped answer must not fail the check")
+        .access_plan
+        .unwrap();
+    assert_eq!(report.state, "needs_connection");
+    let api = report.api.unwrap();
+    assert_eq!(api.setup_instructions.len(), 8);
+    assert!(api.setup_instructions.iter().all(|l| l.chars().count() <= 500));
+    assert!(report.summary.chars().count() <= 1600);
 }

@@ -110,6 +110,7 @@ export function friendlyFailure(message: string, kind?: string): string {
   if (kind === "quota" || kind === "budget") return "The model's spending limit has been reached. Check your allowance in Settings, then try again.";
   if (kind === "destination_exists") return "That file already exists. Choose another output name, then try again.";
   if (kind === "input_invalid") return "Couldn't read this file. Check its dates and values, or choose another file, then try again.";
+  if (kind === "missing_data") return `The tool can't run yet because it has no data to work with. ${message.trim()} Macroscope won't make data up, so give it a source: choose a file, or check how to get it from the service.`;
   if (kind === "checks") return "The result didn't pass its checks. Try again, or change what the tool should do.";
   return "Couldn't finish this task. Try again, or change what the tool should do.";
 }

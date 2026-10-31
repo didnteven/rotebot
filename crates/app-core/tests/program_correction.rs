@@ -705,3 +705,62 @@ async fn failing_review_change_keeps_the_passing_program() {
         .iter()
         .any(|e| e.message.contains("version that passed was kept")));
 }
+
+const MISSING_SENTENCE: &str = "No bank statement file was selected for the money-in-per-day summary.";
+
+#[tokio::test]
+async fn a_program_that_says_its_data_is_missing_twice_stops_after_one_correction_with_a_missing_data_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let model_server = MockServer::start().await;
+    let refuses = Program {
+        connection_sources: vec![],
+        model_step: None,
+        summary: "Money in per day".into(),
+        output_name: "summary.txt".into(),
+        code: format!(r#"function run() {{ throw new Error("{MISSING_SENTENCE}"); }}"#),
+        web_sources: vec![],
+    };
+    let counter = mount_model(&model_server, refuses.clone(), refuses).await;
+    let core = core_at(temp.path(), model_server.uri());
+    core.save_api_key("mk-correction-test-canary-1234567890")
+        .await
+        .unwrap();
+    let draft = core
+        .draft_task_no_input("I need bank statements, a summary of money in per day")
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let state = wait(&core, &started.build_id).await;
+    assert_eq!(state.phase, BuildPhase::Failed, "{state:?}");
+    let failure = state.failure.expect("failure");
+    assert_eq!(failure.kind, BuildFailureKind::MissingData, "{failure:?}");
+    assert_eq!(failure.message, MISSING_SENTENCE);
+    let requests = model_server.received_requests().await.unwrap();
+    assert_eq!(model_requests(&requests).len(), 2, "one build and one correction, not three corrections");
+    assert_eq!(counter.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn an_ordinary_runtime_error_is_not_mistaken_for_missing_data() {
+    let temp = tempfile::tempdir().unwrap();
+    let model_server = MockServer::start().await;
+    let faulty = Program {
+        connection_sources: vec![],
+        model_step: None,
+        summary: "Broken".into(),
+        output_name: "summary.txt".into(),
+        code: r#"function run() { const x = undefined; x.field; }"#.into(),
+        web_sources: vec![],
+    };
+    mount_model(&model_server, faulty.clone(), faulty).await;
+    let core = core_at(temp.path(), model_server.uri());
+    core.save_api_key("mk-correction-test-canary-1234567890")
+        .await
+        .unwrap();
+    let draft = core.draft_task_no_input("A task whose program has a bug").unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let state = wait(&core, &started.build_id).await;
+    assert_eq!(state.phase, BuildPhase::Failed, "{state:?}");
+    assert_eq!(state.failure.expect("failure").kind, BuildFailureKind::Checks);
+    let requests = model_server.received_requests().await.unwrap();
+    assert_eq!(model_requests(&requests).len(), 4, "a real fault still gets every correction");
+}

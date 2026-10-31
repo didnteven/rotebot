@@ -113,6 +113,18 @@ pub async fn get(
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<String, ReadError> {
+    let credentials: Vec<_> = credential.into_iter().collect();
+    get_with_headers(raw, &credentials, allow_test, max_bytes, timeout).await
+}
+
+/// One GET with any number of credential headers (an API key plus an app id, for example).
+pub async fn get_with_headers(
+    raw: &str,
+    credentials: &[(&str, &[u8])],
+    allow_test: bool,
+    max_bytes: usize,
+    timeout: Duration,
+) -> Result<String, ReadError> {
     let url = validate_url(raw, allow_test)?;
     let host = url.host_str().ok_or(ReadError::Url)?;
     let local = allow_test && host == "127.0.0.1" && url.scheme() == "http";
@@ -137,11 +149,11 @@ pub async fn get(
         .build()
         .map_err(|_| ReadError::Transport)?;
     let mut request = client.get(url.clone());
-    if let Some((name, value)) = credential {
+    for (name, value) in credentials {
         validate_header(name)?;
         let mut header = HeaderValue::from_bytes(value).map_err(|_| ReadError::Credential)?;
         header.set_sensitive(true);
-        request = request.header(name, header);
+        request = request.header(*name, header);
     }
     let mut response = request.send().await.map_err(|_| ReadError::Transport)?;
     let status = response.status();
@@ -187,7 +199,7 @@ pub async fn get(
         }
         bytes.extend_from_slice(&part);
     }
-    if credential.is_some_and(|(_, key)| {
+    if credentials.iter().any(|(_, key)| {
         let key = key.strip_prefix(b"Bearer ").unwrap_or(key);
         !key.is_empty() && bytes.windows(key.len()).any(|w| w == key)
     }) {

@@ -109,8 +109,12 @@ impl MetaResponsesClient {
         {
             return Err(GatewayError::MalformedOutput);
         }
-        let output: Value =
-            serde_json::from_str(&text).map_err(|_| GatewayError::MalformedOutput)?;
+        // A model that has just searched the web may wrap its JSON in a sentence or a code fence.
+        // The object is still validated against the schema below.
+        let output: Value = serde_json::from_str(&text)
+            .ok()
+            .or_else(|| search.then(|| json_object_within(&text)).flatten())
+            .ok_or(GatewayError::MalformedOutput)?;
         if !validator.is_valid(&output) {
             return Err(GatewayError::MalformedOutput);
         }
@@ -173,6 +177,11 @@ impl MetaResponsesClient {
         }
         Ok(catalog)
     }
+}
+/// The JSON object between the first `{` and the last `}` of a reply that also contains prose.
+fn json_object_within(text: &str) -> Option<Value> {
+    let (start, end) = (text.find('{')?, text.rfind('}')?);
+    serde_json::from_str(text.get(start..=end)?).ok()
 }
 // Only static error summaries leave this module. Remote bodies, URL errors,
 // schema diagnostics and header parsing errors can echo secrets and are discarded.

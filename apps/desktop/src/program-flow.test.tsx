@@ -113,3 +113,26 @@ it("explains an example correction in plain words and keeps check shapes in one 
   expect(screen.getByText(detail,{selector:"details p"})).toBeVisible();
   expect(screen.getByText(/Output shape matches/)).toBeVisible();
 });
+
+it("a missing-data failure sends the person to the data options instead of offering a pointless retry",async()=>{
+  const backend=new MockBackend();await backend.saveApiKey("test-key");
+  const input=backend.importText("synthetic.log","ERROR invented");
+  const sentence="No bank statement file was selected for the money-in-per-day summary.";
+  vi.spyOn(backend,"startBuild").mockImplementation(async(draftId)=>({
+    buildId:"missing-data",draftId,route:"api_key",routeLabel:"Meta API key",phase:"failed",candidate:null,comparison:null,spentMicros:0,
+    checks:[{id:"sandbox",label:"Runs inside sandbox limits without error",passed:false,detail:"JavaScript execution failed: Error at line 1: "+sentence}],
+    events:[],failure:{kind:"missing_data",message:sentence},
+  }));
+  const user=userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}}/>);
+  await user.type(screen.getByLabelText("What should the tool do?"),"summarise money in per day");
+  await user.click(screen.getByRole("button",{name:"Check the plan"}));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Send and build"})).toBeEnabled());
+  await user.click(screen.getByRole("button",{name:"Send and build"}));
+  expect(await screen.findByText(/can't run yet because it has no data to work with/)).toBeVisible();
+  expect(screen.getAllByText(new RegExp(sentence.slice(0,30))).length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button",{name:"Try again"})).not.toBeInTheDocument();
+  expect(screen.getByRole("button",{name:"Use a file instead"})).toBeVisible();
+  await user.click(screen.getByRole("button",{name:"Check how to get this data"}));
+  expect(await screen.findByRole("button",{name:"Send and build"})).toBeVisible();
+});

@@ -638,7 +638,13 @@ async fn save_api_connection(core: State<'_, Core>, config: ApiConfig) -> Cmd<Co
             .ok_or_else(|| invalid("API credential entry cancelled"))?;
         Some(macroscope_vault::Secret::new(raw.into_bytes()))
     };
-    Ok(core.0.save_api_connection(config, secret).await?)
+    let mut extras = Vec::new();
+    for name in &config.extra_header_names {
+        let raw = native_prompt(&format!("This API also needs a value for its {name} header. Enter it for the API address you reviewed. It stays in Macroscope's secret store and is never sent to the task model."), true, "Save").await?
+            .ok_or_else(|| invalid("API credential entry cancelled"))?;
+        extras.push(macroscope_vault::Secret::new(raw.into_bytes()));
+    }
+    Ok(core.0.save_api_connection_with_extras(config, secret, extras).await?)
 }
 #[tauri::command]
 async fn save_api_search_key(core: State<'_, Core>) -> Cmd<()> {

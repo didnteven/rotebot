@@ -20,7 +20,12 @@ pub struct ApiConfig {
     pub auth: ApiAuth,
     pub header_name: String,
     pub docs_url: Option<String>,
+    /// Further key headers the API also needs (an app id beside the access token). Names only:
+    /// each value is entered in the native dialog and kept in the host vault.
+    #[serde(default)]
+    pub extra_header_names: Vec<String>,
 }
+pub const MAX_EXTRA_HEADERS: usize = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +67,10 @@ impl AppCore {
         SecretRef::new(format!("api-credential:{id}"))
             .map_err(|_| CoreError::Invalid("Invalid API connection".into()))
     }
+    fn api_extra_secret(id: &str, n: usize) -> CoreResult<SecretRef> {
+        SecretRef::new(format!("api-credential:{id}:{n}"))
+            .map_err(|_| CoreError::Invalid("Invalid API connection".into()))
+    }
     pub fn validate_api_config(&self, config: &ApiConfig) -> CoreResult<()> {
         let invalid = |s: &str| CoreError::Invalid(s.into());
         if config.name.trim().is_empty()
@@ -75,6 +84,23 @@ impl AppCore {
         if config.auth == ApiAuth::Header {
             rest::validate_header(&config.header_name).map_err(|e| invalid(&e.to_string()))?;
         }
+        if config.extra_header_names.len() > MAX_EXTRA_HEADERS
+            || (!config.extra_header_names.is_empty() && config.auth == ApiAuth::None)
+        {
+            return Err(invalid("This API needs a credential before it can use extra key headers"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if config.auth == ApiAuth::Bearer {
+            seen.insert("authorization".to_string());
+        } else if config.auth == ApiAuth::Header {
+            seen.insert(config.header_name.to_ascii_lowercase());
+        }
+        for name in &config.extra_header_names {
+            rest::validate_header(name).map_err(|e| invalid(&e.to_string()))?;
+            if !seen.insert(name.to_ascii_lowercase()) {
+                return Err(invalid("Each key header can only be used once"));
+            }
+        }
         if let Some(url) = &config.docs_url {
             rest::validate_url(url, self.allow_insecure_web())
                 .map_err(|e| invalid(&e.to_string()))?;
@@ -85,17 +111,31 @@ impl AppCore {
     /// Configurations are immutable. A replacement gets a new id and needs new grants.
     pub async fn save_api_connection(
         &self,
-        mut config: ApiConfig,
+        config: ApiConfig,
         credential: Option<Secret>,
     ) -> CoreResult<ConnectorInfo> {
+        self.save_api_connection_with_extras(config, credential, Vec::new())
+            .await
+    }
+    /// `extras` holds one value per `extra_header_names` entry, in the same order.
+    pub async fn save_api_connection_with_extras(
+        &self,
+        mut config: ApiConfig,
+        credential: Option<Secret>,
+        extras: Vec<Secret>,
+    ) -> CoreResult<ConnectorInfo> {
         self.validate_api_config(&config)?;
-        if config.auth != ApiAuth::None
-            && credential.as_ref().is_none_or(|s| {
-                s.expose().is_empty()
-                    || s.expose().len() > 8192
-                    || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
-            })
-        {
+        let unusable = |s: &Secret| {
+            s.expose().is_empty()
+                || s.expose().len() > 8192
+                || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
+        };
+        if extras.len() != config.extra_header_names.len() || extras.iter().any(unusable) {
+            return Err(CoreError::Invalid(
+                "Enter every API credential without line breaks".into(),
+            ));
+        }
+        if config.auth != ApiAuth::None && credential.as_ref().is_none_or(unusable) {
             return Err(CoreError::Invalid(
                 "Enter an API credential without line breaks".into(),
             ));
@@ -118,13 +158,31 @@ impl AppCore {
                 .set(&reference, credential.unwrap())
                 .map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
         }
+        let forget = |upto: usize| {
+            let _ = self.inner.cfg.vault.delete(&reference);
+            for n in 0..upto {
+                if let Ok(r) = Self::api_extra_secret(&id, n) {
+                    let _ = self.inner.cfg.vault.delete(&r);
+                }
+            }
+        };
+        for (n, secret) in extras.into_iter().enumerate() {
+            let saved = Self::api_extra_secret(&id, n)
+                .map_err(|e| e.to_string())
+                .and_then(|r| self.inner.cfg.vault.set(&r, secret).map_err(|e| e.to_string()));
+            if saved.is_err() {
+                forget(n);
+                return Err(CoreError::Vault("API credential could not be saved".into()));
+            }
+        }
+        let extra_count = config.extra_header_names.len();
         apis.push(SavedApi {
             id: id.clone(),
             config,
             state: ConnectionState::NotConnected,
         });
         if let Err(e) = self.db().set_setting(APIS, &json!(apis)) {
-            let _ = self.inner.cfg.vault.delete(&reference);
+            forget(extra_count);
             return Err(e.into());
         }
         self.api_info(&id)
@@ -214,6 +272,19 @@ impl AppCore {
                 "Reconnect this API; its credential is unavailable".into(),
             ));
         }
+        let mut extra_values = Vec::new();
+        for n in 0..a.config.extra_header_names.len() {
+            let value = self
+                .inner
+                .cfg
+                .vault
+                .get(&Self::api_extra_secret(id, n)?)
+                .map_err(|_| CoreError::Vault("API credential unavailable".into()))?
+                .ok_or_else(|| {
+                    CoreError::Invalid("Reconnect this API; its credential is unavailable".into())
+                })?;
+            extra_values.push(value);
+        }
         let mut bytes = Vec::new();
         let header = match a.config.auth {
             ApiAuth::None => None,
@@ -227,6 +298,13 @@ impl AppCore {
                 Some(a.config.header_name.as_str())
             }
         };
+        let mut headers: Vec<(&str, &[u8])> = Vec::new();
+        if let Some(h) = header {
+            headers.push((h, bytes.as_slice()));
+        }
+        for (name, value) in a.config.extra_header_names.iter().zip(&extra_values) {
+            headers.push((name.as_str(), value.expose()));
+        }
         self.db().insert_outbound(&db::OutboundRow {
             id: new_id("api_read"),
             at_ms: self.now(),
@@ -255,12 +333,12 @@ impl AppCore {
         let guard = HttpEpochGuard(Some(admission.guard));
         let result = tokio::select! { biased;
             _ = self.inner.policy.revoked(epoch) => Err(ReadError::Transport),
-            r = rest::get(resource, header.map(|h| (h, bytes.as_slice())), self.allow_insecure_web(), 4 * 1024 * 1024, std::time::Duration::from_secs(10)) => r,
+            r = rest::get_with_headers(resource, &headers, self.allow_insecure_web(), 4 * 1024 * 1024, std::time::Duration::from_secs(10)) => r,
         };
         drop(guard);
         let _local = self.admit_local()?;
         let text = result.and_then(|text| {
-            if token.as_ref().is_some_and(|t| {
+            if token.iter().chain(extra_values.iter()).any(|t| {
                 !t.expose().is_empty()
                     && text
                         .as_bytes()
@@ -275,6 +353,9 @@ impl AppCore {
                 || value["next"].is_string()
                 || value["has_more"] == true
                 || value["links"]["next"].is_string()
+                || value["cursor"]["next"].is_string()
+                || value["next_cursor"].is_string()
+                || value["nextPageToken"].is_string()
             {
                 return Err(ReadError::InvalidResponse);
             }
@@ -328,6 +409,13 @@ impl AppCore {
             .vault
             .delete(&Self::api_secret(id)?)
             .map_err(|_| CoreError::Vault("API credential could not be removed".into()))?;
+        for n in 0..apis[index].config.extra_header_names.len() {
+            self.inner
+                .cfg
+                .vault
+                .delete(&Self::api_extra_secret(id, n)?)
+                .map_err(|_| CoreError::Vault("API credential could not be removed".into()))?;
+        }
         let mut info = self.api_info(id)?;
         info.state = ConnectionState::NotConnected;
         apis.remove(index);

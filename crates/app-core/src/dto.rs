@@ -314,6 +314,8 @@ pub enum BuildFailureKind {
     Budget,
     Malformed,
     Checks,
+    /// The program refused to invent data it was never given (a missing file, account or connection).
+    MissingData,
     NoModelAccess,
     Internal,
 }

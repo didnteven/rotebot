@@ -189,7 +189,7 @@ pub fn classify_build_failure(kind: BuildFailureKind, message: &str) -> FailureC
     }
     // Host checks rejected the generated program; the sandbox message can
     // contain outage words ("unavailable") that must not relabel it.
-    if kind == BuildFailureKind::Checks
+    if matches!(kind, BuildFailureKind::Checks | BuildFailureKind::MissingData)
         || contains_any(
             message,
             &[
@@ -235,7 +235,7 @@ pub fn classify_build_failure(kind: BuildFailureKind, message: &str) -> FailureC
         | BuildFailureKind::Budget
         | BuildFailureKind::NoModelAccess
         | BuildFailureKind::Auth => FailureClass::Infrastructure,
-        BuildFailureKind::Checks => FailureClass::ChecksFailed,
+        BuildFailureKind::Checks | BuildFailureKind::MissingData => FailureClass::ChecksFailed,
         BuildFailureKind::Malformed => FailureClass::BuildFailed,
         BuildFailureKind::Internal => FailureClass::BuildFailed,
     }

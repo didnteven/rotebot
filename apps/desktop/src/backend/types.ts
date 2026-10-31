@@ -126,8 +126,8 @@ export interface RuleQuestion {
 export type TaskKind = "csv-mapping" | "program";
 /** A web source the host fetches and passes to the program as data (ADR 0004). */
 export interface WebSource { name: string; url: string; }
-export interface ApiConfig { name: string; url: string; auth: "none" | "bearer" | "header"; headerName: string; docsUrl: string | null; }
-export interface ApiProposal { name: string; url: string; auth: string; headerName: string; docsUrl: string; method: string; setupInstructions: string[]; prerequisites: string[]; coverage: string; }
+export interface ApiConfig { name: string; url: string; auth: "none" | "bearer" | "header"; headerName: string; docsUrl: string | null; /** Further key headers (an app id beside the access token); each value is entered in the native dialog. */ extraHeaderNames?: string[]; }
+export interface ApiProposal { name: string; url: string; auth: string; headerName: string; docsUrl: string; method: string; setupInstructions: string[]; prerequisites: string[]; coverage: string; extraHeaderNames?: string[]; /** From the provider documentation: public, free_personal, free_tier, paid_or_approval or unknown. */ cost?: string; }
 export interface AccessReport { state: string; summary: string; connectorId: string | null; api: ApiProposal | null; sources: string[]; searched: boolean; checkedAtMs: number; binding: string; }
 export interface AccessPreview { payloadText: string; payloadHash: string; recipient: string; searchAvailable: boolean; }
 export interface ConnectionSource {name:string;connectorId:string;toolName:string;argsJson:string;}
@@ -235,6 +235,7 @@ export interface BuildState {
       | "budget"
       | "malformed"
       | "checks"
+      | "missing_data"
       | "no_model_access"
       | "internal";
     message: string;

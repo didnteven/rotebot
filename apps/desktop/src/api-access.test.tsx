@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ApiAccessPanel, ApiSetup } from "./ApiAccess";
+import { Connections } from "./Connections";
 import { MockBackend } from "./backend/mock";
 import type { AccessReport, ApiProposal, TaskDraft } from "./backend/types";
 
@@ -69,7 +70,7 @@ test("API credentials never enter the DOM and saving does not issue the access t
   const { container } = render(<ApiSetup backend={backend} proposal={proposal} connected={connected} />);
   expect(container.querySelector('input[type="password"]')).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
-  await screen.findByText(/Saved locally/); expect(save).toHaveBeenCalledWith(expect.objectContaining({ url: proposal.url, auth: "bearer" }));
+  await screen.findByText(/Saved on this Mac/); expect(save).toHaveBeenCalledWith(expect.objectContaining({ url: proposal.url, auth: "bearer" }));
   expect(check).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Test API access" }));
   await waitFor(() => expect(connected).toHaveBeenCalledWith(expect.objectContaining({ state: expect.objectContaining({ kind: "connected" }) })));
@@ -99,4 +100,43 @@ test("an old research response cannot replace a new draft", async () => {
   const replacement = await f.backend.draftTaskNoInput("A different task");
   view.rerender(<ApiAccessPanel backend={f.backend} draft={replacement} status={f.status} accept={accept} onBusy={onBusy} />);
   resolve(f.draft); await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false)); expect(accept).not.toHaveBeenCalled();
+});
+
+test("an API that needs an app id beside the token asks for both keys and sends only header names", async () => {
+  const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection");
+  const { container } = render(<ApiSetup backend={backend} proposal={{ ...proposal, extraHeaderNames: ["X-App-Id"] }} />);
+  expect(screen.getByText(/Secure boxes open one at a time where you paste your 2 keys/)).toBeVisible();
+  expect(container.querySelector('input[type="password"]')).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
+  await screen.findByText(/Saved on this Mac/);
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ extraHeaderNames: ["X-App-Id"] }));
+});
+
+test("a proposal's technical fields are tucked away, while a manual custom API shows them", async () => {
+  const backend = new MockBackend();
+  const first = render(<ApiSetup backend={backend} proposal={proposal} />);
+  expect(first.container.querySelector("details")).not.toHaveAttribute("open"); first.unmount();
+  const second = render(<ApiSetup backend={backend} />);
+  expect(second.container.querySelector("details")).toHaveAttribute("open");
+});
+
+test("custom APIs have their own visible section with the saved ones and an add button", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/accounts", auth: "none", headerName: "", docsUrl: null });
+  render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
+  expect(screen.getByRole("heading", { name: "Custom APIs" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Bank accounts" })).toBeVisible();
+  expect(screen.getByText(/Send and check access/)).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Custom API setup" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Add a custom API" }));
+  expect(screen.getByRole("region", { name: "Custom API setup" })).toBeVisible();
+});
+
+test("each proposal says in plain words what it costs, and never claims a cost the documentation did not give", async () => {
+  const free = await panel(report("needs_connection", { ...proposal, cost: "free_personal" }));
+  expect(screen.getByText("Free for your own accounts or data")).toBeVisible(); free.unmount();
+  const paid = await panel(report("needs_connection", { ...proposal, cost: "paid_or_approval" }));
+  expect(screen.getByText("May cost money or need the provider's approval")).toBeVisible(); paid.unmount();
+  await panel(report("needs_connection", proposal));
+  expect(screen.getByText("Cost not confirmed in the documentation")).toBeVisible();
 });
