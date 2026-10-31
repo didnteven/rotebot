@@ -482,6 +482,7 @@ export class MockBackend implements Backend {
   async setCustomEndpointOptions(displayName: string | null, monthlyCallCap: number) {
     if(!Number.isInteger(monthlyCallCap) || monthlyCallCap<0) throw new Error("Enter a nonnegative whole call cap.");
     Object.assign(this.status.customEndpoint,{displayName,monthlyCallCap}); return this.resolveRoute();
+  async saveCustomEndpointModalToken() { return this.saveCustomEndpointToken(); }
   }
   async testCustomEndpoint() {
     const c=this.status.customEndpoint;

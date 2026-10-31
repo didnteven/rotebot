@@ -112,7 +112,7 @@ impl AppCore {
     }
     /// Called by the native dialog (and native test/eval code), never by token-bearing IPC.
     pub async fn save_custom_endpoint_token(&self, raw: &str) -> CoreResult<ModelAccessStatus> {
-        let (secret, _) = validate_key(raw)
+        let (secret, _) = validate_key(strip_auth_prefix(raw))
             .map_err(|_| CoreError::Invalid("That token is empty or has line breaks.".into()))?;
         let _control = self.inner.cloud_controls.lock().await;
         let reopen = self.inner.policy.state() == PolicyState::CloudAllowed;
@@ -132,6 +132,25 @@ impl AppCore {
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
         }
         Ok(self.model_access().await)
+    }
+    /// Modal proxy-auth tokens come as an ID and a secret; the endpoint takes them as one
+    /// `ID.SECRET` bearer. Called by the native dialog only, like the single-token path.
+    pub async fn save_custom_endpoint_modal_token(
+        &self,
+        id: &str,
+        secret: &str,
+    ) -> CoreResult<ModelAccessStatus> {
+        let (id, secret) = (id.trim(), secret.trim());
+        let part_ok =
+            |p: &str| !p.is_empty() && !p.contains(|c: char| c.is_whitespace() || c == '.');
+        if !part_ok(id) || !part_ok(secret) {
+            return Err(CoreError::Invalid(
+                "Enter the token ID and the token secret separately, without spaces or dots."
+                    .into(),
+            ));
+        }
+        self.save_custom_endpoint_token(&format!("{id}.{secret}"))
+            .await
     }
     pub async fn remove_custom_endpoint(&self) -> CoreResult<ModelAccessStatus> {
         let _control = self.inner.cloud_controls.lock().await;
@@ -280,5 +299,34 @@ impl CustomCallObserver for CallLog {
     ) -> Result<(), GatewayError> {
         let (id, request_bytes) = reference.split_once(':').ok_or(GatewayError::Unavailable)?;
         self.core.db().set_outbound_metadata(id, &json!({"requestBytes":request_bytes.parse::<usize>().unwrap_or(0),"responseBytes":response_bytes,"usage":usage}).to_string()).map_err(|_| GatewayError::Unavailable)
+    }
+}
+
+/// The gateway adds `Bearer ` itself, so a pasted `Authorization: Bearer X` or `Bearer X` keeps just `X`.
+fn strip_auth_prefix(raw: &str) -> &str {
+    fn strip<'a>(s: &'a str, prefix: &str) -> &'a str {
+        match s.get(..prefix.len()) {
+            Some(p) if p.eq_ignore_ascii_case(prefix) => s[prefix.len()..].trim_start(),
+            _ => s,
+        }
+    }
+    strip(strip(raw.trim(), "authorization:"), "bearer ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_auth_prefix;
+
+    #[test]
+    fn pasted_header_forms_keep_only_the_token() {
+        for raw in [
+            "wk-a.ws-b",
+            "Bearer wk-a.ws-b",
+            "bearer   wk-a.ws-b",
+            "Authorization: Bearer wk-a.ws-b",
+            "  authorization:Bearer wk-a.ws-b\n",
+        ] {
+            assert_eq!(strip_auth_prefix(raw).trim(), "wk-a.ws-b", "{raw:?}");
+        }
     }
 }

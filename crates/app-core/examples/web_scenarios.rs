@@ -4,7 +4,10 @@
 //!   META_API_KEY=... cargo run -p macroscope-app-core --example web_scenarios -- \
 //!     --confirm-spend "prompt one" "prompt two" ...
 //!
-//! The key comes only from `META_API_KEY`, never argv. Each prompt gets a fresh
+//! The key comes only from `META_API_KEY`, never argv. To run against a custom
+//! OpenAI-compatible endpoint instead, set `MACROSCOPE_CUSTOM_TOKEN` (the bearer
+//! value), `MACROSCOPE_CUSTOM_BASE_URL` and `MACROSCOPE_CUSTOM_MODEL`; the endpoint
+//! is tested before any prompt runs. Each prompt gets a fresh
 //! temporary data folder and an in-memory vault. Nothing is committed: the run
 //! is staged and its preview printed, then the folder is discarded.
 
@@ -23,7 +26,25 @@ async fn main() {
             prompts.push(arg);
         }
     }
-    let key = std::env::var("META_API_KEY").unwrap_or_default();
+    let custom = std::env::var("MACROSCOPE_CUSTOM_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty());
+    let endpoint = match &custom {
+        Some(_) => match (
+            std::env::var("MACROSCOPE_CUSTOM_BASE_URL"),
+            std::env::var("MACROSCOPE_CUSTOM_MODEL"),
+        ) {
+            (Ok(url), Ok(model)) => Some((url, model)),
+            _ => {
+                eprintln!(
+                    "set MACROSCOPE_CUSTOM_BASE_URL and MACROSCOPE_CUSTOM_MODEL with the token"
+                );
+                std::process::exit(2);
+            }
+        },
+        None => None,
+    };
+    let key = custom.unwrap_or_else(|| std::env::var("META_API_KEY").unwrap_or_default());
     if key.trim().is_empty() || !confirm || prompts.is_empty() {
         eprintln!(
             "usage: META_API_KEY=... web_scenarios --confirm-spend \"prompt\" [\"prompt\" ...]"
@@ -32,11 +53,11 @@ async fn main() {
     }
     for prompt in prompts {
         println!("=== {prompt}");
-        println!("{}", run_one(&prompt, &key).await);
+        println!("{}", run_one(&prompt, &key, endpoint.as_ref()).await);
     }
 }
 
-async fn run_one(prompt: &str, key: &str) -> String {
+async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -> String {
     let tmp = tempfile::tempdir().expect("tempdir");
     let home = tmp.path().join("home");
     let vault: Arc<dyn macroscope_vault::SecretStore> =
@@ -57,9 +78,26 @@ async fn run_one(prompt: &str, key: &str) -> String {
         Ok(c) => c,
         Err(e) => return format!("SETUP FAILED: {e}"),
     };
-    if core.save_api_key(key).await.is_err() || core.select_route(ModelRoute::ApiKey).await.is_err()
-    {
-        return "SETUP FAILED: key rejected".into();
+    let configured = match endpoint {
+        Some((url, model)) => {
+            async {
+                core.save_custom_endpoint(url, model).await?;
+                core.save_custom_endpoint_token(key).await?;
+                core.test_custom_endpoint().await?;
+                core.select_route(ModelRoute::CustomEndpoint).await
+            }
+            .await
+        }
+        None => {
+            async {
+                core.save_api_key(key).await?;
+                core.select_route(ModelRoute::ApiKey).await
+            }
+            .await
+        }
+    };
+    if let Err(e) = configured {
+        return format!("SETUP FAILED: {e}");
     }
     let draft = match core.draft_task_no_input(prompt) {
         Ok(d) => d,

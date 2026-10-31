@@ -22,6 +22,7 @@ fn main() {
         "save_custom_endpoint_token",
         "set_custom_endpoint_options",
         "remove_custom_endpoint",
+        "save_custom_endpoint_modal_token",
         "test_custom_endpoint",
         "save_api_key",
         "remove_api_key",

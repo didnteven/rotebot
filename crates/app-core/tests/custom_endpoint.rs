@@ -627,3 +627,28 @@ mod runtime {
         );
     }
 }
+#[tokio::test]
+async fn modal_token_id_and_secret_are_stored_as_one_bearer() {
+    let f = Fixture::new().await;
+    let status = f
+        .core
+        .save_custom_endpoint_modal_token(" wk-abc123 ", "ws-def456\n")
+        .await
+        .unwrap();
+    assert!(status.custom_endpoint.token_present);
+    assert_eq!(
+        f.vault
+            .get(&SecretRef::new("custom-endpoint-token").unwrap())
+            .unwrap()
+            .unwrap()
+            .expose(),
+        b"wk-abc123.ws-def456"
+    );
+    for (id, secret) in [("", "ws-x"), ("wk-x", ""), ("wk x", "ws-x"), ("wk-x", "ws.x")] {
+        assert!(f
+            .core
+            .save_custom_endpoint_modal_token(id, secret)
+            .await
+            .is_err());
+    }
+}

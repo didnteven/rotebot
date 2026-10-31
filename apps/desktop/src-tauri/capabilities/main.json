@@ -16,6 +16,7 @@
     "allow-enter-api-key-native",
     "allow-save-custom-endpoint",
     "allow-save-custom-endpoint-token",
+    "allow-save-custom-endpoint-modal-token",
     "allow-set-custom-endpoint-options",
     "allow-remove-custom-endpoint",
     "allow-test-custom-endpoint",

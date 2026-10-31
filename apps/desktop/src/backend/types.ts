@@ -555,6 +555,8 @@ export interface Backend {
   loadSampleCsv(): Promise<CsvPreview>;
   draftTask(input: FileHandle, description: string): Promise<TaskDraft>;
   /** Drafts a program task with no input file; the program reads approved web sources. */
+  /** Native dialogs ask for the Modal token ID, then the secret; stored as one `ID.SECRET` bearer. */
+  saveCustomEndpointModalToken(): Promise<ModelAccessStatus>;
   draftTaskNoInput(description: string): Promise<TaskDraft>;
   answerQuestion(
     draftId: string,

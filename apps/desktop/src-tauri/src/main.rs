@@ -89,21 +89,21 @@ async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
     enter_secret_native(&core.0, false).await
 }
 
-async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessStatus> {
+fn secret_storage(core: &AppCore) -> &'static str {
+    match core.app_info().secret_store {
+        macroscope_vault::SecretStoreKind::File => "a private file in Macroscope's data folder",
+        _ => "your macOS Keychain",
+    }
+}
+
+/// One native text prompt. `None` means cancelled or left empty.
+async fn native_prompt(message: &str, hidden: bool, button: &str) -> Cmd<Option<String>> {
     if !cfg!(target_os = "macos") {
         return Err(invalid("Native secret entry requires macOS."));
     }
-    let storage = match core.app_info().secret_store {
-        macroscope_vault::SecretStoreKind::File => "a private file in Macroscope's data folder",
-        _ => "your macOS Keychain",
-    };
-    let credential = if custom {
-        "custom endpoint token"
-    } else {
-        "Meta API key"
-    };
+    let hidden = if hidden { "with hidden answer " } else { "" };
     let script = format!(
-        r#"text returned of (display dialog "Paste your {credential}. Macroscope stores it in {storage}." default answer "" with hidden answer with title "Macroscope" buttons {{"Cancel", "Save key"}} default button "Save key")"#
+        r#"text returned of (display dialog "{message}" default answer "" {hidden}with title "Macroscope" buttons {{"Cancel", "{button}"}} default button "{button}")"#
     );
     // A dialog from a background osascript process opens without keyboard
     // focus, so typing goes to the window behind it. Activate it first.
@@ -117,20 +117,52 @@ async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessSta
         .await
         .map_err(|_| invalid("The key dialog could not open."))?;
     if !output.status.success() {
-        return Ok(core.model_access().await); // cancelled
+        return Ok(None); // cancelled
     }
-    let mut key =
+    let mut text =
         String::from_utf8(output.stdout).map_err(|_| invalid("That key is not valid text."))?;
-    let trimmed = key.trim_end_matches(['\n', '\r']).to_string();
-    key.clear();
-    if trimmed.is_empty() {
-        return Ok(core.model_access().await);
-    }
-    if custom {
-        Ok(core.save_custom_endpoint_token(&trimmed).await?)
+    let trimmed = text.trim_end_matches(['\n', '\r']).to_string();
+    text.clear();
+    Ok(Some(trimmed).filter(|t| !t.is_empty()))
+}
+
+async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessStatus> {
+    let storage = secret_storage(core);
+    let credential = if custom {
+        "custom endpoint token"
     } else {
-        Ok(core.save_api_key(&trimmed).await?)
+        "Meta API key"
+    };
+    let message = format!("Paste your {credential}. Macroscope stores it in {storage}.");
+    let Some(key) = native_prompt(&message, true, "Save key").await? else {
+        return Ok(core.model_access().await);
+    };
+    if custom {
+        Ok(core.save_custom_endpoint_token(&key).await?)
+    } else {
+        Ok(core.save_api_key(&key).await?)
     }
+}
+
+/// Modal's "Token created" screen gives an ID and a secret; ask for each in turn.
+async fn enter_modal_token_native(core: &AppCore) -> Cmd<ModelAccessStatus> {
+    let Some(id) = native_prompt(
+        "Paste your Modal Token ID (starts with wk-).",
+        false,
+        "Next",
+    )
+    .await?
+    else {
+        return Ok(core.model_access().await);
+    };
+    let message = format!(
+        "Paste your Modal Token Secret (starts with ws-). Macroscope stores the token in {}.",
+        secret_storage(core)
+    );
+    let Some(secret) = native_prompt(&message, true, "Save token").await? else {
+        return Ok(core.model_access().await);
+    };
+    Ok(core.save_custom_endpoint_modal_token(&id, &secret).await?)
 }
 
 #[tauri::command]
@@ -164,6 +196,12 @@ async fn test_custom_endpoint(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
 #[tauri::command]
 async fn save_custom_endpoint_token(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
     enter_secret_native(&core.0, true).await
+}
+
+/// No credential argument: the ID and secret are typed into native dialogs.
+#[tauri::command]
+async fn save_custom_endpoint_modal_token(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
+    enter_modal_token_native(&core.0).await
 }
 
 #[tauri::command]
@@ -1321,6 +1359,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         stop_recording,
         list_recording_frames,
         preview_recording,
+        save_custom_endpoint_modal_token,
         consent_and_analyze,
         answer_recording_questions,
         edit_recording_draft,

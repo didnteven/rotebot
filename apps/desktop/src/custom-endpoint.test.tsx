@@ -32,6 +32,12 @@ it("calls native token entry without rendering a token field",async()=>{
   await waitFor(()=>expect(native).toHaveBeenCalledWith());expect(document.querySelector('input[type="password"]')).toBeNull();
   expect(await screen.findByText(/Token: Set/)).toBeVisible();
 });
+it("Modal token entry is native too: two dialogs, no field in the page",async()=>{
+  const backend=await show();const native=vi.spyOn(backend,"saveCustomEndpointModalToken");
+  fireEvent.click(screen.getByRole("button",{name:"Set Modal token…"}));
+  await waitFor(()=>expect(native).toHaveBeenCalledWith());expect(document.querySelector('input[type="password"]')).toBeNull();
+  expect(screen.queryByRole("textbox",{name:/token/i})).toBeNull();expect(await screen.findByText(/Token: Set/)).toBeVisible();
+});
 it("shows test result and latency and enables selecting the tested route",async()=>{
   const backend=await show();const select=vi.spyOn(backend,"selectRoute");fill();await save();
   expect(screen.getByRole("button",{name:"Use this route"})).toBeDisabled();
@@ -56,4 +62,27 @@ it("displays auth rejection from the backend and keeps route selection disabled"
 });
 it("native IPC sends no credential argument",async()=>{
   const {invoke}=await import("@tauri-apps/api/core");const backend=new TauriBackend();await backend.saveCustomEndpointToken();expect(invoke).toHaveBeenCalledWith("save_custom_endpoint_token");
+});
+it("native Modal IPC sends no credential argument",async()=>{
+  const {invoke}=await import("@tauri-apps/api/core");const backend=new TauriBackend();await backend.saveCustomEndpointModalToken();expect(invoke).toHaveBeenCalledWith("save_custom_endpoint_modal_token");
+});
+it("saving with a token present tests straight away, so the selected route never goes dead",async()=>{
+  const backend=new MockBackend();await backend.saveCustomEndpoint(URL,MODEL);await backend.saveCustomEndpointToken();await backend.testCustomEndpoint();await backend.selectRoute("custom_endpoint");
+  const test=vi.spyOn(backend,"testCustomEndpoint");await show(backend);test.mockClear();
+  fireEvent.change(screen.getByRole("textbox",{name:"Endpoint base URL"}),{target:{value:URL.replace("/v1","/v2")}});
+  fireEvent.click(screen.getByRole("button",{name:"Save endpoint"}));
+  expect(await screen.findByText("Last endpoint test: OK · 7 ms")).toBeVisible();expect(test).toHaveBeenCalledOnce();
+  expect((await backend.modelAccess()).effectiveRoute).toBe("custom_endpoint");
+});
+it("Test endpoint on unsaved edits saves them first",async()=>{
+  const backend=new MockBackend();await backend.saveCustomEndpoint("https://toddhall34--test.modal.direct/",MODEL);await backend.saveCustomEndpointToken();
+  await show(backend);const test=screen.getByRole("button",{name:"Test endpoint"});expect(test).toBeEnabled();
+  fireEvent.change(screen.getByRole("textbox",{name:"Endpoint base URL"}),{target:{value:URL}});expect(test).toBeEnabled();
+  fireEvent.click(test);expect(await screen.findByText("Last endpoint test: OK · 7 ms")).toBeVisible();
+  expect((await backend.modelAccess()).customEndpoint.baseUrl).toBe(URL);
+});
+it("hints that the URL needs /v1 when it has no path",async()=>{
+  await show();fill();fireEvent.change(screen.getByRole("textbox",{name:"Endpoint base URL"}),{target:{value:"https://toddhall34--test.modal.direct/"}});
+  expect(screen.getByRole("note")).toHaveTextContent("need /v1");
+  fireEvent.change(screen.getByRole("textbox",{name:"Endpoint base URL"}),{target:{value:URL}});expect(screen.queryByRole("note")).toBeNull();
 });

@@ -1,0 +1,27 @@
+import {render,screen,waitFor} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {expect,it} from "vitest";
+import {App} from "./App";
+import {MockBackend} from "./backend/mock";
+const MODEL="meta-models/Muse-Spark-Open-816B-A42B";
+it("after adding /v1 in Settings, a new task goes through the custom endpoint",async()=>{
+  const backend=new MockBackend(),user=userEvent.setup();
+  await backend.saveCustomEndpoint("https://toddhall34--test.modal.direct/",MODEL);await backend.saveCustomEndpointToken();await backend.testCustomEndpoint();await backend.selectRoute("custom_endpoint");
+  render(<App backend={backend}/>);
+  await user.click(await screen.findByRole("button",{name:"Settings"}));
+  const url=await screen.findByRole("textbox",{name:"Endpoint base URL"});await user.click(url);await user.keyboard("{End}v1");
+  await user.click(screen.getByRole("button",{name:"Save endpoint"}));
+  await screen.findByText("Last endpoint test: OK · 7 ms");
+  expect(screen.getByRole("radio",{name:/Custom endpoint/})).toBeEnabled();expect(screen.getByRole("radio",{name:/Custom endpoint/})).toBeChecked();
+  await user.click(screen.getByRole("button",{name:"Today"}));
+  await user.click(await screen.findByRole("button",{name:"Describe a task"}));
+  await user.click(screen.getByRole("button",{name:"No file"}));
+  const description=screen.getByLabelText("What should the tool do?");await user.clear(description);
+  await user.type(description,"Get today's forecast for Auckland from https://api.open-meteo.com and write a short summary to weather.txt");
+  await user.click(screen.getByRole("button",{name:"Check the plan"}));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Send and build"})).toBeEnabled());
+  await user.click(screen.getByText(/What leaves this Mac ·/));
+  expect(await screen.findByText(/What leaves this Mac · toddhall34--test\.modal\.direct/)).toBeVisible();
+  await user.click(screen.getByRole("button",{name:"Send and build"}));
+  expect(await screen.findByText(/Custom endpoint/,{},{timeout:5000})).toBeVisible();
+});

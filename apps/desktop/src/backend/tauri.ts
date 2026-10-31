@@ -90,6 +90,7 @@ export class TauriBackend implements Backend {
   openMuseSignIn: Backend["openMuseSignIn"] = () => invoke("open_muse_sign_in");
   saveCustomEndpoint: Backend["saveCustomEndpoint"] = (baseUrl, model) => invoke("save_custom_endpoint", {baseUrl, model});
   saveCustomEndpointToken: Backend["saveCustomEndpointToken"] = () => invoke("save_custom_endpoint_token");
+  saveCustomEndpointModalToken: Backend["saveCustomEndpointModalToken"] = () => invoke("save_custom_endpoint_modal_token");
   setCustomEndpointOptions: Backend["setCustomEndpointOptions"] = (displayName, monthlyCallCap) => invoke("set_custom_endpoint_options", {displayName, monthlyCallCap});
   testCustomEndpoint: Backend["testCustomEndpoint"] = () => invoke("test_custom_endpoint");
   removeCustomEndpoint: Backend["removeCustomEndpoint"] = () => invoke("remove_custom_endpoint");
