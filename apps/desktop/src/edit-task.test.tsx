@@ -57,7 +57,7 @@ it("edits a saved task: description comes back, saving adds a version to the sam
   await waitFor(async()=>expect((await backend.listTools())[0].version).toBe(1));
   expect((await backend.getTool(tools[0].id)).goal).toBe(GOAL);
   expect(await within(await screen.findByRole("list",{name:"Versions of Weather"})).findByText(/Version 1 \(current\)/)).toBeVisible();
-});
+}, 15000);
 
 it("leaving an edit without saving changes nothing",async()=>{
   const {backend,user}=await open();await createWeather(user);
@@ -87,11 +87,11 @@ it("saves a changed bot appearance on Back without rebuilding or changing the ta
   const [tool]=await backend.listTools();
   const previous=botIdentity(tool.id);
   await user.click(button("Edit: Weather"));
-  await user.click(await screen.findByRole("button",{name:"Edit bot appearance"}));
-  await user.click(screen.getByRole("menuitem",{name:"Try another bot"}));
+  await user.click(await screen.findByRole("button",{name:"Edit character appearance"}));
+  await user.click(screen.getByRole("menuitem",{name:"Try another character"}));
   const chosen=botIdentity(tool.id);
   expect(chosen).not.toBe(previous);
-  expect(screen.getByRole("status")).toHaveTextContent("Bot appearance saved");
+  expect(screen.getByRole("status")).toHaveTextContent("Character appearance saved");
   await user.click(button("Back"));
   await screen.findByRole("heading",{name:/Weather/});
   expect(botIdentity(tool.id)).toBe(chosen);

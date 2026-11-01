@@ -231,8 +231,9 @@ fn template_line_matches(expected: &str, actual: &str) -> bool {
     let Some(parts) = template_literals(&expanded) else {
         return false;
     };
-    // Without fixed wording left, any line would match.
-    if !parts.iter().any(|p| p.chars().any(char::is_alphanumeric)) {
+    // Without any fixed text left, any line would match. A list marker such as "#." or "-"
+    // counts: "1. {first}" must match "1. A headline".
+    if !parts.iter().any(|p| p.chars().any(|c| !c.is_whitespace())) {
         return false;
     }
     let (first, last) = (parts[0], parts[parts.len() - 1]);
@@ -1518,6 +1519,15 @@ mod tests {
     }
 
     #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn numbered_placeholder_lines_match_numbered_output() {
+        let expected = normalize_shape_line("1. {first}");
+        assert!(shape_line_matches(&expected, &normalize_shape_line("1. Laura Kuenssberg: Healey risks breaking a promise")));
+        assert!(shape_line_matches(&normalize_shape_line("- {item}"), &normalize_shape_line("- Milk")));
+        assert!(!shape_line_matches(&normalize_shape_line("{first}"), &normalize_shape_line("anything at all")));
+        assert!(!shape_line_matches(&expected, &normalize_shape_line("Today's top headlines 2026-11-01")));
+    }
+
     #[test]
     fn example_failure_details_never_exceed_200_chars_per_line() {
         use std::collections::BTreeMap;

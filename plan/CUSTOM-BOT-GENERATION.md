@@ -5,8 +5,8 @@ the model used for task building or use the Muse CLI/subscription.
 
 ## Entry points
 
-- New task: **Create a custom bot** beside **Try another bot**.
-- Saved task: **Customize bot** on its My tools card.
+- New task: **Create a character** beside **Try another bot**.
+- Saved task: **Customize character** on its My tools card.
 
 ## Flow and cost
 
@@ -71,3 +71,55 @@ still covered. The bundled helper uses Apple Vision's foreground instance mask
 and retains the original image extent. Foreground detection can fail, so the
 original remains available and failures are shown rather than silently labeled
 transparent.
+
+
+## Character direction — minimal and cool
+
+The preview prompt now separates the user's subject from shared visual guidance.
+It defaults to a few intentional geometric forms, clean matte surfaces, balanced
+proportions, understated facial marks, a restrained neutral palette with at most
+one accent, and a calm confident pose. Babyish proportions, oversized eyes and
+sugary pastel palettes are avoided unless the user explicitly requests a cute or
+plush style. Explicit user appearance requests take
+priority. Animals, plants, objects, creatures and robots are all valid; robot
+anatomy and limbs are not added by default. Workflow descriptions can inspire a
+simple mascot rather than appearing as text on the character.
+
+Matching expressions use only the approved reference's features. The reference
+branch does not apply the new simplifying style, so existing intricate characters
+are preserved rather than redesigned. Storage IDs, prices, six-pose caching and
+local transparency processing are unchanged. Product controls now say character.
+No paid image calls were made for this implementation update.
+
+The minimal/cool update changes new previews only. Existing approved characters
+keep their reference appearance when generating additional poses. No paid image
+generations were made for this prompt update.
+
+## Selected robot face direction
+
+New robot previews default to the approved oval-visor study: a simple matte
+slate-style body, softly rounded cuboid head, understated inset dark face panel
+and two luminous ivory oval eyes. Neutral eyes are fully open and attentive.
+Explicit appearance requests still override these defaults. Non-robot characters
+do not inherit the screen face, and additional poses preserve their approved
+reference. Study: `output/slate-bot-eye-study/01-oval-visor.png`. This prompt update
+makes no paid image requests.
+
+## Preview reference correction
+
+Preview generation now sends the bundled approved oval-visor image as a visual
+style reference through the images edit endpoint. Task-only descriptions such as
+“Rent” default to a robot, not a literal key or house. Explicit non-robot
+descriptions retain their subject. Preview prompts distinguish style inspiration
+from later poses' identity lock; later poses still use their own approved preview.
+The studio disclosure names the built-in reference. No automatic regeneration or
+paid retries occur, and saved designs are kept.
+
+## Independent robot silhouettes
+
+The preview reference now supplies face language only, with explicit instructions
+not to copy its head, torso, limbs, palette or chest stripe. New design IDs receive
+a stable mix of head shape, body proportions and restrained palette (216 brief
+combinations). Explicit user appearance and non-robot anatomy take priority.
+Additional poses remain locked to the approved preview, not the style image.
+This update uses no paid generations.

@@ -230,6 +230,7 @@ impl RunnerEngine {
             limits,
             answers: answers.clone(),
             declared_model_prompt: declared_model_prompt.map(str::to_string),
+            today: Some(crate::web::today_local()),
         };
         let command = if self.synthetic {
             #[cfg(feature = "synthetic-runtime-tests")]

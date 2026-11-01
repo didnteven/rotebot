@@ -7,9 +7,9 @@ it("keeps bot actions behind the edit icon and supports keyboard selection and d
   const user = userEvent.setup(), shuffle = vi.fn(), customize = vi.fn();
   render(<BotAppearanceMenu seed="test" disabled={false} shuffle={shuffle} customize={customize} />);
   expect(screen.queryByRole("menu")).toBeNull();
-  const edit = screen.getByRole("button", { name: "Edit bot appearance" });
+  const edit = screen.getByRole("button", { name: "Edit character appearance" });
   await user.click(edit);
-  expect(screen.getByRole("menuitem", { name: "Try another bot" })).toHaveFocus();
+  expect(screen.getByRole("menuitem", { name: "Try another character" })).toHaveFocus();
   await user.keyboard("{ArrowDown}{Enter}");
   expect(customize).toHaveBeenCalledOnce();
   expect(screen.queryByRole("menu")).toBeNull();

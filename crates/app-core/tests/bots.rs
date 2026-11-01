@@ -18,6 +18,15 @@ impl Respond for ImageProvider {
         assert_eq!(body["n"], 1);
         assert_eq!(body["output_format"], "png");
         assert!(!body.to_string().contains("bot-test-key"));
+        assert_eq!(request.url.path(), "/v1/images/edits");
+        let prompt = body["prompt"].as_str().unwrap();
+        if prompt.contains("STYLE REFERENCE:") {
+            assert!(prompt.contains("task title or activity"));
+            assert!(prompt.contains("Never substitute tiny colored dots"));
+            assert!(!prompt.contains("REFERENCE LOCK:"));
+        } else {
+            assert!(prompt.contains("REFERENCE LOCK:"));
+        }
         if request.url.path() == "/v1/images/edits" {
             assert!(body["images"][0]["image_url"]
                 .as_str()

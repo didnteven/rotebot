@@ -19,7 +19,6 @@ import type {
 import { CreateFlow } from "./CreateFlow";
 import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
-import { frequencyText, nextRunText, whenText } from "./Schedule";
 import { ToolVersions } from "./ToolVersions";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
@@ -428,7 +427,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                                     Edit
                                   </button>}
                                   <button className="quiet" disabled={busy} aria-label={`Rename: ${displayName}`} onClick={() => { setMenuOpen(null); setRenaming({ id: tool.id, name: tool.name.replace(/…$/, "") }); }}>Rename</button>
-                                  <button className="quiet" disabled={busy || !status} aria-label={`Customize bot: ${displayName}`} onClick={() => { setMenuOpen(null); setCustomizingTool(tool); }}>Customize bot</button>
+                                  <button className="quiet" disabled={busy || !status} aria-label={`Customize character: ${displayName}`} onClick={() => { setMenuOpen(null); setCustomizingTool(tool); }}>Customize character</button>
                                   <button className="quiet" disabled={busy} onClick={() => void act(async () => { setExported(await backend.exportTool(tool.id)); setMenuOpen(null); })}>Export</button>
                                   {tool.state !== "paused" && <button className="quiet" disabled={busy} onClick={() => void act(async () => { await backend.revokeTool(tool.id); setMenuOpen(null); await refreshTools(); })}>Pause tool</button>}
                                   {!tool.sample && <ToolVersions backend={backend} toolId={tool.id} name={displayName} changed={refreshTools} />}
@@ -507,10 +506,21 @@ function scheduleLine(s: Schedule | undefined) {
   if (s.status === "needs_reapproval") return "Schedule needs your approval again";
   if (s.status === "emergency_paused") return "Schedule paused by emergency stop";
   if (s.status === "paused") return "Schedule paused";
-  const when = s.frequency.kind === "weekly" ? `Every week at ${s.frequency.time.replace(/^0(?=\d:)/, "")}` : s.frequency.kind === "monthly" ? `Every month at ${s.frequency.time.replace(/^0(?=\d:)/, "")}` : frequencyText(s.frequency);
-  const sends = [s.outputs.email ? `emails ${s.outputs.email.to}` : null, s.outputs.notification ? "notifies you" : null].filter(Boolean);
-  const only = s.outputs.sendWhen && s.outputs.sendWhen.kind !== "always" && sends.length ? ` only when ${whenText(s.outputs.sendWhen)}` : "";
-  return `${when}${sends.length ? ` · ${sends.join(" and ")}${only}` : ""}${s.nextRunMs ? ` · ${nextRunText(s.nextRunMs)}` : ""}`;
+  const how = { hourly: "Hourly", twice_daily: "Twice daily", daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[s.frequency.kind];
+  const sends = [s.outputs.email ? "Email" : null, s.outputs.notification ? "notify" : null].filter(Boolean).join(" + ");
+  const w = s.outputs.sendWhen;
+  const only = !w || w.kind === "always" ? "" : w.kind === "changed" ? " if changed" : w.kind === "contains" ? ` if “${w.text.trim()}”`
+    : ` if ${w.near.trim() ? `${w.near.trim()} ` : ""}${w.kind === "above" ? ">" : "<"} ${w.value}`;
+  return [how, s.nextRunMs ? `Next ${shortWhen(s.nextRunMs)}` : null, sends ? `${sends.charAt(0).toUpperCase()}${sends.slice(1)}${only}` : null].filter(Boolean).join(" · ");
+}
+/** "today 23:24", "tomorrow 7:00", "Sat 7 Nov 8:00". */
+function shortWhen(at: number) {
+  const d = new Date(at), today = new Date(), tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+  const time = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const day = d.toDateString() === today.toDateString() ? "today" : d.toDateString() === tomorrow.toDateString() ? "tomorrow"
+    : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  return `${day} ${time}`;
 }
 function friendlyLastRun(at: number | null) {
   if (at === null) return "Never run";

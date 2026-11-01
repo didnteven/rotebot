@@ -10,8 +10,8 @@ there is no standalone global `groupBy` (use those methods or a Map/reduce loop)
 
 Unavailable: `Date`, `eval`, `Function`, `Worker`, `Promise`, timers (`setTimeout`,
 `setInterval`, `setImmediate`, `queueMicrotask`), `fetch`, `require`, and `process`. `Math.random` is removed for repeatability;
-use Math.round/Math.max for numeric operations. Use `macroscope.date` helpers or
-the `{today}` URL placeholder instead of Date. No imports, dependencies, async
+use Math.round/Math.max for numeric operations. Use `macroscope.date.today()`,
+the other `macroscope.date` helpers or the `{today}` URL placeholder instead of Date. No imports, dependencies, async
 work, filesystem, environment, console or network APIs are available. `import`
 is forbidden even in comments and strings.
 
@@ -36,6 +36,9 @@ allocator and CPU/wall limits. `RegExp.prototype.compile` and legacy RegExp stat
 - `macroscope.log(text)` records bounded diagnostics (1 MiB total).
 - `macroscope.csv.parse(text, {required: ["column"]})` returns row objects.
 - `macroscope.csv.stringify(rows, ["column"])` returns CSV with formula escaping.
+- `macroscope.date.today()` returns today's local date as YYYY-MM-DD, given by the
+  host for this run (the sandbox has no clock). Use it for a dated heading or
+  to compare dates; it is the same within one run.
 - `macroscope.date.toISO(value, "MM/DD/YY")` converts a date (also supports
   DD/MM/YY, MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD and ISO8601).
 - `macroscope.money.decimal(value, {currency: "USD", decimals: 2})` returns

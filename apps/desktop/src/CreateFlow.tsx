@@ -363,7 +363,7 @@ export function CreateFlow({
 
       {busy && !activeBuild && <BotStatus seed={botSeed} label={learning ?? (step === 0 ? "Preparing your task…" : step === 1 ? "Updating your plan…" : "Preparing your tool…")} />}
 
-      {step === 0 && botAppearanceSaved && <p role="status">Bot appearance saved. You can go back without rebuilding the task.</p>}
+      {step === 0 && botAppearanceSaved && <p role="status">Character appearance saved. You can go back without rebuilding the task.</p>}
       {step === 0 && (
         <>
           <div className="task-description-heading">

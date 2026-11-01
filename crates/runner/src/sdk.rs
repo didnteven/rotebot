@@ -13,6 +13,7 @@ struct Data {
     limits: Limits,
     state: Shared,
     declared_model_prompt: Option<String>,
+    today: Option<String>,
 }
 // SAFETY: Data contains only owned Rust values, with no JavaScript lifetimes.
 unsafe impl<'js> rquickjs::JsLifetime<'js> for Data {
@@ -242,6 +243,15 @@ fn stringify(ctx: Ctx<'_>, rows: Array<'_>, columns: Array<'_>) -> Result<String
         .bytes;
     String::from_utf8(bytes).map_err(|_| Exception::throw_type(&ctx, "invalid UTF-8"))
 }
+/// Today's local date, YYYY-MM-DD, as the host gave it for this run.
+fn today_date(ctx: Ctx<'_>) -> Result<String> {
+    ctx.userdata::<Data>()
+        .unwrap()
+        .today
+        .clone()
+        .ok_or_else(|| fail(&ctx, "forbidden", "today's date is not available"))
+}
+
 fn to_iso(ctx: Ctx<'_>, value: String, format: String) -> Result<String> {
     if value.len() > 4096 || format.len() > 32 {
         return Err(fail(&ctx, "forbidden", "date argument too large"));
@@ -285,6 +295,7 @@ pub(crate) fn install(
     limits: &Limits,
     state: Shared,
     declared_model_prompt: Option<String>,
+    today: Option<String>,
 ) -> Result<()> {
     ctx.store_userdata(Data {
         inputs,
@@ -293,6 +304,7 @@ pub(crate) fn install(
         limits: limits.clone(),
         state,
         declared_model_prompt: declared_model_prompt.clone(),
+        today,
     })
     .map_err(|_| rquickjs::Error::Unknown)?;
     let sdk = Object::new(ctx.clone())?;
@@ -324,6 +336,7 @@ pub(crate) fn install(
     let date = Object::new(ctx.clone())?;
     date.set_prototype(None)?;
     date.set("toISO", Function::new(ctx.clone(), to_iso)?)?;
+    date.set("today", Function::new(ctx.clone(), today_date)?)?;
     sdk.set("date", date)?;
     let money = Object::new(ctx.clone())?;
     money.set_prototype(None)?;

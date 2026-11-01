@@ -77,6 +77,11 @@ pub(crate) fn is_api(id: &str) -> bool {
     id.starts_with("api_")
 }
 
+/// Whether two addresses are on the same service (same scheme, host and port).
+pub fn same_service(a: &str, b: &str) -> bool {
+    matches!((url::Url::parse(a), url::Url::parse(b)), (Ok(a), Ok(b)) if a.origin() == b.origin())
+}
+
 /// The version prefix every path on a service shares, taken from the saved address:
 /// `/v1` for `https://api.akahu.io/v1/me`, `/api/v2` for `…/api/v2/users`, empty when there is none.
 pub fn api_base_path(address: &str) -> String {
@@ -289,6 +294,52 @@ impl AppCore {
         }
         self.api_info(&id)
     }
+    /// Changes a saved API in place (name, address on the same service, sign-in, keys). Tools built on
+    /// it keep working because they name this connection; it must pass its test again before use.
+    pub async fn update_api_connection(
+        &self,
+        id: &str,
+        mut config: ApiConfig,
+        credential: Option<Secret>,
+        extras: Vec<Secret>,
+    ) -> CoreResult<ConnectorInfo> {
+        self.validate_api_config(&config)?;
+        let unusable = |s: &Secret| {
+            s.expose().is_empty() || s.expose().len() > 8192 || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
+        };
+        if extras.len() != config.extra_header_names.len() || extras.iter().any(unusable)
+            || (config.auth != ApiAuth::None && credential.as_ref().is_none_or(unusable))
+        {
+            return Err(CoreError::Invalid("Enter every API credential without line breaks".into()));
+        }
+        let _io = self.inner.api_io.lock().await;
+        let _local = self.admit_local()?;
+        let mut apis = self.saved_apis()?;
+        let index = apis.iter().position(|a| a.id == id).ok_or(CoreError::NotFound("API connection"))?;
+        let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+        if origin(&apis[index].config.url) != origin(&config.url) {
+            return Err(CoreError::Invalid("A different service is a new connection".into()));
+        }
+        let vault = &self.inner.cfg.vault;
+        let saved = |r: CoreResult<macroscope_vault::SecretRef>, s: Secret| r.map_err(|e| e.to_string()).and_then(|r| vault.set(&r, s).map_err(|e| e.to_string()));
+        if let Some(main) = credential.filter(|_| config.auth != ApiAuth::None) {
+            saved(Self::api_secret(id), main).map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
+        }
+        let new_count = extras.len();
+        for (n, secret) in extras.into_iter().enumerate() {
+            saved(Self::api_extra_secret(id, n), secret).map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
+        }
+        for n in new_count..apis[index].config.extra_header_names.len() {
+            if let Ok(r) = Self::api_extra_secret(id, n) {
+                let _ = vault.delete(&r);
+            }
+        }
+        config.name = config.name.trim().to_string();
+        apis[index].config = config;
+        apis[index].state = ConnectionState::NotConnected;
+        self.db().set_setting(APIS, &json!(apis))?;
+        self.api_info(id)
+    }
     pub(crate) fn api_infos(&self) -> CoreResult<Vec<ConnectorInfo>> {
         Ok(self.saved_apis()?.into_iter().map(|a| ConnectorInfo {
             service: a.id.clone(), id: a.id, name: a.config.name, category: "APIs".into(),
@@ -316,7 +367,9 @@ impl AppCore {
         let changed = || CoreError::Invalid("API access changed; reconnect and rebuild this tool".into());
         let a = self.api_info(id)?;
         let object = args.as_object().ok_or_else(changed)?;
-        if a.mcp_url != resource || !matches!(a.state, ConnectionState::Connected { .. }) || tool != "read" || object.keys().any(|k| k != "path") {
+        // A tool names its connection; the connection's address may since have moved on the same service.
+        let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+        if origin(&a.mcp_url).is_none() || origin(&a.mcp_url) != origin(resource) || !matches!(a.state, ConnectionState::Connected { .. }) || tool != "read" || object.keys().any(|k| k != "path") {
             return Err(changed());
         }
         match object.get("path") {

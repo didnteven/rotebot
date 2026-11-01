@@ -763,8 +763,12 @@ async fn save_api_connection(core: State<'_, Core>, config: ApiConfig, keys: Opt
         }
         (Some(main), extras)
     };
+    // An edit on the same service changes the connection in place, so tools built on it keep working.
+    if let Some((old_id, _)) = old.as_ref().filter(|(_, c)| macroscope_app_core::api::same_service(&c.url, &config.url)) {
+        return Ok(core.0.update_api_connection(old_id, config, secret, extras).await?);
+    }
     let saved = core.0.save_api_connection_with_extras(config, secret, extras).await?;
-    // An edit replaces the old connection: it is removed only once the new one is safely saved.
+    // A different service is a new connection: the old one is removed only once the new one is saved.
     if let Some((old_id, _)) = old {
         let _ = core.0.disconnect_api(&old_id).await;
     }

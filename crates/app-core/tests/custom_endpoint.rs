@@ -419,7 +419,9 @@ async fn truncated_missing_invalid_and_secret_echo_answers_are_malformed() {
             .to_string()
             .contains(TOKEN));
     }
-    assert_eq!(f.server.received_requests().await.unwrap().len(), 9);
+    // An answer that is not schema JSON gets one correction round; a cut-off answer or one echoing
+    // the key does not.
+    assert_eq!(f.server.received_requests().await.unwrap().len(), 11);
 }
 #[tokio::test]
 async fn rejects_insecure_query_userinfo_fragment_and_empty_model() {

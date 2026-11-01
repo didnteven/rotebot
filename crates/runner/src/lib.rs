@@ -86,6 +86,9 @@ pub struct Request {
     /// whose prompt differs fails the run.
     #[serde(default)]
     pub declared_model_prompt: Option<String>,
+    /// Today's local date (YYYY-MM-DD) from the host, for `macroscope.date.today()`; the sandbox has no clock.
+    #[serde(default)]
+    pub today: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -327,6 +330,7 @@ pub fn execute(request: Request) -> Response {
             &request.limits,
             state.clone(),
             request.declared_model_prompt,
+            request.today,
         )?;
         ctx.eval::<(), _>(include_str!("harden.js"))?;
         let mut compiling = true;

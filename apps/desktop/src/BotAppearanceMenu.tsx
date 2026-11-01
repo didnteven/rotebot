@@ -37,13 +37,13 @@ export function BotAppearanceMenu({ seed, disabled, shuffle, customize }: {
   }
   return <div className="bot-appearance" ref={container}>
     <BotAvatar seed={seed} size={64} />
-    <button className="bot-edit-button" ref={trigger} type="button" disabled={disabled} aria-label="Edit bot appearance" title="Edit bot appearance" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+    <button className="bot-edit-button" ref={trigger} type="button" disabled={disabled} aria-label="Edit character appearance" title="Edit character appearance" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={() => setOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}>
       <span className="bot-edit-glyph" aria-hidden="true"><span className="pencil-icon" /></span>
     </button>
-    {open && <div id={id} className="bot-appearance-menu" role="menu" aria-label="Bot appearance" onKeyDown={navigate}>
-      <button ref={element => { choices.current[0] = element; }} type="button" role="menuitem" onClick={() => select(shuffle)}>Try another bot</button>
-      <button ref={element => { choices.current[1] = element; }} type="button" role="menuitem" onClick={() => select(customize)}>Create a custom bot</button>
+    {open && <div id={id} className="bot-appearance-menu" role="menu" aria-label="Character appearance" onKeyDown={navigate}>
+      <button ref={element => { choices.current[0] = element; }} type="button" role="menuitem" onClick={() => select(shuffle)}>Try another character</button>
+      <button ref={element => { choices.current[1] = element; }} type="button" role="menuitem" onClick={() => select(customize)}>Create a character</button>
     </div>}
   </div>;
 }

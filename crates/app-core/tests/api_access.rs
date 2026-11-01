@@ -1332,3 +1332,26 @@ async fn an_invalid_suggested_layout_is_dropped_but_the_name_is_kept() {
     assert_eq!(next.example_output, None);
     assert_eq!(next.suggested_name.as_deref(), Some("Water bill"));
 }
+
+#[tokio::test]
+async fn editing_an_api_on_the_same_service_keeps_its_id_so_tools_built_on_it_still_read() {
+    let server = MockServer::start().await;
+    for p in ["/v1/me", "/v1/accounts"] {
+        Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
+    }
+    let f = Fixture::new(&server).await;
+    let saved = f.api(&server, "/v1/me").await;
+    f.conns.test(&saved.id).await.unwrap();
+    let mut config = f.core.api_config(&saved.id).unwrap();
+    config.name = "Renamed".into();
+    config.url = format!("{}/v1/accounts", server.uri());
+    let edited = f.core.update_api_connection(&saved.id, config, Some(Secret::new(b"NEW-SYNTHETIC-KEY".to_vec())), vec![]).await.unwrap();
+    assert_eq!(edited.id, saved.id);
+    assert_eq!(edited.name, "Renamed");
+    f.conns.test(&saved.id).await.unwrap();
+    // A tool saved against the old address still reads through this connection.
+    assert!(f.core.validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({"path":"/v1/me"})).is_ok());
+    let mut elsewhere = f.core.api_config(&saved.id).unwrap();
+    elsewhere.url = "https://another.example/v1".into();
+    assert!(f.core.update_api_connection(&saved.id, elsewhere, Some(Secret::new(b"K".to_vec())), vec![]).await.is_err());
+}

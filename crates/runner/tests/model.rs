@@ -9,11 +9,13 @@ fn request(code: &str) -> Request {
         answers: BTreeMap::new(),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     }
 }
 fn request_with_prompt(code: &str, prompt: &str) -> Request {
     Request {
         declared_model_prompt: Some(prompt.into()),
+        today: None,
         ..request(code)
     }
 }

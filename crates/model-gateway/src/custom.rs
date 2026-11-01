@@ -66,9 +66,49 @@ impl CustomEndpointClient {
     ) -> Result<StructuredOutput, GatewayError> {
         let validator =
             jsonschema::validator_for(req.schema).map_err(|_| GatewayError::MalformedOutput)?;
-        let body = json!({"model":self.model,"messages":[{"role":"system","content":req.system},{"role":"user","content":req.user}],
+        let mut messages = vec![json!({"role":"system","content":req.system}), json!({"role":"user","content":req.user})];
+        let mut total = Usage::default();
+        let mut usage_known = true;
+        // Self-hosted models often ignore strict schemas or wrap JSON in prose; one corrective
+        // round with the exact problem fixes most of these.
+        for attempt in 0..2 {
+            let (text, usage, known) = self.complete(&req, &messages).await?;
+            total.input_tokens += usage.input_tokens;
+            total.output_tokens += usage.output_tokens;
+            total.reasoning_tokens += usage.reasoning_tokens;
+            usage_known &= known;
+            if !req.key.expose().is_empty()
+                && text.as_bytes().windows(req.key.expose().len()).any(|w| w == req.key.expose())
+            {
+                return Err(GatewayError::MalformedOutput);
+            }
+            let problem = match extract_json(&text) {
+                None => "The answer was not a JSON object.".to_string(),
+                Some(output) => {
+                    if contains_secret(&output, req.key.expose()) {
+                        return Err(GatewayError::MalformedOutput);
+                    }
+                    let first = validator.iter_errors(&output).next().map(|e| format!("It does not match the schema: {} (at {}).", e, e.instance_path()));
+                    match first {
+                        None => return Ok(StructuredOutput { value: output, usage: total, usage_known }),
+                        Some(problem) => problem,
+                    }
+                }
+            };
+            if attempt == 0 {
+                messages.push(json!({"role":"assistant","content":text.chars().take(8000).collect::<String>()}));
+                messages.push(json!({"role":"user","content":format!("{problem} Return only one JSON object that matches the requested schema exactly: every required field, no extra fields, no prose and no code fences.")}));
+            }
+        }
+        Err(GatewayError::MalformedOutput)
+    }
+
+    /// One chat completion: the answer text, its usage, and whether the usage was reported.
+    async fn complete(&self, req: &StructuredRequest<'_>, messages: &[Value]) -> Result<(String, Usage, bool), GatewayError> {
+        // Reasoning models spend part of max_tokens thinking; leave room for the answer itself.
+        let body = json!({"model":self.model,"messages":messages,
             "response_format":{"type":"json_schema","json_schema":{"name":req.schema_name,"strict":true,"schema":req.schema}},
-            "temperature":0.2,"max_tokens":req.max_output_tokens,"reasoning_effort":"medium"});
+            "temperature":0.2,"max_tokens":req.max_output_tokens.max(8000),"reasoning_effort":"medium"});
         let bytes = serde_json::to_vec(&body).map_err(|_| GatewayError::Rejected)?;
         let header = bearer(req.key)?;
         let id = self
@@ -101,31 +141,25 @@ impl CustomEndpointClient {
         }
         let choice = &value["choices"][0];
         if choice["finish_reason"] == "length" {
-            return Err(GatewayError::MalformedOutput);
+            return Err(GatewayError::Truncated);
         }
         let text = choice["message"]["content"]
             .as_str()
-            .ok_or(GatewayError::MalformedOutput)?;
-        if !req.key.expose().is_empty()
-            && text
-                .as_bytes()
-                .windows(req.key.expose().len())
-                .any(|w| w == req.key.expose())
-        {
-            return Err(GatewayError::MalformedOutput);
-        }
-        let output: Value =
-            serde_json::from_str(text).map_err(|_| GatewayError::MalformedOutput)?;
-        if contains_secret(&output, req.key.expose()) || !validator.is_valid(&output) {
-            return Err(GatewayError::MalformedOutput);
-        }
-        Ok(StructuredOutput {
-            value: output,
-            usage,
-            usage_known: value["usage"]["prompt_tokens"].is_u64()
-                && value["usage"]["completion_tokens"].is_u64(),
-        })
+            .ok_or(GatewayError::MalformedOutput)?
+            .to_string();
+        let known = value["usage"]["prompt_tokens"].is_u64() && value["usage"]["completion_tokens"].is_u64();
+        Ok((text, usage, known))
     }
+}
+
+/// The JSON object in a model's answer, also when it is wrapped in a code fence or a sentence.
+fn extract_json(text: &str) -> Option<Value> {
+    if let Ok(v @ Value::Object(_)) = serde_json::from_str::<Value>(text.trim()) {
+        return Some(v);
+    }
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    serde_json::from_str::<Value>(text.get(start..=end)?).ok().filter(Value::is_object)
 }
 
 fn contains_secret(value: &Value, secret: &[u8]) -> bool {

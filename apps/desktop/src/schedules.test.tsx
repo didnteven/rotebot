@@ -104,7 +104,7 @@ it("a tool card shows its schedule and a Schedule button that opens the schedule
   schedules.push({id:"s",toolId:tool.id,frequency:{kind:"daily",time:"07:00"},outputs:{today:true,notification:true,folder:null,filename:"x.txt",email:{connectorId:"mail-gmail",to:"me@example.com"}},versionHash:tool.versionHash,binding:"b",folderIdentity:null,status:"enabled",approvedAtMs:1,lastDueMs:1,nextRunMs:next.getTime()});
   render(<App backend={backend}/>);
   await user.click(screen.getByRole("button",{name:"My tools"}));
-  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Every day at 7:00 · emails me@example.com and notifies you · Next run: Tomorrow 7:00");
+  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Daily · Next tomorrow 7:00 · Email + notify");
   expect(screen.getByRole("button",{name:"Schedule: Tide"})).toHaveTextContent("Edit schedule");
 });
 
@@ -192,7 +192,7 @@ it("after turning a schedule on, the tool card shows it straight away",async()=>
   await user.click(approve);await user.click(screen.getByRole("button",{name:"Turn on schedule"}));
   expect(await screen.findByText(/Schedule is on\./)).toBeVisible();
   await user.click(screen.getByRole("button",{name:"Back"}));
-  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Every day at 7:00");
+  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Daily");
   expect(screen.getByRole("button",{name:"Schedule: Tide"})).toHaveTextContent("Edit schedule");
 });
 

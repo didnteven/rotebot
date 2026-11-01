@@ -12,6 +12,7 @@ fn run(code: &str, limits: Limits) -> Response {
         sources: BTreeMap::new(),
         limits,
         declared_model_prompt: None,
+        today: None,
     })
 }
 fn success(code: &str) {
@@ -39,6 +40,7 @@ fn sdk_orders_matches_independent_fixture() {
         sources: BTreeMap::new(),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     };
     match macroscope_runner::execute(request) {
         Response::Success { outputs, log, .. } => {
@@ -162,6 +164,7 @@ fn child_memory_limit_and_kernel_peak_rss() {
         sources: BTreeMap::new(),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     };
     let mut child = Command::new(env!("CARGO_BIN_EXE_macroscope-runner"))
         .env_clear()
@@ -277,6 +280,7 @@ fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
         sources: BTreeMap::from([("forecast".into(), "sunny".into())]),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     };
     match macroscope_runner::execute(request) {
         Response::Success { outputs, .. } => {
@@ -293,6 +297,7 @@ fn sdk_source_returns_host_fetched_text_and_rejects_unknown_names() {
         sources: BTreeMap::new(),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     };
     match macroscope_runner::execute(bad) {
         Response::Error { error } => assert_eq!(error.kind, "forbidden"),
@@ -432,6 +437,7 @@ fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
             answers: BTreeMap::new(),
             limits: Limits::default(),
             declared_model_prompt: None,
+        today: None,
         });
         let Response::Error { error } = response else {
             panic!("{response:?}");
@@ -447,6 +453,7 @@ fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
         answers: BTreeMap::new(),
         limits: Limits::default(),
         declared_model_prompt: None,
+        today: None,
     });
     let Response::Error { error } = response else {
         panic!("{response:?}");
@@ -728,4 +735,21 @@ fn a_wrong_output_call_names_the_two_string_shape() {
     );
     let unrelated = failure("function run(){\n  let row;\n  row.trim();\n}");
     assert!(!unrelated.message.contains("macroscope.output"), "{unrelated:?}");
+}
+
+#[test]
+fn today_comes_from_the_host() {
+    let mut request = Request {
+        code: r#"function run(){macroscope.output("out.txt", "Digest - " + macroscope.date.today() + "\n");}"#.into(),
+        inputs: Default::default(),
+        sources: Default::default(),
+        answers: Default::default(),
+        limits: Default::default(),
+        declared_model_prompt: None,
+        today: Some("2026-11-01".into()),
+    };
+    let ok = macroscope_runner::execute(request.clone());
+    assert!(format!("{ok:?}").contains("Digest - 2026-11-01"), "{ok:?}");
+    request.today = None;
+    assert!(format!("{:?}", macroscope_runner::execute(request)).contains("not available"));
 }

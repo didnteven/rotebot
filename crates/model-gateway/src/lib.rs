@@ -65,11 +65,11 @@ pub enum GatewayError {
     PayloadTooLarge,
     #[error("temporary transport or provider failure")]
     Transient,
-    #[error("output truncated")]
+    #[error("the model's answer was cut off before it finished")]
     Truncated,
     #[error("model refused the request")]
     Refused,
-    #[error("output does not match the requested schema")]
+    #[error("the model's answer did not match the requested schema")]
     MalformedOutput,
     #[error("request rejected")]
     Rejected,
