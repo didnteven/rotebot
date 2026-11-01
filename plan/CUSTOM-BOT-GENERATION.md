@@ -123,3 +123,12 @@ a stable mix of head shape, body proportions and restrained palette (216 brief
 combinations). Explicit user appearance and non-robot anatomy take priority.
 Additional poses remain locked to the approved preview, not the style image.
 This update uses no paid generations.
+
+## Glossy companion finish
+
+The user clarified that the existing-bot resemblance means shiny surfaces. New
+previews now request glossy ceramic or polished enamel, soft specular highlights
+and studio reflections, with a glossy black face panel. This explicitly overrides
+the matte style reference finish. Robot shape variation stays close to the
+existing rounded, compact companion family. Explicit material requests still
+take priority; later poses preserve their approved preview. No paid calls.
