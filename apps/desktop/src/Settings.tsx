@@ -1,4 +1,4 @@
-import { BotStatus } from "./Bot";
+import { BotStatus, ThemePicker } from "./Bot";
 import { useEffect, useRef, useState } from "react";
 import type {
   AppInfo,
@@ -28,6 +28,11 @@ export function Settings({
     [signingIn, setSigningIn] = useState(false),
     [docs, setDocs] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  /** Only the setup for the service being used, or being set up, is shown. */
+  const [opened, setOpened] = useState<ModelRoute | null>(null);
+  const active = status.selectedRoute ?? status.effectiveRoute;
+  const configured: Record<ModelRoute, boolean> = { muse_plan: status.muse.kind !== "not_signed_in" && status.muse.kind !== "missing", api_key: status.apiKey.present, custom_endpoint: status.customEndpoint.tokenPresent || !!status.customEndpoint.host, offline_demo: false };
+  const showSetup = (route: ModelRoute) => opened === route || active === route || configured[route];
   const chooser = useRef<HTMLFieldSetElement>(null);
 
   useEffect(() => { chooser.current?.focus({ preventScroll: true }); }, []);
@@ -38,13 +43,13 @@ export function Settings({
   const muse = status.muse;
   function enterKey() {
     if (info.platform === "macos" && !info.mock) void act(async()=>update(await backend.enterApiKeyNative()));
-    else { setEntering(true); document.getElementById("meta-key-setup")?.scrollIntoView?.({block:"start"}); }
+    else { setOpened("api_key"); setEntering(true); document.getElementById("meta-key-setup")?.scrollIntoView?.({block:"start"}); }
   }
   const routes: {route:ModelRoute;label:string;disabled:boolean;reason:string;fix?:string;repair?:()=>void}[] = [
-    {route:"muse_plan",label:"Muse plan (uses your Muse allowance)",disabled:muse.kind!=="signed_in",reason:muse.kind==="signed_in"?"Ready":muse.kind==="missing"?"Muse Code not installed":muse.kind==="not_signed_in"?"Not signed in":"Check sign-in",fix:"Check sign-in",repair:()=>void act(async()=>update(await backend.refreshMuseStatus()))},
-    {route:"api_key",label:"Meta API key (billed to your key)",disabled:!status.apiKey.present,reason:status.apiKey.present?"Ready":"Needs a key",fix:"Add key…",repair:enterKey},
-    {route:"custom_endpoint",label:"Custom endpoint",disabled:!status.customEndpoint.tokenPresent || status.customEndpoint.lastTest?.status!=="ok",reason:status.customEndpoint.tokenPresent && status.customEndpoint.lastTest?.status==="ok"?"Ready":"Needs a token and a passing test",fix:"Set up…",repair:()=>{document.getElementById("custom-endpoint-setup")?.scrollIntoView?.({block:"start"});document.getElementById("custom-endpoint-setup")?.querySelector("input")?.focus();}},
-    {route:"offline_demo",label:"Offline demo (no model)",disabled:false,reason:"Ready"},
+    {route:"muse_plan",label:"Muse plan",disabled:muse.kind!=="signed_in",reason:muse.kind==="signed_in"?"Ready":muse.kind==="missing"?"Not installed":muse.kind==="not_signed_in"?"Not signed in":"Check sign-in",fix:"Sign in…",repair:()=>{setOpened("muse_plan");void act(async()=>update(await backend.refreshMuseStatus()));}},
+    {route:"api_key",label:"Meta API key",disabled:!status.apiKey.present,reason:status.apiKey.present?"Ready":"Needs a key",fix:"Add key…",repair:enterKey},
+    {route:"custom_endpoint",label:"Custom endpoint",disabled:!status.customEndpoint.tokenPresent || status.customEndpoint.lastTest?.status!=="ok",reason:status.customEndpoint.tokenPresent && status.customEndpoint.lastTest?.status==="ok"?"Ready":"Not set up",fix:"Set up…",repair:()=>{setOpened("custom_endpoint");setTimeout(()=>{document.getElementById("custom-endpoint-setup")?.scrollIntoView?.({block:"start"});document.getElementById("custom-endpoint-setup")?.querySelector("input")?.focus();});}},
+    {route:"offline_demo",label:"Offline demo (samples only)",disabled:false,reason:"Ready"},
   ];
   async function select(route:ModelRoute) {
     const next = await backend.selectRoute(route);
@@ -53,8 +58,7 @@ export function Settings({
   }
   return (
     <section>
-      <h2>Model access</h2>
-      <p>Choose the AI service that turns your descriptions into tools. “Ready” means an option is available; select its circle to use it.</p>
+      <p className="muted">Your tools can use this AI service and the services you connect. Each result shows what it used.</p>
       <fieldset ref={chooser} id="model-route-chooser" tabIndex={-1} disabled={busy}>
         <legend>Which model builds your tools</legend>
         {routes.map((r) => (
@@ -85,10 +89,6 @@ export function Settings({
                 }
               />
               {r.label}
-              {status.selectedRoute === null &&
-              status.effectiveRoute === r.route
-                ? " (automatic)"
-                : ""}
             </label>
             <p id={`route-state-${r.route}`}>{r.reason}</p>
             {r.disabled && r.fix && <button onClick={r.repair}>{r.fix}</button>}
@@ -103,9 +103,9 @@ export function Settings({
       )}
       <Notice error={error} />
       {busy && <BotStatus label="Checking model access…" />}
-      <div id="custom-endpoint-setup"><CustomEndpointCard backend={backend} status={status.customEndpoint} update={update} /></div>
+      {showSetup("custom_endpoint") && <div id="custom-endpoint-setup"><CustomEndpointCard backend={backend} status={status.customEndpoint} update={update} /></div>}
       <div className="card-grid">
-        <article className="card" id="meta-key-setup">
+        {showSetup("api_key") && <article className="card" id="meta-key-setup">
           <h3>Meta API key</h3>
           <p>
             {status.apiKey.present
@@ -154,10 +154,11 @@ export function Settings({
                 if (key.current) key.current.value = "";
                 void act(async () => {
                   update(await backend.saveApiKey(value));
+                  setEntering(false);
                 });
               }}
             >
-              <Field label="Meta API key">
+              <Field label="Paste your Meta API key">
                 <input autoFocus ref={key} type="password" autoComplete="off" required />
               </Field>
               <button disabled={busy} type="submit">
@@ -165,8 +166,8 @@ export function Settings({
               </button>
             </form>
           )}
-        </article>
-        <article className="card">
+        </article>}
+        {showSetup("muse_plan") && <article className="card">
           <h3>Muse Code plan</h3>
           {muse.kind === "missing" ? (
             <>
@@ -254,12 +255,8 @@ export function Settings({
           >
             Check again
           </button>
-        </article>
+        </article>}
       </div>
-      <h2>Schedules</h2>
-      <p>Set up a schedule from a tool’s Run screen. Results appear in Today. Macroscope needs to be open for scheduled tasks to run.</p>
-      <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
-      <p>Building tools with: {routeLabel(status.effectiveRoute)}{status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.host} · ${status.customEndpoint.model}` : ""}</p>
       {status.blockedReason && (
         <p
           className={
@@ -271,22 +268,18 @@ export function Settings({
           {status.blockedReason}
         </p>
       )}
-      <p>
-        Macroscope never signs in or out of Muse for you and never changes
-        Muse's saved login.
-      </p>
-      <details><summary>Details</summary><p className="muted">
+      <h2>Preferences</h2>
+      <label className="choice"><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
+      <ThemePicker />
+      <details><summary>About</summary><p className="muted">
         Version {info.version} · {info.platform}
         {info.mock
           ? " · Browser demo; no external calls or persistent files"
           : ""}
-      </p></details>
-      <p>
-        Record a task:{" "}
-        {show.kind === "unavailable"
-          ? show.reason
-          : "Available · opt-in app metadata only"}
       </p>
+      <p className="muted">Record a task: {show.kind === "unavailable" ? show.reason : "Available"}</p>
+      <p className="muted">Macroscope never signs in or out of Muse for you and never changes Muse's saved login.</p>
+      </details>
     </section>
   );
 }

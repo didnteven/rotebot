@@ -44,7 +44,7 @@ it("shows test result and latency and enables selecting the tested route",async(
   fireEvent.click(screen.getByRole("button",{name:"Set token…"}));await waitFor(()=>expect(screen.getByRole("button",{name:"Test endpoint"})).toBeEnabled());
   fireEvent.click(screen.getByRole("button",{name:"Test endpoint"}));expect(await screen.findByText("Last endpoint test: OK · 7 ms")).toBeVisible();
   fireEvent.click(screen.getByRole("button",{name:"Use this route"}));await waitFor(()=>expect(select).toHaveBeenCalledWith("custom_endpoint"));
-  expect((await backend.modelAccess()).effectiveRoute).toBe("custom_endpoint");expect(screen.getByText(/toddhall34--test.modal.direct/)).toBeVisible();
+  expect((await backend.modelAccess()).effectiveRoute).toBe("custom_endpoint");fireEvent.click(screen.getByText("More options"));expect(screen.getByText(/toddhall34--test.modal.direct/)).toBeVisible();
 });
 it("edits the call cap and display name and removes configuration",async()=>{
   const backend=await show();const options=vi.spyOn(backend,"setCustomEndpointOptions");fill();

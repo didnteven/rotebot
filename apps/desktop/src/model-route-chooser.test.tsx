@@ -1,4 +1,4 @@
-import {render, screen, waitFor, within} from "@testing-library/react";
+import {render, screen, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {expect, it, vi} from "vitest";
 import {App} from "./App";
@@ -12,20 +12,21 @@ it("puts all model routes first with credential states and inline repair actions
   const chooser = await screen.findByRole("group",{name:"Which model builds your tools"});
   expect(chooser).toHaveFocus();
   expect(chooser.closest("section")?.querySelector("fieldset")).toBe(chooser);
-  expect(Array.from(chooser.closest("section")!.querySelectorAll("h2"))[0]).toHaveTextContent("Model access");
+  // The routes come before any other section on the page.
+  expect(chooser.closest("section")!.querySelector("fieldset, h2")).toBe(chooser);
   const radios = within(chooser).getAllByRole("radio");
   expect(radios.map(r=>r.getAttribute("value"))).toEqual(["muse_plan","api_key","custom_endpoint","offline_demo"]);
   for (const name of [/Muse plan/,/Meta API key/,/Custom endpoint/]) expect(within(chooser).getByRole("radio",{name})).toBeDisabled();
   expect(within(chooser).getByText("Not signed in")).toBeVisible();
   expect(within(chooser).getByText("Needs a key")).toBeVisible();
-  expect(within(chooser).getByText("Needs a token and a passing test")).toBeVisible();
+  expect(within(chooser).getByText("Not set up")).toBeVisible();
   expect(within(chooser).getByText("Ready")).toBeVisible();
-  await user.click(within(chooser).getByRole("button",{name:"Check sign-in"}));
+  await user.click(within(chooser).getByRole("button",{name:"Sign in…"}));
   expect(refresh).toHaveBeenCalledOnce();
   await user.click(within(chooser).getByRole("button",{name:"Set up…"}));
   expect(screen.getByRole("textbox",{name:"Endpoint base URL"})).toHaveFocus();
   await user.click(within(chooser).getByRole("button",{name:"Add key…"}));
-  expect(screen.getByLabelText("Meta API key")).toHaveFocus();
+  expect(screen.getByLabelText("Paste your Meta API key")).toHaveFocus();
 });
 
 it("Change in Create reaches the chooser, switches immediately, and preserves the draft",async()=>{
@@ -36,7 +37,7 @@ it("Change in Create reaches the chooser, switches immediately, and preserves th
   render(<App backend={backend}/>);
   await user.click(await screen.findByRole("button",{name:"Describe a task"}));
   await user.type(screen.getByLabelText("What should the tool do?"),"Keep this task description");
-  await user.click(screen.getByRole("button",{name:"Settings for model access"}));
+  await user.click(screen.getByRole("button",{name:"Set up AI service"}));
   const chooser = await screen.findByRole("group",{name:"Which model builds your tools"});
   expect(chooser).toHaveFocus();
   await user.click(within(chooser).getByRole("radio",{name:/Meta API key/}));
@@ -45,7 +46,7 @@ it("Change in Create reaches the chooser, switches immediately, and preserves th
   expect(within(chooser).getByRole("radio",{name:/Meta API key/})).toBeChecked();
   await user.click(screen.getByRole("button",{name:"My tools"}));
   expect(screen.getByLabelText("What should the tool do?")).toHaveValue("Keep this task description");
-  await waitFor(()=>expect(screen.getByRole("region",{name:"App status"})).toHaveTextContent("Using Meta API key"));
+  expect(screen.queryByRole("button",{name:"Set up AI service"})).not.toBeInTheDocument();
 });
 
 it("a tested custom endpoint can be selected from the chooser",async()=>{

@@ -12,8 +12,8 @@ async function createWeather(user:ReturnType<typeof userEvent.setup>) {
   await user.click(button("Describe a task"));
   const description=screen.getByLabelText("What should the tool do?");await user.clear(description);await user.type(description,GOAL);
   await user.click(button("Check the plan"));
-  await waitFor(()=>expect(button("Send and build")).toBeEnabled());
-  await user.click(button("Send and build"));
+  await waitFor(()=>expect(button("Build and test")).toBeEnabled());
+  await user.click(button("Build and test"));
   await waitFor(()=>expect(button("Yes, save this tool")).toBeVisible(),{timeout:5000});
   const name=screen.getByLabelText("Tool name");await user.clear(name);await user.type(name,"Weather");
   await user.click(button("Yes, save this tool"));
@@ -35,11 +35,10 @@ it("edits a saved task: description comes back, saving adds a version to the sam
   const description=screen.getByLabelText("What should the tool do?");expect(description).toHaveValue(GOAL);
   await user.type(description," Also show the low.");
   await user.click(button("Check the plan"));
-  await waitFor(()=>expect(button("Send and build")).toBeEnabled());
-  await user.click(button("Send and build"));
+  await waitFor(()=>expect(button("Build and test")).toBeEnabled());
+  await user.click(button("Build and test"));
   await waitFor(()=>expect(button("Yes, save changes")).toBeVisible(),{timeout:5000});
   expect(screen.getByLabelText("Tool name")).toHaveValue("Weather");
-  expect(screen.getByText(/Saving adds a new version of “Weather”/)).toBeVisible();
   expect(screen.queryByRole("button",{name:"Yes, save this tool"})).toBeNull();
   await user.click(button("Yes, save changes"));
 
@@ -48,7 +47,7 @@ it("edits a saved task: description comes back, saving adds a version to the sam
   expect((await backend.getTool(tools[0].id)).goal).toContain("Also show the low.");
   expect(screen.getAllByRole("heading",{name:/Weather/})).toHaveLength(1);
 
-  await user.click(screen.getByText("Details"));
+  await user.click(screen.getByLabelText("More actions: Weather"));
   await user.click(button("Version history"));
   const list=await screen.findByRole("list",{name:"Versions of Weather"});
   expect(within(list).getAllByRole("listitem")).toHaveLength(2);

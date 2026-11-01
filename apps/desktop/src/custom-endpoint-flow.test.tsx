@@ -18,9 +18,9 @@ it("after adding /v1 in Settings, a new task goes through the custom endpoint",a
   const description=screen.getByLabelText("What should the tool do?");await user.clear(description);
   await user.type(description,"Get today's forecast for Auckland from https://api.open-meteo.com and write a short summary to weather.txt");
   await user.click(screen.getByRole("button",{name:"Check the plan"}));
-  await waitFor(()=>expect(screen.getByRole("button",{name:"Send and build"})).toBeEnabled());
-  await user.click(screen.getByText(/What leaves this Mac ·/));
-  expect(await screen.findByText(/What leaves this Mac · toddhall34--test\.modal\.direct/)).toBeVisible();
-  await user.click(screen.getByRole("button",{name:"Send and build"}));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Build and test"})).toBeEnabled());
+  await user.click(screen.getByText(/What gets sent ·/));
+  expect(await screen.findByText(/What gets sent · toddhall34--test\.modal\.direct/)).toBeVisible();
+  await user.click(screen.getByRole("button",{name:"Build and test"}));
   expect(await screen.findByText(/Custom endpoint/,{},{timeout:5000})).toBeVisible();
 });

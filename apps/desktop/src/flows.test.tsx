@@ -16,20 +16,21 @@ async function summary(user: ReturnType<typeof userEvent.setup>) {
   await user.click(button("Check the plan"));
   await user.click(screen.getByRole("radio", { name: "March 4 (MM/DD/YY)" }));
   await waitFor(() => expect(screen.queryByText("Preparing what will be sent…")).not.toBeInTheDocument());
-  await user.click(screen.getByText("Details"));
+  await user.click(screen.getByText("Output"));
+  await user.click(screen.getByText("Advanced"));
 }
 async function review(user: ReturnType<typeof userEvent.setup>) {
   await summary(user);
-  await user.click(screen.getByText(/What leaves this Mac ·/));
+  await user.click(screen.getByText(/What gets sent ·/));
 }
 async function savedTool() {
   const backend = new MockBackend();
   await backend.selectRoute("offline_demo");
   const { user } = await open(backend);
   await review(user);
-  expect(button("Send and build")).toBeEnabled();
+  expect(button("Build and test")).toBeEnabled();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-  await user.click(button("Send and build"));
+  await user.click(button("Build and test"));
   await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 4500,
   });
@@ -54,9 +55,6 @@ describe("Tell and deterministic runs", () => {
     const { user, backend } = await savedTool();
     await user.click(button("Run now: Clean import CSV"));
     await stage(user);
-    expect(
-      screen.getByText("Your input stays unchanged; existing files are never replaced"),
-    ).toBeVisible();
     await user.click(button("Create previewed CSV"));
     expect(
       await screen.findByRole("heading", { name: "Run receipt" }),
@@ -98,7 +96,7 @@ describe("Tell and deterministic runs", () => {
     await backend.selectRoute("offline_demo");
     const { user } = await open(backend);
     await review(user);
-    await user.click(button("Send and build"));
+    await user.click(button("Build and test"));
     await user.click(await screen.findByRole("button", { name: "Stop build" }));
     expect(
       await screen.findByText(/Build stopped\. Your plan is saved\. Change/),
@@ -112,7 +110,7 @@ describe("Tell and deterministic runs", () => {
     await backend.selectRoute("offline_demo");
     const { user } = await open(backend);
     await review(user);
-    await user.click(button("Send and build"));
+    await user.click(button("Build and test"));
     await screen.findByRole("button", { name: "Stop build" });
     const details = screen.getByText("Details").closest("details")!;
     expect(details).not.toHaveTextContent("CSV mapping");
@@ -128,22 +126,18 @@ describe("Tell and deterministic runs", () => {
         "Nothing leaves this Mac. The offline demo maps columns without a model; results are labelled as a demo.",
       ),
     ).toHaveClass("notice-info");
-    expect(button("Send and build")).toBeEnabled();
+    expect(button("Build and test")).toBeEnabled();
     await user.click(button("Settings"));
     const route = screen.getByRole("radio", {
-      name: "Offline demo (no model) (automatic)",
+      name: "Offline demo (samples only)",
     });
     expect(route).toBeChecked();
-    await user.click(
-      screen.getByRole("radio", {
-        name: "Offline demo (no model) (automatic)",
-      }),
-    );
+    await user.click(route);
     await user.click(button("My tools"));
     expect(
       screen.getByRole("heading", { name: "Check the plan" }),
     ).toBeVisible();
-    expect(button("Send and build")).toBeEnabled();
+    expect(button("Build and test")).toBeEnabled();
   });
   it("builds a fresh mock with no key, no Muse sign-in and no selected route to ready", async () => {
     const { user, backend } = await open();
@@ -162,12 +156,12 @@ describe("Tell and deterministic runs", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/Budget:/)).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(button("Send and build")).toBeEnabled();
-    await user.click(button("Send and build"));
+    expect(button("Build and test")).toBeEnabled();
+    await user.click(button("Build and test"));
     await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
       timeout: 4500,
     });
-    expect(screen.getByText("Offline demo", {selector:"p"})).toBeVisible();
+    expect(screen.queryByText(/^Used:/)).not.toBeInTheDocument();
     expect((await backend.privacyOverview()).outbound).toEqual([]);
   });
   it("requires outbound consent for cloud builds and preserves the full review", async () => {
@@ -181,8 +175,8 @@ describe("Tell and deterministic runs", () => {
     expect(screen.getByText("A made-up sample of your data's shape (no real rows)")).toBeVisible();
     expect(screen.getByText(/Estimated cost:.*Budget:/)).toBeVisible();
     expect(screen.queryByRole("checkbox", { name: "I've reviewed what will be sent" })).not.toBeInTheDocument();
-    expect(button("Send and build")).toBeEnabled();
-    await user.click(button("Send and build"));
+    expect(button("Build and test")).toBeEnabled();
+    await user.click(button("Build and test"));
     await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
       timeout: 4500,
     });
@@ -232,7 +226,7 @@ describe("Tell and deterministic runs", () => {
     await user.type(text, "Clean Gmail orders, then Slack and notion.");
     await user.click(button("Check the plan"));
     expect(screen.getByText(/You mentioned Gmail/)).toBeVisible();
-    await user.click(screen.getByText("Details"));
+    await user.click(screen.getByText("Output"));
     const column = screen.getByLabelText("Output column 1");
     await user.clear(column);
     await user.type(column, "Order reference");
@@ -244,36 +238,31 @@ describe("Tell and deterministic runs", () => {
   });
 });
 
-it("preserves a Tell draft when Show is opened and closed", async () => {
+it("opens Record a task from My tools and returns to the list", async () => {
   const { user } = await open();
-  await user.click(button("Try a sample"));
-  const description = screen.getByLabelText("What should the tool do?");
-  await user.clear(description);
-  await user.type(description, "Keep this draft for later");
   await user.click(button("Record a task"));
   expect(screen.getByRole("heading", { name: "Show Macroscope what to do" })).toBeVisible();
   await user.click(button("Back"));
-  expect(screen.getByLabelText("What should the tool do?")).toHaveValue(
-    "Keep this draft for later",
-  );
+  expect(button("Describe a task")).toBeVisible();
 });
 
 describe("Settings, connections, Show and privacy", () => {
   it("saves and clears the key, selects a route, and refreshes simulated Muse sign-in", async () => {
     const { user, backend } = await open();
     await user.click(button("Settings"));
-    await user.click(button("Enter key…"));
-    const key = screen.getByLabelText("Meta API key");
+    await user.click(button("Add key…"));
+    const key = screen.getByLabelText("Paste your Meta API key");
     await user.type(key, "demo-secret-abcd");
     await user.click(button("Save key"));
     expect(key).toHaveValue("");
     expect(await screen.findByText("Key ending …abcd")).toBeVisible();
     await user.click(
       screen.getByRole("radio", {
-        name: "Meta API key (billed to your key) (automatic)",
+        name: "Meta API key",
       }),
     );
     expect((await backend.modelAccess()).selectedRoute).toBe("api_key");
+    await user.click(button("Sign in…"));
     await user.click(button("Sign in with Muse…"));
     expect(
       await screen.findByText(
@@ -286,7 +275,7 @@ describe("Settings, connections, Show and privacy", () => {
     await user.click(button("Remove key"));
     await user.click(
       screen.getByRole("radio", {
-        name: "Muse plan (uses your Muse allowance)",
+        name: "Muse plan",
       }),
     );
     expect((await backend.modelAccess()).effectiveRoute).toBe("muse_plan");
@@ -305,9 +294,9 @@ describe("Settings, connections, Show and privacy", () => {
       .mockImplementation(() => backend.saveApiKey("native-abcd"));
     const { user } = await open(backend);
     await user.click(button("Settings"));
-    await user.click(button("Enter key…"));
+    await user.click(button("Add key…"));
     expect(native).toHaveBeenCalledOnce();
-    expect(screen.queryByLabelText("Meta API key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Paste your Meta API key")).not.toBeInTheDocument();
     expect(await screen.findByText("Key ending …abcd")).toBeVisible();
   });
   it("requires Gmail credentials, clears them, then connects, tests and disconnects", async () => {
@@ -417,7 +406,9 @@ describe("Settings, connections, Show and privacy", () => {
     await backend.answerQuestion(d.draftId, "date-format", "mm_dd_yy");
     await backend.startBuild(d.draftId, { outboundReviewed: true });
     const { user } = await open(backend);
-    await user.click(button("Privacy"));
+    await user.click(button("Settings"));
+  await user.click(screen.getByRole("tab", { name: "Privacy & data" }));
+    await user.click(await screen.findByText("Stored data and sent data history"));
     expect(await screen.findByText("Build CSV tool")).toBeVisible();
     await user.click(screen.getByRole("radio", { name: "Local only" }));
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -482,7 +473,7 @@ it("shows mapping labels while sending enum values to the backend", async () => 
   await user.selectOptions(screen.getByLabelText("Transform 1"), "constant");
   expect(screen.getByText("Value")).toBeVisible();
   await user.type(screen.getByLabelText("Constant value 1"), "Fixed");
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
   expect(update).toHaveBeenLastCalledWith(
     expect.any(String),
     expect.objectContaining({
@@ -505,7 +496,7 @@ it("loads connector tools only on disclosure and renders server text safely", as
   await user.click(button("Connections"));
   expect(preview).not.toHaveBeenCalled();
   const gmail = button("Connect Gmail").closest("article")!;
-  expect(within(gmail).getByText("Verified endpoint")).toBeVisible();
+  await user.click(button("Connect Gmail"));
   await user.click(within(gmail).getByText("What it can do"));
   expect(await within(gmail).findByText("Create draft email")).toBeVisible();
   expect(preview).toHaveBeenCalledExactlyOnceWith("gmail");
@@ -513,6 +504,7 @@ it("loads connector tools only on disclosure and renders server text safely", as
   await user.click(within(gmail).getByText("What it can do"));
   expect(preview).toHaveBeenCalledTimes(1);
   const notion = button("Connect Notion").closest("article")!;
+  await user.click(button("Connect Notion"));
   await user.click(within(notion).getByText("What it can do"));
   expect(
     await within(notion).findByText("Sign in to see its tools"),
@@ -525,8 +517,9 @@ it("loads connector tools only on disclosure and renders server text safely", as
       destructive: null,
     },
   ]);
+  await user.click(screen.getByText("Advanced"));
   const custom = button("Connect Custom MCP server").closest("article")!;
-  expect(within(custom).getByText("Unverified endpoint")).toBeVisible();
+  await user.click(button("Connect Custom MCP server"));
   await user.click(within(custom).getByText("What it can do"));
   expect(
     await within(custom).findByText("<img src=x onerror=alert(1)>"),
@@ -569,21 +562,22 @@ it("keeps the cloud route blocked when effectiveRoute is null", async () => {
   });
   const { user } = await open(backend);
   await review(user);
-  expect(button("Send and build")).toBeDisabled();
+  expect(button("Build and test")).toBeDisabled();
   expect(screen.getByText("Choose a model in Settings to build this tool.")).toBeVisible();
   expect(button("Open model settings").closest("div")).toHaveClass(
     "notice-warning",
   );
 });
 
-it("shows five privacy controls in a definition list and no size for empty data", async () => {
+it("keeps privacy to two controls and shows no size for empty data", async () => {
   const { user } = await open();
-  await user.click(button("Privacy"));
+  await user.click(button("Settings"));
+  await user.click(screen.getByRole("tab", { name: "Privacy & data" }));
   const region = await screen.findByRole("region", {
     name: "Data stored by Macroscope",
   });
   expect(screen.getByRole("group", { name: "Cloud models" })).toBeVisible();
-  expect(document.querySelectorAll("dl.explanations dt")).toHaveLength(5);
+  expect(document.querySelector("dl.explanations")).toBeNull();
   for (const row of within(region).getAllByRole("row").slice(1)) {
     const cells = within(row).getAllByRole("cell");
     if (cells[1].textContent === "0") expect(cells[2]).toHaveTextContent("—");

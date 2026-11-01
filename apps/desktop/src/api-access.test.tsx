@@ -18,17 +18,16 @@ async function fixture(plan?: AccessReport) {
 async function panel(plan?: AccessReport) {
   const f = await fixture(plan); const accept = vi.fn(); const onBusy = vi.fn();
   const view = render(<ApiAccessPanel {...f} accept={accept} onBusy={onBusy} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: /Send and check access|Check access again/ })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check again" })).toBeEnabled());
   return { ...f, accept, onBusy, ...view };
 }
 
-test("preparing the access review is local; only its explicit action starts research", async () => {
+test("with an AI service set up, the data check runs on its own once, without a consent button", async () => {
   const f = await fixture(); const research = vi.spyOn(f.backend, "researchTaskAccess");
   render(<ApiAccessPanel {...f} accept={vi.fn()} onBusy={vi.fn()} />);
-  const button = screen.getByRole("button", { name: "Send and check access" });
-  await waitFor(() => expect(button).toBeEnabled()); expect(research).not.toHaveBeenCalled();
-  await userEvent.click(button);
+  expect(screen.queryByRole("button", { name: "Send and check access" })).not.toBeInTheDocument();
   await waitFor(() => expect(research).toHaveBeenCalledWith(f.draft.draftId, expect.any(String)));
+  expect(research).toHaveBeenCalledTimes(1);
 });
 
 test("a known public API needs no connection or token setup box", async () => {
@@ -95,7 +94,7 @@ test("Local only prevents research even when a model and review are available", 
   const f = await fixture(); await f.backend.setLocalOnly(true); f.status = await f.backend.modelAccess();
   const research = vi.spyOn(f.backend, "researchTaskAccess");
   render(<ApiAccessPanel {...f} accept={vi.fn()} onBusy={vi.fn()} />);
-  expect(screen.getByRole("button", { name: "Send and check access" })).toBeDisabled(); expect(research).not.toHaveBeenCalled();
+  await screen.findByText(/Set up an AI service/); expect(research).not.toHaveBeenCalled();
 });
 
 test("research instructions and source metadata render as inert text", async () => {
@@ -106,14 +105,13 @@ test("research instructions and source metadata render as inert text", async () 
 });
 
 test("an old research response cannot replace a new draft", async () => {
-  const f = await fixture(); let resolve!: (d: TaskDraft) => void;
-  vi.spyOn(f.backend, "researchTaskAccess").mockImplementation(() => new Promise(r => { resolve = r; }));
+  const f = await fixture(); const resolvers: ((d: TaskDraft) => void)[] = [];
+  vi.spyOn(f.backend, "researchTaskAccess").mockImplementation(() => new Promise(r => { resolvers.push(r); }));
   const accept = vi.fn(); const onBusy = vi.fn(); const view = render(<ApiAccessPanel {...f} accept={accept} onBusy={onBusy} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Send and check access" })).toBeEnabled());
-  await userEvent.click(screen.getByRole("button", { name: "Send and check access" }));
+  await waitFor(() => expect(f.backend.researchTaskAccess).toHaveBeenCalled());
   const replacement = await f.backend.draftTaskNoInput("A different task");
   view.rerender(<ApiAccessPanel backend={f.backend} draft={replacement} status={f.status} accept={accept} onBusy={onBusy} />);
-  resolve(f.draft); await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false)); expect(accept).not.toHaveBeenCalled();
+  resolvers[0](f.draft); await new Promise(r => setTimeout(r, 50)); expect(accept).not.toHaveBeenCalledWith(f.draft);
 });
 
 test("an API that needs an app id beside the token asks for both keys and sends only header names", async () => {
@@ -142,7 +140,6 @@ test("custom APIs have their own visible section with the saved ones and an add 
   render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
   expect(screen.getByRole("heading", { name: "Custom APIs" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Bank accounts" })).toBeVisible();
-  expect(screen.getByText(/Send and check access/)).toBeVisible();
   expect(screen.queryByRole("region", { name: "Custom API setup" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Add a custom API" }));
   expect(screen.getByRole("region", { name: "Custom API setup" })).toBeVisible();

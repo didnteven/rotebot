@@ -15,18 +15,19 @@ export function CustomEndpointCard({backend,status,update}:{backend:Backend;stat
   // Saving a changed URL clears the passing test, which would grey out the route until retested; so test straight away.
   const save=async(thenTest:boolean)=>{await backend.saveCustomEndpoint(url,model);update(await backend.setCustomEndpointOptions(name||null,Number(cap)));if(thenTest)update(await backend.testCustomEndpoint());};
   return <article className="card" aria-label="Custom endpoint settings">
-    <h3>Custom endpoint (OpenAI-compatible)</h3>
-    <p className="muted">Optional advanced setup. Use this only if your AI provider has given you a server address, model name, and access token. You can skip this when using Muse or a Meta API key.</p>
+    <h3>Custom endpoint</h3>
+    <p className="muted">Only if your AI provider gave you a server address, model name and token.</p>
     <Notice error={error}/>
     <Field label="Endpoint base URL"><input type="url" value={url} placeholder="https://name.modal.direct/v1" onChange={e=>setUrl(e.target.value)}/></Field>
-    <p className="muted">Paste the secure server address from your provider, usually ending in /v1. Leave out sign-in details and anything after a ? or #.</p>
     {noPath&&<p className="muted" role="note">This URL has no path. Most OpenAI-compatible servers, including Modal, need /v1 at the end.</p>}
     <Field label="Endpoint model"><input value={model} onChange={e=>setModel(e.target.value)}/></Field>
-    <Field label="Endpoint display name"><input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/></Field>
-    <Field label="Monthly endpoint call cap"><input type="number" min="0" step="1" value={cap} onChange={e=>setCap(e.target.value)}/></Field>
-    <p>{status.callsThisMonth} calls this month · {status.host??"No service configured"} · {status.model??"No model"}</p>
-    <p>Token: {status.tokenPresent?"Set":"Not set"}. Entered in a native hidden-input dialog.</p>
-    <p className="muted">Modal proxy-auth token: choose Set Modal token… and paste the Token ID, then the Token Secret from Modal's "Token created" screen. Macroscope sends them as one Authorization: Bearer ID.SECRET header.</p>
+    <details><summary>More options</summary>
+      <Field label="Endpoint display name"><input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/></Field>
+      <Field label="Monthly endpoint call cap"><input type="number" min="0" step="1" value={cap} onChange={e=>setCap(e.target.value)}/></Field>
+      <p className="muted">{status.callsThisMonth} calls this month · {status.host??"No service configured"} · {status.model??"No model"}</p>
+      <p className="muted">For Modal, choose Set Modal token… and paste the Token ID, then the Token Secret.</p>
+    </details>
+    <p>Token: {status.tokenPresent?"Set":"Not set"}</p>
     <p role="status">Last endpoint test: {status.lastTest?`${status.lastTest.status === "ok" ? "OK" : status.lastTest.status} · ${status.lastTest.latencyMs} ms`:"Not tested"}</p>
     {busy && <BotStatus label="Updating model endpoint…" />}
     <div className="actions">

@@ -225,6 +225,14 @@ export class MockBackend implements Backend {
     d.revision++;
     return this.validate(d);
   }
+  async suggestExampleOutput(draftId: string) {
+    const d = this.draft(draftId); const s = this.resolveRoute();
+    if (d.kind !== "program" || d.exampleOutput?.trim() || s.egress !== "cloud_allowed" || s.effectiveRoute === "offline_demo" || !s.effectiveRoute) return this.validate(d);
+    // The simulated weather build prints this line, so the suggested layout passes its example check.
+    if (!d.noInput) return this.validate(d);
+    d.exampleOutput = "Auckland: fine, high 21C, low 14C."; d.revision++;
+    return this.validate(d);
+  }
   async saveApiSearchKey() { this.apiSearchEnabled = true; }
   async removeApiSearchKey() { this.apiSearchEnabled = false; }
   async saveApiConnection(config: import("./types").ApiConfig, _keys?: { main: string; extras: string[] }, replaces?: string) {
@@ -664,7 +672,7 @@ export class MockBackend implements Backend {
   private validate(draft: TaskDraft) {
     draft.blockers = [];
     if (draft.kind === "program") {
-      if (draft.accessPlan && !["local", "public_api", "existing_connection"].includes(draft.accessPlan.state)) draft.blockers.push("Resolve the missing API access before building.");
+      if (draft.accessPlan && !["local", "public_api", "existing_connection", "needs_research"].includes(draft.accessPlan.state)) draft.blockers.push("Resolve the missing API access before building.");
       if (!/^[^/\\:]+\.(csv|tsv|txt|md|json)$/i.test(draft.outputName)) draft.blockers.push("Choose a .csv, .tsv, .txt, .md or .json output name.");
       draft.readyToBuild = !draft.blockers.length;
       return clone(draft);

@@ -23,7 +23,9 @@ async function create(result?: Partial<BuildState>) {
   const view = render(<CreateFlow {...props} />);
   await user.type(screen.getByLabelText("What should the tool do?"), "Show today's weather");
   await user.click(button("Check the plan"));
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  // The data check and the suggested output layout run on their own; wait for both to settle.
+  await screen.findByRole("button", { name: "Check again" });
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
   return { backend, start, save, saved, user, props, ...view };
 }
 
@@ -35,11 +37,11 @@ it("has three screens, focuses each heading, and records consent only on Send an
   expect(screen.getByLabelText("Task kind")).not.toBeVisible();
   expect(screen.queryByRole("group", { name: "Connections this tool may use" })).not.toBeInTheDocument();
   expect(start).not.toHaveBeenCalled();
-  await user.click(screen.getByText(/What leaves this Mac ·/));
+  await user.click(screen.getByText(/What gets sent ·/));
   await user.click(screen.getByText("Exact data sent", { selector: "summary" }));
   expect(screen.getByLabelText("Exact data sent")).toBeVisible();
   expect(start).not.toHaveBeenCalled();
-  await user.click(button("Send and build"));
+  await user.click(button("Build and test"));
   expect(start).toHaveBeenCalledExactlyOnceWith(expect.any(String), { outboundReviewed: true });
   expect(screen.getByRole("heading", { name: "Result" })).toHaveFocus();
   expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "instant" });
@@ -52,7 +54,7 @@ it("has three screens, focuses each heading, and records consent only on Send an
   expect(screen.getByRole("heading", { name: "What should it do?" })).toHaveFocus();
 });
 
-it("requires inline site approval via Yes, save this tool, with each site listed once", async () => {
+it("lists each site once in the Used line instead of asking for approval", async () => {
   const { user, save, saved } = await create({ program: {
     summary: "Stocks", code: "function run() {}", output_name: "stocks.txt", webSources: [
       { name: "stocks", url: "https://api.nasdaq.com/stocks" },
@@ -60,13 +62,13 @@ it("requires inline site approval via Yes, save this tool, with each site listed
       { name: "other", url: "https://api.example.com/data" },
     ],
   } });
-  await user.click(button("Send and build"));
-  const approval = screen.getByText(/This tool will read data from/);
-  expect(approval).toBeVisible();
-  expect(approval.textContent?.match(/api.nasdaq.com/g)).toHaveLength(1);
-  expect(approval).toHaveTextContent("api.nasdaq.com, api.example.com each time it runs. Allow?");
+  await user.click(button("Build and test"));
+  const used = screen.getByText(/^Used:/).closest("p")!;
+  expect(used).toBeVisible();
+  expect(used.textContent?.match(/api.nasdaq.com/g)).toHaveLength(1);
+  expect(used).toHaveTextContent("Used: api.nasdaq.com · api.example.com");
+  expect(screen.queryByText(/This tool will read data from/)).not.toBeInTheDocument();
   expect(button("Yes, save this tool")).toBeEnabled();
-  expect(button("Yes, save this tool")).toHaveAccessibleDescription(approval.textContent!);
   expect(save).not.toHaveBeenCalled();
   await user.click(button("Yes, save this tool"));
   expect(save).toHaveBeenCalledOnce();
@@ -75,15 +77,15 @@ it("requires inline site approval via Yes, save this tool, with each site listed
 
 it("No, change it focuses the plan request and requires a refreshed plan before sending", async () => {
   const { user, start } = await create();
-  await user.click(button("Send and build"));
+  await user.click(button("Build and test"));
   await user.click(button("No, change it"));
   const request = screen.getByLabelText("What should the tool do?");
   expect(request).toHaveFocus();
   fireEvent.change(request, { target: { value: "Show tomorrow's weather" } });
-  expect(button("Send and build")).toBeDisabled();
+  expect(button("Build and test")).toBeDisabled();
   expect(screen.getByText("Update the plan to use your changed request.")).toBeVisible();
   await user.click(button("Update plan"));
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
   expect(start).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/The tool will show tomorrow's weather/)).toBeVisible();
 });
@@ -91,7 +93,7 @@ it("No, change it focuses the plan request and requires a refreshed plan before 
 it("friendly failure hides raw codes in Details and offers retry and a focused request change", async () => {
   const raw = "HTTP_403_FETCH: https://api.example.com refused the request..";
   const { user, start } = await create({ phase: "failed", comparison: null, failure: { kind: "internal", message: raw } });
-  await user.click(button("Send and build"));
+  await user.click(button("Build and test"));
   expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read data from api.example.com (the site refused the request). Try again, or change what the tool should do.");
   expect(screen.getByRole("alert")).not.toHaveTextContent("HTTP_403_FETCH");
   expect(screen.getByRole("alert")).not.toHaveTextContent("..");
@@ -114,7 +116,7 @@ it("tool list uses stored summary, friendly last run and Run now; duplicate name
   expect(await screen.findByRole("heading", { name: "Daily report (1)" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Daily report (2)" })).toBeVisible();
   expect(await screen.findAllByText("Summarizes the largest stock price change.")).toHaveLength(2);
-  expect(button("Run now: Daily report (1)")).toHaveTextContent("Run now");
+  expect(button("Run now: Daily report (1)")).toHaveTextContent("Run");
   expect(button("Run now: Daily report (2)")).toBeEnabled();
   expect(screen.getByText("Never run")).toBeVisible();
   expect(screen.getByText(/Ran today at/)).toBeVisible();
@@ -124,14 +126,14 @@ it("tool list uses stored summary, friendly last run and Run now; duplicate name
 
 it("a changed model setting sends retry back through the current plan and consent", async () => {
   const { user, backend, start, props, rerender } = await create({ phase: "failed", comparison: null, failure: { kind: "internal", message: "Error" } });
-  await user.click(button("Send and build"));
+  await user.click(button("Build and test"));
   await backend.selectRoute("offline_demo");
   rerender(<CreateFlow {...props} status={await backend.modelAccess()} />);
   await user.click(button("Try again"));
   expect(start).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("heading", { name: "Check the plan" })).toHaveFocus();
   await screen.findByText("Writing this tool needs a model: sign in to Muse or add a key in Settings.");
-  expect(button("Send and build")).toBeDisabled();
+  expect(button("Build and test")).toBeDisabled();
 });
 
 it("a failed first request can be retried or changed without leaving an empty screen", async () => {
@@ -154,11 +156,11 @@ it("a failed first request can be retried or changed without leaving an empty sc
 it("a failed data review can be retried without sending anything", async () => {
   const { backend, user, start } = await create();
   vi.spyOn(backend, "outboundPreview").mockRejectedValueOnce(new Error("ERR_PREVIEW"));
-  await user.click(screen.getByText("Details"));
+  await user.click(screen.getByText("Advanced"));
   fireEvent.change(screen.getByLabelText("Output file name"), { target: { value: "forecast.txt" } });
   expect(await screen.findByRole("alert")).not.toHaveTextContent("ERR_PREVIEW");
-  expect(button("Send and build")).toBeDisabled();
+  expect(button("Build and test")).toBeDisabled();
   await user.click(button("Try again"));
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
   expect(start).not.toHaveBeenCalled();
 });

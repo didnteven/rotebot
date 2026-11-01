@@ -103,11 +103,15 @@ export function ApiAccessPanel({ backend, draft, status, accept, changed, onBusy
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const { act, busy, error } = useAction();
+  const autoRan = useRef<string | null>(null);
   const current = useRef(draft.draftId);
   current.current = draft.draftId;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { onBusy(busy); return () => onBusy(false); }, [busy, onBusy]);
+  // Until the automatic check has run (or failed), building waits for it.
+  const pendingCheck = !draft.accessPlan && !(status.egress !== "cloud_allowed" || status.effectiveRoute === "offline_demo" || !status.effectiveRoute)
+    && !previewError && !error && (!preview || autoRan.current !== preview.payloadHash);
+  useEffect(() => { onBusy(busy || pendingCheck); return () => onBusy(false); }, [busy, pendingCheck, onBusy]);
   const connections = JSON.stringify(draft.requiredConnections ?? []);
   useEffect(() => {
     let active = true; setPreview(null); setPreviewError(null);
@@ -125,11 +129,17 @@ export function ApiAccessPanel({ backend, draft, status, accept, changed, onBusy
     if (mounted.current && current.current === draft.draftId) accept(next);
     await changed?.();
   }
+  // The person accepted their AI service once, so the check runs on its own instead of asking first.
+  useEffect(() => {
+    if (plan || paused || !preview || busy || autoRan.current === preview.payloadHash) return;
+    autoRan.current = preview.payloadHash;
+    const id = draft.draftId;
+    void act(async () => { const next = await backend.researchTaskAccess(id, preview.payloadHash); if (mounted.current && current.current === id) accept(next); });
+  }, [plan, paused, preview, busy]);
   const using = (id?: string | null) => !!id && (draft.requiredConnections ?? []).some(c => c.connectorId === id);
   const chosen = plan?.state === "same_service_works" ? using(plan.reuseKeysFrom) : plan?.connectorId ? using(plan.connectorId) : false;
   return <section aria-label="Task access" className="card api-access">
     <h3>Where this task gets its data</h3>
-    {!plan && <p className="muted">Macroscope checks your connections and known public APIs, and can research the web if nothing fits.</p>}
     {plan && <div role="note" className="api-plan">
       <p><strong>{states[plan.state] ?? "Access check"}</strong>{chosen && <span className="badge">In use</span>}</p>
       <p>{plan.summary}</p>
@@ -154,13 +164,11 @@ export function ApiAccessPanel({ backend, draft, status, accept, changed, onBusy
           if (window.confirm(`Open this documentation in your browser?\n\n${url}`)) await backend.openExternal(url);
         })}>Open documentation: {url}</button>)}
       </details>}
-      <p className="muted">{plan.searched ? "Web research was used." : "Existing access and known documentation were checked."} API access and task results are still tested during the build.</p>
     </div>}
-    {paused && <p className="notice notice-info">Choose a model and allow cloud access to check API options.</p>}
+    {paused && !plan && <p className="muted">Set up an AI service in Settings to find where this data comes from.</p>}
     {previewError && <p role="alert">{previewError} <button onClick={() => setAttempt(n => n + 1)}>Retry access preview</button></p>}
-    <details className="api-more"><summary>{plan ? "Check again or see what is sent" : "Research options and what is sent"}</summary>
-      <p>Sending this check shares your task description and connection metadata with {preview?.recipient ?? "your selected model"}. File contents, recordings and credentials are excluded. Missing access may trigger service/action searches and up to two documentation reads. It will not read connected accounts or connect anything.</p>
-      <p>Research uses up to two model calls and three hosted search tool calls, with a limit of 100 research model calls per month. Provider search fees may apply; their price is not included in the tool-build estimate.</p>
+    <details className="api-more"><summary>What this check sends</summary>
+      <p className="muted">This check sends your task description and connection names to {preview?.recipient ?? "your AI service"}, never file contents or keys.</p>
       <details><summary>Review access research</summary>{preview && <pre aria-label="Access research data" tabIndex={0}>{preview.payloadText}</pre>}</details>
       {!preview?.searchAvailable && !paused && <details><summary>Enable broader API searches</summary>
         <p>This model can assess known APIs and existing connections. Broader web research needs your own Brave Search API key. Search labels are sent to Brave; your key stays in the app's secret store.</p>
@@ -169,11 +177,11 @@ export function ApiAccessPanel({ backend, draft, status, accept, changed, onBusy
       </details>}
       {preview?.searchAvailable && status.effectiveRoute !== "api_key" && <button className="quiet" disabled={busy} onClick={() => void act(async () => { await backend.removeApiSearchKey(); setAttempt(n => n + 1); })}>Remove research search key</button>}
     </details>
-    <button className={plan ? "quiet" : undefined} disabled={busy || paused || !preview} onClick={() => void act(async () => {
+    {plan && <button className="quiet" disabled={busy || paused || !preview} onClick={() => void act(async () => {
       const id = draft.draftId; const next = await backend.researchTaskAccess(id, preview!.payloadHash);
       if (mounted.current && current.current === id) accept(next);
-    })}>{busy ? "Checking access…" : plan ? "Check access again" : "Send and check access"}</button>
-    {busy && <BotStatus label="Checking API access…" />}
+    })}>Check again</button>}
+    {busy && <BotStatus label="Finding where this data comes from…" />}
     {error && <p role="alert">{error}</p>}
   </section>;
 }

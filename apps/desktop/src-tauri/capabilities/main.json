@@ -13,6 +13,7 @@
     "allow-app-info",
     "allow-access-preview",
     "allow-research-task-access",
+    "allow-suggest-example-output",
     "allow-save-api-connection",
     "allow-save-api-search-key",
     "allow-remove-api-search-key",

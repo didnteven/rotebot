@@ -748,10 +748,6 @@ button { line-height: 1.35; }
 pre, code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 14px; line-height: 1.6; }
 th, .badge, time { font-variant-numeric: tabular-nums; }
 .page-description { color: var(--muted); font-size: 16px; margin-top: 0; }
-.section-guide { margin: -12px 0 28px; }
-.section-guide details { border-left: 2px solid var(--border); padding-left: 16px; max-width: 70ch; }
-.section-guide summary { color: var(--accent); font-size: 14px; padding: 10px 0; }
-.section-guide li { margin-block: 8px; }
 .resume-task { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; margin: 20px 0; background: var(--info-surface); border: 1px solid var(--border); border-radius: 12px; }
 .resume-task p { margin: 0; }
 fieldset > label:not(.choice) { display: block; margin-block: 12px; }
@@ -833,3 +829,33 @@ button.bot-edit-button:hover:not(:disabled) .bot-edit-glyph, button.bot-edit-but
 .schedule .schedule-approve { display: grid; gap: 8px; justify-items: start; }
 .schedule .schedule-state { align-items: center; }
 .schedule .schedule-state p { margin: 0; }
+
+/* Simplified layout: one primary action per row, extra actions behind a menu. */
+.nav-dot { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.tabs { display: flex; gap: 8px; margin: -8px 0 24px; border-bottom: 1px solid var(--border); }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 4px; color: var(--muted); min-height: 44px; }
+.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tool-row { align-items: center; }
+.tool-row .tool-text { flex: 1 1 260px; }
+.tool-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.more-menu { position: relative; }
+.more-menu > summary { list-style: none; cursor: pointer; min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 10px; font-size: 20px; line-height: 1; background: var(--card); }
+.more-menu > summary::-webkit-details-marker { display: none; }
+.more-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.more-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 200px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.more-menu .menu > button { text-align: left; justify-content: flex-start; }
+.more-menu .menu details { padding: 4px 8px; }
+.confirm-row { flex-basis: 100%; }
+.connector-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.connector-row { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+.connector-row-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.connector-row-head h2 { font-size: 17px; margin: 0; flex: 1 1 auto; }
+.list-heading { font-size: 15px; color: var(--muted); font-weight: 600; margin: 24px 0 8px; }
+.used-line { color: var(--muted); font-size: 14px; margin-block: 12px; }
+.used-line strong { color: var(--text, inherit); }
+.output-section > summary { font-weight: 600; }
+.output-section textarea { font-family: inherit; }
+.theme-picker select { max-width: 240px; }
+.more-menu .menu > button, .more-menu .menu .ghost { background: transparent; border-color: transparent; box-shadow: none; }
+.more-menu .menu > button:hover, .more-menu .menu .ghost:hover { background: var(--info-surface); }
+.more-menu .menu > button.danger { color: var(--danger, #b42318); }

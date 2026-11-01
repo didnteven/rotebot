@@ -5,7 +5,10 @@ import type {
   ConnectionSuggestion,
   CsvPreview,
   ModelCostSummary,
+  ModelRoute,
+  Program,
   Receipt,
+  SelectedConnection,
 } from "./backend/types";
 
 // Presentation only: opaque handles and original file names still go to the
@@ -117,6 +120,38 @@ export function friendlyFailure(message: string, kind?: string): string {
   if (kind === "missing_data") return `The tool can't run yet because it has no data to work with. ${message.trim()} Macroscope won't make data up, so give it a source: choose a file, or check how to get it from the service.`;
   if (kind === "checks") return "The result didn't pass its checks. Try again, or change what the tool should do.";
   return "Couldn't finish this task. Try again, or change what the tool should do.";
+}
+/** Host of a declared web source URL, with the {today} template filled in. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url.replace("{today}", "2026-01-01")).hostname || url;
+  } catch {
+    return url;
+  }
+}
+const knownServices: Record<string, string> = { gmail: "Gmail", "google-calendar": "Google Calendar", "google-drive": "Google Drive" };
+export function serviceName(id: string, connections?: { connectorId: string; name: string }[]) {
+  return connections?.find(c => c.connectorId === id)?.name ?? knownServices[id] ?? (id.startsWith("api_") ? "your saved API" : id);
+}
+const aiNames: Record<ModelRoute, string | null> = { api_key: "Meta API key", muse_plan: "Muse plan", custom_endpoint: "Custom endpoint", offline_demo: null };
+/** What a tool used, listed after the result instead of asked for before it: services, sites and the AI service. */
+export function usedParts(program: Program | null | undefined, ai: ModelRoute | null | undefined, connections?: SelectedConnection[]) {
+  const byService = new Map<string, string[]>();
+  for (const source of program?.connectionSources ?? []) {
+    const service = serviceName(source.connectorId, connections);
+    const what = source.name.trim();
+    const list = byService.get(service) ?? [];
+    if (what && what.toLowerCase() !== service.toLowerCase()) list.push(what.charAt(0).toUpperCase() + what.slice(1));
+    byService.set(service, list);
+  }
+  const services = [...byService].map(([service, what]) => what.length ? `${service} (${[...new Set(what)].join(", ")})` : service);
+  const sites = [...new Set((program?.webSources ?? []).map(s => hostOf(s.url)))];
+  const aiName = ai ? aiNames[ai] : null;
+  return [...services, ...sites, ...(aiName ? [`AI: ${aiName}`] : [])];
+}
+export function UsedLine({ parts }: { parts: string[] }) {
+  if (!parts.length) return null;
+  return <p className="used-line"><strong>Used:</strong> {parts.join(" · ")}</p>;
 }
 export function FailureNotice({ message, kind, retry, change }: { message: string; kind?: string; retry: () => void; change: () => void }) {
   return <>

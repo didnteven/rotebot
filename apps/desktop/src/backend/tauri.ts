@@ -49,6 +49,7 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 /** Arguments intentionally use camelCase: Tauri maps them to Rust parameters. */
 export class TauriBackend implements Backend {
   accessPreview: Backend["accessPreview"] = draftId => invoke("access_preview", { draftId });
+  suggestExampleOutput: Backend["suggestExampleOutput"] = (draftId) => invoke("suggest_example_output", { draftId });
   researchTaskAccess: Backend["researchTaskAccess"] = (draftId, payloadHash) => invoke("research_task_access", { draftId, payloadHash });
   addApiAddress: Backend["addApiAddress"] = (sourceId, url) => invoke("add_api_address", { sourceId, url });
   debugApiConnection: Backend["debugApiConnection"] = id => invoke("debug_api_connection", { id });

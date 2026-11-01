@@ -18,7 +18,7 @@ import type {
   Transform,
 } from "./backend/types";
 import { connectOffers, readyConnectors } from "./mentionedServices";
-import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, ModelCostLines, rowCount, useAction, useScreenFocus } from "./ui";
+import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, hostOf, ModelCostLines, rowCount, useAction, useScreenFocus, usedParts, UsedLine } from "./ui";
 
 const formats: DateFormat[] = [
   "mm_dd_yy",
@@ -76,14 +76,6 @@ function newTransform(type: Transform["type"]): Transform {
 const terminal = (build: BuildState) =>
   ["ready", "failed", "stopped"].includes(build.phase);
 
-/** Host of a declared web source URL, with the {today} template filled in. */
-function hostOf(url: string): string {
-  try {
-    return new URL(url.replace("{today}", "2026-01-01")).hostname || url;
-  } catch {
-    return url;
-  }
-}
 
 export function CreateFlow({
   backend,
@@ -234,6 +226,22 @@ export function CreateFlow({
   useEffect(() => {
     if (step === 1 && editing) requestRef.current?.focus();
   }, [step, editing]);
+  const aiReady = status.egress === "cloud_allowed" && !!status.effectiveRoute && status.effectiveRoute !== "offline_demo";
+  const suggested = useRef<string | null>(null);
+  const buildStarted = useRef(false);
+  buildStarted.current = !!build;
+  const [suggesting, setSuggesting] = useState(false);
+  useEffect(() => {
+    if (step !== 1 || !draft || draft.kind !== "program" || example.trim() || !aiReady || build || suggested.current === `${draft.draftId}:${draft.goal}`) return;
+    suggested.current = `${draft.draftId}:${draft.goal}`;
+    const id = draft.draftId;
+    setSuggesting(true);
+    void backend.suggestExampleOutput(id)
+      // A build already sent keeps its plan: a late layout never changes it.
+      .then(next => { if (next.exampleOutput && !buildStarted.current) setExample(current => current.trim() ? current : next.exampleOutput!); })
+      .catch(() => { /* The person can still type the layout themselves. */ })
+      .finally(() => setSuggesting(false));
+  }, [step, draft, example, aiReady, backend, build]);
   function acceptDraft(next: TaskDraft) {
     setDraft(next);
     setName(editTool ? editTool.name : next.kind === "program" ? toolNameFromGoal(next.goal) : "Clean import CSV");
@@ -305,14 +313,11 @@ export function CreateFlow({
     setEditing(true);
     setStep(1);
   }
-  // Read-only connections the person chose for this task (on the first step or the plan) are already
-  // approved: a build that only reads them starts testing without asking again. A model step still asks.
+  // Build and test is the go-ahead for the reads and the AI step a build tests with: the person
+  // accepted their AI service and connections once, and the result lists what was used.
   const autoApproved = useRef<string | null>(null);
   useEffect(() => {
-    if (build?.phase !== "candidate" || !build.program || build.program.modelStep || autoApproved.current === build.buildId) return;
-    const sources = build.program.connectionSources ?? [];
-    const chosenIds = new Set((draft?.requiredConnections ?? []).map(c => c.connectorId));
-    if (!sources.length || !sources.every(s => chosenIds.has(s.connectorId))) return;
+    if (build?.phase !== "candidate" || !build.program || autoApproved.current === build.buildId) return;
     autoApproved.current = build.buildId;
     void act(async () => setBuild(await backend.approveBuildSources(build.buildId, build.program!)));
   }, [build, draft, backend]);
@@ -322,6 +327,7 @@ export function CreateFlow({
     : status.effectiveRoute === null ? "Choose a model in Settings before building."
     : draft?.kind === "program" && preview?.route === "offline_demo" ? "Writing this tool needs a model: sign in to Muse or add a key in Settings."
     : draft && description.trim() !== draft.goal ? "Update the plan to use your changed request."
+    : suggesting ? "Writing the output layout…"
     : planBlockers.length ? planBlockers[0]
     : !preview ? "Preparing what will be sent…" : null;
   return (
@@ -331,7 +337,6 @@ export function CreateFlow({
         <button className="quiet" disabled={busy} onClick={() => { if (step === 0) close(); else setStep(step - 1); }}>
           <span aria-hidden="true">‹ </span>Back
         </button>
-        <button className="quiet" disabled={busy || !!activeBuild} onClick={close}>Back to My tools</button>
       </div>
       <ol className="stepper" aria-label="Create progress">
         {[
@@ -360,28 +365,24 @@ export function CreateFlow({
             <BotAppearanceMenu seed={botSeed} disabled={busy} shuffle={() => chooseBot(`draft-${globalThis.crypto.randomUUID()}`)} customize={() => setCustomizingBot(true)} />
             <h2 ref={headingRef} tabIndex={-1}>What should it do?</h2>
           </div>
-          <p className="muted">Describe the result you want, where the information comes from, and any rules to follow. For example: “Summarize today’s calendar and list my first meeting.”</p>
-          {editTool && <p role="note" className="notice notice-info">Editing “{editTool.name}”. Change the description, then check the plan and test it. Task changes are applied only after you test and save them; the current version stays in its version history. Bot appearance saves immediately.</p>}
+          {editTool && <p role="note" className="muted">Editing “{editTool.name}”. Your current version is kept until you save.</p>}
           {editTool && !editTool.noInput && !input && <p className="muted">This tool reads a file. Choose a sample file to test the new version.</p>}
-          <Field label="What should the tool do?">
-            <textarea
-              ref={requestRef}
-              rows={4}
-              placeholder="What would you like help with?"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
-          <div className="actions file-options">
+          <textarea
+            aria-label="What should the tool do?"
+            ref={requestRef}
+            rows={4}
+            placeholder="For example: Summarize today’s calendar and list my first meeting"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <div className="actions source-options" role="group" aria-label="Use data from">
+            <span className="muted">Use data from</span>
             {input && !noInput
               ? <button className="quiet" disabled={busy} onClick={() => { setInput(null); setNoInput(true); }}>Remove file</button>
               : <button className="quiet" disabled={busy} onClick={() => void act(async () => {
                   const next = await backend.pickCsv();
                   if (next) { setInput(next); setNoInput(false); }
                 })}>+ Add a file</button>}
-          </div>
-          <div className="actions source-options" role="group" aria-label="Use data from">
-            <span className="muted">Use data from</span>
             {usable.map(c => {
               const on = chosen.includes(c.id);
               return <button key={c.id} className={on ? "chip chip-on" : "chip"} aria-pressed={on} disabled={busy || (!on && chosen.length >= 5)}
@@ -391,7 +392,7 @@ export function CreateFlow({
           </div>
           {input && !noInput && <CsvView preview={input} />}
 
-          {!description.trim() && <p className="muted">Describe a task to continue.</p>}
+          {noInput && !aiReady && <div className="notice notice-info"><p>Building your own tools needs an AI service.</p><button onClick={openSettings}>Set up AI service</button></div>}
           <button
             className="primary"
             disabled={busy || (!input && !noInput) || !description.trim()}
@@ -414,7 +415,6 @@ export function CreateFlow({
               <p className="plan-sentence">The tool will {draft.goal.charAt(0).toLowerCase()}{draft.goal.slice(1).replace(/[.!?]+$/, "")}.</p>
               <dl className="plan-facts">
                 {!!draft.requiredConnections?.length && <><dt>Data</dt><dd>Using your {draft.requiredConnections.map(s => s.name).join(", ")} connection (read-only)</dd></>}
-                {preview && <><dt>Built by</dt><dd>{preview.route === "offline_demo" ? "Offline demo, nothing leaves this Mac" : preview.summary.recipient}</dd></>}
               </dl>
               <button className="quiet" onClick={() => setEditing(true)}>Change request</button>
             </>}
@@ -451,21 +451,11 @@ export function CreateFlow({
               ))}
             </fieldset>
           ))}
-          <details key="plan-details"><summary>Details</summary>
-          <Field label="Task kind">
-            <select value={draft.kind ?? "csv-mapping"} disabled={busy || draft.noInput} onChange={(e) => void act(async () => {
-              const kind = e.target.value as "csv-mapping" | "program";
-              acceptDraft(await backend.updateTask(draft.draftId, kind, outputName.replace(/\.[^.]+$/, kind === "program" ? ".txt" : ".csv"), example || null));
-            })}>
-              <option value="csv-mapping">CSV mapping</option>
-              <option value="program">Program (sandboxed)</option>
-            </select>
-          </Field>
-          {draft.kind === "program" && <Field label="Example of the expected result (optional)">
-            <textarea aria-label="Example of the expected result (optional)" rows={4} maxLength={16000} value={example} onChange={(e) => setExample(e.target.value)} />
-            <span>Write values that change in {"{braces}"}, for example Hottest: {"{city}"} {"{temp}"}. This is your real text. It will be included when you send the plan.</span>
+          <details key="plan-output" className="output-section" open={draft.kind === "program"}><summary>Output</summary>
+          {draft.kind === "program" && <Field label="What the result should look like">
+            <textarea aria-label="What the result should look like" rows={5} maxLength={16000} value={example} placeholder={suggesting ? "Writing a suggested layout…" : "Water: {water_cost}"} onChange={(e) => setExample(e.target.value)} />
+            <span className="muted">Change anything. Words in {"{braces}"} are filled in each run.</span>
           </Field>}
-<ul>{draft.summary.map(line => <li key={line}>{line}</li>)}</ul>
           {draft.kind !== "program" && <div
             className="table-scroll"
             role="region"
@@ -648,16 +638,17 @@ export function CreateFlow({
               onChange={setOutputName}
             />
           </Field>
-          {planBlockers.length > 0 && (
-            <div className="notice notice-warning">
-              <p>Before you build</p>
-              <ul>
-                {planBlockers.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <details key="plan-advanced"><summary>Advanced</summary>
+          <Field label="Task kind">
+            <select value={draft.kind ?? "csv-mapping"} disabled={busy || draft.noInput} onChange={(e) => void act(async () => {
+              const kind = e.target.value as "csv-mapping" | "program";
+              acceptDraft(await backend.updateTask(draft.draftId, kind, outputName.replace(/\.[^.]+$/, kind === "program" ? ".txt" : ".csv"), example || null));
+            })}>
+              <option value="csv-mapping">CSV mapping</option>
+              <option value="program">Program (sandboxed)</option>
+            </select>
+          </Field>
+<ul>{draft.summary.map(line => <li key={line}>{line}</li>)}</ul>
           {(connectors.some(c => c.state.kind === "connected") || !!draft.requiredConnections?.length) && <fieldset disabled={busy || !!activeBuild}>
             <legend>Connections this tool may use</legend>
             {connectors.filter(c => c.state.kind === "connected").map(c => <div key={c.id}>
@@ -670,6 +661,7 @@ export function CreateFlow({
               {draft.requiredConnections?.filter(s => s.connectorId === c.id).map(s => <ul key={s.connectorId}>{s.tools.map(t => <li key={t.name}><code>{t.name}</code>: {t.description}</li>)}</ul>)}
             </div>)}
           </fieldset>}
+          </details>
           </details>
           {draft.kind === "program" && !editing && !activeBuild && !(chosen.length && draft.requiredConnections?.length && !draft.accessPlan) && <ApiAccessPanel key={draft.draftId} backend={backend} draft={draft} status={status} accept={acceptDraft} changed={connectionsChanged} onBusy={setAccessBusy} connect={connect} connectors={connectors} />}
           {connectOffers(draft.mentionedConnectors, connectors)
@@ -694,7 +686,7 @@ export function CreateFlow({
           {reviewError && <FailureNotice message={reviewError} retry={() => setReviewAttempt(attempt => attempt + 1)} change={changeRequest} />}
           {status.effectiveRoute === null && <div className="notice notice-warning"><p>Choose a model in Settings to build this tool.</p><button onClick={openSettings}>Open model settings</button></div>}
           {preview && <details key="send-details" className="send-review">
-            <summary>What leaves this Mac · {preview.route === "offline_demo" ? "Nothing" : preview.summary.recipient}</summary>
+            <summary>What gets sent · {preview.route === "offline_demo" ? "Nothing" : preview.summary.recipient}</summary>
             {preview.route === "offline_demo" && <p className="notice notice-info">Nothing leaves this Mac. The offline demo maps columns without a model; results are labelled as a demo.</p>}
             <dl><dt>Recipient</dt><dd>{preview.summary.recipient}</dd><dt>Model</dt><dd>{preview.summary.model}</dd><dt>Cost</dt><dd>{preview.summary.cost}</dd></dl>
             <h3>What is included</h3>
@@ -704,8 +696,7 @@ export function CreateFlow({
           </details>}
           {blocked && <p id="build-reason" role="status">{blocked}{draft && !busy && !accessBusy && description.trim() !== draft.goal && <> <button className="quiet" onClick={() => void act(describe)}>Update the plan</button></>}</p>}
           <div className="build-bar">
-            <button className="primary" disabled={!!blocked} aria-describedby={blocked ? "build-reason" : "build-consent"} onClick={() => void act(sendAndBuild)}>Send and build</button>
-            {!blocked && <span id="build-consent" className="muted">Sends what is listed above{preview && preview.route !== "offline_demo" ? ` to ${preview.summary.recipient}` : ""} and tests the tool.</span>}
+            <button className="primary" disabled={!!blocked} aria-describedby={blocked ? "build-reason" : undefined} onClick={() => void act(sendAndBuild)}>Build and test</button>
           </div>
         </>
       )}
@@ -713,7 +704,7 @@ export function CreateFlow({
         <>
           <h2 ref={headingRef} tabIndex={-1}>Result</h2>
           {!activeBuild && <BotAvatar seed={botSeed} state={build.phase === "ready" ? "success" : build.phase === "failed" ? "error" : "paused"} size={96} />}
-          {activeBuild && <BotStatus large seed={botSeed} state={build.phase === "candidate" ? "waiting" : build.phase === "checking" ? "working" : "building"} label={build.phase === "candidate" ? "Check access before testing." : build.phase === "checking" ? "Checking your tool…" : "Building your tool…"} detail={build.phase === "candidate" ? "Your bot is waiting for you to review access." : "You can stop the build at any time."} />}
+          {activeBuild && <BotStatus large seed={botSeed} state={build.phase === "candidate" ? "waiting" : build.phase === "checking" ? "working" : "building"} label={build.phase === "checking" || build.phase === "candidate" ? "Testing your tool…" : "Building your tool…"} />}
           {activeBuild && (
             <button
               disabled={busy}
@@ -726,11 +717,6 @@ export function CreateFlow({
               Stop build
             </button>
           )}
-          {build.phase === "candidate" && build.program && autoApproved.current !== build.buildId && ((build.program.connectionSources?.length??0)>0 || build.program.modelStep) && <div className="card">
-            <h3>Allow access to test this tool</h3>
-            <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} build connections={draft?.requiredConnections}/>
-            <button className="primary" disabled={busy} onClick={()=>void act(async()=>setBuild(await backend.approveBuildSources(build.buildId,build.program!)))}>Approve reads and test</button>
-          </div>}
           {build.phase === "stopped" && (
             <p role="status">
               Build stopped. Your plan is saved. Change the request or try again.
@@ -751,20 +737,15 @@ export function CreateFlow({
             <>
               {build.comparison.outputText !== undefined ? <div className={`result-answer preserve-lines${build.comparison.outputText.length>200?" long":""}`} tabIndex={0} aria-label="Answer">{build.comparison.outputText}</div> : <DataTable columns={build.comparison.outputColumns} rows={build.comparison.outputRows} caption="Result · first 8 rows" />}
               {!draft?.noInput && !sites.length && <p>{rowCount(build.comparison.rowsIn)} → {rowCount(build.comparison.rowsOut)}</p>}
-              {build.route === "offline_demo" && <p className="muted">Offline demo</p>}
-              {build.testModelCost && <ModelCostLines cost={build.testModelCost} />}
-              <p>The tool creates a new output file in the folder you choose. Existing files stay unchanged.</p>
-              {build.program && <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} connections={draft?.requiredConnections} />}
+              <UsedLine parts={usedParts(build.program, build.route, draft?.requiredConnections)} />
               <Field label="Tool name">
                 <input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
-              {editTool && <p role="note" className="notice notice-info">Saving adds a new version of “{editTool.name}”. The current version stays in its version history and can be restored.{editTool.noInput ? " If this tool is scheduled, you will be asked to approve the new version before it runs on its own." : ""}</p>}
               <h3>Is this right?</h3>
-              {!!sites.length && <p id="save-approval" className="notice notice-info">This tool will read data from {sites.join(", ")} each time it runs. Allow? Press “{editTool ? "Yes, save changes" : "Yes, save this tool"}” to allow this access and save.</p>}
 
               {!name.trim() && <p id="save-reason">Give the tool a name before saving.</p>}
               <div className="actions">
-                <button className="primary" disabled={busy || !name.trim()} aria-describedby={sites.length ? "save-approval" : !name.trim() ? "save-reason" : undefined} onClick={() => void act(async () => { const savedTool = await backend.saveTool(build.buildId, name); saveBotIdentity(savedTool.id, botSeed); await saved(); })}>{editTool ? "Yes, save changes" : "Yes, save this tool"}</button>
+                <button className="primary" disabled={busy || !name.trim()} aria-describedby={!name.trim() ? "save-reason" : undefined} onClick={() => void act(async () => { const savedTool = await backend.saveTool(build.buildId, name); saveBotIdentity(savedTool.id, botSeed); await saved(); })}>{editTool ? "Yes, save changes" : "Yes, save this tool"}</button>
                 <button onClick={changeRequest}>No, change it</button>
               </div>
             </>
@@ -774,6 +755,8 @@ export function CreateFlow({
           {build.events.some(e=>/to review the output/i.test(e.message)) && !build.events.some(e=>/Checks failed/i.test(e.message)) ? <p role="status">The checks passed, so Macroscope had the model double-check the output against the page it read.</p> : build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
           {build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id)) && <p role="status">Tip: write values that change in {"{braces}"}, like {"{city}"} or {"{temp}"}.</p>}
             {build.failure && <p>{build.failure.message}</p>}
+            {build.testModelCost && <ModelCostLines cost={build.testModelCost} />}
+            {build.program && <SourceReview advanced={false} program={build.program} route={build.route} routeDetails={build.routeLabel} connections={draft?.requiredConnections} />}
             {(build.program || build.candidate) && <p>{build.program ? "Program (sandboxed)" : "CSV mapping"}</p>}
             {build.candidate && <ul>{build.candidate.output_columns.map(c => <li key={c.name}>{c.name} ← {c.source}: {c.transform.type}</li>)}</ul>}
             {!draft?.noInput && build.comparison && <>{build.comparison.inputText !== undefined ? <><h3>Input · first lines</h3><pre>{build.comparison.inputText}</pre></> : <DataTable columns={build.comparison.inputColumns} rows={build.comparison.inputRows} caption="Input · first 8 rows" />}</>}

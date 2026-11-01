@@ -104,6 +104,7 @@ fn main() {
         "find_connectors",
         "access_preview",
         "research_task_access",
+        "suggest_example_output",
         "save_api_connection",
         "save_api_search_key",
         "remove_api_search_key",

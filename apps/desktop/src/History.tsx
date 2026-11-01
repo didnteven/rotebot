@@ -96,11 +96,10 @@ export function Privacy({
       <Notice error={error} />
       {busy && !stopping && <BotStatus label="Updating privacy…" />}
       {error && <button onClick={() => void act(load)}>Reload privacy</button>}
-      <h2>Cloud models</h2>
-      <p>Choose whether Macroscope may send approved information to an online AI service. Local only stops cloud work; it does not stop tools that run on this Mac.</p>
+      <h2>Cloud AI</h2>
       <Notice error={emergency.error} />
       <fieldset disabled={busy}>
-        <legend>Cloud models</legend>
+        <legend className="sr-only">Cloud models</legend>
         {[false, true].map((local) => (
           <label className="choice" key={String(local)}>
             <input
@@ -123,16 +122,13 @@ export function Privacy({
                 })
               }
             />
-            {local ? "Local only" : "Use cloud models"}
+            {local ? "Local only" : "Use cloud AI"}
           </label>
         ))}
       </fieldset>
       {(stopping || status.egress === "stopping") && (
         <p role="status">Stopping cloud work…</p>
       )}
-      <p>
-        Transmitted requests cannot be recalled and may still incur charges.
-      </p>
       <button
         className="danger"
         disabled={emergency.busy}
@@ -147,42 +143,21 @@ export function Privacy({
         Emergency stop
       </button>
       {emergency.busy && <BotStatus label="Stopping builds, tools, and recording…" />}
-      <dl className="explanations">
-        <dt>Pause recording</dt>
-        <dd>Pauses observation only; builds continue.</dd>
-        <dt>Stop builds</dt>
-        <dd>Cancels active and queued builds; recording continues.</dd>
-        <dt>Local only</dt>
-        <dd>Stops all cloud model work; tools that run on this Mac continue.</dd>
-        <dt>Emergency stop</dt>
-        <dd>Stops builds, tools, and recording.</dd>
-        <dt>Delete</dt>
-        <dd>
-          Removes the selected local history; provider copies cannot be
-          recalled.
-        </dd>
-      </dl>
+      <p className="muted">Stops builds, running tools and recording right away.</p>
       <h2>Your data</h2>
-      <p>
-        Deleting history stops builds, recording, and runs, then removes the local
-        items listed below. Your API key and connection tokens stay until you
-        use Remove key or Disconnect. Files you selected and exported outputs
-        stay in their own folders. Provider copies cannot be recalled.
-      </p>
-      {preview && (
-        <DataTable
-          caption="Local history to delete"
-          columns={["Item", "Count"]}
-          rows={preview.items.map((item) => [item.label, String(item.count)])}
-        />
-      )}
       {deleted && <p role="status">Local history deleted.</p>}
       {confirmDelete ? (
         <section aria-label="Confirm local history deletion" className="card">
           <h3>Delete local history?</h3>
+          {preview && (
+            <DataTable
+              caption="Local history to delete"
+              columns={["Item", "Count"]}
+              rows={preview.items.map((item) => [item.label, String(item.count)])}
+            />
+          )}
           <p>
-            Everything listed above will be deleted immediately. Cloud models
-            will be set to Local only.
+            This is deleted right away and cloud AI is set to Local only. Your keys, connections and saved files stay.
           </p>
           <label className="choice">
             <input
@@ -236,7 +211,8 @@ export function Privacy({
         </button>
       )}
       {overview && (
-        <>
+        <details>
+          <summary>Stored data and sent data history</summary>
           <h2>Stored data</h2>
           <DataTable
             caption="Data stored by Macroscope"
@@ -292,7 +268,7 @@ export function Privacy({
           >
             Delete sent data history
           </button>
-        </>
+        </details>
       )}
     </section>
   );

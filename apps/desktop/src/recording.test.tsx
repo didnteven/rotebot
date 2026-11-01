@@ -68,14 +68,15 @@ it("walks all five screens, consents only on Send, then builds, previews and sav
   expect(ctx.create).toHaveBeenCalledOnce();
   expect(ctx.create.mock.calls[0][0]).toContain("Manual only (unsupported)");
   expect(ctx.build).not.toHaveBeenCalled();
-  expect(button("Send and build")).toBeEnabled();
+  await waitFor(() => expect(button("Build and test")).toBeEnabled(), { timeout: 3000 });
   expect(screen.queryByRole("button", { name: "Discard recording" })).not.toBeInTheDocument();
-  await ctx.user.click(button("Send and build"));
+  await ctx.user.click(button("Build and test"));
   expect(ctx.build).toHaveBeenCalledExactlyOnceWith(expect.any(String), {outboundReviewed:true});
   await screen.findByRole("heading", {name:"Result"}, {timeout:4000});
   expect(await screen.findByLabelText("Answer", {}, {timeout:4000})).toBeVisible();
+  await waitFor(() => expect(button("Yes, save this tool")).toBeEnabled());
   await ctx.user.click(button("Yes, save this tool"));
-  await waitFor(async () => expect(await backend.listTools()).toHaveLength(1));
+  await waitFor(async () => expect(await backend.listTools()).toHaveLength(1), { timeout: 3000 });
 }, 10000);
 
 it.each([0, 1, 2, 3])("declining on screen %i discards without creating a task", async step => {

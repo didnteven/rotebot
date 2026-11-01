@@ -713,6 +713,10 @@ async fn research_task_access(
         .research_task_access(&conns.0, &draft_id, &payload_hash)
         .await?)
 }
+#[tauri::command]
+async fn suggest_example_output(core: State<'_, Core>, draft_id: String) -> Cmd<TaskDraft> {
+    Ok(core.0.suggest_example_output(&draft_id).await?)
+}
 /// The keys typed into the setup form: the main key, then one value per extra key name.
 #[derive(serde::Deserialize)]
 struct ApiKeys {
@@ -1539,6 +1543,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         find_connectors,
         access_preview,
         research_task_access,
+        suggest_example_output,
         save_api_connection,
         save_api_search_key,
         remove_api_search_key,

@@ -47,65 +47,53 @@ export function Connections({
     <section>
       {loading && <BotStatus label="Loading connections…" />}
       {!loading && connectors.length === 0 && <p>No services available yet. You can add a custom API below.</p>}
-      <p>
-        Choose a service below to connect it. A CSV is a spreadsheet saved as a text file; tools that only use your files do not need a connection.
-      </p>
-      <div className="connector-grid">
-        {connectors.filter((c) => c.registration !== "api").map((c) => (
-          <article className={`card${selected === c.id ? " card-open" : ""}`} key={c.id}>
-            <h2>{c.name}</h2>
-            <p>{c.category.charAt(0).toUpperCase() + c.category.slice(1)}</p>
-            <p className="badge">{stateName(c)}</p>
-            <p className="badge">
-              {c.verification === "verified-live" ||
-              c.verification === "verified-docs"
-                ? "Verified endpoint"
-                : "Unverified endpoint"}
-            </p>
-            <ConnectorTools backend={backend} connectorId={c.id} />
-            {c.registration === "api" && <>
-              <p><bdi>{c.mcpUrl}</bdi></p>
-              <p>One approved GET read. Credentials stay in the app's secret store.</p>
-              {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
-              <ApiConnectionActions backend={backend} connector={c} changed={changed} />
-            </>}
-            {selected === c.id && c.registration !== "api" && (
-              <ConnectionDetail
-                key={c.id}
-                backend={backend}
-                connector={c}
-                changed={changed}
-                focusTick={tick}
-                startTick={startTick}
-              />
+      {(() => {
+        const card = (c: ConnectorInfo) => (
+          <article className={`connector-row${selected === c.id ? " card-open" : ""}`} key={c.id}>
+            <div className="connector-row-head">
+              <h2>{c.name}</h2>
+              {c.state.kind !== "not_connected" && <span className="badge">{stateName(c)}</span>}
+              <button
+                className={c.state.kind === "connected" ? "quiet" : undefined}
+                aria-label={c.state.kind === "connected" ? `Manage ${c.name}` : `Connect ${c.name}`}
+                aria-expanded={selected === c.id}
+                onClick={() => {
+                  select(c.id);
+                  setTick((t) => t + 1);
+                  // Choosing a service that isn't connected starts its sign-in when it can.
+                  if (c.state.kind !== "connected") setStartTick((t) => t + 1);
+                }}
+              >
+                {c.state.kind === "connected" ? "Manage" : "Connect"}
+              </button>
+            </div>
+            {selected === c.id && (
+              <>
+                <ConnectorTools backend={backend} connectorId={c.id} />
+                <ConnectionDetail
+                  key={c.id}
+                  backend={backend}
+                  connector={c}
+                  changed={changed}
+                  focusTick={tick}
+                  startTick={startTick}
+                />
+              </>
             )}
-            {c.registration !== "api" && <button
-              aria-expanded={selected === c.id}
-              onClick={() => {
-                select(c.id);
-                setTick((t) => t + 1);
-                // Choosing a service that isn't connected starts its sign-in when it can.
-                if (c.state.kind !== "connected") setStartTick((t) => t + 1);
-              }}
-            >
-              {c.state.kind === "connected"
-                ? `Manage ${c.name}`
-                : `Connect ${c.name}`}
-            </button>}
           </article>
-        ))}
-      </div>
+        );
+        // Rows stay in one place whatever their state, so a sign-in in progress is never restarted by a move.
+        const services = connectors.filter((c) => c.registration !== "api");
+        const custom = services.filter((c) => c.category.toLowerCase() === "custom");
+        const others = services.filter((c) => c.category.toLowerCase() !== "custom");
+        return <>
+          {others.length > 0 && <div className="connector-list">{others.map(card)}</div>}
+          {custom.length > 0 && <details className="advanced-connections" open={custom.some(c => c.id === selected || c.state.kind !== "not_connected") || undefined}><summary>Advanced</summary><div className="connector-list">{custom.map(card)}</div></details>}
+        </>;
+      })()}
       <section aria-labelledby="custom-apis">
-        <h2 id="custom-apis">Custom APIs</h2>
-        <p>
-          Connect any service that offers an API, such as a bank feed, a weather
-          service or your own data. Macroscope can only read from it, never change anything.
-        </p>
-        <p className="muted">
-          Not sure what to connect? Describe your task and choose “Send and check
-          access”. Macroscope looks up the service's API and walks you through each step.
-        </p>
-        {apis.length === 0 && <p>No custom APIs yet.</p>}
+        <h2 id="custom-apis" className="list-heading">Custom APIs</h2>
+        {apis.length === 0 && <p className="muted">Not sure what to connect? Describe your task and Macroscope finds the API for you.</p>}
         <div className="connector-grid">
           {apis.map((c) => (
             <article className="card" key={c.id}>
@@ -113,9 +101,8 @@ export function Connections({
               <p className="badge">{stateName(c)}</p>
               <ConnectorTools backend={backend} connectorId={c.id} />
               <p><bdi>{c.mcpUrl}</bdi></p>
-              <p>Read only. Your keys stay in the app's secret store.</p>
               {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
-              {(c.state.kind === "error" || c.state.kind === "needs_reauth") && <p>Not working? Open <strong>Debug this connection</strong> below and choose <strong>Check and fix this connection</strong>. It explains what is wrong and repairs what it can.</p>}
+              {(c.state.kind === "error" || c.state.kind === "needs_reauth") && <p>Not working? Open <strong>Debug this connection</strong> below.</p>}
               <ApiConnectionActions backend={backend} connector={c} changed={changed} />
             </article>
           ))}

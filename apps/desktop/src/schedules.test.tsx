@@ -16,8 +16,8 @@ it("Today empty state links to Tools and is first in navigation",async()=>{
   const user=userEvent.setup();render(<App backend={new MockBackend()}/>);
   const nav=screen.getByRole("navigation");expect(nav.querySelector("button")).toHaveTextContent("Today");
   await user.click(screen.getByRole("button",{name:"Today"}));
-  expect(await screen.findByText("Schedule a tool to see its results here each day")).toBeVisible();
-  await user.click(screen.getByRole("button",{name:"Go to My tools"}));expect(screen.getByRole("heading",{name:"My tools",level:1})).toBeVisible();
+  expect(await screen.findByText("Scheduled results show up here")).toBeVisible();
+  await user.click(screen.getByRole("button",{name:"Schedule a tool"}));expect(screen.getByRole("heading",{name:"My tools",level:1})).toBeVisible();
 });
 function pending():TodayEntry {
   const staged:StagedRun={runId:"run",toolId:"weather",input:{handleId:"none",displayName:"No input",displayPath:""},outputDir:{handleId:"folder",displayName:"Reports",displayPath:"/Reports"},outputName:"weather.txt",planHash:"exact-hash",rowsIn:0,rowsOut:1,outputColumns:[],previewRows:[],destinationExists:false,createsOutput:true,plannedCalls:[{service:"Mail",resource:"https://mail.invalid/mcp",call:{connectorId:"mail",toolName:"send",args:{to:"owner@example.invalid",subject:"Your forecast",body:"Exact message"}},readOnlyHint:true,destructiveHint:true}]};
@@ -37,7 +37,7 @@ it("Needs you reviews exact calls before approval and can discard",async()=>{
   await user.click(screen.getByText("Details"));
   expect(screen.getByLabelText("Exact action arguments 1")).toBeVisible();
   expect(screen.getByText(/Server’s claims: readOnlyHint = true; destructiveHint = true/)).toBeVisible();
-  expect(screen.getByRole("button",{name:"Approve and run"})).toBeDisabled();await user.click(screen.getByLabelText("I reviewed these actions"));await user.click(screen.getByRole("button",{name:"Approve and run"}));
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Approve and run"}));
   expect(commit).toHaveBeenCalledWith("run","exact-hash",true);await waitFor(()=>expect(screen.queryByRole("heading",{name:"Needs you"})).not.toBeInTheDocument());
   view.unmount();e=pending();render(<Today backend={backend} tools={()=>{}} create={()=>{}}/>);await user.click(await screen.findByRole("button",{name:"Discard"}));expect(discard).toHaveBeenCalledWith("run");expect(commit).toHaveBeenCalledTimes(1);
 });
@@ -191,7 +191,7 @@ it("after turning a schedule on, the tool card shows it straight away",async()=>
   const approve=await screen.findByLabelText("I approve this running unattended");await waitFor(()=>expect(approve).toBeEnabled());
   await user.click(approve);await user.click(screen.getByRole("button",{name:"Turn on schedule"}));
   expect(await screen.findByText(/Schedule is on\./)).toBeVisible();
-  await user.click(screen.getByRole("button",{name:/Back to tools/}));
+  await user.click(screen.getByRole("button",{name:"Back"}));
   expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Every day at 7:00");
   expect(screen.getByRole("button",{name:"Schedule: Tide"})).toHaveTextContent("Edit schedule");
 });

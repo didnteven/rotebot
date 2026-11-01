@@ -18,9 +18,9 @@ it("returns from Settings to an unfinished task without losing its description",
   await user.type(screen.getByLabelText("What should the tool do?"), "Summarize my calendar");
   await user.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.getByRole("group", { name: "Which model builds your tools" })).toHaveFocus();
-  await user.click(screen.getByRole("button", { name: "Return to your task" }));
+  await user.click(screen.getByRole("button", { name: "My tools" }));
   expect(screen.getByLabelText("What should the tool do?")).toHaveValue("Summarize my calendar");
-  await user.click(screen.getByRole("button", { name: "Back to My tools" }));
+  await user.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("button", { name: "Describe a task" })).toBeVisible();
 });
 

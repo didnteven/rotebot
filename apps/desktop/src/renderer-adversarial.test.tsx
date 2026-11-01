@@ -158,7 +158,8 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     literal(screen.getByRole("region", { name: "Selected CSV · first 8 rows" }), payload);
     inert();
     await user.click(button("Check the plan"));
-    await user.click(screen.getByText("Details"));
+    await user.click(screen.getByText("Output"));
+    await user.click(screen.getByText("Advanced"));
     literal(root, v("summary"));
     inputLiteral("Output column 1", v("mapping column"));
     inputLiteral("Constant value 1", v("constant"));
@@ -166,8 +167,8 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     if (pathDisplay(v("output name")) !== v("output name")) literal(root, v("output name"), true);
     literal(screen.getByRole("region", { name: "Column mapping" }), v("mapping source"));
     inert();
-    await waitFor(() => expect(button("Send and build")).toBeEnabled());
-    await user.click(screen.getByText(/What leaves this Mac ·/));
+    await waitFor(() => expect(button("Build and test")).toBeEnabled());
+    await user.click(screen.getByText(/What gets sent ·/));
     expect(update).toHaveBeenCalledWith("draft", expect.any(Object), v("output name"));
     await screen.findByLabelText("Exact data sent");
     await user.click(screen.getByText("Exact data sent"));
@@ -175,7 +176,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     literal(root, v("model"));
     literal(root, v("destination"));
     inert();
-    await user.click(button("Send and build"));
+    await user.click(button("Build and test"));
     const result = screen.getByRole("region", { name: "Result · first 8 rows" });
     literal(result, v("mapping column"));
     literal(result, v("constant"));
@@ -204,15 +205,15 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     literal(root, `Connect ${v("suggested connector")}`);
     await user.click(button("Connections"));
     literal(root, v("connector"));
-    await user.click(screen.getByText("What it can do"));
-    await screen.findByText(v("MCP tool"), textOptions);
-    literal(root, v("MCP tool"));
-    literal(root, v("MCP description"));
     // Select the catalog action rather than the suggestion's action.
     const catalog = screen.getByText(v("connector"), textOptions).closest("article")!;
     await user.click(within(catalog).getByRole("button"));
     // Choosing the service starts its sign-in once; the hostile text stays inert.
     await screen.findByLabelText("Authorization URL");
+    await user.click(within(catalog).getByText("What it can do"));
+    await screen.findByText(v("MCP tool"), textOptions);
+    literal(root, v("MCP tool"));
+    literal(root, v("MCP description"));
     expect(connect).toHaveBeenCalledTimes(1);
     inputLiteral("MCP URL", payload);
     literal(root, payload); // URL-like strings must remain inspectable as text.
@@ -239,6 +240,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     await screen.findByRole("alert");
     literal(root, v("action error"));
     inert({ exportTool: 1, revealOutput: 1 });
+    await user.click(button("My tools"));
     await user.click(button("Record a task"));
     await user.click(screen.getByText("Advanced: app activity log"));
     expect(screen.getByText(`Apps seen: ${v("app")}`, textOptions)).toBeVisible();
@@ -247,8 +249,10 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     await user.click(button("Record another task"));
     literal(root, v("show error"));
     inert({ exportTool: 1, revealOutput: 1, startShow: 1 });
-    await user.click(button("Privacy"));
+    await user.click(button("Settings"));
+  await user.click(screen.getByRole("tab", { name: "Privacy & data" }));
     await screen.findByText(v("outbound purpose"), textOptions);
+    await user.click(screen.getByText("Stored data and sent data history"));
     literal(root, v("stored label"));
     literal(root, v("expiry"));
     literal(root, v("outbound purpose"));
@@ -258,6 +262,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     await user.click(button("Settings"));
     literal(root, v("route blocker"));
     literal(root, `Unknown: ${v("model error")}`);
+    await user.click(screen.getByText("About"));
     literal(root, `Record a task: ${v("show error")}`);
     await user.click(button("Check again"));
     literal(root, v("settings error"));

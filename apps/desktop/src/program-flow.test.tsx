@@ -17,18 +17,19 @@ it("creates a program, reviews real example text, compares inert output and save
   await user.clear(description);
   await user.type(description, "extract every line containing ERROR into errors.txt");
   await user.click(screen.getByRole("button", {name:"Check the plan"}));
-  await user.click(screen.getByText("Details"));
+  await user.click(screen.getByText("Advanced"));
   expect(await screen.findByLabelText("Task kind")).toHaveValue("program");
   expect(screen.queryByRole("region", {name:"Column mapping"})).toBeNull();
-  await user.type(screen.getByLabelText("Example of the expected result (optional)"), "ERROR <img src=x onerror=alert(1)>");
-  await waitFor(() => expect(screen.getByRole("button", {name:"Send and build"})).toBeEnabled());
-  await user.click(screen.getByText(/What leaves this Mac ·/));
+  // The output layout is open for a program and can be typed over.
+  await user.type(screen.getByLabelText("What the result should look like"), "ERROR <img src=x onerror=alert(1)>");
+  await waitFor(() => expect(screen.getByRole("button", {name:"Build and test"})).toBeEnabled());
+  await user.click(screen.getByText(/What gets sent ·/));
   expect(await screen.findByText("Your example result")).toBeVisible();
   expect(screen.getByText("ERROR <img src=x onerror=alert(1)>", {selector:"p"})).toBeVisible();
   expect(screen.getByLabelText("Exact data sent")).not.toBeVisible();
   await user.click(screen.getByText("Exact data sent"));
   expect(screen.getByLabelText("Exact data sent")).toBeVisible();
-  const build = screen.getByRole("button", {name:"Send and build"});
+  const build = screen.getByRole("button", {name:"Build and test"});
   expect(build).toBeEnabled();
   await user.click(build);
   await waitFor(() => expect(screen.getByRole("button", {name:"Yes, save this tool"})).toBeVisible(), {timeout:5000});
@@ -63,7 +64,7 @@ it("explains the missing model for programs on the offline route", async () => {
   await user.click(screen.getByRole("button",{name:"Check the plan"}));
 
   expect(await screen.findByText("Writing this tool needs a model: sign in to Muse or add a key in Settings.")).toBeVisible();
-  expect(screen.getByRole("button",{name:"Send and build"})).toBeDisabled();
+  expect(screen.getByRole("button",{name:"Build and test"})).toBeDisabled();
 });
 
 it("shows the sanitized runtime check detail when a program build fails", async () => {
@@ -81,8 +82,8 @@ it("shows the sanitized runtime check detail when a program build fails", async 
   render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
   await user.type(screen.getByLabelText("What should the tool do?"), "extract ERROR lines");
   await user.click(screen.getByRole("button", {name: "Check the plan"}));
-  await waitFor(() => expect(screen.getByRole("button", {name:"Send and build"})).toBeEnabled());
-  await user.click(screen.getByRole("button", {name: "Send and build"}));
+  await waitFor(() => expect(screen.getByRole("button", {name:"Build and test"})).toBeEnabled());
+  await user.click(screen.getByRole("button", {name: "Build and test"}));
   expect(await screen.findByRole("alert")).not.toHaveTextContent(detail);
   expect(screen.getByText(detail, {exact:false,selector:"li"})).not.toBeVisible();
   await user.click(screen.getByText("Details"));
@@ -105,8 +106,8 @@ it("explains an example correction in plain words and keeps check shapes in one 
   await user.type(screen.getByLabelText("What should the tool do?"),"extract errors");
   await user.click(screen.getByRole("button",{name:"Check the plan"}));
 
-  await waitFor(() => expect(screen.getByRole("button", {name:"Send and build"})).toBeEnabled());
-  await user.click(screen.getByRole("button",{name:"Send and build"}));
+  await waitFor(() => expect(screen.getByRole("button", {name:"Build and test"})).toBeEnabled());
+  await user.click(screen.getByRole("button",{name:"Build and test"}));
   expect(await screen.findByText("The output didn’t match your example’s format — Macroscope asked the model to fix it.")).not.toBeVisible();
   expect(container.querySelectorAll("details")).toHaveLength(1);
   expect(screen.getByText(detail,{selector:"details p"})).not.toBeVisible();
@@ -128,12 +129,12 @@ it("a missing-data failure sends the person to the data options instead of offer
   render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}}/>);
   await user.type(screen.getByLabelText("What should the tool do?"),"summarise money in per day");
   await user.click(screen.getByRole("button",{name:"Check the plan"}));
-  await waitFor(()=>expect(screen.getByRole("button",{name:"Send and build"})).toBeEnabled());
-  await user.click(screen.getByRole("button",{name:"Send and build"}));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Build and test"})).toBeEnabled());
+  await user.click(screen.getByRole("button",{name:"Build and test"}));
   expect(await screen.findByText(/can't run yet because it has no data to work with/)).toBeVisible();
   expect(screen.getAllByText(new RegExp(sentence.slice(0,30))).length).toBeGreaterThan(0);
   expect(screen.queryByRole("button",{name:"Try again"})).not.toBeInTheDocument();
   expect(screen.getByRole("button",{name:"Use a file instead"})).toBeVisible();
   await user.click(screen.getByRole("button",{name:"Check how to get this data"}));
-  expect(await screen.findByRole("button",{name:"Send and build"})).toBeVisible();
+  expect(await screen.findByRole("button",{name:"Build and test"})).toBeVisible();
 });

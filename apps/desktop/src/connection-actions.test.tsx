@@ -17,7 +17,7 @@ const receipt: Receipt = {runId:"r",toolId:"t",toolName:"Draft message",versionH
   actions:[{action,status:"succeeded",summary:'<script>alert("result")</script><iframe src="https://evil.invalid">'}],
 };
 
-it("renders complete action arguments and server claims as text and requires action review", async () => {
+it("renders complete action arguments and server claims as text and approves with one click", async () => {
   const backend = new MockBackend();
   const tool = await backend.installSampleTool();
   const input = await backend.loadSampleCsv();
@@ -39,17 +39,16 @@ it("renders complete action arguments and server claims as text and requires act
   expect(screen.getByText(/Server’s claims: readOnlyHint = false; destructiveHint = false/)).toBeVisible();
   expect(screen.getByLabelText("Exact action arguments 1").textContent).toBe(JSON.stringify(action.call.args, null, 2));
   const approve = screen.getByRole("button", {name:"Approve actions"});
-  expect(approve).toBeDisabled();
+  expect(approve).toBeEnabled();
   expect(commit).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("checkbox", {name:"I reviewed these actions"}));
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   await user.click(approve);
   expect(commit).toHaveBeenCalledExactlyOnceWith("r", "hash", true);
   expect(await screen.findByText(receipt.actions![0].summary)).toBeVisible();
   expect(container.querySelectorAll("script,img,iframe,object")).toHaveLength(0);
   await user.click(screen.getByRole("button", {name:"Run again"}));
   await user.click(screen.getByRole("button", {name:"Preview result"}));
-  expect(await screen.findByRole("checkbox", {name:"I reviewed these actions"})).not.toBeChecked();
-  expect(screen.getByRole("button", {name:"Approve actions"})).toBeDisabled();
+  expect(await screen.findByRole("button", {name:"Approve actions"})).toBeEnabled();
 });
 
 it("shows action receipts as inert text and disables Finder for action-only runs", () => {
@@ -71,7 +70,8 @@ it("offers explicit access to connected services in Create and lists their untru
   const {container} = render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[connector]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}} />);
   await user.type(screen.getByLabelText("What should the tool do?"), "draft a Gmail message");
   await user.click(screen.getByRole("button", {name:"Check the plan"}));
-  await user.click(screen.getByText("Details"));
+  // A text task is a program, so its Output section is already open.
+  await user.click(screen.getByText("Advanced"));
   const use = await screen.findByRole("checkbox", {name:`Let this tool use ${connector.name}`});
   // The description mentions Gmail and it is connected, so it is switched on for the tool already.
   expect(await screen.findByText(/Using your .* connection \(read-only\)/)).toBeVisible();

@@ -16,13 +16,13 @@ it("previews history, defaults to keeping tools and credentials, and lets Keep c
   const user = userEvent.setup();
   render(<App backend={backend} />);
   await screen.findByRole("button", { name: "Export" });
-  await user.click(button("Privacy"));
-  await screen.findByRole("table", { name: "Local history to delete" });
+  await user.click(button("Settings"));
+  await user.click(screen.getByRole("tab", { name: "Privacy & data" }));
+  await user.click(await screen.findByText("Stored data and sent data history"));
   expect(screen.getByText("30 days; items needing you stay until handled")).toBeVisible();
-  expect(
-    screen.getByText(/Your API key and connection tokens stay/),
-  ).toBeVisible();
   await user.click(button("Delete local history…"));
+  await screen.findByRole("table", { name: "Local history to delete" });
+  expect(screen.getByText(/Your keys, connections and saved files stay/)).toBeVisible();
   expect(
     screen.getByRole("checkbox", { name: "Also delete my tools" }),
   ).not.toBeChecked();
@@ -59,7 +59,7 @@ it("exports and toggles Pause tool and Resume tool in the library", async () => 
   expect(
     await screen.findByRole("button", { name: "Resume tool" }),
   ).toBeVisible();
-  expect(button(`Run now: ${tool.name}`)).toBeDisabled();
+  expect(screen.queryByRole("button", { name: `Run now: ${tool.name}` })).not.toBeInTheDocument();
   await user.click(button("Export"));
   const exported = await screen.findByRole("status");
   expect(exported).toBeVisible();
@@ -81,8 +81,8 @@ it("Try another sample opens the picker and displays failing row and column deta
   await user.click(await screen.findByRole("button", { name: "Try a sample" }));
   await user.click(button("Check the plan"));
   await user.click(screen.getByRole("radio", { name: "March 4 (MM/DD/YY)" }));
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
-  await user.click(button("Send and build"));
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
+  await user.click(button("Build and test"));
   await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 4500,
   });

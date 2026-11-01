@@ -1,7 +1,6 @@
 import { BotLibraryProvider } from "./BotLibrary";
 import { CustomBotStudio } from "./CustomBotStudio";
-import { SectionGuide } from "./SectionGuide";
-import { BotAvatar, BotStatus, ThemePicker, botIdentity, saveBotIdentity } from "./Bot";
+import { BotAvatar, BotStatus, botIdentity, saveBotIdentity } from "./Bot";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -17,7 +16,6 @@ import type {
   ToolDetail,
   ToolSummary,
 } from "./backend/types";
-import { routeLabel } from "./backend/mock";
 import { CreateFlow } from "./CreateFlow";
 import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
@@ -29,15 +27,15 @@ import { Activity, Privacy } from "./History";
 import { RecordingBar, ShowPanel } from "./Show";
 import { FileText, Notice, Suggestions, useAction } from "./ui";
 
-const destinations = [
-  "Today",
-  "Tools",
-  "Activity",
-  "Connections",
-  "Privacy",
-  "Settings",
-] as const;
-type Destination = (typeof destinations)[number];
+type Destination = "Today" | "Tools" | "Activity" | "Connections" | "Privacy" | "Settings";
+/** Privacy lives under Settings, so the sidebar stays short. */
+const navigation: { item: Destination; label: string; secondary?: boolean }[] = [
+  { item: "Today", label: "Today" },
+  { item: "Tools", label: "My tools" },
+  { item: "Activity", label: "Activity" },
+  { item: "Connections", label: "Connections", secondary: true },
+  { item: "Settings", label: "Settings", secondary: true },
+];
 export function App({ backend }: { backend: Backend }) {
   return <BotLibraryProvider backend={backend}><AppWorkspace backend={backend} /></BotLibraryProvider>;
 }
@@ -45,6 +43,17 @@ function AppWorkspace({ backend }: { backend: Backend }) {
   const [destination, setDestination] = useState<Destination>("Tools");
   const [customizingTool, setCustomizingTool] = useState<ToolSummary | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // An open ⋯ menu closes on a click outside it or on Escape, like any menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: Event) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !(event.target as Element | null)?.closest?.(".more-menu")) setMenuOpen(null);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); };
+  }, [menuOpen]);
   const [tools, setTools] = useState<ToolSummary[] | null>(null),
     [libraryFailed, setLibraryFailed] = useState(false);
   const [status, setStatus] = useState<ModelAccessStatus | null>(null),
@@ -178,6 +187,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
     setDestination("Connections");
   }
   const openSettings = () => setDestination("Settings");
+  const aiReady = !!status && status.egress === "cloud_allowed" && !!status.effectiveRoute && status.effectiveRoute !== "offline_demo";
   const updateShow = (state: ShowState) => {
     setShow(state);
     void act(refreshConnections);
@@ -201,33 +211,37 @@ function AppWorkspace({ backend }: { backend: Backend }) {
       <aside className="sidebar">
         <div className="brand"><BotAvatar size={36} />Macroscope</div>
         <nav aria-label="Main navigation">
-          {destinations.map((item, index) => (
+          {navigation.map(({ item, label, secondary }, index) => (
             <button
-              className={index === 3 ? "secondary-start" : index > 3 ? "secondary-nav" : undefined}
+              className={secondary ? (navigation[index - 1]?.secondary ? "secondary-nav" : "secondary-start") : undefined}
               key={item}
-              aria-current={destination === item && !(item === "Tools" && showPanel) ? "page" : undefined}
+              aria-current={destination === item || (item === "Settings" && destination === "Privacy") ? "page" : undefined}
               onClick={() => setDestination(item)}
             >
-              {item === "Tools" ? "My tools" : item}
+              {label}
+              {item === "Tools" && destination !== "Tools" && (creating || running || showPanel) && <span className="nav-dot" aria-hidden="true" title="Task in progress" />}
             </button>
-          )).flatMap((b, index) => index === 1 && show ? [b, <button key="record" aria-current={destination === "Tools" && showPanel ? "page" : undefined} onClick={() => { setDestination("Tools"); setShowPanel(true); }}>Record a task</button>] : [b])}
+          ))}
         </nav>
-        <div className="sidebar-note"><ThemePicker /><p>Small bots. Useful work.</p></div>
       </aside>
       <div className="workspace">
         {show?.kind === "recording" && (
           <RecordingBar backend={backend} state={show} update={updateShow} />
         )}
-        <div className="status-strip" role="region" aria-label="App status">
-          <span>{status ? `Using ${routeLabel(status.effectiveRoute)} - cloud models ${status.egress === "cloud_allowed" ? "on" : status.egress === "stopping" ? "stopping" : status.egress === "key_unavailable" ? "unavailable (check your key)" : "off (local only)"}` : "Checking model access…"}</span>
-          <button className="ghost" aria-label="Settings for model access" onClick={openSettings}>Settings</button>
-        </div>
+        {status && (status.egress === "key_unavailable" || status.effectiveRoute === null) && destination !== "Settings" && (
+          <div className="status-strip notice-warning" role="region" aria-label="App status">
+            <span>{status.egress === "key_unavailable" ? "Your AI service isn’t working. Check your key." : "No AI service is set up."}</span>
+            <button className="ghost" onClick={openSettings}>Fix in Settings</button>
+          </div>
+        )}
         <main id="main-content" tabIndex={-1} aria-labelledby="page-title">
           <header>
-            <h1 id="page-title">{destination === "Tools" ? "My tools" : destination}</h1>
+            <h1 id="page-title">{destination === "Tools" ? "My tools" : destination === "Privacy" ? "Settings" : destination}</h1>
           </header>
-          {!(destination === "Tools" && (creating || running || showPanel)) && <SectionGuide section={destination} />}
-          {destination !== "Tools" && (creating || running || showPanel) && <div className="resume-task" role="region" aria-label="Task in progress"><p>Your {showPanel ? "recording" : creating ? "task setup" : "tool run"} is still open.</p><button onClick={() => setDestination("Tools")}>Return to your task</button></div>}
+          {(destination === "Settings" || destination === "Privacy") && <div className="tabs" role="tablist" aria-label="Settings sections">
+            <button role="tab" aria-selected={destination === "Settings"} onClick={() => setDestination("Settings")}>AI service</button>
+            <button role="tab" aria-selected={destination === "Privacy"} onClick={() => setDestination("Privacy")}>Privacy &amp; data</button>
+          </div>}
           <Notice error={error} />
           {exported && <p role="status">Tool exported to <FileText text={exported} /></p>}
           {error && (
@@ -286,13 +300,11 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                   {tools.length === 0 ? (
                     <section className="empty-state">
                       <BotAvatar size={144} />
-                      <h2>
-                        Turn a repetitive task into a tool you can test and
-                        keep.
-                      </h2>
+                      <h2>Turn a repetitive task into a tool.</h2>
+                      {status && !aiReady && <div className="notice notice-info"><p>First, connect an AI service so Macroscope can build your tools.</p><button className="primary" onClick={openSettings}>Connect an AI service</button></div>}
                       <div className="actions">
                         <button
-                          className="primary"
+                          className={aiReady ? "primary" : undefined}
                           disabled={busy || !status}
                           onClick={() => {
                             setInitialInput(null);
@@ -312,24 +324,13 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                         >
                           Try a sample
                         </button>
+                        {show && <button onClick={() => setShowPanel(true)}>Record a task</button>}
                       </div>
-                      <div className="sample-line">
-                        <strong>Sample: messy CSV → clean import</strong>
-                        <p>
-                          Input: date=10/22/26, amount=$1,240.00
-                          <br />
-                          Output: date=2026-10-22, amount=1240.00
-                        </p>
-                      </div>
-                      <p>
-                        You choose what to send before building. Check the result before saving your tool.
-                      </p>
                     </section>
                   ) : (
                     <>
                       <div className="actions">
                         <button
-                          className="primary"
                           onClick={() => {
                             setInitialInput(null);
                             setCreating(true);
@@ -337,6 +338,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                         >
                           Describe a task
                         </button>
+                        {show && <button className="quiet" onClick={() => setShowPanel(true)}>Record a task</button>}
                       </div>
                       <ul className="plain-list">
                         {tools.map((tool, index) => {
@@ -344,91 +346,74 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                           const displayName = duplicate ? `${tool.name} (${tools.slice(0, index + 1).filter(t => t.name === tool.name).length})` : tool.name;
                           return (
                           <li key={tool.id} className="tool-row">
-                            <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={72} />
-                            <div>
+                            <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={64} />
+                            <div className="tool-text">
                               <h2>
                                 {displayName}{" "}
                                 {tool.sample && (
                                   <span className="badge">Sample</span>
                                 )}
+                                {tool.state === "paused" && <span className="badge">Paused</span>}
                               </h2>
                               <p>{toolDescriptions[tool.id] || tool.name}</p>
-                              <p className="muted">{friendlyLastRun(tool.lastRunAtMs)}{tool.state === "paused" ? " · Paused. Resume this tool before running it." : ""}</p>
-                              {(() => { const line = scheduleLine(schedules.find(s => s.toolId === tool.id)); return line && <p className="muted" data-testid="schedule-line">{line}</p>; })()}
-                              <details><summary>Details</summary><p>{tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version}</p>{!tool.sample && <ToolVersions backend={backend} toolId={tool.id} name={displayName} changed={refreshTools} />}</details>
+                              <p className="muted">{(() => { const line = scheduleLine(schedules.find(s => s.toolId === tool.id)); return line ? <span data-testid="schedule-line">{line}</span> : friendlyLastRun(tool.lastRunAtMs); })()}</p>
                             </div>
-                            <button className="quiet" disabled={busy || !status} aria-label={`Customize bot: ${displayName}`} onClick={() => setCustomizingTool(tool)}>Customize bot</button>
-                            <button
-                              className="quiet"
-                              disabled={busy}
-                              onClick={() =>
-                                void act(async () => {
-                                  setExported(
-                                    await backend.exportTool(tool.id),
-                                  );
-                                })
-                              }
-                            >
-                              Export
-                            </button>
-                            <button
-                              className="quiet"
-                              disabled={busy}
-                              onClick={() =>
-                                void act(async () => {
-                                  if (tool.state === "paused")
-                                    await backend.restoreTool(tool.id);
-                                  else await backend.revokeTool(tool.id);
-                                  await refreshTools();
-                                })
-                              }
-                            >
-                              {tool.state === "paused"
-                                ? "Resume tool"
-                                : "Pause tool"}
-                            </button>
-                            {confirmDelete === tool.id ? (
-                              <div role="alertdialog" aria-label={`Delete ${displayName}`}>
-                                <p>Delete “{displayName}”? Its runs and costs are removed. Files it already created stay where they are.</p>
-                                <button disabled={busy} onClick={() => void act(async () => {
-                                  await backend.deleteTool(tool.id);
-                                  setConfirmDelete(null);
-                                  await refreshTools();
-                                })}>Delete tool</button>
-                                <button className="ghost" onClick={() => setConfirmDelete(null)}>Keep tool</button>
+                            <div className="tool-actions">
+                              {tool.state === "paused" ? (
+                                <button className="primary" disabled={busy} onClick={() => void act(async () => { await backend.restoreTool(tool.id); await refreshTools(); })}>Resume tool</button>
+                              ) : (
+                                <button
+                                  className="primary"
+                                  aria-label={`Run now: ${displayName}`}
+                                  onClick={() => { setScheduleFirst(false); setRunning(tool); }}
+                                >
+                                  Run
+                                </button>
+                              )}
+                              {!tool.sample && tool.state !== "paused" && <button
+                                aria-label={`Schedule: ${displayName}`}
+                                onClick={() => { setScheduleFirst(true); setRunning(tool); }}
+                              >
+                                {schedules.some(s => s.toolId === tool.id) ? "Edit schedule" : "Schedule"}
+                              </button>}
+                              <details className="more-menu" open={menuOpen === tool.id} onToggle={e => { const open = e.currentTarget.open; setMenuOpen(current => open ? tool.id : current === tool.id ? null : current); }}>
+                                <summary aria-label={`More actions: ${displayName}`}>⋯</summary>
+                                <div className="menu">
+                                  {!tool.sample && <button
+                                    className="quiet"
+                                    disabled={busy}
+                                    aria-label={`Edit: ${displayName}`}
+                                    onClick={() => void act(async () => {
+                                      setEditTool(await backend.getTool(tool.id));
+                                      setInitialInput(null);
+                                      setRunning(null);
+                                      setMenuOpen(null);
+                                      setCreating(true);
+                                    })}
+                                  >
+                                    Edit
+                                  </button>}
+                                  <button className="quiet" disabled={busy || !status} aria-label={`Customize bot: ${displayName}`} onClick={() => { setMenuOpen(null); setCustomizingTool(tool); }}>Customize bot</button>
+                                  <button className="quiet" disabled={busy} onClick={() => void act(async () => { setExported(await backend.exportTool(tool.id)); setMenuOpen(null); })}>Export</button>
+                                  {tool.state !== "paused" && <button className="quiet" disabled={busy} onClick={() => void act(async () => { await backend.revokeTool(tool.id); setMenuOpen(null); await refreshTools(); })}>Pause tool</button>}
+                                  {!tool.sample && <ToolVersions backend={backend} toolId={tool.id} name={displayName} changed={refreshTools} />}
+                                  <button className="quiet danger" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => { setMenuOpen(null); setConfirmDelete(tool.id); }}>Delete</button>
+                                </div>
+                              </details>
+                            </div>
+                            {confirmDelete === tool.id && (
+                              <div role="alertdialog" aria-label={`Delete ${displayName}`} className="notice notice-warning confirm-row">
+                                <p>Delete “{displayName}”? Files it already created are kept.</p>
+                                <div className="actions">
+                                  <button className="danger" disabled={busy} onClick={() => void act(async () => {
+                                    await backend.deleteTool(tool.id);
+                                    setConfirmDelete(null);
+                                    await refreshTools();
+                                  })}>Delete tool</button>
+                                  <button className="ghost" onClick={() => setConfirmDelete(null)}>Keep tool</button>
+                                </div>
                               </div>
-                            ) : (
-                              <button className="quiet danger" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => setConfirmDelete(tool.id)}>Delete</button>
                             )}
-                            {!tool.sample && <button
-                              className="quiet"
-                              disabled={busy}
-                              aria-label={`Edit: ${displayName}`}
-                              onClick={() => void act(async () => {
-                                setEditTool(await backend.getTool(tool.id));
-                                setInitialInput(null);
-                                setRunning(null);
-                                setCreating(true);
-                              })}
-                            >
-                              Edit
-                            </button>}
-                            {!tool.sample && <button
-                              className="quiet"
-                              disabled={tool.state === "paused"}
-                              aria-label={`Schedule: ${displayName}`}
-                              onClick={() => { setScheduleFirst(true); setRunning(tool); }}
-                            >
-                              {schedules.some(s => s.toolId === tool.id) ? "Edit schedule" : "Schedule"}
-                            </button>}
-                            <button
-                              className="primary"
-                              disabled={tool.state === "paused"}
-                              aria-label={`Run now: ${displayName}`}
-                              onClick={() => { setScheduleFirst(false); setRunning(tool); }}
-                            >
-                              Run now
-                            </button>
                           </li>
                         ); })}
                       </ul>

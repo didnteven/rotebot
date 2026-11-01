@@ -539,6 +539,8 @@ export interface RecordingStatus {
 export interface Backend {
   accessPreview(draftId: string): Promise<AccessPreview>;
   researchTaskAccess(draftId: string, payloadHash: string): Promise<TaskDraft>;
+  /** Asks the selected model to fill in the output layout of a program task that has none yet. */
+  suggestExampleOutput(draftId: string): Promise<TaskDraft>;
   /** `keys` are the values typed into the setup form: the main key, then one per extra key name. */
   /** Adds another address on a saved API's own service, reusing its keys; tested before it is kept. */
   addApiAddress(sourceId: string, url: string): Promise<ConnectorInfo>;

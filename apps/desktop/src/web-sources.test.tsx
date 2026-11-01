@@ -24,22 +24,22 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   );
   await user.click(button("Check the plan"));
 
-  await waitFor(() => expect(button("Send and build")).toBeEnabled());
-  await user.click(screen.getByText(/What leaves this Mac ·/));
+  await waitFor(() => expect(button("Build and test")).toBeEnabled());
+  await user.click(screen.getByText(/What gets sent ·/));
 
   // Before generation, requested hosts are named; exact sources need approval.
   expect(
     await screen.findByText(/Requested site: api.open-meteo.com on each run/),
   ).toBeVisible();
-  expect(button("Send and build")).toBeEnabled();
-  await user.click(button("Send and build"));
+  expect(button("Build and test")).toBeEnabled();
+  await user.click(button("Build and test"));
 
-  // The build-and-compare review lists the declared hosts; saving requires approval.
+  // The result lists the sites the tool used; saving needs no separate approval.
   await waitFor(() => expect(button("Yes, save this tool")).toBeVisible(), {
     timeout: 5000,
   });
   expect(
-    screen.getByText(/This tool will read data from api.open-meteo.com/),
+    screen.getByText(/api.open-meteo.com/, { selector: "p.used-line" }),
   ).toBeVisible();
   expect(button("Yes, save this tool")).toBeEnabled();
   const toolName = screen.getByLabelText("Tool name");
@@ -54,11 +54,9 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   expect(detail.noInput).toBe(true);
   expect(detail.program?.webSources).toHaveLength(1);
 
-  // The run screen says which sites will be fetched; no input file is asked for.
+  // No input file is asked for; the result says which site was used.
   await user.click(button("Run now: Weather"));
-  expect(
-    await screen.findByText(/This run reads data from api.open-meteo.com/),
-  ).toBeVisible();
+  await screen.findByRole("button", { name: "Preview result" });
   expect(
     screen.queryByRole("button", { name: "Choose input file" }),
   ).not.toBeInTheDocument();
@@ -70,6 +68,7 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   expect(
     await screen.findByLabelText("Answer"),
   ).toHaveTextContent("Auckland: fine, high 21C, low 14C.");
+  expect(screen.getByText(/api.open-meteo.com/, { selector: "p.used-line" })).toBeVisible();
   await user.click(button("Choose output folder"));
   await user.click(button("Create file"));
   expect(

@@ -1294,3 +1294,58 @@ async fn a_keyed_api_whose_documentation_cannot_be_read_is_verified_by_asking_fo
     let saved = f.api(&server, "/records").await;
     assert!(!f.conns.test(&saved.id).await.unwrap_err().to_string().contains("paused"));
 }
+
+#[tokio::test]
+async fn the_model_fills_in_the_output_layout_and_a_typed_one_is_kept() {
+    let server = MockServer::start().await;
+    Mock::given(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            json!({"exampleOutput":"Water: {water_cost}\nPower: {power_cost}\nEach: {each}"}),
+            vec![],
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let d = f
+        .core
+        .draft_task_no_input("Split the water and power bills four ways")
+        .unwrap();
+    let filled = f.core.suggest_example_output(&d.draft_id).await.unwrap();
+    assert_eq!(
+        filled.example_output.as_deref(),
+        Some("Water: {water_cost}\nPower: {power_cost}\nEach: {each}")
+    );
+    // A layout is already there, so no second model call is made and nothing is replaced.
+    let typed = f
+        .core
+        .update_task(
+            &d.draft_id,
+            TaskKind::Program,
+            "bills.txt",
+            Some("Total: {total}".into()),
+        )
+        .unwrap();
+    let kept = f
+        .core
+        .suggest_example_output(&typed.draft_id)
+        .await
+        .unwrap();
+    assert_eq!(kept.example_output.as_deref(), Some("Total: {total}"));
+}
+
+#[tokio::test]
+async fn an_invalid_suggested_layout_is_dropped() {
+    let server = MockServer::start().await;
+    Mock::given(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            json!({"exampleOutput":"Water: {water_cost"}),
+            vec![],
+        )))
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let d = f.core.draft_task_no_input("Split the water bill").unwrap();
+    let next = f.core.suggest_example_output(&d.draft_id).await.unwrap();
+    assert_eq!(next.example_output, None);
+}

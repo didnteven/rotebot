@@ -34,12 +34,9 @@ describe("desktop shell", () => {
     expect(screen.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
     await user.tab();
     expect(screen.getByRole("button", { name: "My tools" })).toHaveFocus();
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Record a task" })).toHaveFocus();
     for (const destination of [
       "Activity",
       "Connections",
-      "Privacy",
       "Settings",
     ]) {
       await user.tab();
@@ -91,20 +88,19 @@ describe("desktop shell", () => {
   });
 });
 
-it("shows a single Show action with independent plain-language status facts", async () => {
+it("shows a single Record action and no status bar while the AI service works", async () => {
   render(<App backend={new MockBackend()} />);
-  expect(await screen.findByText(/Using .* - cloud models on/)).toBeVisible();
-  expect(screen.getAllByRole("button", { name: "Record a task" })).toHaveLength(
-    1,
-  );
+  expect(await screen.findByRole("button", { name: "Record a task" })).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Record a task" })).toHaveLength(1);
+  expect(screen.queryByRole("region", { name: "App status" })).not.toBeInTheDocument();
 });
 
 it.each([
-  ["stopping", "stopping"],
-  ["local_only", "off (local only)"],
-  ["key_unavailable", "unavailable (check your key)"],
+  ["stopping", null],
+  ["local_only", null],
+  ["key_unavailable", "Your AI service isn’t working. Check your key."],
 ] as const)(
-  "labels %s cloud models and keeps the recording sample available",
+  "shows a status bar for %s only when something needs fixing",
   async (egress, label) => {
     const backend = new MockBackend();
     const status = await backend.modelAccess();
@@ -114,10 +110,9 @@ it.each([
       reason: "Unavailable on this platform",
     });
     render(<App backend={backend} />);
-    expect(await screen.findByText((text, el) => el?.tagName === "SPAN" && text.endsWith(`cloud models ${label}`))).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Record a task" }),
-    ).toBeVisible();
+    await screen.findByRole("button", { name: "Try a sample" });
+    if (label) expect(await screen.findByText(label)).toBeVisible();
+    else expect(screen.queryByRole("region", { name: "App status" })).not.toBeInTheDocument();
   },
 );
 
