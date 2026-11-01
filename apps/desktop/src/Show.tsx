@@ -265,21 +265,19 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   return <section className="card recording-flow" aria-label="Record a task">
     {step > 0 && step < 4 && <p className="muted">Back discards this recording and returns to My tools.</p>}
     {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard(true))}>Back</button>}
-    <ol className="stepper" aria-label="Recording progress">{["Choose a window", "Record", "Review privacy", "Check the plan", "Create tool"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined}>{index + 1}. {label}</li>)}</ol>
+    {step>0 && <ol className="stepper" aria-label="Recording progress">{["Choose a window", "Record", "Review privacy", "Check the plan", "Create tool"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined}>{index + 1}. {label}</li>)}</ol>}
     <h2 ref={heading} tabIndex={-1}>{titles[step]}</h2>
     <Notice error={error ?? pollError}/>
     {(error || pollError) && <p>Check your settings or discard this recording and start again.</p>}
     {busy && <BotStatus label={step===2?"Analyzing your recording…":"Preparing your recording…"} />}
     {step===0 && <>
-      <p>Choose one window and show Rotebot a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
-      <p>Password fields and private windows are always excluded. After you stop, you can choose how much other sensitive text to hide before anything is sent. That's off until you turn it on.</p>
-      <p className="muted">Hiding text can miss things. Always check every image before sending.</p>
+      <p>Pick a window and show Rotebot a chore. You'll review everything before it's sent.</p>
       {captureStatus===null ? <p role="status">Checking screen recording…</p> : captureStatus.captureAvailable ?
         <button className="primary" disabled={busy} onClick={()=>void act(()=>start("window"))}>Choose a window to record</button> : <>
           <p className="notice notice-info">Screen recording isn't set up on this Mac yet</p>
-          {captureStatus.reason==="picker_identity_unavailable" && <p>Window recording needs macOS 15.2 or later to identify the window you choose safely.</p>}
+          {captureStatus.reason==="picker_identity_unavailable" && <p>Window recording needs macOS 15.2 or later.</p>}
           {captureStatus.helperAvailable && captureStatus.reason!=="picker_identity_unavailable" && <>
-            <p>Rotebot needs both of these. Switch Rotebot on in each, then quit and reopen the app. This page updates by itself.</p>
+            <p className="muted">Turn Rotebot on in both, then reopen the app.</p>
             <div className="actions">
               <button disabled={busy} onClick={()=>void act(async()=>{const next = await backend.requestRecordingPermission();await backend.openPrivacySettings("screen_recording");setCaptureStatus(next);})}>Open Screen Recording settings</button>
               <span role="status">{captureStatus.screenRecordingGranted ? "Screen Recording: on" : "Screen Recording: off"}</span>
@@ -291,9 +289,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
             <button disabled={busy} onClick={()=>void act(async()=>setCaptureStatus(await backend.recordingStatus()))}>Check again</button>
           </>}
         </>}
-      <p>Browser windows work too. Don't pick a private (Incognito) window, and check every image before sending.</p>
-      <p>The sample uses made-up information. You'll review it before deciding whether to send it.</p>
-      <button disabled={busy} onClick={()=>void act(()=>start("sample"))}>Try it with a sample recording</button>
+      <p className="muted"><button className="link" disabled={busy} onClick={()=>void act(()=>start("sample"))}>Try it with a sample recording</button></p>
     </>}
     {step===1 && <>
       <p role="timer" aria-label="Elapsed recording time">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,"0")}</p>
@@ -398,7 +394,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
         sessionRef.current=null;setSession(null);setDraft(approved);setStep(4);
       })}>Looks right</button>
     </>}
-    {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard())}>Discard recording</button>}
+    {step>0 && step<4 && <button disabled={busy} onClick={()=>void act(()=>discard())}>Discard recording</button>}
     {step===4 && draft && <>
       <p>Your recording became the request below and has been discarded. Check it, choose any data to use, then check the plan.</p>
       <CreateFlow {...createFlow} backend={backend} initialInput={null} initialGoal={draft.goal} initialDraft={draft} startAtRequest/>

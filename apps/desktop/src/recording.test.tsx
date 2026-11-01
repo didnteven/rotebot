@@ -33,7 +33,7 @@ it("walks all five screens, consents only on Send, then builds, previews and sav
   const ctx = await open(backend);
   expect(screen.getByRole("heading", { name: "Show Rotebot what to do" })).toHaveFocus();
   expect(screen.getByText("Advanced: app activity log").closest("details")).not.toHaveAttribute("open");
-  expect(button("Discard recording")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Discard recording" })).not.toBeInTheDocument();
   await review(ctx);
   expect(ctx.analyze).not.toHaveBeenCalled();
   expect((await backend.privacyOverview()).outbound).toEqual([]);
@@ -84,6 +84,7 @@ it.each([0, 1, 2, 3])("declining on screen %i discards without creating a task",
   if (step === 1) await ctx.user.click(button("Try it with a sample recording"));
   if (step >= 2) await review(ctx);
   if (step === 3) await ctx.user.click(button("Send for analysis"));
+  if (step === 0) return;
   await ctx.user.click(button("Discard recording"));
   expect(screen.getByRole("heading", { name: "Show Rotebot what to do" })).toHaveFocus();
   if (step > 0) {
