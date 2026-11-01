@@ -327,7 +327,7 @@ export function CreateFlow({
     : status.effectiveRoute === null ? "Choose a model in Settings before building."
     : draft?.kind === "program" && preview?.route === "offline_demo" ? "Writing this tool needs a model: sign in to Muse or add a key in Settings."
     : draft && description.trim() !== draft.goal ? "Update the plan to use your changed request."
-    : suggesting ? "Writing the output layout…"
+    : suggesting && !example.trim() ? "Writing the output layout…"
     : planBlockers.length ? planBlockers[0]
     : !preview ? "Preparing what will be sent…" : null;
   return (
@@ -452,8 +452,9 @@ export function CreateFlow({
             </fieldset>
           ))}
           <details key="plan-output" className="output-section" open={draft.kind === "program"}><summary>Output</summary>
+          {draft.kind === "program" && suggesting && !example.trim() && <BotStatus seed={botSeed} label="Writing the output layout…" detail="You can type your own instead." />}
           {draft.kind === "program" && <Field label="What the result should look like">
-            <textarea aria-label="What the result should look like" rows={5} maxLength={16000} value={example} placeholder={suggesting ? "Writing a suggested layout…" : "Water: {water_cost}"} onChange={(e) => setExample(e.target.value)} />
+            <textarea aria-label="What the result should look like" aria-busy={suggesting} rows={5} maxLength={16000} value={example} placeholder={suggesting ? "Writing a suggested layout…" : "Water: {water_cost}"} onChange={(e) => setExample(e.target.value)} />
             <span className="muted">Change anything. Words in {"{braces}"} are filled in each run.</span>
           </Field>}
           {draft.kind !== "program" && <div

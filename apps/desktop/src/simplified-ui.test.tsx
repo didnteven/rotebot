@@ -164,3 +164,21 @@ it("a failed data review can be retried without sending anything", async () => {
   await waitFor(() => expect(button("Build and test")).toBeEnabled());
   expect(start).not.toHaveBeenCalled();
 });
+
+it("shows a loading state in Output while the AI writes the layout, then fills it in", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const original = backend.suggestExampleOutput.bind(backend);
+  let release!: () => void;
+  vi.spyOn(backend, "suggestExampleOutput").mockImplementation(async id => { await new Promise<void>(r => { release = r; }); return original(id); });
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={null} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
+  await user.type(screen.getByLabelText("What should the tool do?"), "Get today's forecast for Auckland");
+  await user.click(button("Check the plan"));
+  expect(await screen.findByText("Writing the output layout…", { selector: "strong" })).toBeVisible();
+  expect(screen.getByLabelText("What the result should look like")).toHaveAttribute("aria-busy", "true");
+  expect(button("Build and test")).toBeDisabled();
+  release();
+  await waitFor(() => expect(screen.getByLabelText("What the result should look like")).toHaveValue("Auckland: fine, high 21C, low 14C."));
+  expect(screen.queryByText("Writing the output layout…", { selector: "strong" })).not.toBeInTheDocument();
+});
