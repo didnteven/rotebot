@@ -57,16 +57,20 @@ impl EmailDelivery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Frequency {
+    /// Every hour, at the minute of `time` (its hour is ignored).
+    Hourly { time: String },
+    /// Every day at `time` and again at `second_time`.
+    TwiceDaily {
+        time: String,
+        #[serde(rename = "secondTime")]
+        second_time: String,
+    },
     Daily { time: String },
     Weekly { weekday: u32, time: String }, // Monday = 1
     Monthly { day: u32, time: String },
 }
-impl Frequency {
-    fn time(&self) -> CoreResult<NaiveTime> {
-        let text = match self {
-            Self::Daily { time } | Self::Weekly { time, .. } | Self::Monthly { time, .. } => time,
-        };
-        if text.len() != 5
+fn parse_time(text: &str) -> CoreResult<NaiveTime> {
+    if text.len() != 5
             || !text.bytes().enumerate().all(|(i, c)| {
                 if i == 2 {
                     c == b':'
@@ -79,9 +83,30 @@ impl Frequency {
         }
         NaiveTime::parse_from_str(text, "%H:%M")
             .map_err(|_| CoreError::Invalid("Time must be HH:MM".into()))
+}
+impl Frequency {
+    /// The local times this frequency runs on a matching day, earliest first.
+    fn times(&self) -> CoreResult<Vec<NaiveTime>> {
+        Ok(match self {
+            Self::Hourly { time } => {
+                let minute = chrono::Timelike::minute(&parse_time(time)?);
+                (0..24).filter_map(|h| NaiveTime::from_hms_opt(h, minute, 0)).collect()
+            }
+            Self::TwiceDaily { time, second_time } => {
+                let mut both = vec![parse_time(time)?, parse_time(second_time)?];
+                both.sort();
+                both
+            }
+            Self::Daily { time } | Self::Weekly { time, .. } | Self::Monthly { time, .. } => {
+                vec![parse_time(time)?]
+            }
+        })
     }
     fn validate(&self) -> CoreResult<()> {
-        self.time()?;
+        let times = self.times()?;
+        if matches!(self, Self::TwiceDaily { .. }) && times[0] == times[1] {
+            return Err(CoreError::Invalid("Choose two different times".into()));
+        }
         if matches!(self, Self::Weekly { weekday, .. } if !(1..=7).contains(weekday))
             || matches!(self, Self::Monthly { day, .. } if !(1..=31).contains(day))
         {
@@ -93,7 +118,7 @@ impl Frequency {
     }
     fn matches(&self, date: NaiveDate) -> bool {
         match self {
-            Self::Daily { .. } => true,
+            Self::Hourly { .. } | Self::TwiceDaily { .. } | Self::Daily { .. } => true,
             Self::Weekly { weekday, .. } => date.weekday().number_from_monday() == *weekday,
             Self::Monthly { day, .. } => {
                 date.day() == *day
@@ -191,12 +216,15 @@ fn instant(now: i64, tz: Tz) -> DateTime<Tz> {
 /// Most recent occurrence, including now. One watermark coalesces all missed runs.
 pub fn most_recent_due(f: &Frequency, now: i64, tz: Tz) -> CoreResult<Option<i64>> {
     f.validate()?;
+    let times = f.times()?;
     let mut day = instant(now, tz).date_naive();
     for _ in 0..=370 {
         if f.matches(day) {
-            if let Some(due) = occurrence(tz, day, f.time()?) {
-                if due <= now {
-                    return Ok(Some(due));
+            for time in times.iter().rev() {
+                if let Some(due) = occurrence(tz, day, *time) {
+                    if due <= now {
+                        return Ok(Some(due));
+                    }
                 }
             }
         }
@@ -208,12 +236,15 @@ pub fn most_recent_due(f: &Frequency, now: i64, tz: Tz) -> CoreResult<Option<i64
     Ok(None)
 }
 fn next_due(f: &Frequency, now: i64, tz: Tz) -> CoreResult<Option<i64>> {
+    let times = f.times()?;
     let mut day = instant(now, tz).date_naive();
     for _ in 0..=370 {
         if f.matches(day) {
-            if let Some(due) = occurrence(tz, day, f.time()?) {
-                if due > now {
-                    return Ok(Some(due));
+            for time in &times {
+                if let Some(due) = occurrence(tz, day, *time) {
+                    if due > now {
+                        return Ok(Some(due));
+                    }
                 }
             }
         }
@@ -610,10 +641,7 @@ impl AppCore {
                 .map(|s| {
                     format!(
                         "Missed at {} (Macroscope was closed); ran at {}",
-                        s.frequency
-                            .time()
-                            .map(|t| t.format("%-H:%M").to_string())
-                            .unwrap_or_default(),
+                        instant(s.last_due_ms, self.schedule_timezone()).format("%-H:%M"),
                         instant(started_at_ms, self.schedule_timezone()).format("%-H:%M")
                     )
                 }),
@@ -767,7 +795,7 @@ impl AppCore {
                 self.put_schedule(&s)?;
             }
             let tool = self.get_tool(&s.tool_id)?;
-            let time = s.frequency.time()?.format("%-H:%M").to_string();
+            let time = instant(due, tz).format("%-H:%M").to_string();
             let mut entry = TodayEntry {
                 id: new_id("today"),
                 tool_id: s.tool_id.clone(),
@@ -1158,6 +1186,57 @@ mod tests {
                 Some(utc(expected))
             );
         }
+    }
+    #[test]
+    fn hourly_and_twice_daily() {
+        let tz = chrono_tz::Pacific::Auckland;
+        let hourly = Frequency::Hourly {
+            time: "00:15".into(),
+        };
+        assert_eq!(
+            most_recent_due(&hourly, utc("2026-10-28T09:14:00+13:00"), tz).unwrap(),
+            Some(utc("2026-10-28T08:15:00+13:00"))
+        );
+        assert_eq!(
+            next_due(&hourly, utc("2026-10-28T23:20:00+13:00"), tz).unwrap(),
+            Some(utc("2026-10-29T00:15:00+13:00"))
+        );
+        // Times may be given in either order; runs are earliest first.
+        let twice = Frequency::TwiceDaily {
+            time: "18:00".into(),
+            second_time: "08:00".into(),
+        };
+        assert_eq!(
+            most_recent_due(&twice, utc("2026-10-28T12:00:00+13:00"), tz).unwrap(),
+            Some(utc("2026-10-28T08:00:00+13:00"))
+        );
+        assert_eq!(
+            next_due(&twice, utc("2026-10-28T12:00:00+13:00"), tz).unwrap(),
+            Some(utc("2026-10-28T18:00:00+13:00"))
+        );
+        assert_eq!(
+            most_recent_due(&twice, utc("2026-10-28T07:00:00+13:00"), tz).unwrap(),
+            Some(utc("2026-10-27T18:00:00+13:00"))
+        );
+        // The repeated hour when clocks go back runs once.
+        let back = utc("2026-04-05T02:15:00+13:00");
+        assert_eq!(
+            next_due(&hourly, back, tz).unwrap(),
+            Some(utc("2026-04-05T03:15:00+12:00"))
+        );
+        assert_eq!(
+            serde_json::to_value(&twice).unwrap(),
+            serde_json::json!({"kind":"twice_daily","time":"18:00","secondTime":"08:00"})
+        );
+        assert!(most_recent_due(
+            &Frequency::TwiceDaily {
+                time: "08:00".into(),
+                second_time: "08:00".into()
+            },
+            utc("2026-10-28T12:00:00+13:00"),
+            tz
+        )
+        .is_err());
     }
     #[test]
     fn spring_gap_runs_first_valid_minute_and_fall_repeat_once() {

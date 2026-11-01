@@ -10,6 +10,15 @@ export const canSendEmail=(c:ConnectorInfo)=>c.state.kind==="connected" && (!!c.
 export const validEmail=(to:string)=>/^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(to.trim());
 export const whenText=(w:SendWhen)=>w.kind==="changed"?"the result changes":w.kind==="contains"?`the result contains “${w.text.trim()}”`:w.kind==="above"||w.kind==="below"?`${w.near.trim()?`the number ${w.side} “${w.near.trim()}”`:"the first number"} is ${w.kind} ${w.value}`:"";
 export const whenProblem=(w:SendWhen)=>w.kind==="contains"&&!w.text.trim()?"Enter the text the result must contain.":(w.kind==="above"||w.kind==="below")&&!Number.isFinite(w.value)?"Enter the number to compare with.":null;
+/** "Every hour at :15", "Twice a day at 8:00 and 18:00", "Every day at 7:00"... */
+export function frequencyText(f: Frequency) {
+  const t = (time: string) => time.replace(/^0(?=\d:)/, "");
+  return f.kind === "hourly" ? `Every hour at :${f.time.slice(3)}`
+    : f.kind === "twice_daily" ? `Twice a day at ${t(f.time)} and ${t(f.secondTime)}`
+    : f.kind === "daily" ? `Every day at ${t(f.time)}`
+    : f.kind === "weekly" ? `Every ${weekdays[f.weekday - 1]} at ${t(f.time)}`
+    : `Every month on day ${f.day} (or the last day) at ${t(f.time)}`;
+}
 export function nextRunText(at: number) {
   const d=new Date(at), tomorrow=new Date(); tomorrow.setDate(tomorrow.getDate()+1);
   const day=d.toDateString()===tomorrow.toDateString()?"Tomorrow":d.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});
@@ -25,7 +34,7 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
   const [routeDetails,setRouteDetails]=useState("");
   useEffect(()=>{void backend.modelAccess().then(a=>{setModelRoute(a.effectiveRoute??"offline_demo");setRouteDetails(`Custom endpoint · ${a.customEndpoint.host} · ${a.customEndpoint.model}`);});},[backend]);
   const [schedule,setSchedule]=useState<Schedule | null>(null),[login,setLogin]=useState(true);
-  const [kind,setKind]=useState<Frequency["kind"]>("daily"),[time,setTime]=useState("07:00"),[weekday,setWeekday]=useState(1),[day,setDay]=useState(1);
+  const [kind,setKind]=useState<Frequency["kind"]>("daily"),[time,setTime]=useState("07:00"),[secondTime,setSecondTime]=useState("18:00"),[weekday,setWeekday]=useState(1),[day,setDay]=useState(1);
   const [outputs,setOutputs]=useState<ScheduleOutputs>({today:true,notification:true,folder:null,filename:datedFilename(tool.program?.output_name)});
   const [file,setFile]=useState(false),[approved,setApproved]=useState(false);
   const [mailboxes,setMailboxes]=useState<ConnectorInfo[]>([]);
@@ -51,6 +60,7 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
     if (!schedule || skipLoad.current===schedule.id) return;
     setKind(schedule.frequency.kind);
     setTime(schedule.frequency.time);
+    if (schedule.frequency.kind === "twice_daily") setSecondTime(schedule.frequency.secondTime);
     if (schedule.frequency.kind === "weekly") setWeekday(schedule.frequency.weekday);
     if (schedule.frequency.kind === "monthly") setDay(schedule.frequency.day);
     setOutputs(schedule.outputs);
@@ -58,15 +68,16 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
     setApproved(false);
   }, [schedule?.id]);
   // Approval is for exactly what the summary says, so it resets when that changes, not when the page merely re-renders.
-  const approvedFor=JSON.stringify([kind,time,weekday,day,outputs,file,tool.versionHash]);
+  const approvedFor=JSON.stringify([kind,time,secondTime,weekday,day,outputs,file,tool.versionHash]);
   useEffect(()=>{setApproved(false);},[approvedFor]);
-  const frequency:Frequency=kind==="daily"?{kind,time}:kind==="weekly"?{kind,time,weekday}:{kind,time,day};
+  const frequency:Frequency=kind==="hourly"?{kind,time:`00:${time.slice(3)}`}:kind==="twice_daily"?{kind,time,secondTime}:kind==="daily"?{kind,time}:kind==="weekly"?{kind,time,weekday}:{kind,time,day};
+  const runsPerDay=kind==="hourly"?24:kind==="twice_daily"?2:1;
   const hosts=[...new Set(tool.program?.webSources.map(s=>{try{return new URL(s.url).hostname;}catch{return s.url;}})??[])];
-  const recurrence=kind==="daily"?"Every day":kind==="weekly"?`Every ${weekdays[weekday-1]}`:`Every month on day ${day} (or the last day)`;
   const actions=[...(hosts.length?[`read data from ${hosts.join(", ")}`]:[]),`run ${tool.name}`,...(outputs.today?["add the result to Today"]:[]),...(outputs.notification?["notify you"]:[]),...(outputs.email?[`email the result to ${outputs.email.to.trim()} from your ${mailboxes.find(c=>c.id===outputs.email?.connectorId)?.name??"email account"}`]:[]),...(file?[`create ${outputs.filename} in ${outputs.folder?.displayPath??"<folder>"}`]:[])];
-  const invalidTime = !/^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  const validTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+  const invalidTime = !validTime(time) || (kind === "twice_daily" && (!validTime(secondTime) || secondTime === time));
   const invalidDay = kind === "monthly" && (!Number.isInteger(day) || day < 1 || day > 31);
-  const scheduleProblem = invalidTime ? "Choose a valid time." : invalidDay ? "Choose a day from 1 to 31."
+  const scheduleProblem = invalidTime ? (kind === "twice_daily" ? "Choose two different times." : "Choose a valid time.") : invalidDay ? "Choose a day from 1 to 31."
     : file && (!outputs.folder || !outputs.filename.trim()) ? "Choose a folder and name for your result file."
     : outputs.email && !mailboxes.some(c=>c.id===outputs.email?.connectorId) ? "Choose which email account sends the result."
     : outputs.email && !validEmail(outputs.email.to) ? "Enter one email address, like you@example.com."
@@ -84,11 +95,15 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
     <fieldset disabled={busy} className="schedule-form"><legend className="sr-only">When and where to run</legend>
       <div className="schedule-group"><h4>When</h4>
         <div className="schedule-row">
-          <label>Frequency<select value={kind} onChange={e=>setKind(e.target.value as Frequency["kind"])}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
+          <label>Frequency<select value={kind} onChange={e=>setKind(e.target.value as Frequency["kind"])}><option value="hourly">Every hour</option><option value="twice_daily">Twice a day</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
           {kind==="weekly" && <label>Weekday<select value={weekday} onChange={e=>setWeekday(Number(e.target.value))}>{weekdays.map((name,i)=><option value={i+1} key={name}>{name}</option>)}</select></label>}
           {kind==="monthly" && <label>Day<input type="number" min={1} max={31} value={day} onChange={e=>setDay(Number(e.target.value))}/></label>}
-          <label>Time<input type="time" value={time} onChange={e=>setTime(e.target.value)} required/></label>
+          {kind==="hourly"
+            ? <label>Minutes past the hour<input type="number" min={0} max={59} value={Number(time.slice(3))} onChange={e=>{const m=Math.min(59,Math.max(0,Math.trunc(Number(e.target.value)||0)));setTime(`00:${String(m).padStart(2,"0")}`);}}/></label>
+            : <label>{kind==="twice_daily"?"First time":"Time"}<input type="time" value={time} onChange={e=>setTime(e.target.value)} required/></label>}
+          {kind==="twice_daily" && <label>Second time<input type="time" value={secondTime} onChange={e=>setSecondTime(e.target.value)} required/></label>}
         </div>
+        {runsPerDay>1 && tool.program?.modelStep && <p className="muted">Runs {runsPerDay} times a day. Each run uses the AI, which counts toward this tool’s monthly limit ({tool.modelStepCap} runs).</p>}
       </div>
       <div className="schedule-group"><h4>Where the result goes</h4>
         <label className="choice"><input type="checkbox" checked={outputs.today} onChange={e=>setOutputs({...outputs,today:e.target.checked})}/>Add to Today</label>
@@ -118,8 +133,8 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
         {when.kind!=="always" && <p className="muted">Every run is still saved in Today, with the reason when nothing is sent.</p>}
       </div>}
       <div className="schedule-summary">
-        <p data-testid="schedule-summary">{recurrence} at {time.replace(/^0/,"")} Macroscope will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.{when.kind!=="always"&&(outputs.notification||outputs.email)?` It will notify and email only when ${whenText(when)}.`:""}</p>
-        {tool.program && <SourceReview advanced={advanced} program={tool.program} route={modelRoute} routeDetails={routeDetails} connections={named} frequency={`${kind==="daily"?"every day":kind==="weekly"?`every ${weekdays[weekday-1]}`:`every month on day ${day}`} at ${time.replace(/^0/,"")}`}/>}
+        <p data-testid="schedule-summary">{frequencyText(frequency)} Macroscope will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.{when.kind!=="always"&&(outputs.notification||outputs.email)?` It will notify and email only when ${whenText(when)}.`:""}</p>
+        {tool.program && <SourceReview advanced={advanced} program={tool.program} route={modelRoute} routeDetails={routeDetails} connections={named} frequency={frequencyText(frequency).replace(/^E/,"e").replace(/^T/,"t").replace(" (or the last day)","")}/>}
         <p className="muted">Any send or change it plans waits in Needs you for your approval. A run missed while Macroscope was closed happens once when it opens.</p>
       </div>
       {saved

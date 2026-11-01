@@ -19,7 +19,7 @@ import type {
 import { CreateFlow } from "./CreateFlow";
 import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
-import { nextRunText, whenText } from "./Schedule";
+import { frequencyText, nextRunText, whenText } from "./Schedule";
 import { ToolVersions } from "./ToolVersions";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
@@ -507,10 +507,10 @@ function scheduleLine(s: Schedule | undefined) {
   if (s.status === "needs_reapproval") return "Schedule needs your approval again";
   if (s.status === "emergency_paused") return "Schedule paused by emergency stop";
   if (s.status === "paused") return "Schedule paused";
-  const when = s.frequency.kind === "daily" ? "Every day" : s.frequency.kind === "weekly" ? "Every week" : "Every month";
+  const when = s.frequency.kind === "weekly" ? `Every week at ${s.frequency.time.replace(/^0(?=\d:)/, "")}` : s.frequency.kind === "monthly" ? `Every month at ${s.frequency.time.replace(/^0(?=\d:)/, "")}` : frequencyText(s.frequency);
   const sends = [s.outputs.email ? `emails ${s.outputs.email.to}` : null, s.outputs.notification ? "notifies you" : null].filter(Boolean);
   const only = s.outputs.sendWhen && s.outputs.sendWhen.kind !== "always" && sends.length ? ` only when ${whenText(s.outputs.sendWhen)}` : "";
-  return `${when} at ${s.frequency.time.replace(/^0/, "")}${sends.length ? ` · ${sends.join(" and ")}${only}` : ""}${s.nextRunMs ? ` · ${nextRunText(s.nextRunMs)}` : ""}`;
+  return `${when}${sends.length ? ` · ${sends.join(" and ")}${only}` : ""}${s.nextRunMs ? ` · ${nextRunText(s.nextRunMs)}` : ""}`;
 }
 function friendlyLastRun(at: number | null) {
   if (at === null) return "Never run";

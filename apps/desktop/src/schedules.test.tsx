@@ -195,3 +195,24 @@ it("after turning a schedule on, the tool card shows it straight away",async()=>
   expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Every day at 7:00");
   expect(screen.getByRole("button",{name:"Schedule: Tide"})).toHaveTextContent("Edit schedule");
 });
+
+it("schedules a tool every hour or twice a day",async()=>{
+  const user=userEvent.setup(),backend=new MockBackend(),tool=await weather(backend);
+  vi.spyOn(backend,"getTool").mockResolvedValue(tool);
+  const save=vi.spyOn(backend,"setSchedule");
+  render(<ScheduleSection backend={backend} tool={tool}/>);
+  const frequency=await screen.findByRole("combobox",{name:"Frequency"});
+  await user.selectOptions(frequency,"twice_daily");
+  await user.clear(screen.getByLabelText("First time"));await user.type(screen.getByLabelText("First time"),"08:00");
+  await user.clear(screen.getByLabelText("Second time"));await user.type(screen.getByLabelText("Second time"),"08:00");
+  expect(screen.getByText("Choose two different times.")).toBeVisible();
+  await user.clear(screen.getByLabelText("Second time"));await user.type(screen.getByLabelText("Second time"),"18:30");
+  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Twice a day at 8:00 and 18:30 Macroscope will/);
+  await user.selectOptions(frequency,"hourly");
+  const minutes=screen.getByLabelText("Minutes past the hour");await user.clear(minutes);await user.type(minutes,"5");
+  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Every hour at :05 Macroscope will/);
+  await user.click(screen.getByLabelText("I approve this running unattended"));
+  await user.click(screen.getByRole("button",{name:"Turn on schedule"}));
+  await waitFor(()=>expect(save).toHaveBeenCalledWith(tool.id,expect.objectContaining({frequency:{kind:"hourly",time:"00:05"}})));
+  expect(await screen.findByText(/Schedule is on\./)).toBeVisible();
+});

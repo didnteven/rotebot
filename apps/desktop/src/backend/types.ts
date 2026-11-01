@@ -512,7 +512,8 @@ export type ShowState =
 
 // ---------- The seam ----------
 
-export type Frequency = {kind: "daily"; time: string} | {kind: "weekly"; weekday: number; time: string} | {kind: "monthly"; day: number; time: string};
+/** Hourly runs at the minute of `time`; twice daily runs at `time` and `secondTime`. */
+export type Frequency = {kind: "hourly"; time: string} | {kind: "twice_daily"; time: string; secondTime: string} | {kind: "daily"; time: string} | {kind: "weekly"; weekday: number; time: string} | {kind: "monthly"; day: number; time: string};
 /** Where a scheduled result is emailed: one address, approved with the schedule. */
 export interface EmailDelivery { connectorId: string; to: string }
 /** Which scheduled runs send the notification and email. Today still records every run. */

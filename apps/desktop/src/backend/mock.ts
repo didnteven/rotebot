@@ -332,9 +332,20 @@ export class MockBackend implements Backend {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(request.frequency.time)) throw new Error("Time must be HH:MM");
     if (request.frequency.kind === "weekly" && (request.frequency.weekday < 1 || request.frequency.weekday > 7)) throw new Error("Choose a valid weekday");
     if (request.frequency.kind === "monthly" && (request.frequency.day < 1 || request.frequency.day > 31)) throw new Error("Choose day 1–31");
+    const f0 = request.frequency;
+    if (f0.kind === "twice_daily" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(f0.secondTime) || f0.secondTime === f0.time)) throw new Error("Choose two different times");
+    const at = (time: string, base: Date) => { const d = new Date(base); const [hh, mm] = time.split(":").map(Number); d.setHours(hh, mm, 0, 0); return d; };
+    const soonest = (dates: Date[]) => dates.filter(d => +d > Date.now()).sort((a, b) => +a - +b)[0];
+    if (f0.kind === "hourly" || f0.kind === "twice_daily") {
+      const today = new Date(), tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      const times = f0.kind === "hourly" ? Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:${f0.time.slice(3)}`) : [f0.time, f0.secondTime];
+      const nextRun = soonest([today, tomorrow].flatMap(day => times.map(t => at(t, day))));
+      const schedule: import("./types").Schedule = {...clone(request),id:`schedule-${toolId}`,toolId,binding:tool.versionHash,folderIdentity:null,status:"enabled",approvedAtMs:Date.now(),lastDueMs:Date.now(),nextRunMs:+nextRun};
+      this.schedules.set(toolId,schedule); return clone(schedule);
+    }
     const next = new Date(); const [h,m] = request.frequency.time.split(":").map(Number); next.setHours(h,m,0,0);
     for (let i=0;i<370;i++) {
-      const f=request.frequency;
+      const f=f0 as Extract<import("./types").Frequency,{kind:"daily"|"weekly"|"monthly"}>;
       const matches=f.kind === "daily" || (f.kind === "weekly" ? ((next.getDay()+6)%7)+1===f.weekday : next.getDate()===Math.min(f.day,new Date(next.getFullYear(),next.getMonth()+1,0).getDate()));
       if (+next>Date.now() && matches) break;
       next.setDate(next.getDate()+1);
