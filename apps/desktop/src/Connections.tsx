@@ -94,18 +94,8 @@ export function Connections({
       <section aria-labelledby="custom-apis">
         <h2 id="custom-apis" className="list-heading">Custom APIs</h2>
         {apis.length === 0 && <p className="muted">Not sure what to connect? Describe your task and Macroscope finds the API for you.</p>}
-        <div className="connector-grid">
-          {apis.map((c) => (
-            <article className="card" key={c.id}>
-              <h3>{c.name}</h3>
-              <p className="badge">{stateName(c)}</p>
-              <ConnectorTools backend={backend} connectorId={c.id} />
-              <p><bdi>{c.mcpUrl}</bdi></p>
-              {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
-              {(c.state.kind === "error" || c.state.kind === "needs_reauth") && <p>Not working? Open <strong>Debug this connection</strong> below.</p>}
-              <ApiConnectionActions backend={backend} connector={c} changed={changed} />
-            </article>
-          ))}
+        <div className="connector-list">
+          {apis.map((c) => <ApiCard key={c.id} backend={backend} connector={c} changed={changed} />)}
         </div>
         {addingApi
           ? <ApiSetup backend={backend} changed={changed} />
@@ -114,22 +104,38 @@ export function Connections({
     </section>
   );
 }
-function ApiConnectionActions({ backend, connector, changed }: { backend: Backend; connector: ConnectorInfo; changed: () => Promise<void> }) {
+/** One saved API: name, status and Test up front; address, editing, tools and debugging behind Manage. */
+function ApiCard({ backend, connector, changed }: { backend: Backend; connector: ConnectorInfo; changed: () => Promise<void> }) {
+  const failing = connector.state.kind === "error" || connector.state.kind === "needs_reauth";
+  const [open, setOpen] = useState(failing);
   const { act, busy, error } = useAction();
   const [tested, setTested] = useState("");
   const [testing, setTesting] = useState(false);
   const [editing, setEditing] = useState<import("./backend/types").ApiConfig | null>(null);
-  if (editing) return <ApiSetup backend={backend} changed={changed} edit={{ id: connector.id, config: editing }} done={() => setEditing(null)} />;
-  return <>
-    <button disabled={busy} onClick={() => void act(async () => setEditing(await backend.getApiConfig(connector.id)))}>Edit API connection</button>
-    <button disabled={busy} onClick={() => void act(async () => { setTested(""); setTesting(true); try { await backend.testConnection(connector.id); setTested("Tested just now: it works."); } finally { setTesting(false); await changed(); } })}>Test API connection</button>
+  return <article className={`connector-row${open ? " card-open" : ""}`}>
+    <div className="connector-row-head">
+      <h3>{connector.name}</h3>
+      <span className="badge">{stateName(connector)}</span>
+      <button className="quiet" disabled={busy} aria-label="Test API connection" onClick={() => void act(async () => { setTested(""); setTesting(true); try { await backend.testConnection(connector.id); setTested("Tested just now: it works."); } finally { setTesting(false); await changed(); } })}>Test</button>
+      <button className="quiet" aria-expanded={open} aria-label={`Manage ${connector.name}`} onClick={() => setOpen(!open)}>{open ? "Close" : "Manage"}</button>
+    </div>
     {testing && <BotStatus label="Testing the API with your saved keys…" />}
     {tested && !error && <p role="status">{tested}</p>}
-    <button disabled={busy} onClick={() => void act(async () => { await backend.disconnect(connector.id); await changed(); })}>Remove API connection</button>
-    <ApiExamples backend={backend} id={connector.id} current={connector.mcpUrl} changed={changed} failing={connector.state.kind === "error" || connector.state.kind === "needs_reauth"} />
-    {busy && <BotStatus label="Updating API connection…" />}
+    {connector.state.kind === "error" && <p role="alert">{connector.state.message}</p>}
     {error && <p role="alert">{error}</p>}
-  </>;
+    {open && (editing
+      ? <ApiSetup backend={backend} changed={changed} edit={{ id: connector.id, config: editing }} done={() => setEditing(null)} />
+      : <div className="api-manage">
+          <p className="muted"><bdi>{connector.mcpUrl}</bdi></p>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void act(async () => setEditing(await backend.getApiConfig(connector.id)))}>Edit API connection</button>
+            <button className="quiet danger" disabled={busy} onClick={() => void act(async () => { await backend.disconnect(connector.id); await changed(); })}>Remove API connection</button>
+          </div>
+          <ConnectorTools backend={backend} connectorId={connector.id} />
+          <ApiExamples backend={backend} id={connector.id} current={connector.mcpUrl} changed={changed} failing={failing} />
+          {busy && <BotStatus label="Updating API connection…" />}
+        </div>)}
+  </article>;
 }
 /** Debug section of a saved API: explains why it is not working, repairs what it can, and finds addresses that do work. */
 function ApiExamples({ backend, id, current, failing, changed }: { backend: Backend; id: string; current: string; failing?: boolean; changed: () => Promise<void> }) {
@@ -155,42 +161,42 @@ function ApiExamples({ backend, id, current, failing, changed }: { backend: Back
     await backend.addApiAddress(id, url);
     await changed();
   }
-  return <details open={examples.length > 0 || !!failing || !!report}><summary>Debug this connection</summary>
-    <p className="muted">Checks the address without and with your keys and explains what is wrong. A key pasted with something extra, such as “Bearer”, is repaired. If the address itself is wrong, your selected model then reads the service's public documentation (never your keys or data) to look for the right one, each candidate is tested with your keys, and you can switch with one click.</p>
+  return <details open={!!failing || !!report}><summary>Debug this connection</summary>
+    <p className="muted">Finds what’s wrong and fixes what it can. Your keys and data are never sent to the AI.</p>
     <button disabled={busy} className="primary" onClick={() => run("Checking the address without keys, then with your saved keys…", async () => {
       const result = await backend.debugApiConnection(id); setReport(result);
       if (result.fixed) { try { await backend.testConnection(id); } finally { await changed(); } }
       else if (result.tryExamples) await findWorking(true);
     })}>Check and fix this connection</button>
     {busy && working && <BotStatus label={working} />}
-    {better && <div role="status" aria-label="Working address found">
+    {better && (failing || report) && <div role="status" aria-label="Working address found">
       <h4>Found an address that works</h4>
-      <p><bdi>{better.url}</bdi></p><p>It returns: <bdi>{better.result}</bdi></p>
-      <p>Your keys work on this service. The address saved with this connection, <bdi>{current}</bdi>, is not one that works, but any path on the service can be used with the same keys.</p>
+      <p><bdi>{better.url}</bdi></p>
+      <p className="muted">Your keys work here, so this connection can use this address instead.</p>
       <button className="primary" disabled={busy} onClick={() => run("Saving that path on this connection…", () => useAddress(better.url))}>Use this path on this connection</button>
     </div>}
     {report && <div aria-label="Debug report">
       <ol>{report.steps.map((step, i) => <li key={i}><strong>{step.ok ? "✓" : "✗"} {step.label}.</strong> {step.detail}</li>)}</ol>
       <p role="status"><strong>{report.verdict}</strong></p>
     </div>}
-    {(report?.tryExamples || examples.length > 0 || failing) && <>
-      <p className="muted">Your selected, connected model reads the API's public documentation (or uses what it knows of the service) and looks for addresses that work. It is sent the API's name, address and documentation only, never your keys or data. Only the field names that come back are kept.</p>
-      <button disabled={busy} onClick={() => void findWorking()}>{examples.length ? "Find more working addresses" : "Find working addresses"}</button>
-    </>}
+    {(report?.tryExamples || examples.length > 0 || failing) && <button className="quiet" disabled={busy} onClick={() => void findWorking()}>{examples.length ? "Find more working addresses" : "Find working addresses"}</button>}
     {allChecked && !anyWorks && <div role="alert" aria-label="Nothing worked">
       <h4>Every example was checked and none worked</h4>
       <p>First re-check your keys: choose <strong>Edit API connection</strong> above and paste them again, making sure each goes in the right box. Then check the address against the service's documentation. This is what each call said:</p>
       <ul>{examples.map(e => <li key={e.url}><bdi>{e.url}</bdi>: {e.result}</li>)}</ul>
     </div>}
-    {examples.map(e => <article key={e.url} aria-label={e.label}>
-      <h4>{e.label}</h4><p>{e.note}</p><p><bdi>{e.url}</bdi></p>
-      {e.ok !== null && <p role="status">{e.ok ? "Works. It returns: " : "Failed: "}<bdi>{e.result}</bdi></p>}
-      {e.ok === false && /authentication failed|refused access|credential/i.test(e.result ?? "") && <p>Re-check your keys: use Edit API connection and paste them again.</p>}
-      <div className="actions">
-        <button disabled={busy} onClick={() => run(`Running “${e.label}” with your saved keys…`, async () => setExamples(await backend.runApiExample(id, e.url)))}>{e.ok === null ? "Run this example" : "Run again"}</button>
-        {e.ok === true && <button disabled={busy} onClick={() => run("Saving that path on this connection…", () => useAddress(e.url))}>Use this path</button>}
+    {examples.length > 0 && <details className="api-examples"><summary>Addresses checked · {examples.filter(e => e.ok).length} of {examples.length} work</summary>
+    {examples.map(e => <article key={e.url} aria-label={e.label} className="api-example">
+      <div className="api-example-head">
+        <strong>{e.ok === true ? "✓" : e.ok === false ? "✗" : "○"} {e.label}</strong>
+        <button className="quiet" disabled={busy} onClick={() => run(`Running “${e.label}” with your saved keys…`, async () => setExamples(await backend.runApiExample(id, e.url)))}>{e.ok === null ? "Run this example" : "Run again"}</button>
+        {e.ok === true && e.url !== current && <button className="quiet" disabled={busy} onClick={() => run("Saving that path on this connection…", () => useAddress(e.url))}>Use this path</button>}
       </div>
+      <p className="muted"><bdi>{e.url}</bdi></p>
+      {e.ok === false && <p role="status" className="muted">Failed: <bdi>{e.result}</bdi></p>}
+      {e.ok === true && <details><summary>What it returns</summary><p role="status" className="muted">Works. It returns: <bdi>{e.result}</bdi></p></details>}
     </article>)}
+    </details>}
     {error && <p role="alert">{error}</p>}
   </details>;
 }

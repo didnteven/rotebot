@@ -859,3 +859,9 @@ button.bot-edit-button:hover:not(:disabled) .bot-edit-glyph, button.bot-edit-but
 .more-menu .menu > button, .more-menu .menu .ghost { background: transparent; border-color: transparent; box-shadow: none; }
 .more-menu .menu > button:hover, .more-menu .menu .ghost:hover { background: var(--info-surface); }
 .more-menu .menu > button.danger { color: var(--danger, #b42318); }
+.connector-row-head h3 { font-size: 17px; margin: 0; flex: 1 1 auto; }
+.api-manage { margin-top: 12px; display: grid; gap: 8px; }
+.api-example { padding: 8px 0; border-top: 1px solid var(--border); }
+.api-example-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.api-example-head strong { flex: 1 1 auto; }
+.api-example p { margin: 4px 0; overflow-wrap: anywhere; }

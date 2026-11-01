@@ -209,6 +209,7 @@ test("one button explains the problem, finds and tests addresses, and offers a o
   const info = await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/v1", auth: "none", headerName: "", docsUrl: null });
   const changed = vi.fn(async () => {});
   render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={changed} />);
+  await userEvent.click(screen.getByRole("button", { name: "Manage Bank accounts" }));
   await userEvent.click(screen.getByText(/Debug this connection/));
   const originalSuggest = backend.suggestApiExamples.bind(backend); let release!: () => void;
   vi.spyOn(backend, "suggestApiExamples").mockImplementation(async id => { await new Promise<void>(r => { release = r; }); return originalSuggest(id); });
@@ -218,7 +219,7 @@ test("one button explains the problem, finds and tests addresses, and offers a o
   expect(await screen.findByText(/Looking for addresses that work/)).toBeVisible();
   release();
   const found = await screen.findByLabelText("Working address found");
-  expect(found).toHaveTextContent("https://api.example.com/accounts"); expect(found).toHaveTextContent("balance: {available: number}");
+  expect(found).toHaveTextContent("https://api.example.com/accounts");
   const add = vi.spyOn(backend, "addApiAddress");
   await userEvent.click(within(found).getByRole("button", { name: "Use this path on this connection" }));
   await waitFor(() => expect(add).toHaveBeenCalledWith(info.id, "https://api.example.com/accounts"));
@@ -236,19 +237,20 @@ test("when every example fails the person is told to re-check their keys and sho
     { label: "Profile", url: "https://api.example.com/me", note: "", ok: false, result: "The service says that address does not exist (404).", testedAtMs: 1 },
   ]);
   render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
+  await userEvent.click(screen.getByRole("button", { name: "Manage Bank accounts" }));
   await userEvent.click(screen.getByText(/Debug this connection/));
   const alert = await screen.findByRole("alert", { name: "Nothing worked" });
   expect(alert).toHaveTextContent("re-check your keys");
   expect(alert).toHaveTextContent("https://api.example.com/accounts: API authentication failed");
   expect(alert).toHaveTextContent("https://api.example.com/me: The service says that address does not exist");
-  expect(screen.getByLabelText("List accounts")).toHaveTextContent("Re-check your keys: use Edit API connection");
+  expect(screen.getByLabelText("List accounts")).toHaveTextContent("Failed: API authentication failed");
 });
 
-test("a failing API connection points to the debug check", async () => {
+test("a failing API connection opens on its own with the debug check ready", async () => {
   const backend = new MockBackend();
   const info = await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/v1", auth: "none", headerName: "", docsUrl: null });
   const failing = { ...info, state: { kind: "error" as const, message: "The service says that address does not exist (404)." } };
   render(<Connections backend={backend} connectors={[failing]} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
-  expect(screen.getByText(/Not working\?/)).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent("does not exist (404)");
   expect(screen.getByRole("button", { name: "Check and fix this connection" })).toBeVisible();
 });
