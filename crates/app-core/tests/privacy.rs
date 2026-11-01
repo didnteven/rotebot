@@ -115,7 +115,7 @@ async fn export_is_structural_create_only_and_refuses_symlink_swaps() {
         }
     }
     let readme = std::fs::read_to_string(path.join("README.txt")).unwrap();
-    assert!(readme.contains("column names only") && readme.contains("Runs in Macroscope"));
+    assert!(readme.contains("column names only") && readme.contains("Runs in Rotebot"));
     assert!(core
         .export_tool(&tool.summary_row.id, &handle.handle_id)
         .is_err());

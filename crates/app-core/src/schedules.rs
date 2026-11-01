@@ -640,7 +640,7 @@ impl AppCore {
                 .filter(|s| started_at_ms - s.last_due_ms >= 60_000)
                 .map(|s| {
                     format!(
-                        "Missed at {} (Macroscope was closed); ran at {}",
+                        "Missed at {} (Rotebot was closed); ran at {}",
                         instant(s.last_due_ms, self.schedule_timezone()).format("%-H:%M"),
                         instant(started_at_ms, self.schedule_timezone()).format("%-H:%M")
                     )
@@ -816,7 +816,7 @@ impl AppCore {
             };
             if now - due >= 60_000 {
                 entry.note = Some(format!(
-                    "Missed at {time} (Macroscope was closed); ran at {}",
+                    "Missed at {time} (Rotebot was closed); ran at {}",
                     instant(now, tz).format("%-H:%M")
                 ));
             }
@@ -979,7 +979,7 @@ impl AppCore {
         .take(150)
         .collect();
         let body: String = text.chars().take(20_000).collect::<String>()
-            + "\n\n— Sent by your Macroscope schedule";
+            + "\n\n— Sent by your Rotebot schedule";
         tokio::time::timeout(
             std::time::Duration::from_secs(60),
             mailer.send(&email.connector_id, &email.to, &subject, &body),

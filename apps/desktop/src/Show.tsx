@@ -63,7 +63,7 @@ function ActivityLog({
           </p>
           {state.accessibility !== "granted" && (
             <p>
-              Enable Accessibility for Macroscope in macOS System Settings, then
+              Enable Accessibility for Rotebot in macOS System Settings, then
               check again. You can describe a task without recording.
             </p>
           )}
@@ -261,7 +261,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     sessionRef.current=id;setSession(id);setPollError(null);
     setKept(await backend.listRecordingFrames(id));setStarted(Date.now());setElapsed(0);setStep(1);
   }
-  const titles=["Show Macroscope what to do","Recording","Check what will be sent","What we understood","Create the tool"];
+  const titles=["Show Rotebot what to do","Recording","Check what will be sent","What we understood","Create the tool"];
   return <section className="card recording-flow" aria-label="Record a task">
     {step > 0 && step < 4 && <p className="muted">Back discards this recording and returns to My tools.</p>}
     {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard(true))}>Back</button>}
@@ -271,7 +271,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     {(error || pollError) && <p>Check your settings or discard this recording and start again.</p>}
     {busy && <BotStatus label={step===2?"Analyzing your recording…":"Preparing your recording…"} />}
     {step===0 && <>
-      <p>Choose one window and show Macroscope a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
+      <p>Choose one window and show Rotebot a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
       <p>Password fields and private windows are always excluded. After you stop, you can choose how much other sensitive text to hide before anything is sent. That's off until you turn it on.</p>
       <p className="muted">Hiding text can miss things. Always check every image before sending.</p>
       {captureStatus===null ? <p role="status">Checking screen recording…</p> : captureStatus.captureAvailable ?
@@ -279,7 +279,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
           <p className="notice notice-info">Screen recording isn't set up on this Mac yet</p>
           {captureStatus.reason==="picker_identity_unavailable" && <p>Window recording needs macOS 15.2 or later to identify the window you choose safely.</p>}
           {captureStatus.helperAvailable && captureStatus.reason!=="picker_identity_unavailable" && <>
-            <p>Macroscope needs both of these. Switch Macroscope on in each, then quit and reopen the app. This page updates by itself.</p>
+            <p>Rotebot needs both of these. Switch Rotebot on in each, then quit and reopen the app. This page updates by itself.</p>
             <div className="actions">
               <button disabled={busy} onClick={()=>void act(async()=>{const next = await backend.requestRecordingPermission();await backend.openPrivacySettings("screen_recording");setCaptureStatus(next);})}>Open Screen Recording settings</button>
               <span role="status">{captureStatus.screenRecordingGranted ? "Screen Recording: on" : "Screen Recording: off"}</span>
@@ -377,7 +377,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
           <p>The tool reads this through a read-only connection, so it doesn’t need to open or click anything. You approve what it can read before it is built.</p>
           <ul>{need.connectors.map(c=><li key={c.id}>{c.name}: {c.state.kind==="connected"?"connected":"not connected yet"}{c.state.kind!=="connected" && <> <button disabled={busy} onClick={()=>createFlow.connect(c.id)}>Connect {c.name}</button></>}</li>)}
           {need.otherNames.map(n=><li key={n}>{n}: no built-in connection. <button disabled={busy} onClick={()=>void act(async()=>{ const r=await backend.findConnectors(n); setFound(f=>({...f,[n]:r})); })}>Find a connector for {n}</button>
-            {found[n] && (found[n].length===0 ? <p className="muted">No connector found in the public registry. You can add one by its address on the Connections page.</p> : <><p className="muted">From the public MCP registry. These are not verified by Macroscope: check the publisher before you sign in.</p>
+            {found[n] && (found[n].length===0 ? <p className="muted">No connector found in the public registry. You can add one by its address on the Connections page.</p> : <><p className="muted">From the public MCP registry. These are not verified by Rotebot: check the publisher before you sign in.</p>
               <ul>{found[n].map(c=><li key={c.url}><strong>{c.name}</strong> · published by {c.publisher}<br/>{c.description}<br/><code>{c.url}</code> <button disabled={busy} onClick={()=>void act(async()=>{ await backend.setConnectorUrl("custom",c.url); createFlow.connect("custom"); })}>Use this address</button></li>)}</ul></>)}</li>)}</ul>
           {need.connectors.some(c=>c.state.kind!=="connected") && <p className="muted">Connect it, then come back here. Your recording stays on this screen.</p>}
         </section>; })()}
@@ -385,7 +385,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       {!!understood.constants.length && <><h3>What stays the same</h3><ul>{understood.constants.map(c=><li key={c.name}>{c.name}: {c.value}</li>)}</ul></>}
       <p>Result: {understood.output_description}</p><p>When: {understood.trigger}</p>
       {!!understood.ambiguities.length && <><h3>Still unclear</h3><ul>{understood.ambiguities.map((a,i)=><li key={i}>{a}</li>)}</ul></>}
-      <p>Check each choice below. The suggested choices are already selected; “Any is fine” lets Macroscope choose within the plan.</p>
+      <p>Check each choice below. The suggested choices are already selected; “Any is fine” lets Rotebot choose within the plan.</p>
       {understood.questions.map(q=><fieldset key={q.id} disabled={busy}><legend>{q.prompt}</legend>{q.options.map(o=><label className="recording-choice" key={o.id}>
         <input type="radio" name={`recording-${q.id}`} value={o.id} checked={answers[q.id]===o.id} onChange={()=>setAnswers(a=>({...a,[q.id]:o.id}))}/>{o.any_is_fine?"Any is fine":o.label}{q.default===o.id?" (suggested)":""}
       </label>)}</fieldset>)}

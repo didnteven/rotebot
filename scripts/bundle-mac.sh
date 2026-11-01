@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Macroscope.app for this Mac (unsigned, for local use) with the Show observer
+# Build Rotebot.app for this Mac (unsigned, for local use) with the Show observer
 # inside the bundle, where the app looks for it (Contents/MacOS/macroscope-observer).
 # Usage: scripts/bundle-mac.sh [--release]
 set -euo pipefail
@@ -17,7 +17,7 @@ fi
 (cd apps/desktop && npx tauri build $profile_flag --bundles app)
 
 target_dir="${CARGO_TARGET_DIR:-target}"
-app="$target_dir/$profile_dir/bundle/macos/Macroscope.app"
+app="$target_dir/$profile_dir/bundle/macos/Rotebot.app"
 cp native/macos-observer/.build/release/macroscope-observer "$app/Contents/MacOS/macroscope-observer"
 cp "$target_dir/$profile_dir/macroscope-runner" "$app/Contents/MacOS/macroscope-runner"
 cp "$target_dir/$profile_dir/macroscope-runner-launch" "$app/Contents/MacOS/macroscope-runner-launch"

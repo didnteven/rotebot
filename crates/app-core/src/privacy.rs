@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 impl AppCore {
     pub(crate) fn ensure_active(&self) -> CoreResult<()> {
         if self.inner.deleting.load(Ordering::SeqCst) {
-            return Err(CoreError::Invalid("Local data deletion is in progress. Retry deletion or restart Macroscope to finish cleanup.".into()));
+            return Err(CoreError::Invalid("Local data deletion is in progress. Retry deletion or restart Rotebot to finish cleanup.".into()));
         }
         Ok(())
     }
@@ -53,9 +53,9 @@ impl AppCore {
             .collect::<Vec<_>>()
             .join("\n");
         let readme = if tool.program.is_some() {
-            format!("{}\n\nProgram (sandboxed). Runs through Macroscope runtime v2. Host checks cover selected input, deterministic bytes, output format, example lines and source integrity. The host previews and commits one create-only output after approval.\n", row.name)
+            format!("{}\n\nProgram (sandboxed). Runs through Rotebot runtime v2. Host checks cover selected input, deterministic bytes, output format, example lines and source integrity. The host previews and commits one create-only output after approval.\n", row.name)
         } else {
-            format!("{}\n\nWhat it does:\n{}\n\nChecked by Macroscope's host checks: confirmed mapping rules, selected CSV, row counts, source integrity and malformed-input stop cases.\nRuns in Macroscope with the csv-mapping engine; this folder is not a standalone application.\nNo user data or sample rows are included. contract.json contains column names only.\n", row.name, rules)
+            format!("{}\n\nWhat it does:\n{}\n\nChecked by Rotebot's host checks: confirmed mapping rules, selected CSV, row counts, source integrity and malformed-input stop cases.\nRuns in Rotebot with the csv-mapping engine; this folder is not a standalone application.\nNo user data or sample rows are included. contract.json contains column names only.\n", row.name, rules)
         };
         let files = vec![
             (

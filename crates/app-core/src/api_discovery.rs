@@ -713,7 +713,7 @@ impl AppCore {
                     }
                     .map_err(|e| match e {
                         GatewayError::MalformedOutput => CoreError::Invalid(
-                            "The model's answer wasn't in the form Macroscope needs. Press Check access again; the answer can differ each time.".into(),
+                            "The model's answer wasn't in the form Rotebot needs. Press Check access again; the answer can differ each time.".into(),
                         ),
                         other => CoreError::Invalid(other.to_string()),
                     })?;

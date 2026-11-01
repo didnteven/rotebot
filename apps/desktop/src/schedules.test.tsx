@@ -47,7 +47,7 @@ it("Schedule requires explicit unattended approval and shows next run and reappr
   const schedule:Schedule={id:"s",toolId:tool.id,frequency:{kind:"daily",time:"07:00"},outputs:{today:true,notification:true,folder:null,filename:"weather-{date}.txt"},versionHash:tool.versionHash,binding:"b",folderIdentity:null,status:"enabled",approvedAtMs:Date.now(),lastDueMs:Date.now(),nextRunMs:+tomorrow};
   vi.spyOn(backend,"listSchedules").mockResolvedValue([]);const save=vi.spyOn(backend,"setSchedule").mockResolvedValue(schedule);
   const view=render(<ScheduleSection backend={backend} tool={tool}/>);
-  const button=screen.getByRole("button",{name:"Turn on schedule"});expect(button).toBeDisabled();expect(screen.getByText(/Every day at 7:00 Macroscope will read data from api.open-meteo.com, run Weather summary/)).toBeVisible();
+  const button=screen.getByRole("button",{name:"Turn on schedule"});expect(button).toBeDisabled();expect(screen.getByText(/Every day at 7:00 Rotebot will read data from api.open-meteo.com, run Weather summary/)).toBeVisible();
   await user.click(screen.getByLabelText("I approve this running unattended"));expect(button).toBeEnabled();await user.click(button);
   expect(save).toHaveBeenCalledWith(tool.id,expect.objectContaining({approved:true,versionHash:tool.versionHash,outputs:expect.objectContaining({today:true,notification:true})}));expect(await screen.findByText("Next run: Tomorrow 7:00")).toBeVisible();
   expect(screen.getByText(/Schedule is on\./)).toBeVisible();expect(screen.queryByText("Review the summary, then approve the schedule to continue.")).toBeNull();await user.selectOptions(screen.getByLabelText("Frequency"),"monthly");expect(screen.getByText("Approve the changes to update the schedule.")).toBeVisible();expect(screen.getByRole("button",{name:"Update schedule"})).toBeDisabled();expect(screen.getByLabelText("Day")).toBeVisible();
@@ -60,7 +60,7 @@ it("Schedule file name template comes from the tool's output name",()=>{
   expect(datedFilename(undefined)).toBe("result-{date}.txt");
 });
 it("Settings login toggle is opt-in and persists through the backend",async()=>{
-  const backend=new MockBackend(),user=userEvent.setup();const set=vi.spyOn(backend,"setLoginEnabled");render(<App backend={backend}/>);await user.click(screen.getByRole("button",{name:"Settings"}));const toggle=await screen.findByLabelText("Open Macroscope at login so schedules run");expect(toggle).not.toBeChecked();await user.click(toggle);expect(set).toHaveBeenCalledWith(true);await waitFor(()=>expect(toggle).toBeChecked());
+  const backend=new MockBackend(),user=userEvent.setup();const set=vi.spyOn(backend,"setLoginEnabled");render(<App backend={backend}/>);await user.click(screen.getByRole("button",{name:"Settings"}));const toggle=await screen.findByLabelText("Open Rotebot at login so schedules run");expect(toggle).not.toBeChecked();await user.click(toggle);expect(set).toHaveBeenCalledWith(true);await waitFor(()=>expect(toggle).toBeChecked());
 });
 
 const mailbox=(over:Partial<ConnectorInfo>={}):ConnectorInfo=>({id:"mail-gmail",name:"Gmail (app password)",category:"mail",mcpUrl:"https://imap.gmail.com",registration:"api",verification:"unverified",clientSetup:null,redirectUri:null,docsUrl:null,state:{kind:"connected",sinceMs:1,toolCount:7},hasClientCredentials:false,mail:{help:"",customServer:false,imapHost:"imap.gmail.com",imapPort:993,smtpHost:"smtp.gmail.com",smtpPort:465,smtpStarttls:false,email:"me@example.com"},...over});
@@ -207,10 +207,10 @@ it("schedules a tool every hour or twice a day",async()=>{
   await user.clear(screen.getByLabelText("Second time"));await user.type(screen.getByLabelText("Second time"),"08:00");
   expect(screen.getByText("Choose two different times.")).toBeVisible();
   await user.clear(screen.getByLabelText("Second time"));await user.type(screen.getByLabelText("Second time"),"18:30");
-  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Twice a day at 8:00 and 18:30 Macroscope will/);
+  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Twice a day at 8:00 and 18:30 Rotebot will/);
   await user.selectOptions(frequency,"hourly");
   const minutes=screen.getByLabelText("Minutes past the hour");await user.clear(minutes);await user.type(minutes,"5");
-  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Every hour at :05 Macroscope will/);
+  expect(screen.getByTestId("schedule-summary")).toHaveTextContent(/^Every hour at :05 Rotebot will/);
   await user.click(screen.getByLabelText("I approve this running unattended"));
   await user.click(screen.getByRole("button",{name:"Turn on schedule"}));
   await waitFor(()=>expect(save).toHaveBeenCalledWith(tool.id,expect.objectContaining({frequency:{kind:"hourly",time:"00:05"}})));

@@ -90,7 +90,7 @@ impl RunnerEngine {
         let bundled = target.join("macroscope-runner.sb");
         if in_bundle && (!runner.is_file() || !bundled.is_file()) {
             return Err(BrokerError::Runner(
-                "The sandbox runner is missing from this app; reinstall Macroscope".into(),
+                "The sandbox runner is missing from this app; reinstall Rotebot".into(),
             ));
         }
         let profile = if in_bundle || bundled.exists() {
@@ -390,7 +390,7 @@ mod discovery_tests {
             .err()
             .expect("incomplete bundle must fail");
         assert!(matches!(error, BrokerError::Runner(message)
-            if message == "The sandbox runner is missing from this app; reinstall Macroscope"));
+            if message == "The sandbox runner is missing from this app; reinstall Rotebot"));
     }
 
     #[test]

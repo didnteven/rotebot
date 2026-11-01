@@ -60,7 +60,7 @@ pub struct Auth {
     pub extra_authorize_params: BTreeMap<String, String>,
     #[serde(default)]
     pub client_setup: Option<String>,
-    /// An OAuth client registered for Macroscope itself. When present the person goes straight to
+    /// An OAuth client registered for Rotebot itself. When present the person goes straight to
     /// the service's sign-in; their own client (saved in Connections) still takes priority.
     #[serde(default)]
     pub bundled_client_id: Option<String>,

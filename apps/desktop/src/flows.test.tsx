@@ -241,7 +241,7 @@ describe("Tell and deterministic runs", () => {
 it("opens Record a task from My tools and returns to the list", async () => {
   const { user } = await open();
   await user.click(button("Record a task"));
-  expect(screen.getByRole("heading", { name: "Show Macroscope what to do" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Show Rotebot what to do" })).toBeVisible();
   await user.click(button("Back"));
   expect(button("Describe a task")).toBeVisible();
 });
@@ -574,7 +574,7 @@ it("keeps privacy to two controls and shows no size for empty data", async () =>
   await user.click(button("Settings"));
   await user.click(screen.getByRole("tab", { name: "Privacy & data" }));
   const region = await screen.findByRole("region", {
-    name: "Data stored by Macroscope",
+    name: "Data stored by Rotebot",
   });
   expect(screen.getByRole("group", { name: "Cloud models" })).toBeVisible();
   expect(document.querySelector("dl.explanations")).toBeNull();

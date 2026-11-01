@@ -93,7 +93,7 @@ export function Connections({
       })()}
       <section aria-labelledby="custom-apis">
         <h2 id="custom-apis" className="list-heading">Custom APIs</h2>
-        {apis.length === 0 && <p className="muted">Not sure what to connect? Describe your task and Macroscope finds the API for you.</p>}
+        {apis.length === 0 && <p className="muted">Not sure what to connect? Describe your task and Rotebot finds the API for you.</p>}
         <div className="connector-list">
           {apis.map((c) => <ApiCard key={c.id} backend={backend} connector={c} changed={changed} />)}
         </div>

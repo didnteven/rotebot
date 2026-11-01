@@ -29,7 +29,7 @@ pub enum ReadError {
     Transport,
     #[error("The service says that address does not exist (404). If it is only the service's base address, add the path of the data you want, as the service's instructions give it")]
     NotFound,
-    #[error("The service returned one page of a longer list, in a kind of paging Macroscope cannot follow yet; use an address that returns the whole list")]
+    #[error("The service returned one page of a longer list, in a kind of paging Rotebot cannot follow yet; use an address that returns the whole list")]
     Paginated,
     #[error("The service returned HTTP {0}; no retry was attempted")]
     Http(u16),
@@ -189,7 +189,7 @@ pub async fn get_with_keys(
         .retry(reqwest::retry::never())
         .resolve_to_addrs(host, &addresses)
         .timeout(timeout)
-        .user_agent(concat!("Macroscope/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Rotebot/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| ReadError::Transport)?;
     let mut request = client.get(url.clone());

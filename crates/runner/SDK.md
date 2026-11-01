@@ -1,4 +1,4 @@
-# Macroscope runtime v2 SDK (1.0)
+# Rotebot runtime v2 SDK (1.0)
 
 Write plain JavaScript defining a synchronous global `function run() { ... }`.
 Available JavaScript built-ins (standard ES2023 operations): `Array`, `Object`,

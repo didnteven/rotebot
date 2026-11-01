@@ -6,11 +6,11 @@ const sampleDraft: TaskDraftV2 = {
   schema_version: 2, goal: "Create a weekly order summary", trigger: "When you choose to run it",
   steps: [
     {id:"read",order:1,app:"Spreadsheet",action:"Read the order list you select",capability:"file_read",evidence_frames:[1]},
-    {id:"save",order:2,app:"Macroscope",action:"Create a new summary file",capability:"output_file",evidence_frames:[2]},
+    {id:"save",order:2,app:"Rotebot",action:"Create a new summary file",capability:"output_file",evidence_frames:[2]},
     {id:"send",order:3,app:"Mail",action:"Send the summary to your team",capability:"manual",evidence_frames:[3]},
   ],
   variables:[{name:"Order list",description:"Choose the current week's file"}], constants:[],
-  output_description:"One new weekly summary file", unsupported_steps:[{step_id:"send",reason:"Macroscope cannot control Mail or send messages"}], ambiguities:[],
+  output_description:"One new weekly summary file", unsupported_steps:[{step_id:"send",reason:"Rotebot cannot control Mail or send messages"}], ambiguities:[],
   questions: [
     {id:"format",prompt:"Which summary format?",evidence_frames:[1],default:"text",options:[{id:"text",label:"Plain text",any_is_fine:false},{id:"any",label:"Any is fine",any_is_fine:true}]},
     {id:"group",prompt:"How should orders be grouped?",evidence_frames:[2],default:"date",options:[{id:"date",label:"By date",any_is_fine:false},{id:"any",label:"Any is fine",any_is_fine:true}]},

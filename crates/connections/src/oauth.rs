@@ -433,7 +433,7 @@ impl OAuthClient {
                 .as_ref()
                 .ok_or(OAuthError::Discovery)?;
             http::json(self.http.post(endpoint).json(&serde_json::json!({
-                "client_name":"Macroscope", "redirect_uris":[redirect_uri],
+                "client_name":"Rotebot", "redirect_uris":[redirect_uri],
                 "grant_types":["authorization_code", "refresh_token"], "response_types":["code"],
                 "token_endpoint_auth_method":"none"
             })).send().await.map_err(|_| McpError::Transport)?).await?
@@ -804,7 +804,7 @@ async fn callback_client(
         Err(_) => ("404 Not Found", "Not found."),
     };
     let page = format!(
-        "<!doctype html><html><head><title>Macroscope</title></head><body>{body}</body></html>"
+        "<!doctype html><html><head><title>Rotebot</title></head><body>{body}</body></html>"
     );
     let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{page}", page.len());
     let _ = tokio::time::timeout(Duration::from_secs(1), async {

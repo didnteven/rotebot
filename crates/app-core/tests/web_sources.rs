@@ -858,7 +858,7 @@ mod schedules {
         assert_eq!(ran.detail.as_deref(), Some("Finished"));
         assert_eq!(
             entries[0].note.as_deref(),
-            Some("Missed at 7:00 (Macroscope was closed); ran at 9:14")
+            Some("Missed at 7:00 (Rotebot was closed); ran at 9:14")
         );
         assert!(std::fs::read_dir(&f.folder.display_path)
             .unwrap()
@@ -895,7 +895,7 @@ mod schedules {
         assert_eq!(entries[0].status, "done");
         assert_eq!(
             entries[0].note.as_deref(),
-            Some("Missed at 7:00 (Macroscope was closed); ran at 9:14")
+            Some("Missed at 7:00 (Rotebot was closed); ran at 9:14")
         );
         assert!(reopened
             .run_due_schedules(now + 30_000)

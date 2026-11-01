@@ -98,7 +98,7 @@ export function Settings({
       {confirmation && <p role="status">{confirmation}</p>}
       {info.debugBuild && info.secretStore === "file" && (
         <p className="muted">
-          Development build: secrets are stored in a private file in Macroscope's data folder instead of the Keychain.
+          Development build: secrets are stored in a private file in Rotebot's data folder instead of the Keychain.
         </p>
       )}
       <Notice error={error} />
@@ -269,7 +269,7 @@ export function Settings({
         </p>
       )}
       <h2>Preferences</h2>
-      <label className="choice"><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
+      <label className="choice"><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Rotebot at login so schedules run</label>
       <ThemePicker />
       <details><summary>About</summary><p className="muted">
         Version {info.version} · {info.platform}
@@ -278,7 +278,7 @@ export function Settings({
           : ""}
       </p>
       <p className="muted">Record a task: {show.kind === "unavailable" ? show.reason : "Available"}</p>
-      <p className="muted">Macroscope never signs in or out of Muse for you and never changes Muse's saved login.</p>
+      <p className="muted">Rotebot never signs in or out of Muse for you and never changes Muse's saved login.</p>
       </details>
     </section>
   );

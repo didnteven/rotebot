@@ -28,7 +28,7 @@ it.each<[AppInfo["secretStore"], boolean, boolean]>([
     await screen.findByRole("button", { name: "Try a sample" });
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const note = screen.queryByText(
-      "Development build: secrets are stored in a private file in Macroscope's data folder instead of the Keychain.",
+      "Development build: secrets are stored in a private file in Rotebot's data folder instead of the Keychain.",
     );
     if (visible) expect(note).toBeVisible();
     else expect(note).not.toBeInTheDocument();

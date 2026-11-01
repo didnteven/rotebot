@@ -1,4 +1,4 @@
-# Macroscope connections
+# Rotebot connections
 
 This crate implements host-owned remote MCP connection setup, verification, and local
 usage suggestions (ADR 0001 §2). It does not observe the desktop or start a browser.

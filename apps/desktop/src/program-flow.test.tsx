@@ -108,7 +108,7 @@ it("explains an example correction in plain words and keeps check shapes in one 
 
   await waitFor(() => expect(screen.getByRole("button", {name:"Build and test"})).toBeEnabled());
   await user.click(screen.getByRole("button",{name:"Build and test"}));
-  expect(await screen.findByText("The output didn’t match your example’s format — Macroscope asked the model to fix it.")).not.toBeVisible();
+  expect(await screen.findByText("The output didn’t match your example’s format — Rotebot asked the model to fix it.")).not.toBeVisible();
   expect(container.querySelectorAll("details")).toHaveLength(1);
   expect(screen.getByText(detail,{selector:"details p"})).not.toBeVisible();
   await user.click(screen.getByText("Details"));

@@ -408,7 +408,7 @@ impl AppCore {
             .is_err()
         {
             // Best-effort history must be observable without logging its payload.
-            eprintln!("Macroscope: activity persistence failed");
+            eprintln!("Rotebot: activity persistence failed");
         }
     }
 
@@ -426,7 +426,7 @@ impl AppCore {
                     state.failure = Some(BuildFailure {
                         kind: BuildFailureKind::Internal,
                         message:
-                            "Macroscope quit during this build. Start it again; your draft is kept."
+                            "Rotebot quit during this build. Start it again; your draft is kept."
                                 .into(),
                     });
                     row.state = serde_json::to_value(&state).unwrap_or(Value::Null);
@@ -461,7 +461,7 @@ impl AppCore {
                     self.activity(
                         "run",
                         "A run was interrupted and its result is unknown",
-                        Some("Check the external service and output folder. Macroscope never resends interrupted actions.".into()),
+                        Some("Check the external service and output folder. Rotebot never resends interrupted actions.".into()),
                     );
                 }
                 Ok(broker::ReconcileOutcome::NotPublished) => {
@@ -1717,7 +1717,7 @@ impl AppCore {
                 .persist_build(&slot.state, slot.draft_revision)
                 .is_err()
             {
-                eprintln!("Macroscope: failed build state could not be persisted");
+                eprintln!("Rotebot: failed build state could not be persisted");
             }
             let _ = slot.cancel.send(true);
             let _ = slot.tx.send(slot.state.clone());
@@ -1940,7 +1940,7 @@ impl AppCore {
                 .await
                 .is_err()
             {
-                eprintln!("Macroscope: build persistence or internal operation failed");
+                eprintln!("Rotebot: build persistence or internal operation failed");
                 if core
                     .fail_build(
                         &id,
@@ -1949,7 +1949,7 @@ impl AppCore {
                     )
                     .is_err()
                 {
-                    eprintln!("Macroscope: internal build failure could not be persisted");
+                    eprintln!("Rotebot: internal build failure could not be persisted");
                 }
             }
         });

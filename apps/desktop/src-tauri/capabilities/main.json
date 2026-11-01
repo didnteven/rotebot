@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Only the main window may call Macroscope's commands and subscribe to host events; no filesystem, shell, or opener plugin commands are exposed.",
+  "description": "Only the main window may call Rotebot's commands and subscribe to host events; no filesystem, shell, or opener plugin commands are exposed.",
   "windows": [
     "main"
   ],

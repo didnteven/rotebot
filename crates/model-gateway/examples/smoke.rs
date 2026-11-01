@@ -57,7 +57,7 @@ async fn main() {
         keychain_key().or_else(read_hidden)
     };
     let Some(key) = key else {
-        eprintln!("No key. Save one in Macroscope (Settings → Enter key…) or pass --prompt.");
+        eprintln!("No key. Save one in Rotebot (Settings → Enter key…) or pass --prompt.");
         std::process::exit(2);
     };
     let client = MetaResponsesClient::new(base.clone());

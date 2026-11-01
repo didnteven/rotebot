@@ -89,7 +89,7 @@ fn client(allow_insecure: bool) -> Result<reqwest::Client, FetchError> {
     reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         // Many public APIs refuse requests that do not name their client.
-        .user_agent(concat!("Macroscope/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Rotebot/", env!("CARGO_PKG_VERSION")))
         .https_only(!allow_insecure)
         // Follow redirects only back to the host that issued them; anything
         // else stops and is reported as a cross-host redirect below.

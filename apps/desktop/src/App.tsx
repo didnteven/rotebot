@@ -217,7 +217,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
       {customizingTool && status && <CustomBotStudio backend={backend} status={status} currentSeed={botIdentity(customizingTool.id)} title={customizingTool.name} useBot={seed => saveBotIdentity(customizingTool.id, seed)} close={() => setCustomizingTool(null)} openSettings={openSettings} />}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="sidebar">
-        <div className="brand"><BotAvatar size={36} />Macroscope</div>
+        <div className="brand"><BotAvatar size={36} />Rotebot</div>
         <nav aria-label="Main navigation">
           {navigation.map(({ item, label, secondary }, index) => (
             <button
@@ -255,7 +255,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
           {error && (
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}
-          {!status && !error && <BotStatus label="Loading Macroscope…" />}
+          {!status && !error && <BotStatus label="Loading Rotebot…" />}
           {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} run={id => void act(async () => { const tool = await backend.getTool(id); setCreating(false); setShowPanel(false); setRunning(tool); setDestination("Tools"); })} create={() => { setDestination("Tools"); setInitialInput(null); setCreating(true); }} />}
           <div hidden={destination !== "Tools"}>
             {destination === "Tools" && !creating && commonSuggestions}
@@ -296,7 +296,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                 />
               ) : libraryFailed ? (
                 <div role="alert">
-                  <p>Tools could not be loaded. Try reopening Macroscope.</p>
+                  <p>Tools could not be loaded. Try reopening Rotebot.</p>
                   <button onClick={() => void refreshTools()}>
                     Reload tools
                   </button>
@@ -309,7 +309,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                     <section className="empty-state">
                       <BotAvatar size={144} />
                       <h2>Turn a repetitive task into a tool.</h2>
-                      {status && !aiReady && <div className="notice notice-info"><p>First, connect an AI service so Macroscope can build your tools.</p><button className="primary" onClick={openSettings}>Connect an AI service</button></div>}
+                      {status && !aiReady && <div className="notice notice-info"><p>First, connect an AI service so Rotebot can build your tools.</p><button className="primary" onClick={openSettings}>Connect an AI service</button></div>}
                       <div className="actions">
                         <button
                           className={aiReady ? "primary" : undefined}

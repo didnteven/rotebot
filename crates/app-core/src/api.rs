@@ -29,7 +29,7 @@ pub struct ApiConfig {
 }
 pub const MAX_EXTRA_HEADERS: usize = 2;
 
-/// What people paste around a key: quotes, a leading `Authorization:` or `Bearer` (Macroscope adds
+/// What people paste around a key: quotes, a leading `Authorization:` or `Bearer` (Rotebot adds
 /// that itself, so a pasted one is sent twice), and stray spaces or line breaks. Keys never contain spaces.
 pub fn clean_key(raw: &str) -> String {
     let mut s = raw.trim().to_string();

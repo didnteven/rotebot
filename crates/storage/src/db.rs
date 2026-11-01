@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
-    #[error("database key rejected or file is not a Macroscope database")]
+    #[error("database key rejected or file is not a Rotebot database")]
     KeyRejected,
     #[error("database error: {0}")]
     Sql(String),

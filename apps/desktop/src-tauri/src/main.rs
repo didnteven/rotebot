@@ -115,7 +115,7 @@ async fn enter_api_key_native(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
 
 fn secret_storage(core: &AppCore) -> &'static str {
     match core.app_info().secret_store {
-        macroscope_vault::SecretStoreKind::File => "a private file in Macroscope's data folder",
+        macroscope_vault::SecretStoreKind::File => "a private file in Rotebot's data folder",
         _ => "your macOS Keychain",
     }
 }
@@ -127,7 +127,7 @@ async fn native_prompt(message: &str, hidden: bool, button: &str) -> Cmd<Option<
     }
     let hidden = if hidden { "with hidden answer " } else { "" };
     let script = format!(
-        r#"text returned of (display dialog "{message}" default answer "" {hidden}with title "Macroscope" buttons {{"Cancel", "{button}"}} default button "{button}")"#
+        r#"text returned of (display dialog "{message}" default answer "" {hidden}with title "Rotebot" buttons {{"Cancel", "{button}"}} default button "{button}")"#
     );
     // A dialog from a background osascript process opens without keyboard
     // focus, so typing goes to the window behind it. Activate it first.
@@ -157,7 +157,7 @@ async fn enter_secret_native(core: &AppCore, custom: bool) -> Cmd<ModelAccessSta
     } else {
         "Meta API key"
     };
-    let message = format!("Paste your {credential}. Macroscope stores it in {storage}.");
+    let message = format!("Paste your {credential}. Rotebot stores it in {storage}.");
     let Some(key) = native_prompt(&message, true, "Save key").await? else {
         return Ok(core.model_access().await);
     };
@@ -180,7 +180,7 @@ async fn enter_modal_token_native(core: &AppCore) -> Cmd<ModelAccessStatus> {
         return Ok(core.model_access().await);
     };
     let message = format!(
-        "Paste your Modal Token Secret (starts with ws-). Macroscope stores the token in {}.",
+        "Paste your Modal Token Secret (starts with ws-). Rotebot stores the token in {}.",
         secret_storage(core)
     );
     let Some(secret) = native_prompt(&message, true, "Save token").await? else {
@@ -249,7 +249,7 @@ async fn refresh_muse_status(core: State<'_, Core>) -> Cmd<ModelAccessStatus> {
 }
 
 /// Opens Terminal running `muse login`, only on this explicit click (ADR 0001 §1).
-/// Macroscope itself never signs in or touches Muse's saved login.
+/// Rotebot itself never signs in or touches Muse's saved login.
 #[tauri::command]
 async fn open_muse_sign_in() -> Cmd<()> {
     if !cfg!(target_os = "macos") {
@@ -805,7 +805,7 @@ fn get_api_config(core: State<'_, Core>, id: String) -> Cmd<ApiConfig> {
 }
 #[tauri::command]
 async fn save_api_search_key(core: State<'_, Core>) -> Cmd<()> {
-    let raw = native_prompt("Enter your Brave Search API key. API research sends service and action search labels to Brave. The key stays in Macroscope's secret store.", true, "Save").await?
+    let raw = native_prompt("Enter your Brave Search API key. API research sends service and action search labels to Brave. The key stays in Rotebot's secret store.", true, "Save").await?
         .ok_or_else(|| invalid("Search credential entry cancelled"))?;
     Ok(core
         .0
@@ -1140,7 +1140,7 @@ fn open_external<R: Runtime>(app: AppHandle<R>, conns: State<'_, Conns>, url: St
         && !conns.0.allow_documentation_url(&url)
     {
         return Err(invalid(
-            "That link is not on Macroscope's list of documentation sites.",
+            "That link is not on Rotebot's list of documentation sites.",
         ));
     }
     app.opener()
@@ -1216,7 +1216,7 @@ fn tool_menu_rows(tools: Vec<ToolSummary>) -> Vec<(String, String)> {
 
 fn tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
-    let open = MenuItem::with_id(app, "open", "Open Macroscope", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Rotebot", true, None::<&str>)?;
     menu.append(&open)?;
     for (id, label) in tool_menu_rows(app.state::<Core>().0.list_tools().unwrap_or_default()) {
         menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
@@ -1255,7 +1255,7 @@ fn tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     menu.append(&MenuItem::with_id(
         app,
         "quit",
-        "Quit Macroscope",
+        "Quit Rotebot",
         true,
         None::<&str>,
     )?)?;
@@ -1282,17 +1282,17 @@ fn open_main<R: Runtime>(app: &AppHandle<R>) {
 fn startup_failure_message(e: &CoreError, store: macroscope_vault::SecretStoreKind) -> String {
     match e.code() {
         "vault" if store == macroscope_vault::SecretStoreKind::File =>
-            "Macroscope couldn't read its private secrets file, so it can't open its encrypted data.\n\nCheck that dev-secrets in Macroscope's data folder belongs to you, with directory permissions 0700 and file permissions 0600."
+            "Rotebot couldn't read its private secrets file, so it can't open its encrypted data.\n\nCheck that dev-secrets in Rotebot's data folder belongs to you, with directory permissions 0700 and file permissions 0600."
                 .to_string(),
-        "vault" => "Macroscope couldn't read its key from your Keychain, so it can't open its \
-                    encrypted data.\n\nOpen Macroscope again and, when macOS asks, enter your Mac \
+        "vault" => "Rotebot couldn't read its key from your Keychain, so it can't open its \
+                    encrypted data.\n\nOpen Rotebot again and, when macOS asks, enter your Mac \
                     login password and choose Always Allow."
             .to_string(),
         "storage" => format!(
-            "Macroscope couldn't open its data folder.\n\n{e}\n\nIf this keeps happening, \
-             quit other copies of Macroscope and try again."
+            "Rotebot couldn't open its data folder.\n\n{e}\n\nIf this keeps happening, \
+             quit other copies of Rotebot and try again."
         ),
-        _ => format!("Macroscope couldn't start.\n\n{e}"),
+        _ => format!("Rotebot couldn't start.\n\n{e}"),
     }
 }
 
@@ -1310,7 +1310,7 @@ fn foreign_key_message(store: macroscope_vault::SecretStoreKind) -> String {
         _ => "this build keeps its key in your Keychain",
     };
     format!(
-        "Macroscope's data folder was encrypted with a key this copy doesn't have ({here}, and the \
+        "Rotebot's data folder was encrypted with a key this copy doesn't have ({here}, and the \
          folder was made by a build that kept its key somewhere else).\n\nStart fresh to move the old \
          folder aside as a backup and open with an empty one. Nothing is deleted."
     )
@@ -1333,7 +1333,7 @@ fn backup_path(data_dir: &std::path::Path, now: std::time::SystemTime) -> std::p
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = tray_menu(app.handle())?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Macroscope")
+        .tooltip("Rotebot")
         .menu(&menu)
         .on_menu_event(move |app, event| {
             let core = app.state::<Core>().0.clone();
@@ -1596,7 +1596,7 @@ fn main() {
             let data_dir = app.path().app_data_dir()?;
             let data_dir_for_backup = data_dir.clone();
             let vault = vault(&data_dir)?;
-            eprintln!("Macroscope secret store: {:?}", vault.kind());
+            eprintln!("Rotebot secret store: {:?}", vault.kind());
             let home = home_dir();
             let core = AppCore::new(CoreConfig {
                 data_dir,
@@ -1617,7 +1617,7 @@ fn main() {
                     let fresh = app
                         .dialog()
                         .message(foreign_key_message(vault.kind()))
-                        .title("Macroscope can't open its data")
+                        .title("Rotebot can't open its data")
                         .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
                         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
                             "Start fresh (keep a backup)".into(),
@@ -1648,7 +1648,7 @@ fn main() {
                     // Explain instead of crashing silently, then quit.
                     app.dialog()
                         .message(startup_failure_message(&e, vault.kind()))
-                        .title("Macroscope can't open")
+                        .title("Rotebot can't open")
                         .kind(tauri_plugin_dialog::MessageDialogKind::Error)
                         .blocking_show();
                     std::process::exit(1);
@@ -1679,7 +1679,7 @@ fn main() {
                         Ok(entries) if !entries.is_empty() => {
                             let _ = digest_app.emit("today://updated", ());
                         }
-                        Err(_) => eprintln!("Macroscope: schedule evaluation failed"),
+                        Err(_) => eprintln!("Rotebot: schedule evaluation failed"),
                         _ => {}
                     }
                 }
@@ -1713,7 +1713,7 @@ fn main() {
         })
         .invoke_handler(handlers())
         .build(context())
-        .expect("Macroscope could not start")
+        .expect("Rotebot could not start")
         .run(|app, event| {
             if matches!(
                 event,
@@ -2126,7 +2126,7 @@ mod tests {
     #[test]
     fn foreign_key_data_is_detected_and_backed_up_beside_the_folder() {
         let e =
-            CoreError::Storage("database key rejected or file is not a Macroscope database".into());
+            CoreError::Storage("database key rejected or file is not a Rotebot database".into());
         assert!(is_foreign_key_data(&e));
         assert!(!is_foreign_key_data(&CoreError::Storage(
             "disk full".into()

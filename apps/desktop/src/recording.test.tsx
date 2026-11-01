@@ -31,7 +31,7 @@ it("walks all five screens, consents only on Send, then builds, previews and sav
   const backend = new MockBackend();
   await backend.saveApiKey("synthetic-test-key");
   const ctx = await open(backend);
-  expect(screen.getByRole("heading", { name: "Show Macroscope what to do" })).toHaveFocus();
+  expect(screen.getByRole("heading", { name: "Show Rotebot what to do" })).toHaveFocus();
   expect(screen.getByText("Advanced: app activity log").closest("details")).not.toHaveAttribute("open");
   expect(button("Discard recording")).toBeVisible();
   await review(ctx);
@@ -85,7 +85,7 @@ it.each([0, 1, 2, 3])("declining on screen %i discards without creating a task",
   if (step >= 2) await review(ctx);
   if (step === 3) await ctx.user.click(button("Send for analysis"));
   await ctx.user.click(button("Discard recording"));
-  expect(screen.getByRole("heading", { name: "Show Macroscope what to do" })).toHaveFocus();
+  expect(screen.getByRole("heading", { name: "Show Rotebot what to do" })).toHaveFocus();
   if (step > 0) {
     expect(ctx.discard).toHaveBeenCalledOnce();
     await expect(ctx.backend.listRecordingFrames(ctx.discard.mock.calls[0][0])).rejects.toThrow(/discarded/);

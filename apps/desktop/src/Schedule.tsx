@@ -88,7 +88,7 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
   const approvedOutputs={...outputs,folder:file?outputs.folder:null};
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   return <section className="card schedule" aria-label="Schedule"><h3>Schedule</h3>
-    <p className="muted">Runs this tool automatically while Macroscope is open. Times are in {tz}.</p>{busy && <BotStatus label="Updating your schedule…" />}<Notice error={error}/>
+    <p className="muted">Runs this tool automatically while Rotebot is open. Times are in {tz}.</p>{busy && <BotStatus label="Updating your schedule…" />}<Notice error={error}/>
     {schedule && <div className="actions schedule-state"><p role="status"><strong>{schedule.status==="needs_reapproval"?"Needs re-approval":schedule.status==="emergency_paused"?"Paused by emergency stop":schedule.status==="paused"?"Paused":schedule.nextRunMs?nextRunText(schedule.nextRunMs):"Enabled"}</strong></p>
       {schedule.status!=="needs_reapproval" && <button className="quiet" disabled={busy} onClick={()=>void act(async()=>{await backend.scheduleStatus(tool.id,schedule.status==="enabled"?"paused":"enabled");await refresh();onChanged?.();})}>{schedule.status==="enabled"?"Pause":"Resume"}</button>}
       <button className="quiet" disabled={busy} onClick={()=>void act(async()=>{await backend.scheduleStatus(tool.id,"remove");await refresh();setSavedKey(null);onChanged?.();})}>Remove</button></div>}
@@ -133,9 +133,9 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
         {when.kind!=="always" && <p className="muted">Every run is still saved in Today, with the reason when nothing is sent.</p>}
       </div>}
       <div className="schedule-summary">
-        <p data-testid="schedule-summary">{frequencyText(frequency)} Macroscope will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.{when.kind!=="always"&&(outputs.notification||outputs.email)?` It will notify and email only when ${whenText(when)}.`:""}</p>
+        <p data-testid="schedule-summary">{frequencyText(frequency)} Rotebot will {actions.slice(0,-1).join(", ")}{actions.length>1?", and ":""}{actions.at(-1)}.{when.kind!=="always"&&(outputs.notification||outputs.email)?` It will notify and email only when ${whenText(when)}.`:""}</p>
         {tool.program && <SourceReview advanced={advanced} program={tool.program} route={modelRoute} routeDetails={routeDetails} connections={named} frequency={frequencyText(frequency).replace(/^E/,"e").replace(/^T/,"t").replace(" (or the last day)","")}/>}
-        <p className="muted">Any send or change it plans waits in Needs you for your approval. A run missed while Macroscope was closed happens once when it opens.</p>
+        <p className="muted">Any send or change it plans waits in Needs you for your approval. A run missed while Rotebot was closed happens once when it opens.</p>
       </div>
       {saved
         ? <p role="status" className="notice notice-info"><strong>Schedule is on.</strong> {schedule?.nextRunMs?nextRunText(schedule.nextRunMs)+". ":""}Change anything above to edit it; you will be asked to approve the change.</p>
@@ -145,6 +145,6 @@ export function ScheduleSection({backend,tool,openSettings,advanced=true,onChang
             <button className="primary" aria-describedby={scheduleProblem ? `schedule-reason-${tool.id}` : undefined} disabled={busy || !!scheduleProblem} onClick={()=>void act(async()=>{const key=approvedFor,made=await backend.setSchedule(tool.id,{frequency,outputs:approvedOutputs,versionHash:tool.versionHash,approved});skipLoad.current=made.id;setSchedule(made);setSavedKey(key);setApproved(false);onChanged?.();})}>{schedule?"Update schedule":"Turn on schedule"}</button>
           </div>}
     </fieldset>
-    {!login && <p>Schedules run while Macroscope is open. <button onClick={openSettings}>Open Settings to enable opening at login</button></p>}
+    {!login && <p>Schedules run while Rotebot is open. <button onClick={openSettings}>Open Settings to enable opening at login</button></p>}
   </section>;
 }

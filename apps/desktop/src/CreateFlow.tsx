@@ -758,7 +758,7 @@ export function CreateFlow({
           )}
           <details>
             <summary>Details</summary>
-          {build.events.some(e=>/to review the output/i.test(e.message)) && !build.events.some(e=>/Checks failed/i.test(e.message)) ? <p role="status">The checks passed, so Macroscope had the model double-check the output against the page it read.</p> : build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Macroscope asked the model to fix it." : "The tool did not pass its checks — Macroscope asked the model to fix it."}</p>}
+          {build.events.some(e=>/to review the output/i.test(e.message)) && !build.events.some(e=>/Checks failed/i.test(e.message)) ? <p role="status">The checks passed, so Rotebot had the model double-check the output against the page it read.</p> : build.events.some(e=>/correct|fix/i.test(e.message)) && <p role="status">{(build.events.some(e=>e.message.includes("(example format)")) || build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id))) ? "The output didn’t match your example’s format — Rotebot asked the model to fix it." : "The tool did not pass its checks — Rotebot asked the model to fix it."}</p>}
           {build.checks.some(c=>!c.passed && /example|shape|format/i.test(c.id)) && <p role="status">Tip: write values that change in {"{braces}"}, like {"{city}"} or {"{temp}"}.</p>}
             {build.failure && <p>{build.failure.message}</p>}
             {build.testModelCost && <ModelCostLines cost={build.testModelCost} />}

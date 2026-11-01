@@ -298,7 +298,7 @@ impl AppCore {
                     continue;
                 }
                 let lower = text.trim().to_ascii_lowercase();
-                let why = if lower.starts_with("bearer") { "started with “Bearer”, which Macroscope already adds, so it was sent twice" }
+                let why = if lower.starts_with("bearer") { "started with “Bearer”, which Rotebot already adds, so it was sent twice" }
                     else if lower.starts_with("authorization") { "started with “Authorization:”" }
                     else if text.trim().starts_with(['"', '\'', '`']) { "was wrapped in quote marks" }
                     else { "had spaces or a line break in it" };
@@ -324,7 +324,7 @@ impl AppCore {
                 }
             }
             if config.auth == crate::api::ApiAuth::Header && config.header_name.eq_ignore_ascii_case("authorization") && !fixed {
-                steps.push(DebugStep { label: "Check how the key is sent".into(), ok: false, detail: "The key is set to go in a header named Authorization. For a token that the service wants as “Authorization: Bearer …”, choose “An access token” instead; Macroscope adds the word Bearer for you.".into() });
+                steps.push(DebugStep { label: "Check how the key is sent".into(), ok: false, detail: "The key is set to go in a header named Authorization. For a token that the service wants as “Authorization: Bearer …”, choose “An access token” instead; Rotebot adds the word Bearer for you.".into() });
             }
         }
         let (verdict, try_examples) = match (bare, keyed) {

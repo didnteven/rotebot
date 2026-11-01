@@ -215,7 +215,7 @@ export function Privacy({
           <summary>Stored data and sent data history</summary>
           <h2>Stored data</h2>
           <DataTable
-            caption="Data stored by Macroscope"
+            caption="Data stored by Rotebot"
             columns={["Data", "Count", "Size", "Expires"]}
             rows={overview.stored.map((s) => [
               s.label,

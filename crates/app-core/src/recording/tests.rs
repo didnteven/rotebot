@@ -763,7 +763,7 @@ pub(super) fn valid_draft() -> Value {
         "schema_version": 2, "goal": "Create a weekly report.",
         "steps": [
             {"id":"read", "order":1, "app":"Browser", "action":"Read approved report source", "capability":"web_source", "evidence_frames":[1]},
-            {"id":"save", "order":2, "app":"Macroscope", "action":"Create report", "capability":"output_file", "evidence_frames":[1]},
+            {"id":"save", "order":2, "app":"Rotebot", "action":"Create report", "capability":"output_file", "evidence_frames":[1]},
             {"id":"send", "order":3, "app":"Mail", "action":"Click Send", "capability":"manual", "evidence_frames":[1]}
         ],
         "variables":[{"name":"Week", "description":"Reporting week"}],
@@ -861,7 +861,7 @@ fn answers_produce_reviewable_builder_text_and_keep_manual_limits() {
         .description
         .contains("Manual only (unsupported) — Mail: Click Send"));
     assert!(
-        result.description.find("2. In Macroscope").unwrap()
+        result.description.find("2. In Rotebot").unwrap()
             < result.description.find("3. Manual only").unwrap()
     );
     assert!(result

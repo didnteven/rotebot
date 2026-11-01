@@ -34,10 +34,10 @@ export function ApiSetup({ backend, proposal, connected, changed, edit, done }: 
   return <section aria-label="Custom API setup" className="card">
     <h3>{edit ? `Edit ${edit.config.name}` : proposal ? `Connect ${proposal.name}` : "Add a custom API"}</h3>
     {edit && <p className="muted">Your saved keys show as dots and are kept unless you type new ones. Saving replaces the old connection.</p>}
-    <p>Macroscope will only read from this service. It can look at your data but never change it.</p>
+    <p>Rotebot will only read from this service. It can look at your data but never change it.</p>
     <ol>
       <li>{keys === 0 ? "No key is needed." : "Paste your key below and save it."}</li>
-      <li>Test it. Macroscope makes one read request to check that it works.</li>
+      <li>Test it. Rotebot makes one read request to check that it works.</li>
       <li>Pick it for your task.</li>
     </ol>
     <fieldset disabled={busy || !!saved}>
