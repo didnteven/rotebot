@@ -333,11 +333,13 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
       {!preview.frames.length && <p>No frames were safe to keep{captureStatus?.reason?.startsWith("uncertain_") ? ` (skipped because of: ${captureStatus.reason.slice(10)})` : ""}. Discard this recording and try again.</p>}
       {preview.dropped.length>0 && <><p>{preview.dropped.length} frame(s) left out for privacy.</p>
         <p className="muted">Why: {dropSummary(preview.dropped)}</p></>}
-      <h3>The text that goes with the images</h3><pre tabIndex={0} aria-label="Cleared recording text">{preview.clearedTextJson}</pre>
-      <dl><dt>Recipient</dt><dd>{preview.recipient}</dd><dt>Model</dt><dd>{preview.model}</dd><dt>Size</dt><dd>{formatBytes(preview.totalBytes)} before delivery packaging</dd><dt>Estimated cost</dt><dd>${(preview.cost.estimated_micros/1_000_000).toFixed(4)}</dd></dl>
-      <p>{preview.cost.caveat}</p>
-      <details><summary>Instructions and response format</summary><h3>System instructions</h3><pre tabIndex={0}>{preview.systemInstructions}</pre><h3>Response schema</h3><pre tabIndex={0}>{preview.schemaJson}</pre><h3>Exact text fields</h3><pre tabIndex={0}>{preview.payloadText}</pre></details>
-      <p>Pressing Send gives permission for this exact recording and model only.</p>
+      <p>Sending {preview.frames.length} image{preview.frames.length===1?"":"s"} and their text to {preview.model} · {formatBytes(preview.totalBytes)} · about ${(preview.cost.estimated_micros/1_000_000).toFixed(2)}. Sending gives permission for this exact recording only.</p>
+      <details><summary>See exactly what's sent</summary>
+        <dl><dt>Recipient</dt><dd>{preview.recipient}</dd></dl>
+        <p className="muted">{preview.cost.caveat}</p>
+        <h3>The text that goes with the images</h3><pre tabIndex={0} aria-label="Cleared recording text">{preview.clearedTextJson}</pre>
+        <h3>System instructions</h3><pre tabIndex={0}>{preview.systemInstructions}</pre><h3>Response schema</h3><pre tabIndex={0}>{preview.schemaJson}</pre><h3>Exact text fields</h3><pre tabIndex={0}>{preview.payloadText}</pre>
+      </details>
       <button className="primary" disabled={busy || !preview.frames.length} onClick={()=>void act(async()=>{
         let d;
         try { d=await backend.consentAndAnalyze(session!,preview.payloadHash); }
