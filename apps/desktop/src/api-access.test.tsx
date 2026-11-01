@@ -32,7 +32,10 @@ test("with an AI service set up, the data check runs on its own once, without a 
 
 test("a known public API needs no connection or token setup box", async () => {
   await panel(report("public_api", { ...proposal, auth: "none" }));
-  expect(screen.getByText("Public API found")).toBeVisible();
+  // One line says where the data comes from; the reasoning, address and steps are folded away.
+  expect(screen.getByText("Data from Example records")).toBeVisible();
+  expect(screen.getByText("Access check result")).not.toBeVisible();
+  expect(screen.queryByText("Setup steps")).not.toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "Custom API setup" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Save API connection" })).not.toBeInTheDocument();
 });

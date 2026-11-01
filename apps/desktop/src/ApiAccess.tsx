@@ -138,32 +138,40 @@ export function ApiAccessPanel({ backend, draft, status, accept, changed, onBusy
   }, [plan, paused, preview, busy]);
   const using = (id?: string | null) => !!id && (draft.requiredConnections ?? []).some(c => c.connectorId === id);
   const chosen = plan?.state === "same_service_works" ? using(plan.reuseKeysFrom) : plan?.connectorId ? using(plan.connectorId) : false;
+  const connectorName = (id?: string | null) => connectors.find(c => c.id === id)?.name ?? draft.requiredConnections?.find(c => c.connectorId === id)?.name;
+  // Ready means nothing is left for the person to do before building.
+  const ready = !!plan && (chosen || plan.state === "public_api" || plan.state === "local" || plan.state === "needs_research");
+  const headline = !plan ? "" : chosen && plan.connectorId ? `Uses your ${connectorName(plan.connectorId) ?? "connection"}`
+    : plan.state === "public_api" && api ? `Data from ${api.name}`
+    : plan.state === "existing_connection" ? `Use your ${connectorName(plan.connectorId) ?? "existing"} connection`
+    : plan.state === "connect_service" ? `Connect ${connectorName(plan.connectorId) ?? "a service"} first`
+    : (plan.state === "needs_connection" || plan.state === "needs_details") && api ? `${api.name} needs a key`
+    : states[plan.state] ?? "Access check";
   return <section aria-label="Task access" className="card api-access">
     <h3>Where this task gets its data</h3>
     {plan && <div role="note" className="api-plan">
-      <p><strong>{states[plan.state] ?? "Access check"}</strong>{chosen && <span className="badge">In use</span>}</p>
-      <p>{plan.summary}</p>
-      {api && <p className="api-address"><bdi>{api.method} {api.url}</bdi></p>}
+      <p className="api-headline"><strong>{headline}</strong>{api && <span className="badge">{costLabel(api.cost)}</span>}{chosen && <span className="badge">In use</span>}</p>
+      {!ready && <p>{plan.summary}</p>}
       {plan.connectorId && !chosen && (plan.state !== "connect_service" || connectors.some(c => c.id === plan.connectorId && c.state.kind === "connected")) && <button className="primary" disabled={busy || paused} onClick={() => void act(() => selectConnection(plan.connectorId!))}>Use this existing connection</button>}
       {plan.connectorId && plan.state === "connect_service" && !connectors.some(c => c.id === plan.connectorId && c.state.kind === "connected") && <button className="primary" disabled={busy || !connect} onClick={() => connect?.(plan.connectorId!)}>Set up this available connection</button>}
       {api && plan.state === "same_service_works" && plan.reuseKeysFrom && !chosen && <button className="primary" disabled={busy} onClick={() => void act(async () => {
         const info = await backend.addApiAddress(plan.reuseKeysFrom!, api.url); await selectConnection(info.id);
       })}>Use my existing connection for this</button>}
-      {chosen && <p role="status">Ready. You can send and build below.</p>}
-      {plan.state === "public_api" && <p>No credential setup is needed. The tool's source and result will be checked during the build.</p>}
-      {api && <><p><span className="badge">{costLabel(api.cost)}</span></p><p className="muted">{api.coverage}</p></>}
-      {api && !chosen && (!!api.prerequisites.length || !!api.setupInstructions.length) && <details open>
+      {api && !chosen && !ready && (!!api.prerequisites.length || !!api.setupInstructions.length) && <details open>
         <summary>Setup steps</summary>
         {!!api.prerequisites.length && <><h4>What you need</h4><ul>{api.prerequisites.map((s, i) => <li key={i}>{s}</li>)}</ul></>}
         {!!api.setupInstructions.length && <><h4>Setup instructions</h4><ol>{api.setupInstructions.map((s, i) => <li key={i}>{s}</li>)}</ol></>}
       </details>}
       {api && canSetup && ["needs_connection", "needs_details"].includes(plan.state) && <ApiSetup key={`${draft.draftId}:${api.url}`} backend={backend} proposal={api} changed={changed} connected={info => selectConnection(info.id)} />}
       {api && !canSetup && <p>This API needs an adapter for its authentication or operation. A key-entry form cannot enable it yet.</p>}
-      {!!plan.sources.length && <details open><summary>Documentation</summary>
+      <details className="api-more-source"><summary>More about this source</summary>
+        {ready && <p>{plan.summary}</p>}
+        {api && <p className="api-address"><bdi>{api.method} {api.url}</bdi></p>}
+        {api?.coverage && <p className="muted">{api.coverage}</p>}
         {plan.sources.map(url => <button key={url} className="quiet" onClick={() => void act(async () => {
           if (window.confirm(`Open this documentation in your browser?\n\n${url}`)) await backend.openExternal(url);
         })}>Open documentation: {url}</button>)}
-      </details>}
+      </details>
     </div>}
     {paused && !plan && <p className="muted">Set up an AI service in Settings to find where this data comes from.</p>}
     {previewError && <p role="alert">{previewError} <button onClick={() => setAttempt(n => n + 1)}>Retry access preview</button></p>}

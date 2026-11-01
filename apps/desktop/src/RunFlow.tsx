@@ -49,6 +49,9 @@ export function RunFlow({
   const [modelRoute,setModelRoute]=useState<import("./backend/types").ModelRoute>("offline_demo");
   const [routeDetails,setRouteDetails]=useState("");
   const [detail, setDetail] = useState<ToolDetail | null>(null);
+  // Connection names, so reads show "Akahu", never an internal id.
+  const [named, setNamed] = useState<import("./backend/types").SelectedConnection[]>([]);
+  useEffect(() => { let live = true; void backend.listConnectors().then(list => { if (live) setNamed(list.map(c => ({ connectorId: c.id, name: c.name, resource: c.mcpUrl, tools: [] }))); }).catch(() => {}); return () => { live = false; }; }, [backend]);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const detailRequest = useRef(0);
   async function loadDetail() {
@@ -303,7 +306,7 @@ export function RunFlow({
       )}
       <details><summary>Details</summary>
         {detail?.modelCost && <section aria-label="Model cost"><h3>Model cost</h3><ModelCostLines cost={detail.modelCost}/></section>}
-        {detail?.program && <SourceReview advanced={false} program={detail.program} route={modelRoute} routeDetails={routeDetails}/>}
+        {detail?.program && <SourceReview advanced={false} program={detail.program} route={modelRoute} routeDetails={routeDetails} connections={named}/>}
         <p>{detail?.program ? "Program (sandboxed) · " : ""}Version {tool.version}</p>
         {detail?.program?.modelStep && <label>Monthly model-step cap<input aria-label="Monthly model-step cap" type="number" min={0} max={10000} value={detail.modelStepCap} onChange={e=>{const cap=Number(e.target.value);void act(async()=>setDetail(await backend.setModelStepCap(tool.id,cap)));}}/></label>}
         {detail?.program && <><pre>{detail.program.code}</pre><SourceTechnicalDetails program={detail.program}/></>}

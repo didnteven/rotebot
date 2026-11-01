@@ -167,16 +167,23 @@ function AppWorkspace({ backend }: { backend: Backend }) {
     };
   }, [backend]);
   const [toolDescriptions, setToolDescriptions] = useState<Record<string, string>>({});
+  /** What each saved tool uses: the exact connections it reads or acts through, and the web sites it reads. */
+  const [toolUses, setToolUses] = useState<Record<string, { connections: string[]; sites: string[] }>>({});
   useEffect(() => {
     let active = true;
     void Promise.all((tools ?? []).map(async tool => {
       try {
         const detail = await backend.getTool(tool.id);
         const summary = detail.summary?.find(line => line.trim() && !line.includes("recurrence unmeasured") && !line.startsWith("Program (sandboxed)"));
-        return [tool.id, summary || detail.program?.summary || tool.name];
+        const code = detail.program?.code ?? "";
+        // Reads are declared; actions name their connection in the code (macroscope.connection.request("id", …)).
+        const ids = [...new Set([...(detail.program?.connectionSources ?? []).map(s => s.connectorId),
+          ...[...code.matchAll(/connection\.request\(\s*["']([^"']+)["']/g)].map(m => m[1])])];
+        const sites = [...new Set((detail.program?.webSources ?? []).map(w => { try { return new URL(w.url).hostname; } catch { return ""; } }).filter(Boolean))];
+        return [tool.id, summary || detail.program?.summary || tool.name, { connections: ids, sites }] as const;
       }
-      catch { return [tool.id, tool.name]; }
-    })).then(entries => { if (active) setToolDescriptions(Object.fromEntries(entries)); });
+      catch { return [tool.id, tool.name, { connections: [] as string[], sites: [] as string[] }] as const; }
+    })).then(entries => { if (active) { setToolDescriptions(Object.fromEntries(entries.map(([id, d]) => [id, d]))); setToolUses(Object.fromEntries(entries.map(([id, , u]) => [id, u]))); } });
     return () => { active = false; };
   }, [backend, tools]);
   const [exported, setExported] = useState<string | null>(null);
@@ -372,6 +379,16 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                                   <p className={open ? undefined : "clamp"}>{description}</p>
                                   {description.length > 60 && <button className="chevron" aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} full description of ${displayName}`} onClick={() => setExpanded(open ? null : tool.id)}>{open ? "▴" : "▾"}</button>}
                                 </div>;
+                              })()}
+                              {(() => {
+                                const uses = toolUses[tool.id];
+                                if (!uses || (!uses.connections.length && !uses.sites.length)) return null;
+                                return <p className="tool-uses muted">Uses {[...uses.connections.map(id => {
+                                  const c = connectors.find(x => x.id === id);
+                                  return !c ? <span key={id} className="tool-use-missing">a removed connection</span>
+                                    : c.state.kind !== "connected" ? <span key={id} className="tool-use-missing">{c.name} (not connected)</span>
+                                    : <span key={id}>{c.name}</span>;
+                                }), ...uses.sites.map(h => <span key={h}>{h}</span>)].flatMap((el, i) => i ? [<span key={`sep${i}`}> · </span>, el] : [el])}</p>;
                               })()}
                               <p className="muted">{(() => { const line = scheduleLine(schedules.find(s => s.toolId === tool.id)); return line ? <span data-testid="schedule-line">{line}</span> : friendlyLastRun(tool.lastRunAtMs); })()}</p>
                             </div>
