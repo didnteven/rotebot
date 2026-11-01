@@ -112,6 +112,13 @@ async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -
         Ok(d) => d,
         Err(e) => return format!("DRAFT FAILED: {e}"),
     };
+    // SCENARIO_SUGGEST=1: only ask for the output layout and tool name, as the create screen does.
+    if std::env::var("SCENARIO_SUGGEST").is_ok() {
+        return match core.suggest_example_output(&draft.draft_id).await {
+            Ok(d) => format!("SUGGESTED name={:?}\n{}", d.suggested_name, d.example_output.unwrap_or_default()),
+            Err(e) => format!("SUGGEST FAILED: {e}"),
+        };
+    }
     if let Err(e) = core.outbound_preview(&draft.draft_id).await {
         return format!("REVIEW FAILED: {e}");
     }
@@ -121,7 +128,7 @@ async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -
     };
     let mut approved = false;
     let mut state = None;
-    for _ in 0..300 {
+    for _ in 0..900 {
         let Ok(s) = core.build_state(&started.build_id) else {
             break;
         };

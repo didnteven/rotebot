@@ -183,6 +183,42 @@ it("shows a loading state in Output while the AI writes the layout, then fills i
   expect(screen.queryByText("Writing the output layout…", { selector: "strong" })).not.toBeInTheDocument();
 });
 
+it("clears a previously entered task on step 1, and Undo puts it back", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={null} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
+  const request = () => screen.getByLabelText("What should the tool do?");
+  expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  await user.type(request(), "Get today's forecast for Auckland");
+  await user.click(button("Check the plan"));
+  await screen.findByRole("heading", { name: "Check the plan" });
+  await user.click(button("Back"));
+  expect(request()).toHaveValue("Get today's forecast for Auckland");
+  await user.click(button("Clear"));
+  expect(request()).toHaveValue("");
+  expect(request()).toHaveFocus();
+  expect(button("Check the plan")).toBeDisabled();
+  await user.click(button("Undo"));
+  expect(request()).toHaveValue("Get today's forecast for Auckland");
+  await user.click(button("Clear"));
+  await user.type(request(), "Bitcoin price");
+  expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+});
+
+it("says so when no layout was suggested, instead of leaving Output silently empty", async () => {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  vi.spyOn(backend, "suggestExampleOutput").mockRejectedValue(new Error("model unavailable"));
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={null} status={await backend.modelAccess()} connectors={[]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
+  await user.type(screen.getByLabelText("What should the tool do?"), "Get today's forecast for Auckland");
+  await user.click(button("Check the plan"));
+  expect(await screen.findByText(/No layout was suggested this time/)).toBeVisible();
+  await user.type(screen.getByLabelText("What the result should look like"), "High: {{high}");
+  expect(screen.queryByText(/No layout was suggested this time/)).not.toBeInTheDocument();
+});
+
 it("shows one line of a long description with a chevron, and renames a tool from the ⋯ menu", async () => {
   const long = "Get me incoming payments by person use the name not account number, for the last week only, since the last Monday.";
   const backend = new MockBackend([{ id: "a", name: "Get me incoming payments by person use the name…", version: 1 }]);

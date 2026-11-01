@@ -41,8 +41,9 @@ impl MetaResponsesClient {
             .await
             .map(|(output, _)| output)
     }
-    /// Planning research only: the sole enabled tool is provider-hosted web search.
-    /// Build and runtime calls continue to use the zero-tool method above.
+    /// Research only (access planning, and finding a data source when a build's source could not
+    /// be used): the sole enabled tool is provider-hosted web search. Program writing and runtime
+    /// calls continue to use the zero-tool method above.
     pub async fn research_structured(
         &self,
         req: StructuredRequest<'_>,

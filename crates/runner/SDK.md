@@ -43,6 +43,18 @@ allocator and CPU/wall limits. `RegExp.prototype.compile` and legacy RegExp stat
   DD/MM/YY, MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD and ISO8601).
 - `macroscope.money.decimal(value, {currency: "USD", decimals: 2})` returns
   decimal text using the host money parser.
+- `macroscope.html.*` reads an ordinary web page (the text from
+  `macroscope.source(name)`) without a browser: `tables(page)` returns
+  `[{headers: ["Symbol", ...], rows: [["ABOS", ...], ...]}]` with cell text;
+  `text(page)` returns the visible text, one block per line; `links(page)`
+  returns `[{text, href}]`; `json(page)` returns the parsed JSON a page embeds
+  for its own scripts (`<script type="application/json">`, JSON-LD,
+  `__NEXT_DATA__`); `headings(page)` returns `[{level, text}]` in page order
+  (the lead story on a news page is usually the first heading after the
+  menus); `title(page)` returns the page title. Scripts, styles and
+  comments are ignored, and entities such as `&amp;` are decoded. They also take
+  a page fragment an API returns inside JSON (pass that string). Content a page
+  builds in the browser with JavaScript is not in the fetched text.
 
 JSON.parse/stringify and ordinary pure array/string/object operations are
 available. SDK objects are frozen. Each run has a fresh 64 MiB JS heap,

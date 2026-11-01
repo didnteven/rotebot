@@ -753,3 +753,80 @@ fn today_comes_from_the_host() {
     request.today = None;
     assert!(format!("{:?}", macroscope_runner::execute(request)).contains("not available"));
 }
+
+#[test]
+fn ordinary_web_pages_read_as_tables_text_links_and_embedded_json() {
+    let page = r#"<html><head><title>Top &amp; bottom</title><style>td{}</style></head><body>
+<script>var junk = "<table><tr><td>no</td></tr></table>";</script>
+<h1>Movers</h1><p>Updated&nbsp;today</p>
+<table><thead><tr><th>Symbol</th><th>Change</th></tr></thead>
+<tbody><tr><td><a href="/s/abos">ABOS</a></td><td>-90.83%</td>
+<tr><td>ONEG</td><td>+120.5%</td></tr></tbody></table>
+<script type="application/ld+json">{"name":"Movers"}</script></body></html>"#;
+    let code = r#"function run(){
+      const page = macroscope.source("page");
+      const t = macroscope.html.tables(page)[0];
+      const link = macroscope.html.links(page)[0];
+      macroscope.output("out.txt", [macroscope.html.title(page), t.headers.join("|"), t.rows.map(r => r.join("=")).join(";"),
+        link.text + ">" + link.href, macroscope.html.json(page)[0].name, macroscope.html.headings(page)[0].level + macroscope.html.headings(page)[0].text, macroscope.html.text(page).split("\n").slice(0, 2).join("/")].join("\n"));
+    }"#;
+    let request = Request {
+        code: code.into(),
+        inputs: Default::default(),
+        sources: [("page".to_string(), page.to_string())].into(),
+        answers: Default::default(),
+        limits: Default::default(),
+        declared_model_prompt: None,
+        today: None,
+    };
+    let out = format!("{:?}", macroscope_runner::execute(request));
+    for expected in ["1Movers", "Top & bottom", "Symbol|Change", "ABOS=-90.83%;ONEG=+120.5%", "ABOS>/s/abos", "Movers", "Movers/Updated today"] {
+        assert!(out.contains(expected), "{expected} missing from {out}");
+    }
+}
+
+#[test]
+fn words_that_contain_import_are_allowed_but_import_is_not() {
+    let run = |code: &str| {
+        format!(
+            "{:?}",
+            macroscope_runner::execute(Request {
+                code: code.into(),
+                inputs: Default::default(),
+                sources: [("important_emails".to_string(), "[]".to_string())].into(),
+                answers: Default::default(),
+                limits: Default::default(),
+                declared_model_prompt: None,
+                today: None,
+            })
+        )
+    };
+    let ok = run(r#"function run(){ var importance = macroscope.source("important_emails"); macroscope.output("out.txt", "Important: " + importance + "\n"); }"#);
+    assert!(ok.contains("Important: []"), "{ok}");
+    for code in ["function run(){import('x')}", "function run(){ var s = 'import'; }", "import x from 'y'; function run(){}"] {
+        assert!(run(code).contains("imports are forbidden"), "{code}");
+    }
+}
+
+#[test]
+fn run_may_be_a_const_or_let_arrow_function() {
+    for code in [
+        r#"const run = () => { macroscope.output("out.txt", "ok\n"); };"#,
+        r#"let run = function () { macroscope.output("out.txt", "ok\n"); };"#,
+    ] {
+        let out = format!(
+            "{:?}",
+            macroscope_runner::execute(Request {
+                code: code.into(),
+                inputs: Default::default(),
+                sources: Default::default(),
+                answers: Default::default(),
+                limits: Default::default(),
+                declared_model_prompt: None,
+                today: None,
+            })
+        );
+        assert!(!out.contains("must define function run"), "{code}: {out}");
+        assert!(out.contains("ok"), "{code}: {out}");
+    }
+}

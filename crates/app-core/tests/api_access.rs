@@ -192,7 +192,7 @@ async fn public_source_auth_refusal_and_rate_limit_stop_without_a_repair_or_alte
         );
         let d = f
             .core
-            .draft_task_no_input("Read a public source into output.txt")
+            .draft_task_no_input(&format!("Read {}/denied into output.txt", server.uri()))
             .unwrap();
         let b = f.core.start_build(&d.draft_id, true).await.unwrap();
         let mut terminal = None;
@@ -1317,6 +1317,27 @@ async fn the_model_fills_in_the_output_layout_and_name_and_a_typed_one_is_kept()
     let kept = f.core.suggest_example_output(&typed.draft_id).await.unwrap();
     assert_eq!(kept.example_output.as_deref(), Some("Total: {total}"));
     assert_eq!(kept.suggested_name.as_deref(), Some("Split the bills"));
+}
+
+#[tokio::test]
+async fn a_failed_layout_answer_is_asked_for_once_more() {
+    let server = MockServer::start().await;
+    Mock::given(path("/responses"))
+        .respond_with(ResponseTemplate::new(500))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(json!({"exampleOutput":"Wind: {speed} km/h","name":"Auckland wind today"}), vec![])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let f = Fixture::new(&server).await;
+    let d = f.core.draft_task_no_input("What is the wind in Auckland today").unwrap();
+    let next = f.core.suggest_example_output(&d.draft_id).await.unwrap();
+    assert_eq!(next.example_output.as_deref(), Some("Wind: {speed} km/h"));
+    assert_eq!(next.suggested_name.as_deref(), Some("Auckland wind today"));
 }
 
 #[tokio::test]

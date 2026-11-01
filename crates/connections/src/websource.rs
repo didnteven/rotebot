@@ -136,11 +136,18 @@ pub async fn fetch_all(
         }
         // The host issues a bare GET: no cookies, credentials or custom
         // headers are ever attached (the client name above is the only one).
-        let response = client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|e| FetchError::Transport(short_error(e)))?;
+        // One retry when the site did not answer or dropped the connection, so a
+        // momentary blip does not fail a run. Refusals and rate limits are answers
+        // and are never retried.
+        let response = match client.get(url.clone()).send().await {
+            Ok(response) => response,
+            Err(e) if e.is_timeout() || e.is_connect() => client
+                .get(url.clone())
+                .send()
+                .await
+                .map_err(|e| FetchError::Transport(short_error(e)))?,
+            Err(e) => return Err(FetchError::Transport(short_error(e))),
+        };
         if response.status().is_redirection() {
             return Err(FetchError::CrossHostRedirect);
         }

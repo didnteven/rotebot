@@ -22,8 +22,10 @@ The Meta API route can use provider-hosted `web_search`, capped at three built-i
 tool calls. Other model routes can inspect known documentation and optionally use
 the user's Brave Search API key for broader research. They never silently switch
 to another inference route or borrow its credential. Each check makes at most two
-model calls and two documentation reads. Research has a fixed 100 model-call
-monthly limit, shared across checks.
+model calls and two documentation reads. Research has a fixed 1,000 model-call
+monthly limit, shared across checks, as a guard against runaway use (100 proved too low: creating
+tools every day reached it). The output layout suggestion and the one source search a build may make
+when a source cannot be used are part of making a tool and do not count toward it.
 
 API setup requires a retrieved document on the endpoint provider's domain (allowing
 the usual `api.` and documentation subdomains), containing the endpoint origin.

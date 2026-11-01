@@ -246,6 +246,14 @@ fn cpu_time() -> Duration {
     Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
 }
 
+/// Whether `word` appears in `code` with no identifier character on either side.
+fn contains_word(code: &str, word: &str) -> bool {
+    let ident = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$');
+    code.match_indices(word).any(|(at, _)| {
+        !ident(code[..at].chars().next_back()) && !ident(code[at + word.len()..].chars().next())
+    })
+}
+
 pub fn execute(request: Request) -> Response {
     if let Err(error) = request.limits.validate() {
         return Response::Error { error };
@@ -265,11 +273,15 @@ pub fn execute(request: Request) -> Response {
     {
         return Response::failure("forbidden", "request exceeds 20 MB");
     }
-    // Deliberately conservative source admission: rejects this byte sequence even
-    // inside comments/strings. No parser evasion can introduce a loader: none is
-    // installed, and every string-code constructor is removed before user code.
-    if request.code.contains("import") {
-        return Response::failure("syntax", "imports are forbidden");
+    // Deliberately conservative source admission: rejects the word `import` even
+    // inside comments/strings (but not words that contain it, such as "important").
+    // No parser evasion can introduce a loader: none is installed, and every
+    // string-code constructor is removed before user code.
+    if contains_word(&request.code, "import") {
+        return Response::failure(
+            "syntax",
+            "imports are forbidden (the word `import` must not appear on its own, even in a string or comment)",
+        );
     }
     if request.answers.len() > 3
         || serde_json::to_vec(&request.answers).map_or(true, |v| v.len() > 196_608)
@@ -338,7 +350,12 @@ pub fn execute(request: Request) -> Response {
         let mut missing_run = false;
         let user_result = (|| {
             diagnostic::eval_user(&ctx, &request.code, &mut compiling)?;
-            let run: rquickjs::Value = ctx.globals().get("run")?;
+            let mut run: rquickjs::Value = ctx.globals().get("run")?;
+            if !run.is_function() {
+                // `const run = () => ...` and `let run` are script bindings, not
+                // properties of the global object; look the name up as code would.
+                run = ctx.eval("typeof run === 'function' ? run : undefined")?;
+            }
             let Some(run) = run.as_function().cloned() else {
                 missing_run = true;
                 return Err(rquickjs::Exception::throw_type(&ctx, "run is not defined"));

@@ -233,20 +233,58 @@ export function CreateFlow({
   const nameEdited = useRef(false);
   buildStarted.current = !!build;
   const [suggesting, setSuggesting] = useState(false);
+  /** The AI wrote no layout this time, so the empty box is explained rather than left blank. */
+  const [layoutMissed, setLayoutMissed] = useState(false);
   useEffect(() => {
     if (step !== 1 || !draft || draft.kind !== "program" || (example.trim() && draft.suggestedName) || !aiReady || build || suggested.current === `${draft.draftId}:${draft.goal}`) return;
     suggested.current = `${draft.draftId}:${draft.goal}`;
     const id = draft.draftId;
     setSuggesting(true);
+    setLayoutMissed(false);
     void backend.suggestExampleOutput(id)
       // A build already sent keeps its plan: a late layout never changes it.
       .then(next => {
         if (next.suggestedName && !nameEdited.current && !editTool) setName(next.suggestedName);
         if (next.exampleOutput && !buildStarted.current) setExample(current => current.trim() ? current : next.exampleOutput!);
+        if (!next.exampleOutput) setLayoutMissed(true);
       })
-      .catch(() => { /* The person can still type the layout themselves. */ })
+      // The person can still type the layout themselves.
+      .catch(() => setLayoutMissed(true))
       .finally(() => setSuggesting(false));
   }, [step, draft, example, aiReady, backend, build]);
+  /** What Clear removed, so Undo can put the task back exactly. */
+  const [clearedTask, setClearedTask] = useState<{ description: string; draft: TaskDraft | null; map: CsvMapping | null; build: BuildState | null; example: string; name: string; outputName: string; preview: OutboundPreview | null } | null>(null);
+  /** Starts the request over: the text and the plan, result and layout made from it. */
+  function clearTask() {
+    setClearedTask({ description, draft, map, build, example, name, outputName, preview });
+    setDescription("");
+    setDraft(null);
+    setMap(null);
+    setBuild(null);
+    setExample("");
+    setPreview(null);
+    setPlanBlockers([]);
+    setLayoutMissed(false);
+    setError(null);
+    setEditing(false);
+    nameEdited.current = false;
+    suggested.current = null;
+    pendingDraft.current = null;
+    requestRef.current?.focus();
+  }
+  function undoClear() {
+    if (!clearedTask) return;
+    setDescription(clearedTask.description);
+    setDraft(clearedTask.draft);
+    setMap(clearedTask.map);
+    setBuild(clearedTask.build);
+    setExample(clearedTask.example);
+    setName(clearedTask.name);
+    setOutputName(clearedTask.outputName);
+    setPreview(clearedTask.preview);
+    setClearedTask(null);
+    requestRef.current?.focus();
+  }
   function acceptDraft(next: TaskDraft) {
     setDraft(next);
     if (!nameEdited.current) setName(editTool ? editTool.name : next.kind === "program" ? next.suggestedName || toolNameFromGoal(next.goal) : "Clean import CSV");
@@ -322,7 +360,10 @@ export function CreateFlow({
   // accepted their AI service and connections once, and the result lists what was used.
   const autoApproved = useRef<string | null>(null);
   useEffect(() => {
-    if (build?.phase !== "candidate" || !build.program || autoApproved.current === build.buildId) return;
+    // Only connection reads and an AI step wait for this go-ahead. A program that reads public web
+    // pages only has already moved on, so approving it would fail and show a false failure.
+    if (build?.phase !== "candidate" || !build.program || autoApproved.current === build.buildId
+      || (!build.program.connectionSources?.length && !build.program.modelStep)) return;
     autoApproved.current = build.buildId;
     void act(async () => setBuild(await backend.approveBuildSources(build.buildId, build.program!)));
   }, [build, draft, backend]);
@@ -378,8 +419,11 @@ export function CreateFlow({
             rows={4}
             placeholder="For example: Summarize today’s calendar and list my first meeting"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => { setDescription(e.target.value); setClearedTask(null); }}
           />
+          {description.trim()
+            ? <div className="actions task-clear"><button className="quiet" disabled={busy || !!activeBuild} onClick={clearTask}>Clear</button></div>
+            : clearedTask && <p role="status" className="muted task-clear">Task cleared. <button className="quiet" onClick={undoClear}>Undo</button></p>}
           <div className="actions source-options" role="group" aria-label="Use data from">
             <span className="muted">Use data from</span>
             {input && !noInput
@@ -460,7 +504,9 @@ export function CreateFlow({
           {draft.kind === "program" && suggesting && !example.trim() && <BotStatus seed={botSeed} label="Writing the output layout…" detail="You can type your own instead." />}
           {draft.kind === "program" && <Field label="What the result should look like">
             <textarea aria-label="What the result should look like" aria-busy={suggesting} rows={5} maxLength={16000} value={example} placeholder={suggesting ? "Writing a suggested layout…" : "Water: {water_cost}"} onChange={(e) => setExample(e.target.value)} />
-            <span className="muted">Change anything. Words in {"{braces}"} are filled in each run.</span>
+            <span className="muted">{layoutMissed && !suggesting && !example.trim()
+              ? "No layout was suggested this time. Type one, or leave it empty and the AI will choose one when it builds."
+              : <>Change anything. Words in {"{braces}"} are filled in each run.</>}</span>
           </Field>}
           {draft.kind !== "program" && <div
             className="table-scroll"

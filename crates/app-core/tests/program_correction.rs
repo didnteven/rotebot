@@ -197,8 +197,8 @@ async fn correction_passes_on_second_attempt_ready_with_both_events() {
     );
     let requests = model_server.received_requests().await.unwrap();
     let model_calls = model_requests(&requests);
-    assert_eq!(model_calls.len(), 2, "exactly one correction round");
-    assert_eq!(count2.load(Ordering::SeqCst), 2);
+    assert_eq!(model_calls.len(), 3, "one correction round, then one review of the corrected output");
+    assert_eq!(count2.load(Ordering::SeqCst), 3);
     let wire_body: serde_json::Value =
         serde_json::from_slice(&model_calls[1].body).expect("wire body is JSON");
     let user_content = wire_body["input"][1]["content"]
@@ -495,7 +495,8 @@ impl SourceCorrection {
             .unwrap();
         let started = self.core.start_build(&draft.draft_id, true).await.unwrap();
         let state = wait(&self.core, &started.build_id).await;
-        assert!((2..=4).contains(&count.load(Ordering::SeqCst)), "initial build plus one to three corrections");
+        // Up to three program corrections, plus up to four tries of a new site when a source cannot be used.
+        assert!((2..=8).contains(&count.load(Ordering::SeqCst)), "initial build plus one to seven corrections");
         state
     }
 
@@ -763,4 +764,163 @@ async fn an_ordinary_runtime_error_is_not_mistaken_for_missing_data() {
     assert_eq!(state.failure.expect("failure").kind, BuildFailureKind::Checks);
     let requests = model_server.received_requests().await.unwrap();
     assert_eq!(model_requests(&requests).len(), 4, "a real fault still gets every correction");
+}
+
+#[tokio::test]
+async fn a_source_that_cannot_be_used_starts_one_web_search_whose_addresses_reach_the_correction() {
+    let temp = tempfile::tempdir().unwrap();
+    let model = MockServer::start().await;
+    let live = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/weather"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"high": 21, "low": 13})))
+        .mount(&live)
+        .await;
+    // A site that does not answer, on a different host from the live one.
+    let gone = "https://gone.invalid";
+    let live_base = live.uri();
+    let program = |base: &str| {
+        let mut p = program_for(base, "");
+        p.web_sources[0] = WebSource { name: "weather".into(), url: format!("{base}/weather") };
+        p.code = r#"function run() {
+            const data = JSON.parse(macroscope.source("weather"));
+            macroscope.output("weather.txt", "Gisborne high : " + data.high + ", low : " + data.low);
+        }"#
+        .into();
+        p
+    };
+    let first = responses_body(&program(gone));
+    let corrected = responses_body(&program(&live_base));
+    let found = format!("{live_base}/weather");
+    let search = json!({"status": "completed", "output": [
+        {"type": "web_search_call", "status": "completed", "results": [{"url": format!("{live_base}/docs"), "type": "text_result"}]},
+        {"type": "message", "content": [{"type": "output_text", "text": json!({"sources": [
+            {"url": found, "serves": "today's Gisborne forecast as JSON"},
+            {"url": format!("{gone}/other"), "serves": "the site that failed"},
+        ]}).to_string()}]},
+    ]});
+    let builds = Arc::new(AtomicUsize::new(0));
+    let counter = builds.clone();
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(move |r: &wiremock::Request| {
+            if r.body_json::<serde_json::Value>().unwrap().get("tools").is_some() {
+                return ResponseTemplate::new(200).set_body_json(search.clone());
+            }
+            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 { &first } else { &corrected };
+            ResponseTemplate::new(200).set_body_json(body.clone())
+        })
+        .mount(&model)
+        .await;
+    let core = core_at(temp.path(), model.uri());
+    core.save_api_key("mk-source-search-test-1234567890").await.unwrap();
+    let draft = core.draft_task_no_input("Gisborne weather summary to weather.txt").unwrap();
+    let draft = core
+        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", Some(EXAMPLE.into()))
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let state = wait(&core, &started.build_id).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    assert!(state.program.unwrap().web_sources[0].url.starts_with(&live_base));
+    let requests = model.received_requests().await.unwrap();
+    let bodies: Vec<serde_json::Value> = model_requests(&requests)
+        .iter()
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect();
+    let searches: Vec<_> = bodies.iter().filter(|b| b.get("tools").is_some()).collect();
+    assert_eq!(searches.len(), 1, "one search per build");
+    let asked = searches[0]["input"][1]["content"].as_str().unwrap();
+    assert!(asked.contains(&format!("{gone}/weather")), "the search is told which address failed");
+    let correction: serde_json::Value = bodies
+        .iter()
+        .filter(|b| b.get("tools").is_none())
+        .nth(1)
+        .and_then(|b| serde_json::from_str(b["input"][1]["content"].as_str().unwrap()).ok())
+        .unwrap();
+    let results = correction["web_search_results"].as_array().unwrap();
+    assert_eq!(results[0]["url"], found.as_str());
+    assert!(
+        results.iter().all(|r| !r["url"].as_str().unwrap().contains("gone.invalid")),
+        "an address on the failed host is never offered: {results:?}"
+    );
+    assert!(results.iter().any(|r| r["url"] == format!("{live_base}/docs").as_str()), "pages the search reached are kept");
+    assert!(core.list_outbound().unwrap().iter().any(|o| o.purpose == "Finding a data source"));
+}
+
+#[tokio::test]
+async fn a_page_without_the_data_also_starts_the_search_and_keeps_its_site() {
+    let temp = tempfile::tempdir().unwrap();
+    let model = MockServer::start().await;
+    let web = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/empty"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html><body>Loading…</body></html>"))
+        .mount(&web)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/weather"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"high": 21, "low": 13})))
+        .mount(&web)
+        .await;
+    let program = |page: &str, code: &str| {
+        let mut p = program_for(&web.uri(), code);
+        p.web_sources[0] = WebSource { name: "weather".into(), url: format!("{}/{page}", web.uri()) };
+        p
+    };
+    let first = responses_body(&program(
+        "empty",
+        r#"function run() { const page = macroscope.source("weather"); throw new Error("Gisborne forecast not found on the page"); }"#,
+    ));
+    let corrected = responses_body(&program(
+        "weather",
+        r#"function run() {
+            const data = JSON.parse(macroscope.source("weather"));
+            macroscope.output("weather.txt", "Gisborne high : " + data.high + ", low : " + data.low);
+        }"#,
+    ));
+    let found = format!("{}/weather", web.uri());
+    let search = json!({"status": "completed", "output": [
+        {"type": "web_search_call", "status": "completed", "results": [{"url": found, "type": "text_result"}]},
+        {"type": "message", "content": [{"type": "output_text", "text": json!({"sources": [
+            {"url": format!("{}/empty", web.uri()), "serves": "the page that lacked the data"},
+        ]}).to_string()}]},
+    ]});
+    let builds = Arc::new(AtomicUsize::new(0));
+    let counter = builds.clone();
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(move |r: &wiremock::Request| {
+            if r.body_json::<serde_json::Value>().unwrap().get("tools").is_some() {
+                return ResponseTemplate::new(200).set_body_json(search.clone());
+            }
+            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 { &first } else { &corrected };
+            ResponseTemplate::new(200).set_body_json(body.clone())
+        })
+        .mount(&model)
+        .await;
+    let core = core_at(temp.path(), model.uri());
+    core.save_api_key("mk-source-search-test-1234567890").await.unwrap();
+    let draft = core.draft_task_no_input("Gisborne weather summary to weather.txt").unwrap();
+    let draft = core
+        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", Some(EXAMPLE.into()))
+        .unwrap();
+    let started = core.start_build(&draft.draft_id, true).await.unwrap();
+    let state = wait(&core, &started.build_id).await;
+    assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
+    let requests = model.received_requests().await.unwrap();
+    let bodies: Vec<serde_json::Value> = model_requests(&requests)
+        .iter()
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect();
+    assert_eq!(bodies.iter().filter(|b| b.get("tools").is_some()).count(), 1);
+    let correction: serde_json::Value = bodies
+        .iter()
+        .filter(|b| b.get("tools").is_none())
+        .nth(1)
+        .and_then(|b| serde_json::from_str(b["input"][1]["content"].as_str().unwrap()).ok())
+        .unwrap();
+    let results = correction["web_search_results"].as_array().unwrap();
+    // Another page on the same site is offered; the page that lacked the data is not.
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(results[0]["url"], found.as_str());
 }

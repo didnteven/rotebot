@@ -712,6 +712,15 @@ pub fn run_program_with_sources(
             empty.map(|label| format!("Most labelled values in the result are empty (for example \"{label}\"): the data that was read does not contain them. Read the full content (for an email search set includeBody to true so its text is returned) and extract the values, or throw an Error naming what is missing; never output empty values")),
         ));
     }
+    if !program.web_sources.is_empty() {
+        let markup = page_markup(output);
+        checks.push(check(
+            "clean_text",
+            "The result is plain text, not page code",
+            markup.is_none(),
+            markup.map(|m| format!("The result contains page code (\"{m}\"), so the program copied raw HTML or wiki source instead of the text. Extract the readable value: use macroscope.html.text or macroscope.html.tables on HTML, and for wiki source take the cell text, not its markup")),
+        ));
+    }
     if let Some(example) = &draft.example_output {
         // Live-data tasks (web sources) and no-input tasks produce numbers
         // that legitimately differ from the pasted example, so compare line
@@ -1581,6 +1590,21 @@ mod tests {
     }
 }
 
+/// Page code left in a result read from the web: HTML tags and attributes, wiki templates,
+/// links and table cells, or undecoded entities. Returns the first fragment found.
+pub(crate) fn page_markup(output: &str) -> Option<String> {
+    static MARKUP: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(concat!(
+            r#"(?i)\b(?:class|style|scope|href|src|align|data-[a-z-]+)\s*=\s*["']"#,
+            r"|</?(?:div|span|td|tr|th|table|tbody|p|a|li|ul|ol|br|img|script|style|h[1-6])\b[^>]*>",
+            r"|\{\{|\}\}|\[\[|\]\]|(?m)^\s*(?:\|-|\{\||\|\}|!\s*scope)",
+            r"|&(?:nbsp|amp|quot|lt|gt|apos|#\d+|#x[0-9a-f]+);",
+        ))
+        .unwrap()
+    });
+    MARKUP.find(output).map(|m| m.as_str().chars().take(40).collect())
+}
+
 /// A result whose labelled lines are mostly empty ("Total:", "Due date: N/A") found nothing:
 /// returns the first empty label when more than half of at least two labels are empty.
 pub(crate) fn empty_labels(output: &str) -> Option<String> {
@@ -1598,7 +1622,24 @@ pub(crate) fn empty_labels(output: &str) -> Option<String> {
             empty.push(format!("{label}:"));
         }
     }
-    (labelled >= 2 && empty.len() * 2 > labelled).then(|| empty.remove(0))
+    // An answer that is only one empty label ("Featured article tools:") is a heading, not a value.
+    let only_a_label = labelled == 1 && empty.len() == 1 && output.trim().lines().count() == 1;
+    ((labelled >= 2 && empty.len() * 2 > labelled) || only_a_label).then(|| empty.remove(0))
+}
+
+#[cfg(test)]
+mod page_markup_tests {
+    #[test]
+    fn page_code_in_a_result_is_found_and_plain_text_passes() {
+        let eclipse = "Date: August 2, 2027\nVisible from: ! scope=\"row\" class=\"nowrap\" | August 2, 2027 | Total";
+        assert!(super::page_markup(eclipse).is_some());
+        assert!(super::page_markup("Headline: <a href=\"/x\">Storm</a>").is_some());
+        assert!(super::page_markup("Visible from: [[Morocco]], [[Spain]]").is_some());
+        assert!(super::page_markup("Price: 5 &amp; rising").is_some());
+        for plain in ["Silver: $31.20 per ounce", "Top: a < b > c, 3 | 4", "Wind: 25 km/h {gusting}", "Total: 2 & 3"] {
+            assert!(super::page_markup(plain).is_none(), "{plain}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1610,5 +1651,7 @@ mod empty_label_tests {
         assert!(super::empty_labels("Total: $84.20\nDue date: 12 Nov\nNotes:\n").is_none());
         assert!(super::empty_labels("Weather 8:00 sunny\nSee https://x.example\n").is_none());
         assert!(super::empty_labels("Total: N/A\nDue: unknown\n").is_some());
+        assert_eq!(super::empty_labels("Featured article tools:\n").as_deref(), Some("Featured article tools:"));
+        assert!(super::empty_labels("Europejara\n").is_none());
     }
 }

@@ -342,6 +342,9 @@ pub(crate) fn install(
     money.set_prototype(None)?;
     money.set("decimal", Function::new(ctx.clone(), decimal)?)?;
     sdk.set("money", money)?;
+    let html: Object = ctx.eval::<Function, _>(include_str!("html.js"))?.call(())?;
+    html.set_prototype(None)?;
+    sdk.set("html", html)?;
     ctx.globals().set("macroscope", sdk)
 }
 

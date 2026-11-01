@@ -791,6 +791,9 @@ fieldset > label:has(input[type="checkbox"]) { display: flex; align-items: cente
 .api-access .api-plan > button { justify-self: start; }
 .api-access .api-more { margin: 8px 0 12px; }
 
+/* Clear sits just under the request, on the right, out of the way of the main button. */
+.task-clear { justify-content: flex-end; align-items: center; gap: 8px; margin: 4px 0 0; }
+p.task-clear { display: flex; }
 .source-options { flex-wrap: wrap; align-items: center; gap: 8px; }
 .source-options .chip { border-radius: 999px; padding: 6px 14px; }
 .source-options .chip-on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }

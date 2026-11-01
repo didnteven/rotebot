@@ -543,7 +543,7 @@ impl MappingBuilder<'_> {
                         let mut program =
                             serde_json::from_value::<crate::Program>(output.value.clone())
                                 .map_err(|_| BuildError::Gateway(GatewayError::MalformedOutput))?;
-                        program.correct_known_addresses();
+                        program.ensure_run();
                         Some(program)
                     } else {
                         None
