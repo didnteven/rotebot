@@ -587,7 +587,7 @@ impl Db {
                 DELETE FROM activity; DELETE FROM today; DELETE FROM schedules;",
             )?;
             if include_tools {
-                tx.execute_batch("DELETE FROM runs; DELETE FROM model_costs; DELETE FROM tools;")?;
+                tx.execute_batch("DELETE FROM runs; DELETE FROM model_costs; DELETE FROM tools; DELETE FROM settings_kv WHERE key = 'bot-designs' OR key LIKE 'bot:%';")?;
             } else {
                 tx.execute_batch(
                     "UPDATE runs SET run_dir = NULL,

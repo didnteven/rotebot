@@ -8,8 +8,9 @@ export function ToolVersions({backend,toolId,name,changed}:{backend:Backend;tool
   const {act,error,busy}=useAction();
   const load=async()=>setVersions(await backend.listToolVersions(toolId));
   return <div>
-    <button className="quiet" aria-expanded={open} onClick={()=>{const next=!open;setOpen(next);if(next)void act(load);}}>Version history</button>
+    <button className="ghost" aria-expanded={open} onClick={()=>{const next=!open;setOpen(next);if(next)void act(load);}}>Version history</button>
     {open&&<>
+      <p>Each saved edit keeps an earlier version here. Restoring a version makes it the one used for future runs. Scheduled tools may need your approval again.</p>
       <Notice error={error}/>
       {versions===null?<p role="status">Loading…</p>:<ul className="plain-list" aria-label={`Versions of ${name}`}>
         {versions.map(v=><li key={v.hash}>

@@ -50,7 +50,14 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export class TauriBackend implements Backend {
   accessPreview: Backend["accessPreview"] = draftId => invoke("access_preview", { draftId });
   researchTaskAccess: Backend["researchTaskAccess"] = (draftId, payloadHash) => invoke("research_task_access", { draftId, payloadHash });
-  saveApiConnection: Backend["saveApiConnection"] = config => invoke("save_api_connection", { config });
+  addApiAddress: Backend["addApiAddress"] = (sourceId, url) => invoke("add_api_address", { sourceId, url });
+  debugApiConnection: Backend["debugApiConnection"] = id => invoke("debug_api_connection", { id });
+  listApiExamples: Backend["listApiExamples"] = id => invoke("list_api_examples", { id });
+  suggestApiExamples: Backend["suggestApiExamples"] = id => invoke("suggest_api_examples", { id });
+  learnApiForTask: Backend["learnApiForTask"] = (id, task) => invoke("learn_api_for_task", { id, task });
+  runApiExample: Backend["runApiExample"] = (id, url) => invoke("run_api_example", { id, url });
+  getApiConfig: Backend["getApiConfig"] = id => invoke("get_api_config", { id });
+  saveApiConnection: Backend["saveApiConnection"] = (config, keys, replaces) => invoke("save_api_connection", { config, keys, replaces });
   saveApiSearchKey: Backend["saveApiSearchKey"] = () => invoke("save_api_search_key");
   removeApiSearchKey: Backend["removeApiSearchKey"] = () => invoke("remove_api_search_key");
   recordingStatus: Backend["recordingStatus"] = () => invoke("recording_status");
@@ -78,6 +85,10 @@ export class TauriBackend implements Backend {
   scheduleStatus: Backend["scheduleStatus"] = (toolId, status) => invoke("schedule_status", {toolId, status});
   loginEnabled: Backend["loginEnabled"] = () => invoke("login_enabled");
   setLoginEnabled: Backend["setLoginEnabled"] = (enabled) => invoke("set_login_enabled", {enabled});
+  removeBotBackgrounds: Backend["removeBotBackgrounds"] = id => invoke("remove_bot_backgrounds", { id });
+  listBotDesigns: Backend["listBotDesigns"] = () => invoke("list_bot_designs");
+  getBotDesign: Backend["getBotDesign"] = id => invoke("get_bot_design", { id });
+  generateBotImage: Backend["generateBotImage"] = request => invoke("generate_bot_image", { request });
   appInfo: Backend["appInfo"] = () => invoke("app_info");
   modelAccess: Backend["modelAccess"] = () => invoke("model_access");
   enterApiKeyNative: Backend["enterApiKeyNative"] = () =>

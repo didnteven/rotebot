@@ -1,3 +1,4 @@
+import { botIdentity } from "./Bot";
 import {render,screen,waitFor,within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {expect,it} from "vitest";
@@ -9,7 +10,6 @@ const GOAL="Get today's forecast for Auckland from https://api.open-meteo.com an
 
 async function createWeather(user:ReturnType<typeof userEvent.setup>) {
   await user.click(button("Describe a task"));
-  await user.click(button("No file"));
   const description=screen.getByLabelText("What should the tool do?");await user.clear(description);await user.type(description,GOAL);
   await user.click(button("Check the plan"));
   await waitFor(()=>expect(button("Send and build")).toBeEnabled());
@@ -81,4 +81,22 @@ it("the sample tool cannot be edited",async()=>{
   const [sample]=await backend.listTools();
   const draft=await backend.draftTaskNoInput("anything");
   await expect(backend.setDraftReplaces(draft.draftId,sample.id)).rejects.toThrow(/sample/i);
+});
+
+it("saves a changed bot appearance on Back without rebuilding or changing the task version", async () => {
+  const {backend,user}=await open();await createWeather(user);
+  const [tool]=await backend.listTools();
+  const previous=botIdentity(tool.id);
+  await user.click(button("Edit: Weather"));
+  await user.click(await screen.findByRole("button",{name:"Edit bot appearance"}));
+  await user.click(screen.getByRole("menuitem",{name:"Try another bot"}));
+  const chosen=botIdentity(tool.id);
+  expect(chosen).not.toBe(previous);
+  expect(screen.getByRole("status")).toHaveTextContent("Bot appearance saved");
+  await user.click(button("Back"));
+  await screen.findByRole("heading",{name:/Weather/});
+  expect(botIdentity(tool.id)).toBe(chosen);
+  expect((await backend.getTool(tool.id)).version).toBe(1);
+  await user.click(button("Edit: Weather"));
+  expect(botIdentity(tool.id)).toBe(chosen);
 });

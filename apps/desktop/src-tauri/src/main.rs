@@ -70,6 +70,30 @@ fn set_model_step_cap(core: State<'_, Core>, tool_id: String, cap: u32) -> Cmd<T
     Ok(core.0.set_model_step_cap(&tool_id, cap)?)
 }
 
+#[tauri::command]
+fn list_bot_designs(core: State<'_, Core>) -> Cmd<Vec<macroscope_app_core::bots::BotDesign>> {
+    Ok(core.0.list_bot_designs()?)
+}
+#[tauri::command]
+fn get_bot_design(core: State<'_, Core>, id: String) -> Cmd<macroscope_app_core::bots::BotDesign> {
+    Ok(core.0.get_bot_design(&id)?)
+}
+#[tauri::command]
+async fn generate_bot_image(
+    core: State<'_, Core>,
+    request: macroscope_app_core::bots::BotImageRequest,
+) -> Cmd<macroscope_app_core::bots::BotDesign> {
+    Ok(core.0.generate_bot_image(request).await?)
+}
+
+#[tauri::command]
+async fn remove_bot_backgrounds(
+    core: State<'_, Core>,
+    id: String,
+) -> Cmd<macroscope_app_core::bots::BotDesign> {
+    Ok(core.0.remove_bot_backgrounds(&id).await?)
+}
+
 // ---------- app and model access ----------
 
 #[tauri::command]
@@ -689,23 +713,75 @@ async fn research_task_access(
         .research_task_access(&conns.0, &draft_id, &payload_hash)
         .await?)
 }
+/// The keys typed into the setup form: the main key, then one value per extra key name.
+#[derive(serde::Deserialize)]
+struct ApiKeys {
+    main: String,
+    #[serde(default)]
+    extras: Vec<String>,
+}
 #[tauri::command]
-async fn save_api_connection(core: State<'_, Core>, config: ApiConfig) -> Cmd<ConnectorInfo> {
+async fn save_api_connection(core: State<'_, Core>, config: ApiConfig, keys: Option<ApiKeys>, replaces: Option<String>) -> Cmd<ConnectorInfo> {
     core.0.validate_api_config(&config)?;
-    let secret = if config.auth == ApiAuth::None {
-        None
+    // When editing, a blank key box keeps the saved key (extras only while the name stays in the same place).
+    let old = match &replaces { Some(id) => Some((id.clone(), core.0.api_config(id)?)), None => None };
+    let (secret, extras) = if config.auth == ApiAuth::None {
+        (None, Vec::new())
     } else {
-        let raw = native_prompt("Enter the credential for the API address you reviewed. It stays in Macroscope's secret store and is never sent to the task model.", true, "Save").await?
-            .ok_or_else(|| invalid("API credential entry cancelled"))?;
-        Some(macroscope_vault::Secret::new(raw.into_bytes()))
+        let keys = keys.ok_or_else(|| invalid("Enter the API key before saving"))?;
+        let main = if macroscope_app_core::api::clean_key(&keys.main).is_empty() {
+            let (id, _) = old.as_ref().ok_or_else(|| invalid("Enter the API key before saving"))?;
+            core.0.api_kept_secret(id, None)?
+        } else {
+            macroscope_vault::Secret::new(macroscope_app_core::api::clean_key(&keys.main).into_bytes())
+        };
+        let mut extras = Vec::new();
+        for (n, value) in keys.extras.iter().enumerate() {
+            if macroscope_app_core::api::clean_key(value).is_empty() {
+                let kept = old.as_ref().filter(|(_, c)| c.extra_header_names.get(n) == config.extra_header_names.get(n));
+                let (id, _) = kept.ok_or_else(|| invalid("Enter every API key before saving"))?;
+                extras.push(core.0.api_kept_secret(id, Some(n))?);
+            } else {
+                extras.push(macroscope_vault::Secret::new(macroscope_app_core::api::clean_key(value).into_bytes()));
+            }
+        }
+        (Some(main), extras)
     };
-    let mut extras = Vec::new();
-    for name in &config.extra_header_names {
-        let raw = native_prompt(&format!("This API also needs a value for its {name} header. Enter it for the API address you reviewed. It stays in Macroscope's secret store and is never sent to the task model."), true, "Save").await?
-            .ok_or_else(|| invalid("API credential entry cancelled"))?;
-        extras.push(macroscope_vault::Secret::new(raw.into_bytes()));
+    let saved = core.0.save_api_connection_with_extras(config, secret, extras).await?;
+    // An edit replaces the old connection: it is removed only once the new one is safely saved.
+    if let Some((old_id, _)) = old {
+        let _ = core.0.disconnect_api(&old_id).await;
     }
-    Ok(core.0.save_api_connection_with_extras(config, secret, extras).await?)
+    Ok(saved)
+}
+#[tauri::command]
+fn list_api_examples(core: State<'_, Core>, id: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+    Ok(core.0.api_examples(&id)?)
+}
+#[tauri::command]
+async fn learn_api_for_task(core: State<'_, Core>, id: String, task: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+    Ok(core.0.learn_api_for_task(&id, &task).await?)
+}
+
+#[tauri::command]
+async fn suggest_api_examples(core: State<'_, Core>, id: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+    Ok(core.0.suggest_api_examples(&id).await?)
+}
+#[tauri::command]
+async fn run_api_example(core: State<'_, Core>, id: String, url: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+    Ok(core.0.run_api_example(&id, &url).await?)
+}
+#[tauri::command]
+async fn debug_api_connection(core: State<'_, Core>, id: String) -> Cmd<macroscope_app_core::api_examples::ApiDebug> {
+    Ok(core.0.debug_api(&id).await?)
+}
+#[tauri::command]
+async fn add_api_address(core: State<'_, Core>, source_id: String, url: String) -> Cmd<ConnectorInfo> {
+    Ok(core.0.add_api_address(&source_id, &url).await?)
+}
+#[tauri::command]
+fn get_api_config(core: State<'_, Core>, id: String) -> Cmd<ApiConfig> {
+    Ok(core.0.api_config(&id)?)
 }
 #[tauri::command]
 async fn save_api_search_key(core: State<'_, Core>) -> Cmd<()> {
@@ -969,6 +1045,28 @@ fn capture_path() -> Option<PathBuf> {
     dev.is_file().then_some(dev)
 }
 
+fn bot_matte_path() -> Option<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let adjacent = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join("macroscope-bot-matte");
+    if adjacent.is_file() {
+        return Some(adjacent);
+    }
+    let triple = if cfg!(target_arch = "aarch64") {
+        "aarch64-apple-darwin"
+    } else {
+        "x86_64-apple-darwin"
+    };
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries")
+        .join(format!("macroscope-bot-matte-{triple}"));
+    dev.is_file().then_some(dev)
+}
+
 /// The observer helper: `MACROSCOPE_OBSERVER`, a sidecar next to the executable, or the
 /// development build inside the repository.
 fn observer_path() -> Option<PathBuf> {
@@ -1154,6 +1252,7 @@ fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
 
 fn open_main<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -1338,6 +1437,10 @@ impl macroscope_app_core::schedules::Notifier for DesktopNotifier {
 
 fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        remove_bot_backgrounds,
+        list_bot_designs,
+        get_bot_design,
+        generate_bot_image,
         list_today,
         dismiss_today_entry,
         list_schedules,
@@ -1425,6 +1528,13 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         pause_show,
         stop_show,
         list_connectors,
+        get_api_config,
+        add_api_address,
+        debug_api_connection,
+        list_api_examples,
+        suggest_api_examples,
+        learn_api_for_task,
+        run_api_example,
         set_connector_url,
         find_connectors,
         access_preview,
@@ -1451,6 +1561,7 @@ fn context<R: Runtime>() -> tauri::Context<R> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| open_main(app)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -1522,6 +1633,7 @@ fn main() {
                 }
             };
             core.configure_capture_helper(capture_path());
+            core.configure_bot_matte_helper(bot_matte_path());
             core.set_notifier(Arc::new(DesktopNotifier(app.handle().clone())));
             let notification_app = app.handle().clone();
             app.notification().on_action(move |_| {
@@ -1563,6 +1675,7 @@ fn main() {
             let conns = Connections::new(core.clone(), vault).map_err(|e| {
                 Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
             })?;
+            core.set_mailer(Arc::new(conns.clone()));
             app.manage(Core(core));
             app.manage(Show(show));
             app.manage(Conns(conns));

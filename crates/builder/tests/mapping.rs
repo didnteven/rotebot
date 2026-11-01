@@ -146,6 +146,61 @@ async fn malformed_then_corrected_once_and_unknown_spend_stays_reserved() {
     assert!(String::from_utf8_lossy(&requests[1].body).contains("Schema correction"));
 }
 #[tokio::test]
+async fn truncated_answer_is_retried_once_with_a_larger_output_ceiling() {
+    let c = contract();
+    let good = serde_json::to_value(&c.mapping).unwrap();
+    let count = Arc::new(AtomicUsize::new(0));
+    let counter = count.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(move |_: &wiremock::Request| {
+            if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(200).set_body_json(json!({"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}))
+            } else {
+                response(good.clone())
+            }
+        })
+        .expect(2)
+        .mount(&server)
+        .await;
+    let vault = MemoryStore::default();
+    let key = SecretRef::new("meta-api-key").unwrap();
+    vault
+        .set(&key, Secret::new(b"bogus-canary".to_vec()))
+        .unwrap();
+    let policy = EgressPolicy::default();
+    let epoch = policy.allow_cloud().unwrap();
+    let builder = MappingBuilder {
+        route: BuildRoute::DirectMeta { key_ref: key },
+        vault: &vault,
+        gateway: MetaResponsesClient::new(server.uri()),
+        policy: &policy,
+        consent_epoch: epoch,
+        muse: None,
+        custom_observer: None,
+        muse_progress: None,
+    };
+    let result = builder
+        .propose(
+            &c,
+            SyntheticSamples::from_contract(&c, 5),
+            BuildBudget::default(),
+            &Validator,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.mapping, c.mapping);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    let requests = server.received_requests().await.unwrap();
+    let ceiling = |i: usize| {
+        serde_json::from_slice::<Value>(&requests[i].body).unwrap()["max_output_tokens"]
+            .as_u64()
+            .unwrap()
+    };
+    assert_eq!(ceiling(0), 4096);
+    assert!(ceiling(1) > ceiling(0));
+}
+#[tokio::test]
 async fn malformed_twice_fails_no_third_dispatch() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

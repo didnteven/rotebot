@@ -1,3 +1,4 @@
+import { withoutBotArtwork } from "./test/trustedArtwork";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
@@ -150,7 +151,7 @@ describe.each(payloads)("P11 renderer: %s", (_name, payload) => {
     const { user, root, inert } = await open(backend);
     await user.click(button("Describe a task"));
     fireEvent.change(screen.getByLabelText("What should the tool do?"), { target: { value: "Map this CSV" } });
-    await user.click(button("Choose file"));
+    await user.click(button("+ Add a file"));
     literal(root, v("file name"), true);
     literal(root, v("input path"), true);
     literal(screen.getByRole("region", { name: "Selected CSV · first 8 rows" }), v("CSV header"));
@@ -330,8 +331,8 @@ async function open(backend: Backend) {
   const { container: root } = render(<App backend={backend} />);
   await waitFor(() => expect(button("Describe a task")).toBeEnabled());
   const inert = (allowed: Partial<Record<typeof commands[number], number>> = {}) => {
-    expect(root.querySelector("script, img, svg, iframe, object, embed, style, link, base, meta")).toBeNull();
-    expect(root.querySelector("[style], [src], [srcset], [background], [formaction]")).toBeNull();
+    expect(withoutBotArtwork(root).querySelector("script, img, svg, iframe, object, embed, style, link, base, meta")).toBeNull();
+    expect(withoutBotArtwork(root).querySelector("[style], [src], [srcset], [background], [formaction]")).toBeNull();
     const handlers = [...root.querySelectorAll("*")].flatMap((element) =>
       [...element.attributes].filter((attr) => /^on/i.test(attr.name)).map((attr) => attr.name),
     );

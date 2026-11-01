@@ -27,6 +27,10 @@ pub enum ReadError {
     InvalidResponse,
     #[error("The request failed or timed out; no retry was attempted")]
     Transport,
+    #[error("The service says that address does not exist (404). If it is only the service's base address, add the path of the data you want, as the service's instructions give it")]
+    NotFound,
+    #[error("The service returned one page of a longer list, in a kind of paging Macroscope cannot follow yet; use an address that returns the whole list")]
+    Paginated,
     #[error("The service returned HTTP {0}; no retry was attempted")]
     Http(u16),
 }
@@ -98,11 +102,30 @@ pub fn public_ip(ip: IpAddr) -> bool {
 }
 
 pub fn validate_header(raw: &str) -> Result<(), ReadError> {
+    // Real APIs name their key headers freely (Client-Id, Access-Token, Ocp-Apim-Subscription-Key),
+    // so allow any valid name except the ones that steer routing, framing or the browser's own identity.
+    const REFUSED: [&str; 18] = [
+        "host", "cookie", "set-cookie", "connection", "keep-alive", "te", "trailer",
+        "transfer-encoding", "upgrade", "content-length", "content-type", "accept-encoding",
+        "user-agent", "origin", "referer", "expect", "forwarded", "via",
+    ];
     let name = raw.to_ascii_lowercase();
-    if name != "authorization" && !name.starts_with("x-") && name != "api-key" {
+    if REFUSED.contains(&name.as_str()) || name.starts_with("proxy-") || name.starts_with("sec-") {
         return Err(ReadError::Credential);
     }
     HeaderName::from_bytes(raw.as_bytes()).map_err(|_| ReadError::Credential)?;
+    Ok(())
+}
+
+/// A query-string parameter name for APIs that take the key in the web address
+/// (`?access_token=…`): plain letters, digits, `_`, `-` and `.`.
+pub fn validate_param(raw: &str) -> Result<(), ReadError> {
+    if raw.is_empty()
+        || raw.len() > 64
+        || !raw.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        return Err(ReadError::Credential);
+    }
     Ok(())
 }
 
@@ -125,7 +148,28 @@ pub async fn get_with_headers(
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<String, ReadError> {
-    let url = validate_url(raw, allow_test)?;
+    get_with_keys(raw, credentials, &[], allow_test, max_bytes, timeout).await
+}
+
+/// Like `get_with_headers`, plus keys the API wants in the web address. The address itself
+/// is validated without them (a key pasted into it is refused); the host adds `query` to
+/// this one request only.
+pub async fn get_with_keys(
+    raw: &str,
+    credentials: &[(&str, &[u8])],
+    query: &[(&str, &[u8])],
+    allow_test: bool,
+    max_bytes: usize,
+    timeout: Duration,
+) -> Result<String, ReadError> {
+    let mut url = validate_url(raw, allow_test)?;
+    if !query.is_empty() {
+        let mut pairs = url.query_pairs_mut();
+        for (name, value) in query {
+            validate_param(name)?;
+            pairs.append_pair(name, std::str::from_utf8(value).map_err(|_| ReadError::Credential)?);
+        }
+    }
     let host = url.host_str().ok_or(ReadError::Url)?;
     let local = allow_test && host == "127.0.0.1" && url.scheme() == "http";
     let addresses: Vec<_> = tokio::time::timeout(
@@ -184,6 +228,7 @@ pub async fn get_with_headers(
                 .min(i64::MAX as u64);
             return Err(ReadError::RateLimited { retry_at_ms });
         }
+        404 => return Err(ReadError::NotFound),
         code => return Err(ReadError::Http(code)),
     }
     if response
@@ -247,6 +292,13 @@ mod tests {
             "x-bad\r\nname",
         ] {
             assert!(validate_header(name).is_err());
+        }
+        for name in ["Client-Id", "Access-Token", "Modal-Key", "Ocp-Apim-Subscription-Key", "apikey"] {
+            assert!(validate_header(name).is_ok(), "{name}");
+        }
+        assert!(validate_param("access_token").is_ok());
+        for name in ["", "a b", "a=b", "a&b", "a#"] {
+            assert!(validate_param(name).is_err(), "{name}");
         }
     }
 }

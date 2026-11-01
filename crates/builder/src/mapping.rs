@@ -189,6 +189,8 @@ pub struct Candidate {
     pub reserved_microusd: u64,
     pub price_table_version: &'static str,
 }
+/// Ceiling for the one larger retry after a truncated model answer.
+const MAX_RETRY_OUTPUT_TOKENS: u32 = 16384;
 #[derive(Debug, Clone)]
 pub struct BuildBudget {
     /// Host-reserved ceiling for this entire job, including correction retries.
@@ -410,6 +412,9 @@ impl MappingBuilder<'_> {
         let mut charged = 0u64;
         let mut usage_total = Usage::default();
         let mut known = true;
+        // Output tokens include the model's reasoning, so a long program can overrun the
+        // default ceiling. A truncated answer is retried once with a larger one.
+        let mut max_output_tokens = budget.max_output_tokens;
         for attempt in 0..2 {
             let input = u64::try_from(prompt.len() + schema.to_string().len())
                 .map_err(|_| BuildError::BudgetExceeded)?
@@ -418,7 +423,7 @@ impl MappingBuilder<'_> {
             let ceiling = if matches!(self.route, BuildRoute::DirectMeta { .. }) {
                 Usage {
                     input_tokens: input,
-                    output_tokens: u64::from(budget.max_output_tokens),
+                    output_tokens: u64::from(max_output_tokens),
                     ..Default::default()
                 }
             } else {
@@ -491,7 +496,7 @@ impl MappingBuilder<'_> {
                             model: None,
                             system,
                             user: &prompt,
-                            max_output_tokens: budget.max_output_tokens,
+                            max_output_tokens,
                             reasoning_effort: "low",
                             schema_name: if is_program { "program" } else { "csv_mapping" },
                             schema: &schema,
@@ -578,6 +583,14 @@ impl MappingBuilder<'_> {
                         reserved_microusd: reserved,
                         price_table_version: macroscope_model_gateway::PRICE_TABLE_VERSION,
                     });
+                }
+                Err(GatewayError::Truncated)
+                    if attempt == 0 && max_output_tokens < MAX_RETRY_OUTPUT_TOKENS =>
+                {
+                    known = false;
+                    max_output_tokens = max_output_tokens
+                        .saturating_mul(4)
+                        .min(MAX_RETRY_OUTPUT_TOKENS);
                 }
                 Err(GatewayError::MalformedOutput) if attempt == 0 => {
                     known = false;

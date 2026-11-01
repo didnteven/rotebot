@@ -7,9 +7,12 @@
 //! checks, outbound input samples are synthetic, and runs commit the exact staged bytes
 //! the user approved.
 
+pub mod bots;
 pub mod api;
 pub mod api_discovery;
+pub mod api_examples;
 pub mod checks;
+pub mod conditions;
 pub mod connections;
 #[cfg(feature = "generated-runtime")]
 mod connector_search;
@@ -193,6 +196,8 @@ struct Inner {
     custom_calls: Mutex<()>,
     api_io: tokio::sync::Mutex<()>,
     research_io: tokio::sync::Mutex<()>,
+    bot_io: tokio::sync::Mutex<()>,
+    bot_matte_helper: Mutex<Option<PathBuf>>,
     cloud_controls: tokio::sync::Mutex<()>,
     lifecycle: Mutex<()>,
     #[cfg(feature = "generated-runtime")]
@@ -203,6 +208,7 @@ struct Inner {
     allow_insecure_web: Mutex<bool>,
     schedule_eval: tokio::sync::Mutex<()>,
     notifier: Mutex<Option<Arc<dyn schedules::Notifier>>>,
+    mailer: Mutex<Option<Arc<dyn schedules::ResultMailer>>>,
     timezone: Mutex<Option<chrono_tz::Tz>>,
     running_tools: Mutex<std::collections::HashSet<String>>,
 }
@@ -358,8 +364,11 @@ impl AppCore {
                 allow_insecure_web: Mutex::new(false),
                 api_io: tokio::sync::Mutex::new(()),
                 research_io: tokio::sync::Mutex::new(()),
+                bot_io: tokio::sync::Mutex::new(()),
+                bot_matte_helper: Mutex::new(None),
                 schedule_eval: tokio::sync::Mutex::new(()),
                 notifier: Mutex::new(None),
+                mailer: Mutex::new(None),
                 timezone: Mutex::new(None),
                 running_tools: Mutex::new(std::collections::HashSet::new()),
             }),
@@ -945,7 +954,7 @@ impl AppCore {
             "approved_connection_sources": previous.map(|p| &p.connection_sources),
             "approved_model_step": previous.and_then(|p| p.model_step.as_ref()),
             "failed_checks": failed_checks,
-            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. HTTP 401 requires authentication; HTTP 403 is an access refusal; HTTP 429 is rate limiting. Stop and explain the connection or cooldown needed. Do not retry a blocked source, change URLs, switch providers or use a browser to evade the restriction. Do not assume a credential will fix 403 or 429. Prefer suitable approved connections and documented API research. current_output must be a real answer: if it apologises, says it could not determine something, or fills in a detail the task never gave (for example a city), fix the program or make it throw an Error that says what is missing. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. Never embed synthetic values as results.",
+            "correction_instruction": "The previous program failed host checks (labels and details above; details are output shapes with numbers as #, or sanitized runtime error diagnostics with user-code positions). Return a corrected program in the same schema (a program JSON object conforming to program_json_schema with summary, output_name, code, web_sources, connection_sources and model_step). fetched_web_samples hold the first 4000 characters of each declared web source as the host fetched it, and current_output is what the previous program produced from them; write the parser for that real content. fetched_web_summaries give each page's full size and its largest list, so you can tell when fetched_web_samples is only an excerpt. Whether failed_checks lists a failed host check or a review item, check two things before you return the program: current_output is the answer the task asks for (not a navigation label, ad or unrelated text) and the web source covers everything the task asks about. A task like 'the biggest loser of the day' needs the whole market, not the first page of a long list: if the URL has a limit, page, offset or top-N parameter, or the largest list is short for what the task covers, change web_sources to a URL (or option such as an all-rows download) that returns the full set, and choose the answer by the task's own criterion rather than by the source's order. HTTP 401 requires authentication; HTTP 403 is an access refusal; HTTP 429 is rate limiting. Stop and explain the connection or cooldown needed. Do not retry a blocked source, change URLs, switch providers or use a browser to evade the restriction. Do not assume a credential will fix 403 or 429. Prefer suitable approved connections and documented API research. current_output must be a real answer: if it apologises, says it could not determine something, or fills in a detail the task never gave (for example a city), fix the program or make it throw an Error that says what is missing. Return the program unchanged only if both checks hold. Keep web_sources as in previous_web_sources unless the fix needs a different URL (the program must declare every source it reads with macroscope.source). If a failed check says a web source could not be fetched (connection failed, a timeout or an HTTP error), that source is down and retrying it will fail the same way: remove it from web_sources and the code, or replace it with a different source that needs no key for the same data; the data you already have may make it unnecessary. Copy connection_sources and model_step exactly from approved_connection_sources and approved_model_step; changing them is rejected because the user approved those permissions. The output must follow the example's exact wording, punctuation, spacing, capitalization and line layout; only data values (numbers, dates, names that come from the sources or input) may differ. Use only the supplied SDK. A runtime TypeError whose position is a macroscope.output call means the call was not macroscope.output(confirmed_output_name, text): pass the confirmed output name first and the text second. Never embed synthetic values as results.",
         })
         .to_string()
     }
@@ -2454,12 +2463,19 @@ impl AppCore {
                     if let Some(cost) = spent2 {
                         self.db().set_outbound_cost(&corr_id, Some(cost))?;
                     }
-                    // The user approved these permissions; a correction can fix the
-                    // code but never widen or change what it may read or ask.
+                    // The user approved these permissions; a correction can fix the code but never
+                    // widen what it may read or ask. It may change the arguments of an approved read
+                    // (for example to include an email's text) on the same connection and read tool.
                     if let (Some(corrected), Some(approved)) =
                         (candidate2.program.as_mut(), approved_program.as_ref())
                     {
-                        corrected.connection_sources = approved.connection_sources.clone();
+                        let within = !corrected.connection_sources.is_empty()
+                            && corrected.connection_sources.iter().all(|s| {
+                                approved.connection_sources.iter().any(|a| a.connector_id == s.connector_id && a.tool_name == s.tool_name)
+                            });
+                        if !within {
+                            corrected.connection_sources = approved.connection_sources.clone();
+                        }
                         corrected.model_step = approved.model_step.clone();
                     }
                     self.update_build(&build_id, |s| {
@@ -2528,6 +2544,27 @@ impl AppCore {
                                         )?;
                                         return Ok(());
                                     }
+                                }
+                            }
+                        }
+                    }
+                    // Changed read arguments are read again; the previous answers are never reused for them.
+                    if let (Some(new), Some(old)) = (candidate2.program.as_ref(), candidate.program.as_ref()) {
+                        if new.connection_sources != old.connection_sources {
+                            for source in &old.connection_sources {
+                                fetched.remove(&source.name);
+                            }
+                            let read = self.fetch_connection_sources(new, &draft.required_connections);
+                            let result = tokio::select! {
+                                biased;
+                                _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
+                                result = read => result,
+                            };
+                            match result {
+                                Ok(texts) => fetched.extend(texts),
+                                Err(e) => {
+                                    self.fail_build(&build_id, BuildFailureKind::Checks, e.to_string())?;
+                                    return Ok(());
                                 }
                             }
                         }
@@ -3926,17 +3963,28 @@ impl AppCore {
                     self.db().put_tool(&tool)?;
                 }
                 let _ = std::fs::remove_dir_all(&run_dir);
+                // Plain words for what happened. Result text never goes in the activity log: the
+                // result is private to the person and lives in Today and its own outputs.
+                let actions = match out.actions.len() {
+                    0 => None,
+                    1 => Some("1 action sent".to_string()),
+                    n => Some(format!("{n} actions sent")),
+                };
+                let mut parts = Vec::new();
+                if out.status != ReceiptStatus::Committed {
+                    parts.push(format!("Problem: {:?}", out.status));
+                }
+                if !out.output_path.is_empty() {
+                    parts.push(format!("Created {}", dto.output_name));
+                }
+                parts.extend(actions);
                 self.activity(
                     "run",
                     format!("Ran “{tool_name}”"),
-                    Some(if out.output_path.is_empty() {
-                        format!("{} connection actions: {:?}", out.actions.len(), out.status)
+                    Some(if parts.is_empty() {
+                        "Finished".to_string()
                     } else {
-                        format!(
-                            "Created {}; {} connection actions",
-                            dto.output_name,
-                            out.actions.len()
-                        )
+                        parts.join(" · ")
                     }),
                 );
                 self.finish_today(run_id, Some(&out), None)?;

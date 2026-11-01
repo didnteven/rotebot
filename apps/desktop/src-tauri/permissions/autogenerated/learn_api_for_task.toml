@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-learn-api-for-task"
+description = "Enables the learn_api_for_task command without any pre-configured scope."
+commands.allow = ["learn_api_for_task"]
+
+[[permission]]
+identifier = "deny-learn-api-for-task"
+description = "Denies the learn_api_for_task command without any pre-configured scope."
+commands.deny = ["learn_api_for_task"]

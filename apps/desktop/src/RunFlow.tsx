@@ -1,7 +1,8 @@
+import { BotAvatar, BotStatus, botIdentity } from "./Bot";
 import { ActionReview, ActionTechnicalDetails } from "./ActionReview";
 import { SourceReview, SourceTechnicalDetails } from "./SourceReview";
 import { ScheduleSection } from "./Schedule";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Backend,
   CsvPreview,
@@ -32,18 +33,45 @@ export function RunFlow({
   close,
   changed,
   openSettings,
+  scheduleFirst = false,
 }: {
   backend: Backend;
   tool: ToolSummary;
   close: () => void;
   changed: () => Promise<void>;
   openSettings?: () => void;
+  /** Opened from the Schedule button: show the schedule section already expanded. */
+  scheduleFirst?: boolean;
 }) {
+  const { act, busy, error, retry, setError } = useAction();
+  const [scheduleShown, setScheduleShown] = useState(scheduleFirst);
   const [modelRoute,setModelRoute]=useState<import("./backend/types").ModelRoute>("offline_demo");
   const [routeDetails,setRouteDetails]=useState("");
-  useEffect(()=>{void backend.modelAccess().then(a=>{setModelRoute(a.effectiveRoute??"offline_demo");setRouteDetails(`Custom endpoint · ${a.customEndpoint.host} · ${a.customEndpoint.model}`);});},[backend]);
   const [detail, setDetail] = useState<ToolDetail | null>(null);
-  useEffect(() => { void backend.getTool(tool.id).then(next => { setDetail(next); if (next.program) setName(next.program.output_name); }); }, [backend, tool.id]);
+  const [loadingDetail, setLoadingDetail] = useState(true);
+  const detailRequest = useRef(0);
+  async function loadDetail() {
+    const request = ++detailRequest.current;
+    setLoadingDetail(true);
+    setError(null);
+    try {
+      const [access, next] = await Promise.all([backend.modelAccess(), backend.getTool(tool.id)]);
+      if (request !== detailRequest.current) return;
+      setModelRoute(access.effectiveRoute ?? "offline_demo");
+      setRouteDetails(`Custom endpoint · ${access.customEndpoint.host} · ${access.customEndpoint.model}`);
+      setDetail(next);
+      if (next.program) setName(next.program.output_name);
+    } catch (error) {
+      if (request === detailRequest.current) setError(error instanceof Error ? error.message : "Could not load your tool.");
+    } finally {
+      if (request === detailRequest.current) setLoadingDetail(false);
+    }
+  }
+  useEffect(() => {
+    setDetail(null);
+    void loadDetail();
+    return () => { detailRequest.current++; };
+  }, [backend, tool.id]);
   const [input, setInput] = useState<CsvPreview | null>(null),
     [folder, setFolder] = useState<FileHandle | null>(null),
     [name, setName] = useState("orders_ready.csv");
@@ -52,7 +80,6 @@ export function RunFlow({
     [receipt, setReceipt] = useState<Receipt | null>(null),
     [failure, setFailure] = useState<RunFailure | null>(null);
   const [actionsReviewed, setActionsReviewed] = useState(false);
-  const { act, busy, error, retry } = useAction();
   const headingRef = useScreenFocus<HTMLHeadingElement>(receipt ? "receipt" : staged ? "preview" : "input");
   async function clearStage() {
     if (staged) await backend.discardRun(staged.runId);
@@ -109,10 +136,13 @@ export function RunFlow({
       >
         Back to tools
       </button>
+      <BotAvatar seed={botIdentity(tool.id)} state={busy ? "working" : failure ? "error" : receipt ? "success" : staged ? "waiting" : "idle"} size={96} />
       <h2 ref={headingRef} tabIndex={-1}>{receipt ? "Run finished" : staged ? "Result preview" : `Run ${tool.name}`}</h2>
       {detail?.program && <SourceReview advanced={false} program={detail.program} route={modelRoute} routeDetails={routeDetails}/>}
-      {detail?.noInput && <details><summary>Schedule this tool</summary><ScheduleSection advanced={false} backend={backend} tool={detail} openSettings={openSettings} /></details>}
+      {scheduleFirst && detail && !detail.noInput && <p role="note" className="notice notice-info">This tool needs a file each time, so it can’t run on a schedule. Only tools that fetch their own data can.</p>}
+      {detail?.noInput && <details open={scheduleShown} onToggle={e => setScheduleShown(e.currentTarget.open)}><summary>Schedule this tool</summary><ScheduleSection advanced={false} backend={backend} tool={detail} openSettings={openSettings} onChanged={() => void changed()} /></details>}
       <p>Check the result before creating the output file.</p>
+      {(busy || loadingDetail) && <BotStatus seed={botIdentity(tool.id)} label={!detail ? "Loading your tool…" : staged ? "Updating your run…" : "Preparing your result…"} />}
       {detail?.noInput && detail?.program && detail.program.webSources.length > 0 && (
         <p role="note" className="notice notice-info">
           This run reads data from{" "}
@@ -123,8 +153,8 @@ export function RunFlow({
       {detail?.noInput && (
         <p>No input file: this tool reads the sites you approved.</p>
       )}
-      {error && <FailureNotice message={error} retry={() => void act(retry)} change={() => void act(clearStage)} />}
-      {busy && <p role="status">Working…</p>}
+      {error && <FailureNotice message={error} retry={() => void act(detail ? retry : loadDetail)} change={() => void act(clearStage)} />}
+
       {!receipt && (
         <>
           {detail?.noInput && !!detail.program && !preview && !staged && (
@@ -143,6 +173,7 @@ export function RunFlow({
           )}
           {(!detail?.noInput || (!!preview && !sendsOnly) || !!staged || !detail.program) && <fieldset disabled={busy || !!staged}>
             <legend>{detail?.noInput ? "Save the result" : "Choose files"}</legend>
+            <p>Choose where to save the new file. Your original file stays unchanged.</p>
             <div className="actions">
               {!detail?.noInput && (
                 <>
@@ -231,7 +262,7 @@ export function RunFlow({
                 </p>
               )}
               {!!staged.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true) && !actionsReviewed && <p>Review and approve the actions above to continue.</p>}
-              {busy && <p role="status">Working…</p>}
+
               <div className="actions">
                 <button disabled={busy} onClick={() => void act(clearStage)}>
                   Cancel

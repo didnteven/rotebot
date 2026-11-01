@@ -44,9 +44,12 @@ export function isHttpsUrl(value: string) {
 export function useAction() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const pending = useRef(false);
   const lastAction = useRef<() => Promise<unknown>>(async () => {});
   const retry = useCallback(() => lastAction.current(), []);
   async function act(job: () => Promise<unknown>) {
+    if (pending.current) return;
+    pending.current = true;
     if (job !== retry) lastAction.current = job;
     setBusy(true);
     setError(null);
@@ -57,6 +60,7 @@ export function useAction() {
         e instanceof Error ? e.message : "Something went wrong. Try again.",
       );
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   }

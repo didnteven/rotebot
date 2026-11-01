@@ -107,6 +107,19 @@ describe("Tell and deterministic runs", () => {
       screen.queryByRole("button", { name: "Yes, save this tool" }),
     ).not.toBeInTheDocument();
   });
+  it("shows no empty program or mapping in Details while the first candidate is still being written", async () => {
+    const backend = new MockBackend();
+    await backend.selectRoute("offline_demo");
+    const { user } = await open(backend);
+    await review(user);
+    await user.click(button("Send and build"));
+    await screen.findByRole("button", { name: "Stop build" });
+    const details = screen.getByText("Details").closest("details")!;
+    expect(details).not.toHaveTextContent("CSV mapping");
+    expect(details).not.toHaveTextContent("Program (sandboxed)");
+    expect(details.querySelector("pre")).toBeNull();
+    expect(details).not.toHaveTextContent(/\bnull\b/);
+  });
   it("explains the automatic offline route and preserves the draft across settings navigation", async () => {
     const { user } = await open();
     await review(user);
@@ -204,7 +217,7 @@ describe("Tell and deterministic runs", () => {
     );
     const { user } = await open(backend);
     await user.click(button("Describe a task"));
-    await user.click(button("Choose file"));
+    await user.click(button("+ Add a file"));
     expect(
       await screen.findByText("<img src=x onerror=alert(1)>"),
     ).toBeVisible();

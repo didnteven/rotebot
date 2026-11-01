@@ -1,4 +1,6 @@
 //! Single-shot, zero-tool Meta Responses gateway.
+mod images;
+pub use images::*;
 mod responses;
 pub use responses::*;
 mod custom;

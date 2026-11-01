@@ -1,3 +1,4 @@
+import { withoutBotArtwork } from "./test/trustedArtwork";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
@@ -35,7 +36,7 @@ it("creates a program, reviews real example text, compares inert output and save
   expect(screen.getByRole("heading", {name:"Input · first lines", hidden:true})).not.toBeVisible();
   await user.click(screen.getByText("Details"));
   expect(container.querySelectorAll("pre").length).toBeGreaterThan(1);
-  expect(container.querySelectorAll("img, script, iframe, object, svg")).toHaveLength(0);
+  expect(withoutBotArtwork(container).querySelectorAll("img, script, iframe, object, svg")).toHaveLength(0);
   await user.click(screen.getByRole("button", {name:"Yes, save this tool"}));
   expect(saved).toHaveBeenCalledOnce();
   const tool = await backend.getTool((await backend.listTools())[0].id);

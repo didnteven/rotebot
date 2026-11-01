@@ -1,3 +1,4 @@
+import { BotStatus } from "./Bot";
 import { useEffect, useRef, useState } from "react";
 import type { Backend, ConnectorCandidate, ConnectorInfo, ShowState, RecordingFrames, RecordingPreview, TaskDraftV2, TaskDraft, RecordingStatus, MaskLevel } from "./backend/types";
 import { formatBytes, Notice, useAction, useScreenFocus } from "./ui";
@@ -262,11 +263,13 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
   }
   const titles=["Show Macroscope what to do","Recording","Check what will be sent","What we understood","Create the tool"];
   return <section className="card recording-flow" aria-label="Record a task">
+    {step > 0 && step < 4 && <p className="muted">Back discards this recording and returns to My tools.</p>}
     {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard(true))}>Back</button>}
+    <ol className="stepper" aria-label="Recording progress">{["Choose a window", "Record", "Review privacy", "Check the plan", "Create tool"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined}>{index + 1}. {label}</li>)}</ol>
     <h2 ref={heading} tabIndex={-1}>{titles[step]}</h2>
     <Notice error={error ?? pollError}/>
     {(error || pollError) && <p>Check your settings or discard this recording and start again.</p>}
-    {busy && <p role="status">{step===2?"Analyzing your recording…":"Working…"}</p>}
+    {busy && <BotStatus label={step===2?"Analyzing your recording…":"Preparing your recording…"} />}
     {step===0 && <>
       <p>Choose one window and show Macroscope a chore. You'll check the private details we've hidden, then decide whether to send it and turn it into a tool.</p>
       <p>Password fields and private windows are always excluded. After you stop, you can choose how much other sensitive text to hide before anything is sent. That's off until you turn it on.</p>
@@ -278,7 +281,7 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
           {captureStatus.helperAvailable && captureStatus.reason!=="picker_identity_unavailable" && <>
             <p>Macroscope needs both of these. Switch Macroscope on in each, then quit and reopen the app. This page updates by itself.</p>
             <div className="actions">
-              <button disabled={busy} onClick={()=>void act(async()=>{await backend.requestRecordingPermission();await backend.openPrivacySettings("screen_recording");})}>Open Screen Recording settings</button>
+              <button disabled={busy} onClick={()=>void act(async()=>{const next = await backend.requestRecordingPermission();await backend.openPrivacySettings("screen_recording");setCaptureStatus(next);})}>Open Screen Recording settings</button>
               <span role="status">{captureStatus.screenRecordingGranted ? "Screen Recording: on" : "Screen Recording: off"}</span>
             </div>
             <div className="actions">
@@ -397,8 +400,8 @@ export function ShowPanel({backend, state, update, close, createFlow}: {
     </>}
     {step<4 && <button disabled={busy} onClick={()=>void act(()=>discard())}>Discard recording</button>}
     {step===4 && draft && <>
-      <p>Your recording is discarded. Check the plan below, then build and save your tool.</p>
-      <CreateFlow {...createFlow} backend={backend} initialInput={null} initialGoal={draft.goal} initialDraft={draft}/>
+      <p>Your recording became the request below and has been discarded. Check it, choose any data to use, then check the plan.</p>
+      <CreateFlow {...createFlow} backend={backend} initialInput={null} initialGoal={draft.goal} initialDraft={draft} startAtRequest/>
     </>}
     {step===0 && <details><summary>Advanced: app activity log</summary><ActivityLog backend={backend} state={state} update={update}/></details>}
   </section>;

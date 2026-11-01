@@ -404,6 +404,8 @@ fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
             assert!(!error.message.contains(secret), "{error:?}");
         }
     }
+    let error = failure(r#"var x = 1; macroscope.log("top level");"#);
+    assert!(error.message.contains("must define function run()"), "{error:?}");
     let error = failure(r#"function run(){throw "secret-value";}"#);
     assert_eq!(
         error.message,
@@ -714,4 +716,16 @@ fn regex_backtracking_reaches_the_runtime_interrupt_handler() {
         },
         "wall",
     );
+}
+
+#[test]
+fn a_wrong_output_call_names_the_two_string_shape() {
+    let error = failure("function run() {\n  macroscope.output('only text');\n}");
+    assert!(error.message.contains("TypeError at line 2"), "{error:?}");
+    assert!(
+        error.message.contains("macroscope.output takes two strings"),
+        "{error:?}"
+    );
+    let unrelated = failure("function run(){\n  let row;\n  row.trim();\n}");
+    assert!(!unrelated.message.contains("macroscope.output"), "{unrelated:?}");
 }

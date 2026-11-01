@@ -227,12 +227,52 @@ export class MockBackend implements Backend {
   }
   async saveApiSearchKey() { this.apiSearchEnabled = true; }
   async removeApiSearchKey() { this.apiSearchEnabled = false; }
-  async saveApiConnection(config: import("./types").ApiConfig) {
+  async saveApiConnection(config: import("./types").ApiConfig, _keys?: { main: string; extras: string[] }, replaces?: string) {
     const url = new URL(config.url);
     if (url.protocol !== "https:" || url.username || url.password || url.hash || /[{}]/.test(config.url)) throw new Error("Use a complete HTTPS API URL without credentials.");
     const info: ConnectorInfo = { id: this.id("api"), service: config.name, name: config.name, category: "APIs", mcpUrl: config.url,
       registration: "api", verification: "unverified", docsUrl: config.docsUrl, state: { kind: "not_connected" }, hasClientCredentials: false, clientSetup: null, redirectUri: null };
-    this.connectors.push(info); return clone(info);
+    if (replaces) { this.connectors = this.connectors.filter(c => c.id !== replaces); this.apiConfigs.delete(replaces); }
+    this.connectors.push(info); this.apiConfigs.set(info.id, clone(config)); return clone(info);
+  }
+  private apiConfigs = new Map<string, import("./types").ApiConfig>();
+  async addApiAddress(sourceId: string, url: string) {
+    const config = await this.getApiConfig(sourceId);
+    if (new URL(url).origin !== new URL(config.url).origin) throw new Error("That address is not on the same service as the saved API");
+    const info = this.connector(sourceId); info.state = { kind: "connected", sinceMs: Date.now(), toolCount: 1 };
+    const list = this.apiExamples.get(sourceId) ?? [];
+    if (!list.some(e => e.url === url)) list.push({ label: new URL(url).pathname, url, note: "Added from a task", ok: true, result: "{items: […]}", testedAtMs: Date.now() });
+    this.apiExamples.set(sourceId, list);
+    return clone(info);
+  }
+  async debugApiConnection(id: string) {
+    await this.getApiConfig(id);
+    return { steps: [{ label: "Reach the address without any keys", ok: false, detail: "The service says this address does not exist (404)." }],
+      verdict: "The address itself is wrong, whatever the keys. Add the path of the data you want, as the service's instructions give it, or choose Find working addresses below.", tryExamples: true, fixed: false };
+  }
+  private apiExamples = new Map<string, import("./types").ApiExample[]>();
+  async listApiExamples(id: string) { return clone(this.apiExamples.get(id) ?? []); }
+  async suggestApiExamples(id: string) {
+    const config = await this.getApiConfig(id);
+    const url = new URL("/accounts", config.url).toString();
+    const list = this.apiExamples.get(id) ?? [];
+    if (!list.some(e => e.url === url)) list.push({ label: "List accounts", url, note: "Your accounts and balances.", ok: null, result: null, testedAtMs: null });
+    this.apiExamples.set(id, list); return clone(list);
+  }
+  async learnApiForTask(id: string, _task: string) {
+    for (const e of await this.suggestApiExamples(id)) if (e.ok === null) await this.runApiExample(id, e.url);
+    return this.listApiExamples(id);
+  }
+  async runApiExample(id: string, url: string) {
+    const list = this.apiExamples.get(id) ?? [];
+    const example = list.find(e => e.url === url); if (!example) throw new Error("Example not found");
+    example.ok = true; example.result = "{items: [{name: text, balance: {available: number}}] × 1}"; example.testedAtMs = Date.now();
+    return clone(list);
+  }
+  async getApiConfig(id: string) {
+    const config = this.apiConfigs.get(id);
+    if (!config) throw new Error("API connection not found");
+    return clone(config);
   }
   private recording = new RecordingMock(
     () => this.resolveRoute(), description => this.draftTaskNoInput(description), row => this.outbound.unshift(row),
@@ -276,7 +316,10 @@ export class MockBackend implements Backend {
     const tool = await this.getTool(toolId);
     if (!request.approved || request.versionHash !== tool.versionHash) throw new Error("Review and approve this tool version running unattended");
     if (!tool.noInput) throw new Error("Schedules require a tool without a selected input file");
-    if (!request.outputs.today && !request.outputs.notification && !request.outputs.folder) throw new Error("Choose at least one output");
+    if (!request.outputs.today && !request.outputs.notification && !request.outputs.folder && !request.outputs.email) throw new Error("Choose at least one output");
+    const w = request.outputs.sendWhen;
+    if (w && ((w.kind === "contains" && !w.text.trim()) || ((w.kind === "above" || w.kind === "below") && !Number.isFinite(w.value)))) throw new Error("Check the “send only when” choice: enter the text and a number");
+    if (request.outputs.email && !/^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(request.outputs.email.to)) throw new Error("Enter one email address, like you@example.com");
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(request.frequency.time)) throw new Error("Time must be HH:MM");
     if (request.frequency.kind === "weekly" && (request.frequency.weekday < 1 || request.frequency.weekday > 7)) throw new Error("Choose a valid weekday");
     if (request.frequency.kind === "monthly" && (request.frequency.day < 1 || request.frequency.day > 31)) throw new Error("Choose day 1–31");
@@ -454,6 +497,40 @@ export class MockBackend implements Backend {
   async removeApiKey() {
     this.status.apiKey = { present: false, fingerprint: null, lastTest: null };
     return this.resolveRoute();
+  }
+  private botDesigns = new Map<string, import("./types").BotDesign>();
+  async listBotDesigns() { return [...this.botDesigns.values()].map(bot => ({ ...bot, images: {} })); }
+  async getBotDesign(id: string) {
+    const bot = this.botDesigns.get(id);
+    if (!bot) throw new Error("Bot not found.");
+    return structuredClone(bot);
+  }
+  async removeBotBackgrounds(id: string) {
+    const bot = await this.getBotDesign(id);
+    bot.transparentPoses = [...bot.completedPoses];
+    bot.backgroundRemovalError = null;
+    this.botDesigns.set(id, bot);
+    return structuredClone(bot);
+  }
+  async generateBotImage(request: import("./types").BotImageRequest) {
+    if (!request.approved) throw new Error("Approve the cost first.");
+    const access = await this.modelAccess();
+    if (!access.apiKey.present) throw new Error("Add a Meta API key in Settings.");
+    if (access.egress !== "cloud_allowed") throw new Error("Cloud models are paused.");
+    let bot = this.botDesigns.get(request.id);
+    if (!bot) {
+      if (request.pose !== 0) throw new Error("Create a preview first.");
+      bot = { id: request.id, description: request.description, attempts: 0, completedPoses: [], uncertainPose: null, createdAtMs: Date.now(), images: {} };
+    }
+    if (!bot.completedPoses.includes(request.pose)) {
+      bot.attempts++;
+      bot.completedPoses.push(request.pose);
+      // Offline demo pixel: no external generation or charges in the mock backend.
+      bot.images[request.pose] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
+    }
+    bot.transparentPoses = [...bot.completedPoses];
+    this.botDesigns.set(request.id, bot);
+    return structuredClone(bot);
   }
   async testApiKey() {
     if (!this.status.apiKey.present) throw new Error("Enter a key first.");
@@ -1577,6 +1654,7 @@ export class MockBackend implements Backend {
     };
   }
   async deleteData(options: { includeTools: boolean }) {
+    if (options.includeTools) this.botDesigns.clear();
     this.today=[]; this.schedules.clear();
     await this.emergencyStop();
     await this.setLocalOnly(true);

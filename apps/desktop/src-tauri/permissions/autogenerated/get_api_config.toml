@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-api-config"
+description = "Enables the get_api_config command without any pre-configured scope."
+commands.allow = ["get_api_config"]
+
+[[permission]]
+identifier = "deny-get-api-config"
+description = "Denies the get_api_config command without any pre-configured scope."
+commands.deny = ["get_api_config"]

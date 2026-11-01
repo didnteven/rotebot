@@ -1,0 +1,12 @@
+const guides = {
+  Today: { description: "Your scheduled results and anything waiting for your approval.", steps: ["Read your latest results below.", "If a result needs your OK, review the exact actions before approving them.", "Set up a schedule from a saved tool to have results appear here automatically."] },
+  Tools: { description: "Create a reusable tool for a task, then run it whenever you need it.", steps: ["Choose Describe a task and explain what you want in everyday language.", "Review the plan and test the result before saving your tool.", "Choose Run now on a saved tool. You can review the result before approving changes or creating a file."] },
+  Activity: { description: "A history of what Macroscope has built and run.", steps: ["Look here to see what happened and when.", "Open a run receipt to check its outcome or find a file it created.", "Go to Today for results that need your approval, or My tools to run a task again."] },
+  Connections: { description: "Connect the services your tools need, such as email or your calendar.", steps: ["Choose the service you want and follow its sign-in steps.", "After signing in, return here to check the connection.", "Connecting a service does not approve every action. Each tool still asks for the access it needs."] },
+  Privacy: { description: "Control cloud access, check what was sent, and manage the data saved on this Mac.", steps: ["Use Local only to stop cloud model work while allowing local tools to continue.", "Use Emergency stop if you need to stop builds, tools, and recording.", "Review the deletion summary before removing local history. Files in your own folders are kept."] },
+  Settings: { description: "Choose the AI service that builds your tools and manage app preferences.", steps: ["Start with a Muse plan or a Meta API key if you have one. Offline demo lets you try supported examples without a model.", "Choose an available option under Model access. If it is unavailable, use the setup button beside it.", "Custom endpoint setup is optional and intended for people using their own AI provider."] },
+};
+export function SectionGuide({ section }: { section: keyof typeof guides }) {
+  const guide = guides[section];
+  return <div className="section-guide"><p className="page-description">{guide.description}</p><details><summary>How to use this section</summary><ol>{guide.steps.map(step => <li key={step}>{step}</li>)}</ol></details></div>;
+}

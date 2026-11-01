@@ -661,9 +661,21 @@ pub fn refresh(draft: &mut TaskDraft) {
             .as_ref()
             .filter(|p| crate::api_discovery::applicable(draft, p))
         {
-            if !matches!(
+            if plan.state == "same_service_works" {
+                if !draft
+                    .required_connections
+                    .iter()
+                    .any(|c| Some(&c.connector_id) == plan.reuse_keys_from.as_ref())
+                {
+                    blockers.push(
+                        "Choose “Use my existing connection for this” before building.".into(),
+                    );
+                }
+            } else if !matches!(
                 plan.state.as_str(),
-                "local" | "public_api" | "existing_connection"
+                // Research that found nothing to set up does not stop a build: the program may still
+                // use a public source, and the build checks it.
+                "local" | "public_api" | "existing_connection" | "needs_research"
             ) {
                 blockers.push(
                     "Resolve the missing API access or adapter before building this plan.".into(),

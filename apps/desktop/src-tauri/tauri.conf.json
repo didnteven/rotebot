@@ -33,7 +33,7 @@
       "app"
     ],
     "category": "Productivity",
-    "externalBin": ["binaries/macroscope-runner", "binaries/macroscope-capture"],
+    "externalBin": ["binaries/macroscope-runner", "binaries/macroscope-capture", "binaries/macroscope-bot-matte"],
     "shortDescription": "Turn a repetitive task into a tool you can check and keep.",
     "icon": [
       "icons/32x32.png",

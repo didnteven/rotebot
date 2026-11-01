@@ -283,10 +283,11 @@ pub fn tools() -> Vec<Tool> {
     vec![
         Tool {
             name: "search_messages".into(),
-            description: Some("Search a folder, newest first. query words: from:x to:x subject:x since:2026-10-01 before:2026-11-01 newer_than:7d is:unread is:starred; other words search the whole message (Gmail accepts its full search syntax). Returns {\"messages\": [{uid, folder, subject, from, date, unread, messageId}]}.".into()),
+            description: Some("Search a folder, newest first. query words: from:x to:x subject:x since:2026-10-01 before:2026-11-01 newer_than:7d is:unread is:starred; other words search the whole message (Gmail accepts its full search syntax). Returns {\"messages\": [{uid, folder, subject, from, date, unread, messageId}]}. With includeBody true (at most 5 messages) each message also has its plain-text body and attachment names: use this to read the content of the latest matching emails in one read, for example {\"query\": \"from:watercare\", \"pageSize\": 1, \"includeBody\": true}.".into()),
             input_schema: json!({"type": "object", "additionalProperties": false, "properties": {
                 "query": {"type": "string"}, "folder": folder.clone(),
-                "pageSize": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS}}}),
+                "pageSize": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
+                "includeBody": {"type": "boolean", "description": "Also return each message's plain-text body (at most 5 messages)"}}}),
             annotations: read(),
         },
         Tool {
@@ -388,7 +389,8 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
         }
         "search_messages" => {
             let folder = folder_arg(args, "folder").map_err(bad)?;
-            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, MAX_RESULTS) as usize;
+            let with_body = args["includeBody"].as_bool() == Some(true);
+            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, if with_body { 5 } else { MAX_RESULTS }) as usize;
             let criteria = search_criteria(args["query"].as_str().unwrap_or_default(), cfg.gmail(), now_secs()).map_err(bad)?;
             session.examine(&folder).await.map_err(imap_error)?;
             let mut uids: Vec<u32> = session.uid_search(&criteria).await.map_err(imap_error)?.into_iter().collect();
@@ -397,8 +399,14 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
             let mut messages = Vec::new();
             if !uids.is_empty() {
                 let set = uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+                let query = if with_body {
+                    format!("(UID FLAGS BODY.PEEK[]<0.{MAX_FETCH_BYTES}>)")
+                } else {
+                    "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])".to_string()
+                };
+                let per_message = MAX_BODY_CHARS * 2 / uids.len().max(1);
                 let fetched: Vec<_> = session
-                    .uid_fetch(&set, "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
+                    .uid_fetch(&set, query)
                     .await
                     .map_err(imap_error)?
                     .try_collect()
@@ -406,16 +414,21 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
                     .map_err(imap_error)?;
                 for f in &fetched {
                     let Some(uid) = f.uid else { continue };
-                    let parsed = f.header().and_then(|h| mail_parser::MessageParser::default().parse(h));
+                    let parsed = if with_body { f.body() } else { f.header() }.and_then(|h| mail_parser::MessageParser::default().parse(h));
                     let unread = !f.flags().any(|fl| matches!(fl, Flag::Seen));
-                    messages.push((uid, json!({
+                    let mut entry = json!({
                         "uid": uid.to_string(), "folder": folder,
                         "subject": parsed.as_ref().and_then(|m| m.subject()).map(clean_line).unwrap_or_default(),
                         "from": parsed.as_ref().map(|m| from_text(m)).unwrap_or_default(),
                         "date": parsed.as_ref().and_then(|m| m.date()).map(|d| d.to_rfc3339()).unwrap_or_default(),
                         "unread": unread,
                         "messageId": parsed.as_ref().and_then(|m| m.message_id()).map(|id| format!("<{id}>")).unwrap_or_default(),
-                    })));
+                    });
+                    if let (true, Some(m)) = (with_body, parsed.as_ref()) {
+                        entry["body"] = json!(m.body_text(0).map(|b| b.to_string()).unwrap_or_default().chars().take(per_message.min(MAX_BODY_CHARS)).collect::<String>());
+                        entry["attachments"] = json!(m.attachments().take(20).map(|a| json!({"name": a.attachment_name().map(clean_line).unwrap_or_default(), "size": a.len()})).collect::<Vec<_>>());
+                    }
+                    messages.push((uid, entry));
                 }
                 messages.sort_by(|a, b| b.0.cmp(&a.0));
             }
@@ -1014,6 +1027,12 @@ mod tests {
         assert_eq!(messages[1]["unread"], false);
         assert_eq!(messages[0]["messageId"], "<abc@example.org>");
         assert!(seen.lock().unwrap().commands.iter().any(|c| c == "UID SEARCH FROM \"amy\""));
+
+        // includeBody returns the text in the same read, so one fixed read can get the latest email's content.
+        let with_body = call(&cfg, "search_messages", &json!({"query": "from:amy", "pageSize": 1, "includeBody": true})).await.unwrap();
+        let first = &with_body["structuredContent"]["messages"][0];
+        assert_eq!(first["body"].as_str().unwrap().trim(), "Your voucher code is ABC123.");
+        assert_eq!(first["subject"], "Voucher");
 
         let read = call(&cfg, "get_message", &json!({"uid": "1"})).await.unwrap();
         assert_eq!(read["structuredContent"]["body"].as_str().unwrap().trim(), "Your voucher code is ABC123.");

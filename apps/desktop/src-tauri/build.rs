@@ -2,6 +2,10 @@ fn main() {
     // Every command is enrolled in the app manifest and granted to the main window only
     // (capabilities/main.json). Keep this list identical to generate_handler! in main.rs.
     const COMMANDS: &[&str] = &[
+        "remove_bot_backgrounds",
+        "list_bot_designs",
+        "get_bot_design",
+        "generate_bot_image",
         "list_today",
         "dismiss_today_entry",
         "list_schedules",
@@ -89,6 +93,13 @@ fn main() {
         "pause_show",
         "stop_show",
         "list_connectors",
+        "get_api_config",
+        "add_api_address",
+        "debug_api_connection",
+        "list_api_examples",
+        "suggest_api_examples",
+        "learn_api_for_task",
+        "run_api_example",
         "set_connector_url",
         "find_connectors",
         "access_preview",

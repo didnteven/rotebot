@@ -4,6 +4,21 @@
 // Every string that came from a file, a model, or an MCP server is untrusted: render it
 // as text, never as HTML (plan §8.4).
 
+export interface BotDesign {
+  id: string;
+  description: string;
+  completedPoses: number[];
+  attempts: number;
+  uncertainPose: number | null;
+  transparentPoses?: number[];
+  backgroundRemovalError?: string | null;
+  createdAtMs: number;
+  images: Record<string, string>;
+}
+export interface BotImageRequest {
+  id: string; description: string; pose: number; approved: boolean; retryUncertain: boolean;
+}
+
 export interface AppInfo {
   version: string;
   platform: "macos" | "windows" | "linux" | "browser";
@@ -126,9 +141,11 @@ export interface RuleQuestion {
 export type TaskKind = "csv-mapping" | "program";
 /** A web source the host fetches and passes to the program as data (ADR 0004). */
 export interface WebSource { name: string; url: string; }
-export interface ApiConfig { name: string; url: string; auth: "none" | "bearer" | "header"; headerName: string; docsUrl: string | null; /** Further key headers (an app id beside the access token); each value is entered in the native dialog. */ extraHeaderNames?: string[]; }
+export interface ApiConfig { name: string; url: string; auth: "none" | "bearer" | "header" | "query"; headerName: string; docsUrl: string | null; /** Further key headers (an app id beside the access token); each value is entered in the native dialog. */ extraHeaderNames?: string[]; }
+export interface ApiExample { label: string; url: string; note: string; ok: boolean | null; result: string | null; testedAtMs: number | null; }
+export interface ApiDebug { steps: { label: string; ok: boolean; detail: string }[]; verdict: string; tryExamples: boolean; /** A problem with the saved keys was found and repaired. */ fixed: boolean; }
 export interface ApiProposal { name: string; url: string; auth: string; headerName: string; docsUrl: string; method: string; setupInstructions: string[]; prerequisites: string[]; coverage: string; extraHeaderNames?: string[]; /** From the provider documentation: public, free_personal, free_tier, paid_or_approval or unknown. */ cost?: string; }
-export interface AccessReport { state: string; summary: string; connectorId: string | null; api: ApiProposal | null; sources: string[]; searched: boolean; checkedAtMs: number; binding: string; }
+export interface AccessReport { state: string; summary: string; connectorId: string | null; api: ApiProposal | null; sources: string[]; searched: boolean; checkedAtMs: number; binding: string; /** A saved API on the same service whose keys already work at the proposed address. */ reuseKeysFrom?: string | null; }
 export interface AccessPreview { payloadText: string; payloadHash: string; recipient: string; searchAvailable: boolean; }
 export interface ConnectionSource {name:string;connectorId:string;toolName:string;argsJson:string;}
 export interface ModelStep {purpose:string;prompt:string;}
@@ -494,7 +511,15 @@ export type ShowState =
 // ---------- The seam ----------
 
 export type Frequency = {kind: "daily"; time: string} | {kind: "weekly"; weekday: number; time: string} | {kind: "monthly"; day: number; time: string};
-export interface ScheduleOutputs { today: boolean; notification: boolean; folder: FileHandle | null; filename: string }
+/** Where a scheduled result is emailed: one address, approved with the schedule. */
+export interface EmailDelivery { connectorId: string; to: string }
+/** Which scheduled runs send the notification and email. Today still records every run. */
+export type SendWhen =
+  | { kind: "always" }
+  | { kind: "changed" }
+  | { kind: "contains"; text: string }
+  | { kind: "above" | "below"; near: string; side: "after" | "before"; value: number };
+export interface ScheduleOutputs { today: boolean; notification: boolean; folder: FileHandle | null; filename: string; email?: EmailDelivery | null; sendWhen?: SendWhen }
 export interface ScheduleRequest { frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; approved: boolean }
 export interface Schedule { id: string; toolId: string; frequency: Frequency; outputs: ScheduleOutputs; versionHash: string; binding: string; folderIdentity: string | null; status: "enabled" | "paused" | "needs_reapproval" | "emergency_paused"; approvedAtMs: number; lastDueMs: number; nextRunMs: number | null }
 /** Entries expire after 30 days; needs_you stays until approved or discarded. */
@@ -514,7 +539,22 @@ export interface RecordingStatus {
 export interface Backend {
   accessPreview(draftId: string): Promise<AccessPreview>;
   researchTaskAccess(draftId: string, payloadHash: string): Promise<TaskDraft>;
-  saveApiConnection(config: ApiConfig): Promise<ConnectorInfo>;
+  /** `keys` are the values typed into the setup form: the main key, then one per extra key name. */
+  /** Adds another address on a saved API's own service, reusing its keys; tested before it is kept. */
+  addApiAddress(sourceId: string, url: string): Promise<ConnectorInfo>;
+  /** Tries a saved API without and with its keys and explains, in plain words, what is wrong. */
+  debugApiConnection(id: string): Promise<ApiDebug>;
+  /** Example read calls kept beside a custom API, and what each returned (field names only). */
+  listApiExamples(id: string): Promise<ApiExample[]>;
+  /** Asks the model for example addresses from the API's public documentation. */
+  suggestApiExamples(id: string): Promise<ApiExample[]>;
+  /** Finds and reads, once each, the paths a task needs on a saved API, keeping only field names. */
+  learnApiForTask(id: string, task: string): Promise<ApiExample[]>;
+  /** Runs one stored example with the saved keys. */
+  runApiExample(id: string, url: string): Promise<ApiExample[]>;
+  /** The saved settings of a custom API (never its keys), for editing. */
+  getApiConfig(id: string): Promise<ApiConfig>;
+  saveApiConnection(config: ApiConfig, keys?: { main: string; extras: string[] }, replaces?: string): Promise<ConnectorInfo>;
   saveApiSearchKey(): Promise<void>;
   removeApiSearchKey(): Promise<void>;
   recordingStatus(): Promise<RecordingStatus>;
@@ -541,6 +581,10 @@ export interface Backend {
   loginEnabled(): Promise<boolean>;
   setLoginEnabled(enabled: boolean): Promise<void>;
   appInfo(): Promise<AppInfo>;
+  listBotDesigns(): Promise<BotDesign[]>;
+  getBotDesign(id: string): Promise<BotDesign>;
+  removeBotBackgrounds(id: string): Promise<BotDesign>;
+  generateBotImage(request: BotImageRequest): Promise<BotDesign>;
 
   // Model access
   modelAccess(): Promise<ModelAccessStatus>;

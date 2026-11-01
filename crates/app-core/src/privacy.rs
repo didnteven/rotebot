@@ -226,6 +226,7 @@ impl AppCore {
         ];
         if include_tools {
             dirs.push("tools");
+            dirs.push("bots");
         }
         for dir in dirs {
             let path = self.inner.cfg.data_dir.join(dir);

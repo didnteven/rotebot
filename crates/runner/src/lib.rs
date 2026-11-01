@@ -331,9 +331,14 @@ pub fn execute(request: Request) -> Response {
         ctx.eval::<(), _>(include_str!("harden.js"))?;
         let mut compiling = true;
         let mut returned_promise = false;
+        let mut missing_run = false;
         let user_result = (|| {
             diagnostic::eval_user(&ctx, &request.code, &mut compiling)?;
-            let run: Function = ctx.globals().get("run")?;
+            let run: rquickjs::Value = ctx.globals().get("run")?;
+            let Some(run) = run.as_function().cloned() else {
+                missing_run = true;
+                return Err(rquickjs::Exception::throw_type(&ctx, "run is not defined"));
+            };
             let value: rquickjs::Value = run.call(())?;
             if value.is_promise() {
                 returned_promise = true;
@@ -356,6 +361,8 @@ pub fn execute(request: Request) -> Response {
             };
             let detail = if returned_promise {
                 diagnostic::promise_detail()
+            } else if missing_run {
+                diagnostic::missing_run_detail()
             } else if exception.is_error() {
                 inspect
                     .call::<_, rquickjs::Array>((exception,))

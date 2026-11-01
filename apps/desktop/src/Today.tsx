@@ -1,3 +1,4 @@
+import { BotAvatar, BotStatus, botIdentity } from "./Bot";
 import { ActionReview, ActionTechnicalDetails } from "./ActionReview";
 import { useEffect, useState } from "react";
 import type { Backend, TodayDay, TodayEntry } from "./backend/types";
@@ -31,7 +32,7 @@ export function Today({ backend, tools, create, run = tools }: {
     const needsApproval = entry.staged?.plannedCalls?.some(a => a.readOnlyHint !== true || a.destructiveHint === true);
     const time = new Date(entry.startedAtMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     return <article className="card" key={entry.id}>
-      <h3>{entry.toolName}</h3>
+      <div className="task-heading"><BotAvatar seed={botIdentity(entry.toolId)} size={48} /><h3>{entry.toolName}</h3></div>
       {entry.status === "failed" ? <>
         <p>{friendlyFailure(entry.body)}</p>
         <details><summary>{statusWords.failed} · {time}</summary><p>{entry.note}</p><pre>{entry.body}</pre></details>
@@ -57,8 +58,8 @@ export function Today({ backend, tools, create, run = tools }: {
   };
   return <section>
     {error && <FailureNotice message={error} retry={() => void act(refresh)} change={tools} />}
-    {days === null ? <p>Loading Today…</p> : !days.some(d => d.entries.length) ? <div className="empty-state">
-      <p>Schedule a tool to see its results here each day</p>
+    {days === null ? <BotStatus label="Loading Today…" /> : !days.some(d => d.entries.length) ? <div className="empty-state">
+      <h2>Your daily results will appear here</h2><p>Schedule a tool to see its results here each day</p><p>To schedule a saved tool, go to My tools, choose Run now, then open Schedule this tool.</p>
       <button className="primary" onClick={create}>Describe a task</button>
       <button className="quiet" onClick={tools}>Go to My tools</button>
     </div> : <>

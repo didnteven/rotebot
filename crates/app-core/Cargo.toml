@@ -11,6 +11,7 @@ generated-runtime = ["dep:macroscope-runner"]
 synthetic-runtime-tests = ["generated-runtime"]
 
 [dependencies]
+base64 = "0.22"
 macroscope-runner = { path = "../runner", optional = true }
 macroscope-domain.workspace = true
 macroscope-storage.workspace = true

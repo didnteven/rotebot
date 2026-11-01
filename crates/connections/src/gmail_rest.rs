@@ -35,12 +35,13 @@ pub fn tools() -> Vec<Tool> {
     vec![
         Tool {
             name: "search_threads".into(),
-            description: Some("Search Gmail threads with Gmail's search syntax (for example newer_than:7d, from:name, subject:word). Returns {\"threads\": [{id, subject, from, date, snippet, messageCount}]}.".into()),
+            description: Some("Search Gmail threads with Gmail's search syntax (for example newer_than:7d, from:name, subject:word). Returns {\"threads\": [{id, subject, from, date, snippet, messageCount}]}. With includeBody true (at most 5 threads) each thread also has the plain-text body of its newest message: use this to read the content of the latest matching emails in one read, for example {\"query\": \"from:watercare\", \"pageSize\": 1, \"includeBody\": true}.".into()),
             input_schema: json!({
                 "type": "object", "additionalProperties": false,
                 "properties": {
                     "query": {"type": "string", "description": "Gmail search query; empty means the newest threads"},
-                    "pageSize": {"type": "integer", "minimum": 1, "maximum": MAX_THREADS, "description": "How many threads to return (default 10)"}
+                    "pageSize": {"type": "integer", "minimum": 1, "maximum": MAX_THREADS, "description": "How many threads to return (default 10)"},
+                    "includeBody": {"type": "boolean", "description": "Also return the newest message's plain-text body (at most 5 threads)"}
                 }
             }),
             annotations: read(),
@@ -268,7 +269,8 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
             if query.chars().count() > 500 {
                 return Ok(error_result("query is longer than 500 characters"));
             }
-            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, MAX_THREADS);
+            let with_body = args["includeBody"].as_bool() == Some(true);
+            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, if with_body { 5 } else { MAX_THREADS });
             let list = match get(http, auth, &format!("{base}/users/me/threads"), &[("q", query.to_string()), ("maxResults", size.to_string())]).await? {
                 Ok(v) => v,
                 Err(message) => return Ok(error_result(&message)),
@@ -277,7 +279,11 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
             for item in list["threads"].as_array().into_iter().flatten().take(size as usize) {
                 let Some(id) = item["id"].as_str().filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric())) else { continue };
                 let url = format!("{base}/users/me/threads/{id}");
-                let q = [("format", "metadata".to_string()), ("metadataHeaders", "Subject".into()), ("metadataHeaders", "From".into()), ("metadataHeaders", "Date".into())];
+                let q: Vec<(&str, String)> = if with_body {
+                    vec![("format", "full".to_string())]
+                } else {
+                    vec![("format", "metadata".to_string()), ("metadataHeaders", "Subject".into()), ("metadataHeaders", "From".into()), ("metadataHeaders", "Date".into())]
+                };
                 let thread = match get(http, auth, &url, &q).await? {
                     Ok(v) => v,
                     Err(message) => return Ok(error_result(&message)),
@@ -285,14 +291,18 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
                 let messages = thread["messages"].as_array().cloned().unwrap_or_default();
                 let first = messages.first().cloned().unwrap_or(Value::Null);
                 let last = messages.last().cloned().unwrap_or(Value::Null);
-                threads.push(json!({
+                let mut entry = json!({
                     "id": id,
                     "subject": header(&first, "Subject"),
                     "from": header(&first, "From"),
                     "date": header(&last, "Date"),
                     "snippet": item["snippet"].as_str().unwrap_or_default().chars().filter(|c| !c.is_control()).take(300).collect::<String>(),
                     "messageCount": messages.len(),
-                }));
+                });
+                if with_body {
+                    entry["body"] = json!(body_text(&last["payload"]).unwrap_or_default().chars().take(MAX_BODY_CHARS * 2 / size as usize).collect::<String>());
+                }
+                threads.push(entry);
             }
             Ok(text_result(json!({"threads": threads})))
         }

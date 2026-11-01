@@ -60,7 +60,11 @@ it("walks all five screens, consents only on Send, then builds, previews and sav
   expect(ctx.approve).not.toHaveBeenCalled();
   await ctx.user.click(button("Looks right"));
   await waitFor(() => expect(screen.getByRole("heading", { name: "Create the tool" })).toHaveFocus());
-  expect(screen.getByRole("heading", { name: "Check the plan" })).toBeVisible();
+  // The recording fills in the request; the task then goes through the same steps as a typed one.
+  expect(screen.getByRole("heading", { name: "What should it do?" })).toBeVisible();
+  expect(screen.getByLabelText("What should the tool do?")).toHaveValue(ctx.create.mock.calls[0][0].trim());
+  await ctx.user.click(button("Check the plan"));
+  expect(await screen.findByRole("heading", { name: "Check the plan" })).toBeVisible();
   expect(ctx.create).toHaveBeenCalledOnce();
   expect(ctx.create.mock.calls[0][0]).toContain("Manual only (unsupported)");
   expect(ctx.build).not.toHaveBeenCalled();

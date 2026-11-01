@@ -1,3 +1,7 @@
+import { BotLibraryProvider } from "./BotLibrary";
+import { CustomBotStudio } from "./CustomBotStudio";
+import { SectionGuide } from "./SectionGuide";
+import { BotAvatar, BotStatus, ThemePicker, botIdentity, saveBotIdentity } from "./Bot";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -8,6 +12,7 @@ import type {
   ConnectorInfo,
   CsvPreview,
   ModelAccessStatus,
+  Schedule,
   ShowState,
   ToolDetail,
   ToolSummary,
@@ -16,6 +21,7 @@ import { routeLabel } from "./backend/mock";
 import { CreateFlow } from "./CreateFlow";
 import { Today } from "./Today";
 import { RunFlow } from "./RunFlow";
+import { nextRunText, whenText } from "./Schedule";
 import { ToolVersions } from "./ToolVersions";
 import { Settings } from "./Settings";
 import { Connections } from "./Connections";
@@ -33,13 +39,18 @@ const destinations = [
 ] as const;
 type Destination = (typeof destinations)[number];
 export function App({ backend }: { backend: Backend }) {
+  return <BotLibraryProvider backend={backend}><AppWorkspace backend={backend} /></BotLibraryProvider>;
+}
+function AppWorkspace({ backend }: { backend: Backend }) {
   const [destination, setDestination] = useState<Destination>("Tools");
+  const [customizingTool, setCustomizingTool] = useState<ToolSummary | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [tools, setTools] = useState<ToolSummary[] | null>(null),
     [libraryFailed, setLibraryFailed] = useState(false);
   const [status, setStatus] = useState<ModelAccessStatus | null>(null),
     [info, setInfo] = useState<AppInfo | null>(null),
     [show, setShow] = useState<ShowState | null>(null);
+  const [connectionsLoaded, setConnectionsLoaded] = useState(false);
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([]),
     [suggestions, setSuggestions] = useState<ConnectionSuggestion[]>([]),
     [selectedConnector, setSelectedConnector] = useState<string | null>(null);
@@ -47,6 +58,8 @@ export function App({ backend }: { backend: Backend }) {
     [initialInput, setInitialInput] = useState<CsvPreview | null>(null),
     [running, setRunning] = useState<ToolSummary | null>(null),
     [editTool, setEditTool] = useState<ToolDetail | null>(null),
+    [scheduleFirst, setScheduleFirst] = useState(false),
+    [schedules, setSchedules] = useState<Schedule[]>([]),
     [showPanel, setShowPanel] = useState(false);
   const { act, error, busy } = useAction();
   // Leaving the create flow, by saving or going back, ends an edit.
@@ -55,6 +68,8 @@ export function App({ backend }: { backend: Backend }) {
     try {
       setTools(await backend.listTools());
       setLibraryFailed(false);
+      // The schedule line on each card is a convenience; the library still works without it.
+      setSchedules(await backend.listSchedules().catch(() => []));
     } catch {
       setLibraryFailed(true);
     }
@@ -65,6 +80,7 @@ export function App({ backend }: { backend: Backend }) {
       backend.connectionSuggestions(),
     ]);
     setConnectors(c);
+    setConnectionsLoaded(true);
     setSuggestions(s);
   }
   async function refresh() {
@@ -180,22 +196,23 @@ export function App({ backend }: { backend: Backend }) {
   );
   return (
     <div className="app-shell">
+      {customizingTool && status && <CustomBotStudio backend={backend} status={status} currentSeed={botIdentity(customizingTool.id)} title={customizingTool.name} useBot={seed => saveBotIdentity(customizingTool.id, seed)} close={() => setCustomizingTool(null)} openSettings={openSettings} />}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="sidebar">
-        <div className="brand">Macroscope</div>
+        <div className="brand"><BotAvatar size={36} />Macroscope</div>
         <nav aria-label="Main navigation">
           {destinations.map((item, index) => (
             <button
               className={index === 3 ? "secondary-start" : index > 3 ? "secondary-nav" : undefined}
               key={item}
-              aria-current={destination === item ? "page" : undefined}
+              aria-current={destination === item && !(item === "Tools" && showPanel) ? "page" : undefined}
               onClick={() => setDestination(item)}
             >
               {item === "Tools" ? "My tools" : item}
             </button>
-          ))}
+          )).flatMap((b, index) => index === 1 && show ? [b, <button key="record" aria-current={destination === "Tools" && showPanel ? "page" : undefined} onClick={() => { setDestination("Tools"); setShowPanel(true); }}>Record a task</button>] : [b])}
         </nav>
-        <p className="sidebar-note">Small tools for everyday work.</p>
+        <div className="sidebar-note"><ThemePicker /><p>Small bots. Useful work.</p></div>
       </aside>
       <div className="workspace">
         {show?.kind === "recording" && (
@@ -203,28 +220,20 @@ export function App({ backend }: { backend: Backend }) {
         )}
         <div className="status-strip" role="region" aria-label="App status">
           <span>{status ? `Using ${routeLabel(status.effectiveRoute)} - cloud models ${status.egress === "cloud_allowed" ? "on" : status.egress === "stopping" ? "stopping" : status.egress === "key_unavailable" ? "unavailable (check your key)" : "off (local only)"}` : "Checking model access…"}</span>
-          <button className="quiet" aria-label="Settings for model access" onClick={openSettings}>Settings</button>
-          {show && (
-            <button
-              onClick={() => {
-                setDestination("Tools");
-                setShowPanel(true);
-              }}
-            >
-              Record a task
-            </button>
-          )}
+          <button className="ghost" aria-label="Settings for model access" onClick={openSettings}>Settings</button>
         </div>
         <main id="main-content" tabIndex={-1} aria-labelledby="page-title">
           <header>
             <h1 id="page-title">{destination === "Tools" ? "My tools" : destination}</h1>
           </header>
+          {!(destination === "Tools" && (creating || running || showPanel)) && <SectionGuide section={destination} />}
+          {destination !== "Tools" && (creating || running || showPanel) && <div className="resume-task" role="region" aria-label="Task in progress"><p>Your {showPanel ? "recording" : creating ? "task setup" : "tool run"} is still open.</p><button onClick={() => setDestination("Tools")}>Return to your task</button></div>}
           <Notice error={error} />
           {exported && <p role="status">Tool exported to <FileText text={exported} /></p>}
           {error && (
             <button onClick={() => void act(refresh)}>Retry app status</button>
           )}
-          {!status && !error && <p role="status">Loading Macroscope…</p>}
+          {!status && !error && <BotStatus label="Loading Macroscope…" />}
           {destination === "Today" && <Today backend={backend} tools={() => setDestination("Tools")} run={id => void act(async () => { const tool = await backend.getTool(id); setCreating(false); setShowPanel(false); setRunning(tool); setDestination("Tools"); })} create={() => { setDestination("Tools"); setInitialInput(null); setCreating(true); }} />}
           <div hidden={destination !== "Tools"}>
             {destination === "Tools" && !creating && commonSuggestions}
@@ -260,6 +269,7 @@ export function App({ backend }: { backend: Backend }) {
                   tool={running}
                   close={() => setRunning(null)}
                   changed={refreshTools}
+                  scheduleFirst={scheduleFirst}
                   openSettings={openSettings}
                 />
               ) : libraryFailed ? (
@@ -270,14 +280,12 @@ export function App({ backend }: { backend: Backend }) {
                   </button>
                 </div>
               ) : tools === null ? (
-                <p role="status">Loading tools…</p>
+                <BotStatus label="Loading tools…" />
               ) : (
                 <>
                   {tools.length === 0 ? (
                     <section className="empty-state">
-                      <div className="empty-symbol" aria-hidden="true">
-                        ✳
-                      </div>
+                      <BotAvatar size={144} />
                       <h2>
                         Turn a repetitive task into a tool you can test and
                         keep.
@@ -336,6 +344,7 @@ export function App({ backend }: { backend: Backend }) {
                           const displayName = duplicate ? `${tool.name} (${tools.slice(0, index + 1).filter(t => t.name === tool.name).length})` : tool.name;
                           return (
                           <li key={tool.id} className="tool-row">
+                            <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={72} />
                             <div>
                               <h2>
                                 {displayName}{" "}
@@ -345,8 +354,10 @@ export function App({ backend }: { backend: Backend }) {
                               </h2>
                               <p>{toolDescriptions[tool.id] || tool.name}</p>
                               <p className="muted">{friendlyLastRun(tool.lastRunAtMs)}{tool.state === "paused" ? " · Paused. Resume this tool before running it." : ""}</p>
+                              {(() => { const line = scheduleLine(schedules.find(s => s.toolId === tool.id)); return line && <p className="muted" data-testid="schedule-line">{line}</p>; })()}
                               <details><summary>Details</summary><p>{tool.engine === "js-quickjs" ? "Program (sandboxed) · " : ""}Version {tool.version}</p>{!tool.sample && <ToolVersions backend={backend} toolId={tool.id} name={displayName} changed={refreshTools} />}</details>
                             </div>
+                            <button className="quiet" disabled={busy || !status} aria-label={`Customize bot: ${displayName}`} onClick={() => setCustomizingTool(tool)}>Customize bot</button>
                             <button
                               className="quiet"
                               disabled={busy}
@@ -384,10 +395,10 @@ export function App({ backend }: { backend: Backend }) {
                                   setConfirmDelete(null);
                                   await refreshTools();
                                 })}>Delete tool</button>
-                                <button className="quiet" onClick={() => setConfirmDelete(null)}>Keep tool</button>
+                                <button className="ghost" onClick={() => setConfirmDelete(null)}>Keep tool</button>
                               </div>
                             ) : (
-                              <button className="quiet" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => setConfirmDelete(tool.id)}>Delete</button>
+                              <button className="quiet danger" disabled={busy} aria-label={`Delete: ${displayName}`} onClick={() => setConfirmDelete(tool.id)}>Delete</button>
                             )}
                             {!tool.sample && <button
                               className="quiet"
@@ -402,10 +413,19 @@ export function App({ backend }: { backend: Backend }) {
                             >
                               Edit
                             </button>}
+                            {!tool.sample && <button
+                              className="quiet"
+                              disabled={tool.state === "paused"}
+                              aria-label={`Schedule: ${displayName}`}
+                              onClick={() => { setScheduleFirst(true); setRunning(tool); }}
+                            >
+                              {schedules.some(s => s.toolId === tool.id) ? "Edit schedule" : "Schedule"}
+                            </button>}
                             <button
+                              className="primary"
                               disabled={tool.state === "paused"}
                               aria-label={`Run now: ${displayName}`}
-                              onClick={() => setRunning(tool)}
+                              onClick={() => { setScheduleFirst(false); setRunning(tool); }}
                             >
                               Run now
                             </button>
@@ -423,6 +443,7 @@ export function App({ backend }: { backend: Backend }) {
             <>
               {commonSuggestions}
               <Connections
+                loading={!connectionsLoaded && !error}
                 backend={backend}
                 connectors={connectors}
                 selected={selectedConnector}
@@ -461,6 +482,16 @@ export function App({ backend }: { backend: Backend }) {
   );
 }
 
+function scheduleLine(s: Schedule | undefined) {
+  if (!s) return null;
+  if (s.status === "needs_reapproval") return "Schedule needs your approval again";
+  if (s.status === "emergency_paused") return "Schedule paused by emergency stop";
+  if (s.status === "paused") return "Schedule paused";
+  const when = s.frequency.kind === "daily" ? "Every day" : s.frequency.kind === "weekly" ? "Every week" : "Every month";
+  const sends = [s.outputs.email ? `emails ${s.outputs.email.to}` : null, s.outputs.notification ? "notifies you" : null].filter(Boolean);
+  const only = s.outputs.sendWhen && s.outputs.sendWhen.kind !== "always" && sends.length ? ` only when ${whenText(s.outputs.sendWhen)}` : "";
+  return `${when} at ${s.frequency.time.replace(/^0/, "")}${sends.length ? ` · ${sends.join(" and ")}${only}` : ""}${s.nextRunMs ? ` · ${nextRunText(s.nextRunMs)}` : ""}`;
+}
 function friendlyLastRun(at: number | null) {
   if (at === null) return "Never run";
   const date = new Date(at), now = new Date();

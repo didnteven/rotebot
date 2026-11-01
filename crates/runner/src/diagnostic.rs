@@ -52,6 +52,10 @@ pub(crate) fn promise_detail() -> String {
     format!("JavaScript execution failed: TypeError: run must be synchronous. {HINT}")
 }
 
+pub(crate) fn missing_run_detail() -> String {
+    "JavaScript execution failed: TypeError: the program must define function run() { ... } and put all of its code inside it; top-level code is not a program.".into()
+}
+
 fn redact(message: &str) -> String {
     let mut out = String::new();
     let mut chars = message.chars().peekable();
@@ -189,6 +193,17 @@ pub(crate) fn error_detail(
         }
     }
     detail.push_str(&format!(": {text}"));
+    // The engine's argument error is redacted, so name the one SDK call that has a
+    // fixed two-string shape. The hint comes from program text alone, never from data.
+    if name == "TypeError"
+        && location.is_some_and(|(line, _)| {
+            code.lines()
+                .nth(line as usize - 1)
+                .is_some_and(|l| l.contains("macroscope.output("))
+        })
+    {
+        detail.push_str(". macroscope.output takes two strings: the output file name, then the text");
+    }
     if reference.is_some_and(|id| {
         matches!(
             id,

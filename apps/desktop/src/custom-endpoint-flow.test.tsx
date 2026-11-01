@@ -15,7 +15,6 @@ it("after adding /v1 in Settings, a new task goes through the custom endpoint",a
   expect(screen.getByRole("radio",{name:/Custom endpoint/})).toBeEnabled();expect(screen.getByRole("radio",{name:/Custom endpoint/})).toBeChecked();
   await user.click(screen.getByRole("button",{name:"Today"}));
   await user.click(await screen.findByRole("button",{name:"Describe a task"}));
-  await user.click(screen.getByRole("button",{name:"No file"}));
   const description=screen.getByLabelText("What should the tool do?");await user.clear(description);
   await user.type(description,"Get today's forecast for Auckland from https://api.open-meteo.com and write a short summary to weather.txt");
   await user.click(screen.getByRole("button",{name:"Check the plan"}));

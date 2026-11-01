@@ -14,10 +14,6 @@ it("creates a no-input weather tool with site approval, then stages and creates 
   await waitFor(() => expect(button("Describe a task")).toBeEnabled());
 
   await user.click(button("Describe a task"));
-  await user.click(button("No file"));
-  expect(
-    screen.getByText(/No file selected/),
-  ).toBeVisible();
   const description = screen.getByLabelText(
     "What should the tool do?",
   );

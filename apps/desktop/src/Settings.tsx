@@ -1,3 +1,4 @@
+import { BotStatus } from "./Bot";
 import { useEffect, useRef, useState } from "react";
 import type {
   AppInfo,
@@ -28,7 +29,8 @@ export function Settings({
     [docs, setDocs] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const chooser = useRef<HTMLFieldSetElement>(null);
-  useEffect(()=>{chooser.current?.focus(); chooser.current?.scrollIntoView?.({block:"start"});},[]);
+
+  useEffect(() => { chooser.current?.focus({ preventScroll: true }); }, []);
   const [login, setLogin] = useState(false);
   useEffect(() => { void backend.loginEnabled().then(setLogin).catch(() => {}); }, [backend]);
   const key = useRef<HTMLInputElement>(null);
@@ -52,6 +54,7 @@ export function Settings({
   return (
     <section>
       <h2>Model access</h2>
+      <p>Choose the AI service that turns your descriptions into tools. “Ready” means an option is available; select its circle to use it.</p>
       <fieldset ref={chooser} id="model-route-chooser" tabIndex={-1} disabled={busy}>
         <legend>Which model builds your tools</legend>
         {routes.map((r) => (
@@ -99,7 +102,7 @@ export function Settings({
         </p>
       )}
       <Notice error={error} />
-      {busy && <p role="status">Checking…</p>}
+      {busy && <BotStatus label="Checking model access…" />}
       <div id="custom-endpoint-setup"><CustomEndpointCard backend={backend} status={status.customEndpoint} update={update} /></div>
       <div className="card-grid">
         <article className="card" id="meta-key-setup">
@@ -254,6 +257,7 @@ export function Settings({
         </article>
       </div>
       <h2>Schedules</h2>
+      <p>Set up a schedule from a tool’s Run screen. Results appear in Today. Macroscope needs to be open for scheduled tasks to run.</p>
       <label><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Macroscope at login so schedules run</label>
       <p>Building tools with: {routeLabel(status.effectiveRoute)}{status.effectiveRoute === "custom_endpoint" ? ` · ${status.customEndpoint.host} · ${status.customEndpoint.model}` : ""}</p>
       {status.blockedReason && (

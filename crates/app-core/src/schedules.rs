@@ -3,10 +3,55 @@
 use super::*;
 use chrono::{DateTime, Datelike, Days, LocalResult, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
+use crate::conditions::SendWhen;
 use serde::{Deserialize, Serialize};
 
 pub trait Notifier: Send + Sync {
     fn notify(&self, title: &str, body: &str) -> Result<(), String>;
+}
+
+pub type MailFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>>;
+/// Sends one scheduled result as an email through a connected mailbox. The recipient was
+/// approved with the schedule, so a program can never choose where its result goes.
+pub trait ResultMailer: Send + Sync {
+    fn send<'a>(
+        &'a self,
+        connector_id: &'a str,
+        to: &'a str,
+        subject: &'a str,
+        body: &'a str,
+    ) -> MailFuture<'a>;
+}
+
+/// Where a scheduled result is emailed. Part of the approved outputs: changing the
+/// mailbox or the address needs a fresh approval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailDelivery {
+    pub connector_id: String,
+    pub to: String,
+}
+impl EmailDelivery {
+    /// One plain address only: no list, display name, spaces or line breaks, so the
+    /// approved text is exactly who receives the result.
+    fn validate(&self) -> CoreResult<()> {
+        let (local, domain) = self.to.split_once('@').unwrap_or(("", ""));
+        let plain = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || "._+-".contains(c));
+        if self.to.len() > 254
+            || local.is_empty()
+            || !plain(local)
+            || !domain.contains('.')
+            || !plain(domain)
+            || domain.starts_with(['.', '-'])
+            || domain.ends_with(['.', '-'])
+            || self.connector_id.trim().is_empty()
+        {
+            return Err(CoreError::Invalid(
+                "Enter one email address, like you@example.com".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +111,11 @@ pub struct ScheduleOutputs {
     pub notification: bool,
     pub folder: Option<FileHandle>,
     pub filename: String,
+    #[serde(default)]
+    pub email: Option<EmailDelivery>,
+    /// Which runs send the notification and email. Today still records every run.
+    #[serde(default, skip_serializing_if = "SendWhen::is_always")]
+    pub send_when: SendWhen,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,6 +339,27 @@ impl AppCore {
         let _admission = self.admit_local()?;
         let mut schedules = self.raw_schedules()?;
         for s in &mut schedules {
+            // An approved schedule follows its tool: a new version the person built, approved and saved
+            // keeps running on the same schedule. Only a changed result folder still asks again.
+            let folder_ok = s.outputs.folder.as_ref().is_none_or(|f| {
+                Self::folder_identity(Path::new(&f.display_path)).ok() == s.folder_identity
+            });
+            let current_version = self.db().tool(&s.tool_id).ok().flatten()
+                .and_then(|row| self.tool_detail(&row).ok()).map(|d| d.version_hash);
+            // Only a new version (saved with its own approval) carries the schedule; the same version
+            // with a changed approval record still asks again.
+            if folder_ok && s.status != "emergency_paused" && current_version.as_ref().is_some_and(|v| *v != s.version_hash) {
+                if let Ok(binding) = self.schedule_binding(&s.tool_id) {
+                    if binding != s.binding {
+                        s.binding = binding;
+                        s.version_hash = current_version.clone().unwrap_or_default();
+                        if s.status == "needs_reapproval" {
+                            s.status = "enabled".into();
+                        }
+                        self.put_schedule(s)?;
+                    }
+                }
+            }
             if !self.valid_schedule(s) {
                 s.status = "needs_reapproval".into();
                 self.put_schedule(s)?;
@@ -319,9 +390,14 @@ impl AppCore {
                 "Schedules require a tool without a selected input file".into(),
             ));
         }
+        if let Some(email) = &request.outputs.email {
+            email.validate()?;
+        }
+        request.outputs.send_when.validate()?;
         if !request.outputs.today
             && !request.outputs.notification
             && request.outputs.folder.is_none()
+            && request.outputs.email.is_none()
         {
             return Err(CoreError::Invalid("Choose at least one output".into()));
         }
@@ -642,6 +718,19 @@ impl AppCore {
                 .into();
                 e.body = f.chars().take(20_000).collect();
             }
+            if e.status == "done" {
+                if let Some(decision) = self.schedule_decision(&e) {
+                    if !decision.send {
+                        e.notification = false;
+                    }
+                    if let Some(note) = decision.note {
+                        e.note = Some(match e.note.take() {
+                            Some(existing) => format!("{existing}. {note}"),
+                            None => note,
+                        });
+                    }
+                }
+            }
             self.put_today(&e)?;
             self.notify_today(&e);
         }
@@ -759,6 +848,9 @@ impl AppCore {
                             .into_iter()
                             .find(|e| e.run_id.as_deref() == Some(&staged.run_id))
                             .ok_or(CoreError::NotFound("Today entry"))?;
+                        if entry.status == "done" {
+                            self.deliver_email(&s, &mut entry).await;
+                        }
                         ran.push(entry);
                         continue;
                     }
@@ -775,6 +867,97 @@ impl AppCore {
             ran.push(entry);
         }
         Ok(ran)
+    }
+    /// What this schedule's "send only when" says about a finished run. `None` for manual
+    /// runs and schedules that send every time.
+    fn schedule_decision(&self, e: &TodayEntry) -> Option<crate::conditions::Decision> {
+        if e.trigger != "schedule" {
+            return None;
+        }
+        let id = e.schedule_id.as_deref()?;
+        let schedule = self.raw_schedules().ok()?.into_iter().find(|s| s.id == id)?;
+        let condition = &schedule.outputs.send_when;
+        if condition.is_always() {
+            return None;
+        }
+        // The last finished run of this schedule that is still kept, other than this one.
+        let previous = self
+            .today_entries()
+            .ok()?
+            .into_iter()
+            .filter(|p| {
+                p.schedule_id.as_deref() == Some(id)
+                    && p.status == "done"
+                    && p.run_id != e.run_id
+                    && p.started_at_ms <= e.started_at_ms
+            })
+            .max_by_key(|p| p.started_at_ms)
+            .map(|p| p.body);
+        Some(condition.decide(&e.body, previous.as_deref()))
+    }
+    pub fn set_mailer(&self, mailer: Arc<dyn ResultMailer>) {
+        *lock(&self.inner.mailer) = Some(mailer);
+    }
+    /// Emails a finished run to the address approved with the schedule. One attempt only:
+    /// a send whose answer was lost is never repeated, and the outcome is written on the
+    /// Today entry either way.
+    async fn deliver_email(&self, s: &Schedule, entry: &mut TodayEntry) {
+        let Some(email) = &s.outputs.email else {
+            return;
+        };
+        if self.schedule_decision(entry).is_some_and(|d| !d.send) {
+            return;
+        }
+        let outcome = self.send_result_email(s, email, entry).await;
+        let note = match outcome {
+            Ok(()) => format!("Emailed to {}", email.to),
+            Err(reason) => format!("Email not sent: {reason}"),
+        };
+        entry.note = Some(match entry.note.take() {
+            Some(existing) => format!("{existing}. {note}"),
+            None => note,
+        });
+        if let Ok(_admission) = self.admit_local() {
+            let _ = self.put_today(entry);
+        }
+    }
+    async fn send_result_email(
+        &self,
+        s: &Schedule,
+        email: &EmailDelivery,
+        entry: &TodayEntry,
+    ) -> Result<(), String> {
+        if self.db().setting("local_only").ok().flatten() == Some(json!(true)) {
+            return Err("Local only is on".into());
+        }
+        let mailer = lock(&self.inner.mailer)
+            .clone()
+            .ok_or("email is not available")?;
+        // The person can pause or change the schedule while the tool runs.
+        if !self.schedule_still_approved(s, true).map_err(|e| e.to_string())? {
+            return Err("the schedule changed before the email was sent".into());
+        }
+        let text = entry.body.trim();
+        if text.is_empty() {
+            return Err("the tool produced no text to send".into());
+        }
+        let subject: String = format!(
+            "{} · {}",
+            entry.tool_name,
+            self.local_date(entry.started_at_ms)
+        )
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(150)
+        .collect();
+        let body: String = text.chars().take(20_000).collect::<String>()
+            + "\n\n— Sent by your Macroscope schedule";
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            mailer.send(&email.connector_id, &email.to, &subject, &body),
+        )
+        .await
+        .map_err(|_| "the mail server did not answer".to_string())?
     }
     async fn stage_scheduled(
         &self,

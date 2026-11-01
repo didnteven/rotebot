@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, it, vi } from "vitest";
@@ -80,6 +80,36 @@ it("offers explicit access to connected services in Create and lists their untru
   expect(select).toHaveBeenCalledWith(expect.any(String), [connector.id]);
   expect(screen.getAllByText(/<script>server instructions<\/script>/).find(el => el.tagName === "LI")).toBeVisible();
   expect(container.querySelectorAll("script,img,iframe")).toHaveLength(0);
+});
+
+it("lets the person pick a connected service before the plan is drafted", async () => {
+  const backend = new MockBackend();
+  const input = backend.importText("message.txt", "hello");
+  const connector = (await backend.listConnectors()).find(c=>c.id==="gmail")!;
+  connector.state = {kind:"connected",sinceMs:1,toolCount:1};
+  vi.spyOn(backend,"listConnectors").mockResolvedValue([connector]);
+  vi.spyOn(backend,"previewConnectorTools").mockResolvedValue([]);
+  const select = vi.spyOn(backend, "selectTaskConnections");
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={input} status={await backend.modelAccess()} connectors={[connector]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}} />);
+  const chip = within(screen.getByRole("group", {name:"Use data from"})).getByRole("button", {name: connector.name});
+  expect(chip).toHaveAttribute("aria-pressed", "false");
+  await user.click(chip);
+  expect(chip).toHaveAttribute("aria-pressed", "true");
+  // The description never names the service; the choice alone selects it.
+  await user.type(screen.getByLabelText("What should the tool do?"), "summarise my newest messages");
+  await user.click(screen.getByRole("button", {name:"Check the plan"}));
+  await waitFor(() => expect(select).toHaveBeenCalledWith(expect.any(String), [connector.id]));
+  expect(await screen.findByText(/Using your .* connection \(read-only\)/)).toBeVisible();
+});
+
+it("editing a saved tool starts with the connections it reads already chosen", async () => {
+  const backend = new MockBackend();
+  const connector = (await backend.listConnectors()).find(c=>c.id==="gmail")!;
+  connector.state = {kind:"connected",sinceMs:1,toolCount:1};
+  const editTool = {id:"t1",name:"Mail",goal:"Summarise my mail",noInput:true,program:{connectionSources:[{name:"mail",connectorId:"gmail",toolName:"read",argsJson:"{}"}],summary:"",output_name:"out.txt",code:"",webSources:[]}} as unknown as import("./backend/types").ToolDetail;
+  render(<CreateFlow backend={backend} initialInput={null} editTool={editTool} status={await backend.modelAccess()} connectors={[connector]} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async()=>{}} />);
+  expect(within(screen.getByRole("group", {name:"Use data from"})).getByRole("button", {name: new RegExp(connector.name)})).toHaveAttribute("aria-pressed", "true");
 });
 
 it("keeps every external field visible in plain words and hides only the exact argument object", async()=>{

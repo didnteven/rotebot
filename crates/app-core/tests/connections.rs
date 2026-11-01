@@ -863,6 +863,8 @@ mod actions {
                         notification: true,
                         folder: Some(folder.clone()),
                         filename: "draft-{date}.txt".into(),
+                        email: None,
+                        send_when: Default::default(),
                     },
                     version_hash: tool.version_hash.clone(),
                     approved: true,

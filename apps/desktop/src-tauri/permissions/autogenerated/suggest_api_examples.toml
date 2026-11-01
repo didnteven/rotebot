@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-suggest-api-examples"
+description = "Enables the suggest_api_examples command without any pre-configured scope."
+commands.allow = ["suggest_api_examples"]
+
+[[permission]]
+identifier = "deny-suggest-api-examples"
+description = "Denies the suggest_api_examples command without any pre-configured scope."
+commands.deny = ["suggest_api_examples"]

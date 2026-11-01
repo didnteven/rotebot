@@ -1,3 +1,4 @@
+import { BotStatus } from "./Bot";
 import { useEffect, useRef, useState } from "react";
 import type {
   Backend,
@@ -26,6 +27,7 @@ export function Connections({
   select,
   changed,
   autoStart = false,
+  loading = false,
 }: {
   backend: Backend;
   connectors: ConnectorInfo[];
@@ -34,6 +36,7 @@ export function Connections({
   changed: () => Promise<void>;
   /** Start signing in to the selected service as soon as it opens (set when it was chosen elsewhere). */
   autoStart?: boolean;
+  loading?: boolean;
 }) {
   // Every click on a card, even the one already open, brings its details into view.
   const [tick, setTick] = useState(0);
@@ -42,10 +45,10 @@ export function Connections({
   const apis = connectors.filter((c) => c.registration === "api");
   return (
     <section>
-      {connectors.length === 0 && <p role="status">Loading connections…</p>}
+      {loading && <BotStatus label="Loading connections…" />}
+      {!loading && connectors.length === 0 && <p>No services available yet. You can add a custom API below.</p>}
       <p>
-        Connect a service for later tools. CSV tools do not use these
-        connections.
+        Choose a service below to connect it. A CSV is a spreadsheet saved as a text file; tools that only use your files do not need a connection.
       </p>
       <div className="connector-grid">
         {connectors.filter((c) => c.registration !== "api").map((c) => (
@@ -112,6 +115,7 @@ export function Connections({
               <p><bdi>{c.mcpUrl}</bdi></p>
               <p>Read only. Your keys stay in the app's secret store.</p>
               {c.state.kind === "error" && <p role="alert">{c.state.message}</p>}
+              {(c.state.kind === "error" || c.state.kind === "needs_reauth") && <p>Not working? Open <strong>Debug this connection</strong> below and choose <strong>Check and fix this connection</strong>. It explains what is wrong and repairs what it can.</p>}
               <ApiConnectionActions backend={backend} connector={c} changed={changed} />
             </article>
           ))}
@@ -125,11 +129,83 @@ export function Connections({
 }
 function ApiConnectionActions({ backend, connector, changed }: { backend: Backend; connector: ConnectorInfo; changed: () => Promise<void> }) {
   const { act, busy, error } = useAction();
+  const [tested, setTested] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [editing, setEditing] = useState<import("./backend/types").ApiConfig | null>(null);
+  if (editing) return <ApiSetup backend={backend} changed={changed} edit={{ id: connector.id, config: editing }} done={() => setEditing(null)} />;
   return <>
-    <button disabled={busy} onClick={() => void act(async () => { try { await backend.testConnection(connector.id); } finally { await changed(); } })}>Test API connection</button>
+    <button disabled={busy} onClick={() => void act(async () => setEditing(await backend.getApiConfig(connector.id)))}>Edit API connection</button>
+    <button disabled={busy} onClick={() => void act(async () => { setTested(""); setTesting(true); try { await backend.testConnection(connector.id); setTested("Tested just now: it works."); } finally { setTesting(false); await changed(); } })}>Test API connection</button>
+    {testing && <BotStatus label="Testing the API with your saved keys…" />}
+    {tested && !error && <p role="status">{tested}</p>}
     <button disabled={busy} onClick={() => void act(async () => { await backend.disconnect(connector.id); await changed(); })}>Remove API connection</button>
+    <ApiExamples backend={backend} id={connector.id} current={connector.mcpUrl} changed={changed} failing={connector.state.kind === "error" || connector.state.kind === "needs_reauth"} />
+    {busy && <BotStatus label="Updating API connection…" />}
     {error && <p role="alert">{error}</p>}
   </>;
+}
+/** Debug section of a saved API: explains why it is not working, repairs what it can, and finds addresses that do work. */
+function ApiExamples({ backend, id, current, failing, changed }: { backend: Backend; id: string; current: string; failing?: boolean; changed: () => Promise<void> }) {
+  const [examples, setExamples] = useState<import("./backend/types").ApiExample[]>([]);
+  const [report, setReport] = useState<import("./backend/types").ApiDebug | null>(null);
+  const { act, busy, error } = useAction();
+  const [working, setWorking] = useState("");
+  const allChecked = examples.length > 0 && examples.every(e => e.ok !== null);
+  const anyWorks = examples.some(e => e.ok === true);
+  const run = (label: string, task: () => Promise<void>) => void act(async () => { setWorking(label); try { await task(); } finally { setWorking(""); } });
+  useEffect(() => { void backend.listApiExamples(id).then(setExamples).catch(() => undefined); }, [backend, id]);
+  const findWorking = async (inline = false) => {
+    const task = async () => {
+      setWorking("Looking for addresses that work: your model reads the documentation, then each candidate is tested with your saved keys. This can take a minute or two…");
+      let list = await backend.suggestApiExamples(id); setExamples(list);
+      for (const e of list) { if (e.ok === null) { list = await backend.runApiExample(id, e.url); setExamples(list); } }
+    };
+    if (inline) await task(); else run("Looking for addresses that work: your model reads the documentation, then each candidate is tested with your saved keys. This can take a minute or two…", task);
+  };
+  const better = examples.find(e => e.ok === true && e.url !== current);
+  // A connection is its service and keys: a path that works is just remembered on it, never a second connection.
+  async function useAddress(url: string) {
+    await backend.addApiAddress(id, url);
+    await changed();
+  }
+  return <details open={examples.length > 0 || !!failing || !!report}><summary>Debug this connection</summary>
+    <p className="muted">Checks the address without and with your keys and explains what is wrong. A key pasted with something extra, such as “Bearer”, is repaired. If the address itself is wrong, your selected model then reads the service's public documentation (never your keys or data) to look for the right one, each candidate is tested with your keys, and you can switch with one click.</p>
+    <button disabled={busy} className="primary" onClick={() => run("Checking the address without keys, then with your saved keys…", async () => {
+      const result = await backend.debugApiConnection(id); setReport(result);
+      if (result.fixed) { try { await backend.testConnection(id); } finally { await changed(); } }
+      else if (result.tryExamples) await findWorking(true);
+    })}>Check and fix this connection</button>
+    {busy && working && <BotStatus label={working} />}
+    {better && <div role="status" aria-label="Working address found">
+      <h4>Found an address that works</h4>
+      <p><bdi>{better.url}</bdi></p><p>It returns: <bdi>{better.result}</bdi></p>
+      <p>Your keys work on this service. The address saved with this connection, <bdi>{current}</bdi>, is not one that works, but any path on the service can be used with the same keys.</p>
+      <button className="primary" disabled={busy} onClick={() => run("Saving that path on this connection…", () => useAddress(better.url))}>Use this path on this connection</button>
+    </div>}
+    {report && <div aria-label="Debug report">
+      <ol>{report.steps.map((step, i) => <li key={i}><strong>{step.ok ? "✓" : "✗"} {step.label}.</strong> {step.detail}</li>)}</ol>
+      <p role="status"><strong>{report.verdict}</strong></p>
+    </div>}
+    {(report?.tryExamples || examples.length > 0 || failing) && <>
+      <p className="muted">Your selected, connected model reads the API's public documentation (or uses what it knows of the service) and looks for addresses that work. It is sent the API's name, address and documentation only, never your keys or data. Only the field names that come back are kept.</p>
+      <button disabled={busy} onClick={() => void findWorking()}>{examples.length ? "Find more working addresses" : "Find working addresses"}</button>
+    </>}
+    {allChecked && !anyWorks && <div role="alert" aria-label="Nothing worked">
+      <h4>Every example was checked and none worked</h4>
+      <p>First re-check your keys: choose <strong>Edit API connection</strong> above and paste them again, making sure each goes in the right box. Then check the address against the service's documentation. This is what each call said:</p>
+      <ul>{examples.map(e => <li key={e.url}><bdi>{e.url}</bdi>: {e.result}</li>)}</ul>
+    </div>}
+    {examples.map(e => <article key={e.url} aria-label={e.label}>
+      <h4>{e.label}</h4><p>{e.note}</p><p><bdi>{e.url}</bdi></p>
+      {e.ok !== null && <p role="status">{e.ok ? "Works. It returns: " : "Failed: "}<bdi>{e.result}</bdi></p>}
+      {e.ok === false && /authentication failed|refused access|credential/i.test(e.result ?? "") && <p>Re-check your keys: use Edit API connection and paste them again.</p>}
+      <div className="actions">
+        <button disabled={busy} onClick={() => run(`Running “${e.label}” with your saved keys…`, async () => setExamples(await backend.runApiExample(id, e.url)))}>{e.ok === null ? "Run this example" : "Run again"}</button>
+        {e.ok === true && <button disabled={busy} onClick={() => run("Saving that path on this connection…", () => useAddress(e.url))}>Use this path</button>}
+      </div>
+    </article>)}
+    {error && <p role="alert">{error}</p>}
+  </details>;
 }
 function ConnectorTools({
   backend,
@@ -160,7 +236,7 @@ function ConnectorTools({
       }}
     >
       <summary>What it can do</summary>
-      {busy && <p role="status">Loading tools…</p>}
+      {busy && <BotStatus label="Loading tools…" />}
       <Notice error={error} />
       {error && (
         <button disabled={busy} onClick={() => void load()}>
@@ -408,9 +484,10 @@ function ConnectionDetail({
           </p>
         </form>
       )}
+      {busy && !pending && <BotStatus label="Updating connection…" />}
       {pending ? (
         <>
-          <p role="status">Finish signing in in your browser…</p>
+          <BotStatus state="waiting" label="Finish signing in in your browser…" detail="Your bot is waiting for you to complete sign-in." />
           <Field label="Authorization URL">
             <input
               readOnly

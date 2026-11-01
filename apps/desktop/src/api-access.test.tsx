@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ApiAccessPanel, ApiSetup } from "./ApiAccess";
@@ -51,6 +51,18 @@ test("a suitable connected API is selected while preserving other selected servi
   expect(screen.queryByRole("button", { name: "Save API connection" })).not.toBeInTheDocument();
 });
 
+test("when existing keys already work at the proposed address, one click adds it and selects it", async () => {
+  const f = await fixture(); const source = await f.backend.saveApiConnection({ name: "Ahaku", url: "https://api.example.com/me", auth: "bearer", headerName: "", docsUrl: null }, { main: "k", extras: [] });
+  f.draft.accessPlan = { ...report("same_service_works", proposal), reuseKeysFrom: source.id, summary: "Your keys already work on this service." };
+  const add = vi.spyOn(f.backend, "addApiAddress"); const select = vi.spyOn(f.backend, "selectTaskConnections");
+  render(<ApiAccessPanel {...f} accept={vi.fn()} onBusy={vi.fn()} />);
+  expect(screen.getByText("Your existing keys work here")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Save API connection" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Use my existing connection for this" }));
+  await waitFor(() => expect(add).toHaveBeenCalledWith(source.id, proposal.url));
+  await waitFor(() => expect(select).toHaveBeenCalled());
+});
+
 test("a supported service offers its existing connection setup without a custom API box", async () => {
   const f=await fixture({...report("connect_service"),connectorId:"gmail"}); const connect=vi.fn();
   render(<ApiAccessPanel {...f} accept={vi.fn()} onBusy={vi.fn()} connect={connect} />);
@@ -65,12 +77,14 @@ test("OAuth and POST proposals explain the missing adapter without a credential 
   expect(screen.queryByRole("button", { name: "Save API connection" })).not.toBeInTheDocument();
 });
 
-test("API credentials never enter the DOM and saving does not issue the access test", async () => {
+test("keys are typed into hidden boxes, cleared after saving, and saving does not issue the access test", async () => {
   const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection"); const check = vi.spyOn(backend, "testConnection"); const connected = vi.fn();
   const { container } = render(<ApiSetup backend={backend} proposal={proposal} connected={connected} />);
-  expect(container.querySelector('input[type="password"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Save API connection" })).toBeDisabled();
+  await userEvent.type(container.querySelector('input[type="password"]')!, "SYNTHETIC-TOKEN");
   await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
-  await screen.findByText(/Saved on this Mac/); expect(save).toHaveBeenCalledWith(expect.objectContaining({ url: proposal.url, auth: "bearer" }));
+  await screen.findByText(/Saved on this Mac/); expect(save).toHaveBeenCalledWith(expect.objectContaining({ url: proposal.url, auth: "bearer" }), { main: "SYNTHETIC-TOKEN", extras: [] });
+  expect(container.textContent).not.toContain("SYNTHETIC-TOKEN"); expect(container.querySelector('input[type="password"]')).toBeNull();
   expect(check).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Test API access" }));
   await waitFor(() => expect(connected).toHaveBeenCalledWith(expect.objectContaining({ state: expect.objectContaining({ kind: "connected" }) })));
@@ -105,11 +119,13 @@ test("an old research response cannot replace a new draft", async () => {
 test("an API that needs an app id beside the token asks for both keys and sends only header names", async () => {
   const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection");
   const { container } = render(<ApiSetup backend={backend} proposal={{ ...proposal, extraHeaderNames: ["X-App-Id"] }} />);
-  expect(screen.getByText(/Secure boxes open one at a time where you paste your 2 keys/)).toBeVisible();
-  expect(container.querySelector('input[type="password"]')).toBeNull();
+  const boxes = container.querySelectorAll('input[type="password"]');
+  expect(boxes).toHaveLength(2);
+  expect(screen.getByText(/Second key: the value for X-App-Id/)).toBeVisible();
+  await userEvent.type(boxes[0] as HTMLElement, "T1"); await userEvent.type(boxes[1] as HTMLElement, "A1");
   await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
   await screen.findByText(/Saved on this Mac/);
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({ extraHeaderNames: ["X-App-Id"] }));
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ extraHeaderNames: ["X-App-Id"] }), { main: "T1", extras: ["A1"] });
 });
 
 test("a proposal's technical fields are tucked away, while a manual custom API shows them", async () => {
@@ -139,4 +155,103 @@ test("each proposal says in plain words what it costs, and never claims a cost t
   expect(screen.getByText("May cost money or need the provider's approval")).toBeVisible(); paid.unmount();
   await panel(report("needs_connection", proposal));
   expect(screen.getByText("Cost not confirmed in the documentation")).toBeVisible();
+});
+
+test("two keys are set up from the generic fields, naming each box in turn", async () => {
+  const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection");
+  const { container } = render(<ApiSetup backend={backend} />);
+  await userEvent.type(screen.getByLabelText("Name"), "Bank accounts");
+  await userEvent.type(screen.getByLabelText(/^API URL/), "https://api.example.com/v1/accounts");
+  await userEvent.type(screen.getByLabelText(/Second key/), "X-App-Id");
+  const boxes = container.querySelectorAll('input[type="password"]');
+  await userEvent.type(boxes[0] as HTMLElement, "T1"); await userEvent.type(boxes[1] as HTMLElement, "A1");
+  await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
+  await screen.findByText(/Saved on this Mac/);
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ auth: "bearer", extraHeaderNames: ["X-App-Id"] }), { main: "T1", extras: ["A1"] });
+});
+
+test("a saved API can be changed or followed by another one instead of freezing the form", async () => {
+  const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection"); const remove = vi.spyOn(backend, "disconnect");
+  const { container } = render(<ApiSetup backend={backend} />);
+  const fill = async (name: string, key: string) => {
+    await userEvent.clear(screen.getByLabelText("Name")); await userEvent.type(screen.getByLabelText("Name"), name);
+    await userEvent.clear(screen.getByLabelText(/^API URL/)); await userEvent.type(screen.getByLabelText(/^API URL/), "https://api.example.com/v1/items");
+    await userEvent.type(container.querySelector('input[type="password"]')!, key);
+    await userEvent.click(screen.getByRole("button", { name: "Save API connection" })); await screen.findByText(/Saved on this Mac/);
+  };
+  await fill("First", "K1");
+  await userEvent.click(screen.getByRole("button", { name: "Change details" }));
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText("Name")).toHaveValue("First"); expect(screen.getByLabelText("Name")).toBeEnabled();
+  await fill("First fixed", "K2");
+  await userEvent.click(screen.getByRole("button", { name: "Add another API" }));
+  expect(screen.getByLabelText("Name")).toHaveValue(""); await fill("Second", "K3");
+  expect(save).toHaveBeenCalledTimes(3);
+});
+
+test("editing a saved API fills in its settings, keeps the saved keys unless new ones are typed, and replaces the old connection", async () => {
+  const backend = new MockBackend(); const save = vi.spyOn(backend, "saveApiConnection");
+  const old = await backend.saveApiConnection({ name: "Bank", url: "https://api.example.com/v1", auth: "bearer", headerName: "", docsUrl: null, extraHeaderNames: ["X-App-Id"] }, { main: "a", extras: ["b"] });
+  const config = await backend.getApiConfig(old.id);
+  const { container } = render(<ApiSetup backend={backend} edit={{ id: old.id, config }} />);
+  expect(screen.getByLabelText("Name")).toHaveValue("Bank");
+  expect(screen.getByLabelText(/^API URL/)).toHaveValue("https://api.example.com/v1");
+  expect(container.querySelectorAll('input[type="password"]')).toHaveLength(2);
+  expect([...container.querySelectorAll('input[type="password"]')].map(b => (b as HTMLInputElement).value)).toEqual(["••••••••••", "••••••••••"]);
+  await userEvent.clear(screen.getByLabelText(/^API URL/)); await userEvent.type(screen.getByLabelText(/^API URL/), "https://api.example.com/v1/accounts");
+  await userEvent.click(screen.getByRole("button", { name: "Save API connection" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  // The old connection is replaced, not left beside the new one.
+  expect((await backend.listConnectors()).filter(c => c.registration === "api").map(c => c.id)).not.toContain(old.id);
+  // Blank boxes tell the host to keep the saved keys of the connection being replaced.
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ url: "https://api.example.com/v1/accounts", extraHeaderNames: ["X-App-Id"] }), { main: "", extras: [""] }, old.id);
+});
+
+test("one button explains the problem, finds and tests addresses, and offers a one-click update", async () => {
+  const backend = new MockBackend();
+  const info = await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/v1", auth: "none", headerName: "", docsUrl: null });
+  const changed = vi.fn(async () => {});
+  render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={changed} />);
+  await userEvent.click(screen.getByText(/Debug this connection/));
+  const originalSuggest = backend.suggestApiExamples.bind(backend); let release!: () => void;
+  vi.spyOn(backend, "suggestApiExamples").mockImplementation(async id => { await new Promise<void>(r => { release = r; }); return originalSuggest(id); });
+  await userEvent.click(screen.getByRole("button", { name: "Check and fix this connection" }));
+  const report = await screen.findByLabelText("Debug report");
+  expect(report).toHaveTextContent("does not exist (404)"); expect(report).toHaveTextContent("The address itself is wrong");
+  expect(await screen.findByText(/Looking for addresses that work/)).toBeVisible();
+  release();
+  const found = await screen.findByLabelText("Working address found");
+  expect(found).toHaveTextContent("https://api.example.com/accounts"); expect(found).toHaveTextContent("balance: {available: number}");
+  const add = vi.spyOn(backend, "addApiAddress");
+  await userEvent.click(within(found).getByRole("button", { name: "Use this path on this connection" }));
+  await waitFor(() => expect(add).toHaveBeenCalledWith(info.id, "https://api.example.com/accounts"));
+  expect(changed).toHaveBeenCalled();
+  // Still one connection: the path is remembered on it, not added as a second one.
+  expect((await backend.listConnectors()).filter(c => c.registration === "api")).toHaveLength(1);
+});
+
+test("when every example fails the person is told to re-check their keys and shown what each call said", async () => {
+  const backend = new MockBackend();
+  const info = await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/v1/items", auth: "none", headerName: "", docsUrl: null });
+  await backend.suggestApiExamples(info.id);
+  vi.spyOn(backend, "listApiExamples").mockResolvedValue([
+    { label: "List accounts", url: "https://api.example.com/accounts", note: "", ok: false, result: "API authentication failed; check the saved credential. Nothing ran.", testedAtMs: 1 },
+    { label: "Profile", url: "https://api.example.com/me", note: "", ok: false, result: "The service says that address does not exist (404).", testedAtMs: 1 },
+  ]);
+  render(<Connections backend={backend} connectors={await backend.listConnectors()} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
+  await userEvent.click(screen.getByText(/Debug this connection/));
+  const alert = await screen.findByRole("alert", { name: "Nothing worked" });
+  expect(alert).toHaveTextContent("re-check your keys");
+  expect(alert).toHaveTextContent("https://api.example.com/accounts: API authentication failed");
+  expect(alert).toHaveTextContent("https://api.example.com/me: The service says that address does not exist");
+  expect(screen.getByLabelText("List accounts")).toHaveTextContent("Re-check your keys: use Edit API connection");
+});
+
+test("a failing API connection points to the debug check", async () => {
+  const backend = new MockBackend();
+  const info = await backend.saveApiConnection({ name: "Bank accounts", url: "https://api.example.com/v1", auth: "none", headerName: "", docsUrl: null });
+  const failing = { ...info, state: { kind: "error" as const, message: "The service says that address does not exist (404)." } };
+  render(<Connections backend={backend} connectors={[failing]} selected={null} select={vi.fn()} changed={vi.fn(async () => {})} />);
+  expect(screen.getByText(/Not working\?/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Check and fix this connection" })).toBeVisible();
 });

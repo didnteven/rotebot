@@ -702,6 +702,15 @@ pub fn run_program_with_sources(
         valid.is_ok(),
         valid.err().map(|e| e.to_string()),
     ));
+    if no_input || !program.connection_sources.is_empty() || !program.web_sources.is_empty() {
+        let empty = empty_labels(output);
+        checks.push(check(
+            "values_found",
+            "The result has its values, not empty labels",
+            empty.is_none(),
+            empty.map(|label| format!("Most labelled values in the result are empty (for example \"{label}\"): the data that was read does not contain them. Read the full content (for an email search set includeBody to true so its text is returned) and extract the values, or throw an Error naming what is missing; never output empty values")),
+        ));
+    }
     if let Some(example) = &draft.example_output {
         // Live-data tasks (web sources) and no-input tasks produce numbers
         // that legitimately differ from the pasted example, so compare line
@@ -1558,5 +1567,37 @@ mod tests {
         assert!(parts[3].chars().count() <= 200, "closest truncated");
         assert_eq!(parts[1].chars().count(), 200);
         assert_eq!(parts[3].chars().count(), 200);
+    }
+}
+
+/// A result whose labelled lines are mostly empty ("Total:", "Due date: N/A") found nothing:
+/// returns the first empty label when more than half of at least two labels are empty.
+pub(crate) fn empty_labels(output: &str) -> Option<String> {
+    let mut labelled = 0;
+    let mut empty = Vec::new();
+    for line in output.lines().map(str::trim) {
+        let Some((label, value)) = line.split_once(':') else { continue };
+        let label = label.trim().trim_start_matches(['-', '*', '•']).trim();
+        if label.is_empty() || label.chars().count() > 60 || !label.chars().any(char::is_alphabetic) || value.starts_with("//") {
+            continue;
+        }
+        labelled += 1;
+        let v = value.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
+        if ["", "-", "—", "n/a", "na", "none", "null", "undefined", "unknown", "not found", "not available"].contains(&v.as_str()) {
+            empty.push(format!("{label}:"));
+        }
+    }
+    (labelled >= 2 && empty.len() * 2 > labelled).then(|| empty.remove(0))
+}
+
+#[cfg(test)]
+mod empty_label_tests {
+    #[test]
+    fn mostly_empty_labels_fail_and_filled_ones_pass() {
+        let bills = "Bill Summary\n============\nWatercare\nPrevious balance: \nCurrent charges: \nTotal: \nDue date: \n";
+        assert_eq!(super::empty_labels(bills).as_deref(), Some("Previous balance:"));
+        assert!(super::empty_labels("Total: $84.20\nDue date: 12 Nov\nNotes:\n").is_none());
+        assert!(super::empty_labels("Weather 8:00 sunny\nSee https://x.example\n").is_none());
+        assert!(super::empty_labels("Total: N/A\nDue: unknown\n").is_some());
     }
 }

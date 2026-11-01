@@ -1,7 +1,7 @@
 import type { Program, ModelRoute, SelectedConnection } from "./backend/types";
 
 function serviceName(id: string, connections?: SelectedConnection[]) {
-  return connections?.find(c => c.connectorId === id)?.name ?? ({gmail:"Gmail","google-calendar":"Google Calendar"} as Record<string,string>)[id] ?? id;
+  return connections?.find(c => c.connectorId === id)?.name ?? ({gmail:"Gmail","google-calendar":"Google Calendar"} as Record<string,string>)[id] ?? (id.startsWith("api_") ? "your saved API" : id);
 }
 export function SourceReview({program, route, routeDetails, frequency="on every run", build=false, connections, advanced=true}: {program:Program;route:ModelRoute;routeDetails?:string;frequency?:string;build?:boolean;connections?:SelectedConnection[];advanced?:boolean}) {
   const reads=program.connectionSources??[];

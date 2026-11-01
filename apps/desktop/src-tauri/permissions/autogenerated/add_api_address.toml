@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-api-address"
+description = "Enables the add_api_address command without any pre-configured scope."
+commands.allow = ["add_api_address"]
+
+[[permission]]
+identifier = "deny-add-api-address"
+description = "Denies the add_api_address command without any pre-configured scope."
+commands.deny = ["add_api_address"]

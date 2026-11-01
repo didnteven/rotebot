@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-run-api-example"
+description = "Enables the run_api_example command without any pre-configured scope."
+commands.allow = ["run_api_example"]
+
+[[permission]]
+identifier = "deny-run-api-example"
+description = "Denies the run_api_example command without any pre-configured scope."
+commands.deny = ["run_api_example"]

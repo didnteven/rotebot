@@ -9,6 +9,7 @@ publish.workspace = true
 tauri-build.workspace = true
 
 [dependencies]
+tauri-plugin-single-instance = "=2.5.4"
 tauri.workspace = true
 serde.workspace = true
 macroscope-app-core.workspace = true

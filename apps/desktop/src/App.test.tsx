@@ -34,6 +34,8 @@ describe("desktop shell", () => {
     expect(screen.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
     await user.tab();
     expect(screen.getByRole("button", { name: "My tools" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Record a task" })).toHaveFocus();
     for (const destination of [
       "Activity",
       "Connections",
