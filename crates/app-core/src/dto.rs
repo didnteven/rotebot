@@ -185,6 +185,9 @@ pub struct TaskDraft {
     pub kind: TaskKind,
     #[serde(default)]
     pub example_output: Option<String>,
+    /// A short tool name the selected model suggested from the description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_name: Option<String>,
     #[serde(default)]
     pub synthetic_shape: String,
     /// True when the task reads approved web sources instead of a selected

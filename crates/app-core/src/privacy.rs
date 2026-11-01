@@ -101,6 +101,24 @@ impl AppCore {
         self.tool_detail(&row)
     }
 
+    /// Renames a saved tool. The name is display text only: versions, permissions and schedules are unchanged.
+    pub fn rename_tool(&self, tool_id: &str, name: &str) -> CoreResult<ToolDetail> {
+        let _admission = self.admit_local()?;
+        let name: String = name.chars().filter(|c| !c.is_control()).collect();
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 80 {
+            return Err(CoreError::Invalid("Give the tool a name of up to 80 characters.".into()));
+        }
+        let mut row = self
+            .db()
+            .tool(tool_id)?
+            .ok_or(CoreError::NotFound("tool"))?;
+        let old = std::mem::replace(&mut row.name, name.to_string());
+        self.db().put_tool(&row)?;
+        self.activity("settings", format!("Renamed tool “{old}” to “{name}”"), None);
+        self.tool_detail(&row)
+    }
+
     pub fn restore_tool(&self, tool_id: &str) -> CoreResult<ToolDetail> {
         let _admission = self.admit_local()?;
         let mut row = self

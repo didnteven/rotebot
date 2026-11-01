@@ -17,6 +17,7 @@ fn main() {
         "export_tool",
         "revoke_tool",
         "restore_tool",
+        "rename_tool",
         "list_tool_versions",
         "restore_tool_version",
         "delete_preview",

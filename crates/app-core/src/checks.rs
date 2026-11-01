@@ -938,6 +938,7 @@ mod tests {
             replaces_tool_id: None,
             kind: crate::dto::TaskKind::Program,
             example_output: None,
+            suggested_name: None,
             synthetic_shape: String::new(),
             no_input: true,
             draft_id: "draft".into(),

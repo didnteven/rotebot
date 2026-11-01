@@ -157,6 +157,8 @@ export interface TaskDraft {
   requiredConnections?: SelectedConnection[];
   kind?: TaskKind;
   exampleOutput?: string | null;
+  /** A short tool name suggested by the model from the description. */
+  suggestedName?: string | null;
   syntheticShape?: string;
   /** True when the task reads approved web sources instead of a selected file. */
   noInput: boolean;
@@ -539,7 +541,7 @@ export interface RecordingStatus {
 export interface Backend {
   accessPreview(draftId: string): Promise<AccessPreview>;
   researchTaskAccess(draftId: string, payloadHash: string): Promise<TaskDraft>;
-  /** Asks the selected model to fill in the output layout of a program task that has none yet. */
+  /** Asks the selected model for what a program task is missing: its output layout and a short name. */
   suggestExampleOutput(draftId: string): Promise<TaskDraft>;
   /** `keys` are the values typed into the setup form: the main key, then one per extra key name. */
   /** Adds another address on a saved API's own service, reusing its keys; tested before it is kept. */
@@ -652,6 +654,8 @@ export interface Backend {
   exportTool(toolId: string): Promise<string | null>; // null when the folder picker is canceled
   revokeTool(toolId: string): Promise<ToolDetail>;
   restoreTool(toolId: string): Promise<ToolDetail>;
+  /** Renames a saved tool; only its display name changes. */
+  renameTool(toolId: string, name: string): Promise<ToolDetail>;
   /** Marks a draft as an edit of a saved tool; saving its build then adds a version to that tool. */
   setDraftReplaces(draftId: string, toolId: string): Promise<TaskDraft>;
   /** Saved versions of a tool, newest first. */

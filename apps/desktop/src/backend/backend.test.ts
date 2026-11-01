@@ -114,6 +114,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["exportTool", ["t"], { toolId: "t" }],
     ["revokeTool", ["t"], { toolId: "t" }],
     ["restoreTool", ["t"], { toolId: "t" }],
+    ["renameTool", ["t", "New name"], { toolId: "t", name: "New name" }],
     ["deletePreview", [], undefined],
     [
       "deleteData",

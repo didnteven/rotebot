@@ -529,6 +529,18 @@ fn restore_tool<R: Runtime>(
 }
 
 #[tauri::command]
+fn rename_tool<R: Runtime>(
+    app: AppHandle<R>,
+    core: State<'_, Core>,
+    tool_id: String,
+    name: String,
+) -> Cmd<ToolDetail> {
+    let tool = core.0.rename_tool(&tool_id, &name)?;
+    refresh_tray(&app);
+    Ok(tool)
+}
+
+#[tauri::command]
 async fn pick_output_dir<R: Runtime>(
     app: AppHandle<R>,
     core: State<'_, Core>,
@@ -1456,6 +1468,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         export_tool,
         revoke_tool,
         restore_tool,
+        rename_tool,
         list_tool_versions,
         restore_tool_version,
         set_draft_replaces,

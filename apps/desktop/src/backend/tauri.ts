@@ -156,6 +156,7 @@ export class TauriBackend implements Backend {
   setDraftReplaces: Backend["setDraftReplaces"] = (draftId, toolId) => invoke("set_draft_replaces", {draftId, toolId});
   listToolVersions: Backend["listToolVersions"] = toolId => invoke("list_tool_versions", {toolId});
   restoreToolVersion: Backend["restoreToolVersion"] = (toolId, hash) => invoke("restore_tool_version", {toolId, hash});
+  renameTool: Backend["renameTool"] = (toolId, name) => invoke("rename_tool", { toolId, name });
   restoreTool: Backend["restoreTool"] = (toolId) =>
     invoke("restore_tool", { toolId });
   deleteTool: Backend["deleteTool"] = (toolId) =>

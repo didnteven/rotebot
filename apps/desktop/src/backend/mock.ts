@@ -227,9 +227,10 @@ export class MockBackend implements Backend {
   }
   async suggestExampleOutput(draftId: string) {
     const d = this.draft(draftId); const s = this.resolveRoute();
-    if (d.kind !== "program" || d.exampleOutput?.trim() || s.egress !== "cloud_allowed" || s.effectiveRoute === "offline_demo" || !s.effectiveRoute) return this.validate(d);
+    if (d.kind !== "program" || (d.exampleOutput?.trim() && d.suggestedName) || s.egress !== "cloud_allowed" || s.effectiveRoute === "offline_demo" || !s.effectiveRoute) return this.validate(d);
+    if (!d.suggestedName) d.suggestedName = /forecast|weather/i.test(d.goal) ? "Auckland forecast" : "My new tool";
     // The simulated weather build prints this line, so the suggested layout passes its example check.
-    if (!d.noInput) return this.validate(d);
+    if (!d.noInput || d.exampleOutput?.trim()) return this.validate(d);
     d.exampleOutput = "Auckland: fine, high 21C, low 14C."; d.revision++;
     return this.validate(d);
   }
@@ -1317,6 +1318,15 @@ export class MockBackend implements Backend {
     if (!tool) throw new Error("Tool unavailable.");
     tool.state = "paused";
     this.log("settings", `Paused tool “${tool.name}”`);
+    return clone(tool);
+  }
+  async renameTool(toolId: string, name: string) {
+    const tool = this.tools.get(toolId);
+    if (!tool) throw new Error("Tool unavailable.");
+    const clean = name.replace(/[\u0000-\u001f]/g, "").trim();
+    if (!clean || clean.length > 80) throw new Error("Give the tool a name of up to 80 characters.");
+    this.log("settings", `Renamed tool “${tool.name}” to “${clean}”`);
+    tool.name = clean;
     return clone(tool);
   }
   async restoreTool(toolId: string) {

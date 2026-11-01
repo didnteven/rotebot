@@ -394,3 +394,23 @@ async fn invalid_control_names_are_rejected_before_destination_checks() {
         );
     }
 }
+
+#[tokio::test]
+async fn renaming_a_tool_changes_only_its_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_at(tmp.path(), Arc::new(MemoryStore::default()));
+    let tool = core.install_sample_tool().unwrap();
+    let id = &tool.summary_row.id;
+    let run = staged(&core, id, tmp.path(), "renamed.csv").await;
+    let renamed = core.rename_tool(id, "  Clean orders\u{7}  ").unwrap();
+    assert_eq!(renamed.summary_row.name, "Clean orders");
+    assert_eq!(renamed.summary_row.version, tool.summary_row.version);
+    // A run staged before the rename still commits: names are not part of what was approved.
+    assert!(matches!(
+        core.commit_run(&run.run_id, &run.plan_hash).unwrap(),
+        CommitResult::Committed(_)
+    ));
+    assert!(core.rename_tool(id, "   ").is_err());
+    assert!(core.rename_tool(id, &"x".repeat(81)).is_err());
+    assert_eq!(core.list_tools().unwrap()[0].name, "Clean orders");
+}

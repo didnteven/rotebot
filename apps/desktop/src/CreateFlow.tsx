@@ -229,22 +229,27 @@ export function CreateFlow({
   const aiReady = status.egress === "cloud_allowed" && !!status.effectiveRoute && status.effectiveRoute !== "offline_demo";
   const suggested = useRef<string | null>(null);
   const buildStarted = useRef(false);
+  /** A name the person typed is kept over any suggestion. */
+  const nameEdited = useRef(false);
   buildStarted.current = !!build;
   const [suggesting, setSuggesting] = useState(false);
   useEffect(() => {
-    if (step !== 1 || !draft || draft.kind !== "program" || example.trim() || !aiReady || build || suggested.current === `${draft.draftId}:${draft.goal}`) return;
+    if (step !== 1 || !draft || draft.kind !== "program" || (example.trim() && draft.suggestedName) || !aiReady || build || suggested.current === `${draft.draftId}:${draft.goal}`) return;
     suggested.current = `${draft.draftId}:${draft.goal}`;
     const id = draft.draftId;
     setSuggesting(true);
     void backend.suggestExampleOutput(id)
       // A build already sent keeps its plan: a late layout never changes it.
-      .then(next => { if (next.exampleOutput && !buildStarted.current) setExample(current => current.trim() ? current : next.exampleOutput!); })
+      .then(next => {
+        if (next.suggestedName && !nameEdited.current && !editTool) setName(next.suggestedName);
+        if (next.exampleOutput && !buildStarted.current) setExample(current => current.trim() ? current : next.exampleOutput!);
+      })
       .catch(() => { /* The person can still type the layout themselves. */ })
       .finally(() => setSuggesting(false));
   }, [step, draft, example, aiReady, backend, build]);
   function acceptDraft(next: TaskDraft) {
     setDraft(next);
-    setName(editTool ? editTool.name : next.kind === "program" ? toolNameFromGoal(next.goal) : "Clean import CSV");
+    if (!nameEdited.current) setName(editTool ? editTool.name : next.kind === "program" ? next.suggestedName || toolNameFromGoal(next.goal) : "Clean import CSV");
     setMap(next.mapping);
     setOutputName(next.outputName);
     setPreview(null);
@@ -740,7 +745,7 @@ export function CreateFlow({
               {!draft?.noInput && !sites.length && <p>{rowCount(build.comparison.rowsIn)} → {rowCount(build.comparison.rowsOut)}</p>}
               <UsedLine parts={usedParts(build.program, build.route, draft?.requiredConnections)} />
               <Field label="Tool name">
-                <input value={name} onChange={(e) => setName(e.target.value)} />
+                <input value={name} onChange={(e) => { nameEdited.current = true; setName(e.target.value); }} />
               </Field>
               <h3>Is this right?</h3>
 

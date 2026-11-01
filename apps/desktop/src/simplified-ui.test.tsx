@@ -182,3 +182,32 @@ it("shows a loading state in Output while the AI writes the layout, then fills i
   await waitFor(() => expect(screen.getByLabelText("What the result should look like")).toHaveValue("Auckland: fine, high 21C, low 14C."));
   expect(screen.queryByText("Writing the output layout…", { selector: "strong" })).not.toBeInTheDocument();
 });
+
+it("shows one line of a long description with a chevron, and renames a tool from the ⋯ menu", async () => {
+  const long = "Get me incoming payments by person use the name not account number, for the last week only, since the last Monday.";
+  const backend = new MockBackend([{ id: "a", name: "Get me incoming payments by person use the name…", version: 1 }]);
+  const original = backend.getTool.bind(backend);
+  vi.spyOn(backend, "getTool").mockImplementation(async id => ({ ...await original(id), summary: [long] }));
+  const user = userEvent.setup();
+  render(<App backend={backend} />);
+  const text = await screen.findByText(long);
+  expect(text).toHaveClass("clamp");
+  const chevron = screen.getByRole("button", { name: /Show full description of/ });
+  await user.click(chevron);
+  expect(text).not.toHaveClass("clamp");
+  expect(chevron).toHaveAttribute("aria-expanded", "true");
+  await user.click(screen.getByRole("button", { name: /^Rename: / }));
+  const field = screen.getByRole("textbox", { name: /New name for/ });
+  expect(field).toHaveValue("Get me incoming payments by person use the name");
+  await user.clear(field);
+  await user.type(field, "Weekly payments check");
+  await user.click(button("Save name"));
+  expect(await screen.findByRole("heading", { name: "Weekly payments check" })).toBeVisible();
+  expect((await backend.listTools())[0].name).toBe("Weekly payments check");
+});
+
+it("names a new tool with the AI's suggestion unless the person typed their own", async () => {
+  const { user } = await create();
+  await user.click(button("Build and test"));
+  expect(await screen.findByLabelText("Tool name")).toHaveValue("Auckland forecast");
+});

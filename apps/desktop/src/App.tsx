@@ -44,6 +44,8 @@ function AppWorkspace({ backend }: { backend: Backend }) {
   const [customizingTool, setCustomizingTool] = useState<ToolSummary | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   // An open ⋯ menu closes on a click outside it or on Escape, like any menu.
   useEffect(() => {
     if (!menuOpen) return;
@@ -348,14 +350,29 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                           <li key={tool.id} className="tool-row">
                             <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={64} />
                             <div className="tool-text">
-                              <h2>
+                              {renaming?.id === tool.id ? (
+                                <form className="rename-form" onSubmit={e => { e.preventDefault(); const name = renaming.name; void act(async () => { await backend.renameTool(tool.id, name); setRenaming(null); await refreshTools(); }); }}>
+                                  <input aria-label={`New name for ${displayName}`} autoFocus value={renaming.name} maxLength={80} onChange={e => setRenaming({ id: tool.id, name: e.target.value })} onKeyDown={e => { if (e.key === "Escape") setRenaming(null); }} />
+                                  <button className="primary" type="submit" disabled={busy || !renaming.name.trim()}>Save name</button>
+                                  <button type="button" className="ghost" onClick={() => setRenaming(null)}>Cancel</button>
+                                </form>
+                              ) : <h2>
                                 {displayName}{" "}
                                 {tool.sample && (
                                   <span className="badge">Sample</span>
                                 )}
                                 {tool.state === "paused" && <span className="badge">Paused</span>}
-                              </h2>
-                              <p>{toolDescriptions[tool.id] || tool.name}</p>
+                              </h2>}
+                              {(() => {
+                                const description = toolDescriptions[tool.id] || "";
+                                // One line with a chevron for the rest; nothing when it only repeats the name.
+                                if (!description || description === tool.name) return null;
+                                const open = expanded === tool.id;
+                                return <div className="tool-desc">
+                                  <p className={open ? undefined : "clamp"}>{description}</p>
+                                  {description.length > 60 && <button className="chevron" aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} full description of ${displayName}`} onClick={() => setExpanded(open ? null : tool.id)}>{open ? "▴" : "▾"}</button>}
+                                </div>;
+                              })()}
                               <p className="muted">{(() => { const line = scheduleLine(schedules.find(s => s.toolId === tool.id)); return line ? <span data-testid="schedule-line">{line}</span> : friendlyLastRun(tool.lastRunAtMs); })()}</p>
                             </div>
                             <div className="tool-actions">
@@ -393,6 +410,7 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                                   >
                                     Edit
                                   </button>}
+                                  <button className="quiet" disabled={busy} aria-label={`Rename: ${displayName}`} onClick={() => { setMenuOpen(null); setRenaming({ id: tool.id, name: tool.name.replace(/…$/, "") }); }}>Rename</button>
                                   <button className="quiet" disabled={busy || !status} aria-label={`Customize bot: ${displayName}`} onClick={() => { setMenuOpen(null); setCustomizingTool(tool); }}>Customize bot</button>
                                   <button className="quiet" disabled={busy} onClick={() => void act(async () => { setExported(await backend.exportTool(tool.id)); setMenuOpen(null); })}>Export</button>
                                   {tool.state !== "paused" && <button className="quiet" disabled={busy} onClick={() => void act(async () => { await backend.revokeTool(tool.id); setMenuOpen(null); await refreshTools(); })}>Pause tool</button>}

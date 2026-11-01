@@ -111,6 +111,7 @@
     "allow-export-tool",
     "allow-revoke-tool",
     "allow-restore-tool",
+    "allow-rename-tool",
     "allow-list-tool-versions",
     "allow-restore-tool-version",
     "allow-delete-preview",
