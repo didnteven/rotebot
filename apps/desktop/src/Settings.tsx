@@ -57,12 +57,12 @@ export function Settings({
     setConfirmation(next.effectiveRoute === route ? `Builds now use ${routeLabel(route)}` : next.blockedReason ?? "This route is currently unavailable.");
   }
   return (
-    <section>
+    <section className="settings-page">
       <p className="muted">Your tools can use this AI service and the services you connect. Each result shows what it used.</p>
       <fieldset ref={chooser} id="model-route-chooser" tabIndex={-1} disabled={busy}>
         <legend>Which model builds your tools</legend>
         {routes.map((r) => (
-          <div className="model-route-row" key={r.route}>
+          <div className={`model-route-row${active === r.route ? " route-selected" : ""}`} key={r.route}>
             <label className="choice">
               <input
                 type="radio"
@@ -90,12 +90,12 @@ export function Settings({
               />
               {r.label}
             </label>
-            <p id={`route-state-${r.route}`}>{r.reason}</p>
+            <p className={`status-badge${r.disabled ? "" : " status-success"}`} id={`route-state-${r.route}`}>{r.reason}</p>
             {r.disabled && r.fix && <button onClick={r.repair}>{r.fix}</button>}
           </div>
         ))}
       </fieldset>
-      {confirmation && <p role="status">{confirmation}</p>}
+      {confirmation && <p className="notice notice-success" role="status">{confirmation}</p>}
       {info.debugBuild && info.secretStore === "file" && (
         <p className="muted">
           Development build: secrets are stored in a private file in Rotebot's data folder instead of the Keychain.
@@ -268,10 +268,13 @@ export function Settings({
           {status.blockedReason}
         </p>
       )}
-      <h2>Preferences</h2>
+      <section className="settings-section preferences-panel" aria-labelledby="preferences-title">
+      <h2 id="preferences-title">Preferences</h2>
+      <p className="muted">A few small choices for your everyday workspace.</p>
       <label className="choice"><input type="checkbox" checked={login} disabled={busy} onChange={e => { const enabled=e.target.checked; void act(async()=>{await backend.setLoginEnabled(enabled);setLogin(enabled);}); }} />Open Rotebot at login so schedules run</label>
       <ThemePicker />
-      <details><summary>About</summary><p className="muted">
+      </section>
+      <details className="about-panel"><summary>About</summary><p className="muted">
         Version {info.version} · {info.platform}
         {info.mock
           ? " · Browser demo; no external calls or persistent files"

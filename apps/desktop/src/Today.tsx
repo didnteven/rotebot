@@ -40,14 +40,14 @@ export function Today({ backend, tools, create, run = tools }: {
   const show = (entry: TodayEntry) => {
     const program = programs[entry.toolId];
     const time = new Date(entry.startedAtMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return <article className="card" key={entry.id}>
+    return <article className={`card today-card today-${entry.status}`} key={entry.id}>
       <div className="task-heading"><BotAvatar seed={botIdentity(entry.toolId)} size={48} /><h3>{entry.toolName}</h3></div>
       {entry.status === "failed" ? <>
         <p>{friendlyFailure(entry.body)}</p>
         <details><summary>{statusWords.failed} · {time}</summary><p>{entry.note}</p><pre>{entry.body}</pre></details>
         <div className="actions"><button onClick={() => run(entry.toolId)}>Try again</button><button onClick={create}>Change the request</button></div>
       </> : <>
-        <p>{statusWords[entry.status]} · {time}</p>
+        <p className="today-meta"><span className={`status-badge${entry.status === "done" ? " status-success" : entry.status === "needs_you" ? " status-attention" : ""}`}>{statusWords[entry.status]}</span><span>{time}</span></p>
         {entry.note && <p>{entry.note}</p>}
         <div className="result-answer preserve-lines">{entry.body}</div>
       </>}
@@ -64,13 +64,13 @@ export function Today({ backend, tools, create, run = tools }: {
       </> : entry.status !== "staged" && <button disabled={busy} onClick={() => void act(async () => { await backend.dismissTodayEntry(entry.id); await refresh(); })}>Dismiss</button>}
     </article>;
   };
-  return <section>
+  return <section className="today-page">
     {error && <FailureNotice message={error} retry={() => void act(refresh)} change={tools} />}
     {days === null ? <BotStatus label="Loading Today…" /> : !days.some(d => d.entries.length) ? <div className="empty-state">
       <h2>Scheduled results show up here</h2>
       <div className="actions"><button className="primary" onClick={tools}>Schedule a tool</button><button className="quiet" onClick={create}>Describe a task</button></div>
     </div> : <>
-      {!!needs.length && <section><h2>Needs you</h2>{needs.map(show)}</section>}
+      {!!needs.length && <section className="approval-section"><div className="section-intro"><h2>Needs you</h2><span className="status-badge status-attention">{needs.length} to review</span></div>{needs.map(show)}</section>}
       {needs.some(e => e.staged?.plannedCalls?.length) && <details><summary>Details</summary>{needs.map(e => <div key={e.id}><p>{e.toolName}</p><ActionTechnicalDetails actions={e.staged?.plannedCalls ?? []} /></div>)}</details>}
       {days.map(day => <section key={day.day}><h2>{day.day === new Date().toLocaleDateString("en-CA") ? "Today's results" : day.day}</h2>{day.entries.filter(e => e.status !== "needs_you").map(show)}</section>)}
     </>}

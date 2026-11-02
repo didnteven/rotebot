@@ -1,6 +1,6 @@
 import { BotLibraryProvider } from "./BotLibrary";
 import { CustomBotStudio } from "./CustomBotStudio";
-import { BotAvatar, BotStatus, botIdentity, saveBotIdentity } from "./Bot";
+import { BotAvatar, BotStatus, botHash, botIdentity, saveBotIdentity } from "./Bot";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -25,16 +25,25 @@ import { Connections } from "./Connections";
 import { Activity, Privacy } from "./History";
 import { RecordingBar, ShowPanel } from "./Show";
 import { FileText, Notice, Suggestions, useAction } from "./ui";
+import { Icon, type IconName } from "./Icon";
 
 type Destination = "Today" | "Tools" | "Activity" | "Connections" | "Privacy" | "Settings";
 /** Privacy lives under Settings, so the sidebar stays short. */
-const navigation: { item: Destination; label: string; secondary?: boolean }[] = [
-  { item: "Today", label: "Today" },
-  { item: "Tools", label: "My tools" },
-  { item: "Activity", label: "Activity" },
-  { item: "Connections", label: "Connections", secondary: true },
-  { item: "Settings", label: "Settings", secondary: true },
+const navigation: { item: Destination; label: string; icon: IconName; secondary?: boolean }[] = [
+  { item: "Today", label: "Today", icon: "today" },
+  { item: "Tools", label: "My tools", icon: "tools" },
+  { item: "Activity", label: "Activity", icon: "activity" },
+  { item: "Connections", label: "Connections", icon: "connections", secondary: true },
+  { item: "Settings", label: "Settings", icon: "settings", secondary: true },
 ];
+const descriptions: Record<Destination, string> = {
+  Today: "Your results, ready when you are. Review anything that needs your OK.",
+  Tools: "A little less routine. A little more room for everything else.",
+  Activity: "Follow the work: builds, runs, and the receipts they leave behind.",
+  Connections: "Bring your services together. Give each tool the access it needs.",
+  Settings: "Make Rotebot work your way.",
+  Privacy: "Choose what leaves your Mac and manage what stays.",
+};
 export function App({ backend }: { backend: Backend }) {
   return <BotLibraryProvider backend={backend}><AppWorkspace backend={backend} /></BotLibraryProvider>;
 }
@@ -217,20 +226,21 @@ function AppWorkspace({ backend }: { backend: Backend }) {
       {customizingTool && status && <CustomBotStudio backend={backend} status={status} currentSeed={botIdentity(customizingTool.id)} title={customizingTool.name} useBot={seed => saveBotIdentity(customizingTool.id, seed)} close={() => setCustomizingTool(null)} openSettings={openSettings} />}
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="sidebar">
-        <div className="brand"><BotAvatar size={36} />Rotebot</div>
+        <div className="brand"><span className="brand-mark"><BotAvatar size={44} /></span><span>Rotebot<span className="brand-caption">Your everyday crew</span></span></div>
         <nav aria-label="Main navigation">
-          {navigation.map(({ item, label, secondary }, index) => (
+          {navigation.map(({ item, label, icon, secondary }, index) => (
             <button
               className={secondary ? (navigation[index - 1]?.secondary ? "secondary-nav" : "secondary-start") : undefined}
               key={item}
               aria-current={destination === item || (item === "Settings" && destination === "Privacy") ? "page" : undefined}
               onClick={() => setDestination(item)}
             >
-              {label}
+              <Icon name={icon} /><span>{label}</span>
               {item === "Tools" && destination !== "Tools" && (creating || running || showPanel) && <span className="nav-dot" aria-hidden="true" title="Task in progress" />}
             </button>
           ))}
         </nav>
+        <div className="sidebar-footer"><span className="sidebar-footer-rule" /><p>Small tools.<br />More possibilities.</p></div>
       </aside>
       <div className="workspace">
         {show?.kind === "recording" && (
@@ -243,8 +253,10 @@ function AppWorkspace({ backend }: { backend: Backend }) {
           </div>
         )}
         <main id="main-content" tabIndex={-1} aria-labelledby="page-title">
-          <header>
-            <h1 id="page-title">{destination === "Tools" ? "My tools" : destination === "Privacy" ? "Settings" : destination}</h1>
+          <header className="page-header">
+            <p className="eyebrow">{destination === "Settings" || destination === "Privacy" ? "Your workspace" : "Rotebot"}</p>
+            <h1 id="page-title">{destination === "Tools" ? creating && !showPanel ? editTool ? "Edit tool" : "Create a tool" : "My tools" : destination === "Privacy" ? "Settings" : destination}</h1>
+            <p className="page-description">{destination === "Tools" && (creating || running || showPanel) ? "One routine, one useful tool. You stay in control at every step." : descriptions[destination]}</p>
           </header>
           {(destination === "Settings" || destination === "Privacy") && <div className="tabs" role="tablist" aria-label="Settings sections">
             <button role="tab" aria-selected={destination === "Settings"} onClick={() => setDestination("Settings")}>AI service</button>
@@ -306,9 +318,15 @@ function AppWorkspace({ backend }: { backend: Backend }) {
               ) : (
                 <>
                   {tools.length === 0 ? (
-                    <section className="empty-state">
-                      <BotAvatar size={144} />
+                    <section className="empty-state library-welcome">
+                      <div className="welcome-crew" aria-hidden="true">
+                        <BotAvatar seed="crew-left" size={100} />
+                        <BotAvatar size={176} />
+                        <BotAvatar seed="crew-right" size={100} />
+                      </div>
+                      <p className="eyebrow">Small bots. Big possibilities.</p>
                       <h2>Turn a repetitive task into a tool.</h2>
+                      <p>Describe the job or show it once. Give your bot the routine, and keep a tool you can run again.</p>
                       {status && !aiReady && <div className="notice notice-info"><p>First, connect an AI service so Rotebot can build your tools.</p><button className="primary" onClick={openSettings}>Connect an AI service</button></div>}
                       <div className="actions">
                         <button
@@ -337,8 +355,10 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                     </section>
                   ) : (
                     <>
-                      <div className="actions">
+                      <div className="actions library-toolbar">
+                        <div className="library-intro"><p className="eyebrow">Your personal crew</p><p>Small tools, ready for the next time.</p></div>
                         <button
+                          className="primary"
                           onClick={() => {
                             setInitialInput(null);
                             setCreating(true);
@@ -348,13 +368,17 @@ function AppWorkspace({ backend }: { backend: Backend }) {
                         </button>
                         {show && <button className="quiet" onClick={() => setShowPanel(true)}>Record a task</button>}
                       </div>
-                      <ul className="plain-list">
+                      <ul className={`plain-list tool-library${tools.length > 8 ? " tool-library-compact" : ""}`} aria-label="Your tools">
                         {tools.map((tool, index) => {
                           const duplicate = tools.filter(t => t.name === tool.name).length > 1;
                           const displayName = duplicate ? `${tool.name} (${tools.slice(0, index + 1).filter(t => t.name === tool.name).length})` : tool.name;
                           return (
-                          <li key={tool.id} className="tool-row">
-                            <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={64} />
+                          <li key={tool.id} className={`tool-row crew-card crew-tone-${botHash(botIdentity(tool.id)) % 4}`}>
+                            <div className="crew-portrait" aria-hidden="true">
+                              <span className="crew-portrait-halo" />
+                              <BotAvatar seed={botIdentity(tool.id)} state={tool.state === "paused" ? "paused" : "idle"} size={112} />
+                              <span className="portrait-ground" />
+                            </div>
                             <div className="tool-text">
                               {renaming?.id === tool.id ? (
                                 <form className="rename-form" onSubmit={e => { e.preventDefault(); const name = renaming.name; void act(async () => { await backend.renameTool(tool.id, name); setRenaming(null); await refreshTools(); }); }}>

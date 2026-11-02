@@ -1,8 +1,10 @@
 import { BotAppearanceMenu } from "./BotAppearanceMenu";
+import { BuildProgress } from "./BuildProgress";
 import { CustomBotStudio } from "./CustomBotStudio";
 import { BotAvatar, BotStatus, botIdentity, saveBotIdentity } from "./Bot";
 import { SourceReview, SourceTechnicalDetails } from "./SourceReview";
 import { ApiAccessPanel } from "./ApiAccess";
+import { Icon, serviceIcon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
 import type {
   Backend,
@@ -18,7 +20,7 @@ import type {
   Transform,
 } from "./backend/types";
 import { connectOffers, readyConnectors } from "./mentionedServices";
-import { CsvView, DataTable, Field, FileNameInput, FailureNotice, friendlyFailure, hostOf, ModelCostLines, rowCount, useAction, useScreenFocus, usedParts, UsedLine } from "./ui";
+import { CsvView, DataTable, Field, FileNameInput, FileText, FailureNotice, friendlyFailure, hostOf, ModelCostLines, rowCount, useAction, useScreenFocus, usedParts, UsedLine } from "./ui";
 
 const formats: DateFormat[] = [
   "mm_dd_yy",
@@ -377,24 +379,26 @@ export function CreateFlow({
     : planBlockers.length ? planBlockers[0]
     : !preview ? "Preparing what will be sent…" : null;
   return (
-    <section aria-label="Create tool">
+    <section className="create-flow" aria-label="Create tool">
       {customizingBot && <CustomBotStudio backend={backend} status={status} currentSeed={botSeed} title={editTool?.name ?? (description.trim() ? toolNameFromGoal(description) : "")} useBot={chooseBot} close={() => setCustomizingBot(false)} openSettings={openSettings} />}
+      <div className="create-flow-navigation">
       <div className="actions create-nav">
         <button className="quiet" disabled={busy} onClick={() => { if (step === 0) close(); else setStep(step - 1); }}>
           <span aria-hidden="true">‹ </span>Back
         </button>
       </div>
-      <ol className="stepper" aria-label="Create progress">
+      <ol className="stepper create-stepper" aria-label="Create progress">
         {[
-          "What should it do?",
-          "Check the plan",
-          "Result",
+          "Describe",
+          "Review",
+          "Build & test",
         ].map((label, i) => (
-          <li key={label} aria-current={i === step ? "step" : undefined}>
-            {i + 1}. {label}
+          <li key={label} className={i < step ? "step-complete" : undefined} aria-current={i === step ? "step" : undefined}>
+            <span className="create-step-number" aria-hidden="true">{i < step ? "✓" : String(i + 1).padStart(2, "0")}</span><span>{label}</span>
           </li>
         ))}
       </ol>
+      </div>
       {error && <FailureNotice message={error} retry={() => void act(retry)} change={changeRequest} />}
       {activeBuild && step !== 2 && <div className="notice notice-info">
         <p>A build is in progress.</p>
@@ -406,11 +410,12 @@ export function CreateFlow({
 
       {step === 0 && botAppearanceSaved && <p role="status">Character appearance saved. You can go back without rebuilding the task.</p>}
       {step === 0 && (
-        <>
-          <div className="task-description-heading">
-            <BotAppearanceMenu seed={botSeed} disabled={busy} shuffle={() => chooseBot(`draft-${globalThis.crypto.randomUUID()}`)} customize={() => setCustomizingBot(true)} />
-            <h2 ref={headingRef} tabIndex={-1}>What should it do?</h2>
+        <div className="task-composer">
+          <div className="composer-heading">
+            <div className="composer-portrait"><BotAppearanceMenu size={112} seed={botSeed} disabled={busy} shuffle={() => chooseBot(`draft-${globalThis.crypto.randomUUID()}`)} customize={() => setCustomizingBot(true)} /></div>
+            <div><h2 ref={headingRef} tabIndex={-1}>What should it do?</h2><p>Describe the job. Your bot will turn it into a tool you can review and run again.</p></div>
           </div>
+          <div className="composer-request">
           {editTool && <p role="note" className="muted">Editing “{editTool.name}”. Your current version is kept until you save.</p>}
           {editTool && !editTool.noInput && !input && <p className="muted">This tool reads a file. Choose a sample file to test the new version.</p>}
           <textarea
@@ -422,25 +427,34 @@ export function CreateFlow({
             onChange={(e) => { setDescription(e.target.value); setClearedTask(null); }}
           />
           {description.trim()
-            ? <div className="actions task-clear"><button className="quiet" disabled={busy || !!activeBuild} onClick={clearTask}>Clear</button></div>
-            : clearedTask && <p role="status" className="muted task-clear">Task cleared. <button className="quiet" onClick={undoClear}>Undo</button></p>}
-          <div className="actions source-options" role="group" aria-label="Use data from">
-            <span className="muted">Use data from</span>
-            {input && !noInput
-              ? <button className="quiet" disabled={busy} onClick={() => { setInput(null); setNoInput(true); }}>Remove file</button>
-              : <button className="quiet" disabled={busy} onClick={() => void act(async () => {
-                  const next = await backend.pickCsv();
-                  if (next) { setInput(next); setNoInput(false); }
-                })}>+ Add a file</button>}
+            ? <div className="actions task-clear"><button className="ghost" disabled={busy || !!activeBuild} onClick={clearTask}>Clear</button></div>
+            : clearedTask && <p role="status" className="muted task-clear">Task cleared. <button className="ghost" onClick={undoClear}>Undo</button></p>}
+          </div>
+          <div className="composer-sources">
+          <div className="source-section-heading"><h3>Files and services</h3><span>Optional</span></div>
+          <p className="composer-source-help">Choose only what this task needs. Otherwise, leave this empty.</p>
+          {input && !noInput
+            ? <div className="source-file-attached"><Icon name="files" /><div><strong><FileText text={input.handle.displayName} /></strong><span>Attached to this task</span></div><button className="ghost" disabled={busy} onClick={() => { setInput(null); setNoInput(true); }}>Remove file</button></div>
+            : <button className="source-file-picker" aria-label="+ Add a file" disabled={busy} onClick={() => void act(async () => {
+                const next = await backend.pickCsv();
+                if (next) { setInput(next); setNoInput(false); }
+              })}><span className="source-file-icon"><Icon name="files" /></span><span><strong>Attach a file</strong><span>Choose a file from your Mac</span></span><span className="source-file-plus" aria-hidden="true">+</span></button>}
+          <div className="source-service-heading"><h4>Connected services</h4><button className="ghost" disabled={busy} onClick={() => connect("")}>Manage connections</button></div>
+          {!!usable.length && <div className="source-service-list" role="group" aria-label="Use data from">
             {usable.map(c => {
               const on = chosen.includes(c.id);
-              return <button key={c.id} className={on ? "chip chip-on" : "chip"} aria-pressed={on} disabled={busy || (!on && chosen.length >= 5)}
-                onClick={() => setChosen(on ? chosen.filter(id => id !== c.id) : [...chosen, c.id])}>{on ? "✓ " : ""}{c.name}</button>;
+              return <button key={c.id} className={`source-service${on ? " source-service-selected" : ""}`} aria-label={c.name} aria-pressed={on} disabled={busy || (!on && chosen.length >= 5)}
+                onClick={() => setChosen(on ? chosen.filter(id => id !== c.id) : [...chosen, c.id])}>
+                <span className="source-service-icon"><Icon name={serviceIcon(c)} /></span><span className="source-service-copy"><strong>{c.name}</strong><span>{on ? "Included in this task" : "Select to include"}</span></span><span className="source-select-mark" aria-hidden="true">{on ? "✓" : ""}</span>
+              </button>;
             })}
-            <button className="quiet" disabled={busy} onClick={() => connect("")}>{usable.length ? "+ Connect another" : "Connect a service or API"}</button>
-          </div>
+          </div>}
+          {!usable.length && <p className="source-empty">No services connected yet. You can still describe your task above.</p>}
+          {chosen.length >= 5 && <p className="composer-source-help" role="status">You can include up to five services. Deselect one to choose another.</p>}
           {input && !noInput && <CsvView preview={input} />}
+          </div>
 
+          <div className="composer-footer">
           {noInput && !aiReady && <div className="notice notice-info"><p>Building your own tools needs an AI service.</p><button onClick={openSettings}>Set up AI service</button></div>}
           <button
             className="primary"
@@ -449,11 +463,16 @@ export function CreateFlow({
           >
             Check the plan
           </button>
-        </>
+          </div>
+        </div>
       )}
       {step === 1 && draft && map && (
-        <>
-          <h2 ref={headingRef} tabIndex={-1}>Check the plan</h2>
+        <div className="task-composer task-review">
+          <div className="composer-heading">
+            <div className="composer-portrait review-portrait"><BotAvatar seed={botSeed} size={112} /></div>
+            <div><h2 ref={headingRef} tabIndex={-1}>Check the plan</h2><p>Check the task, output, and sources before your bot builds the tool.</p></div>
+          </div>
+          <div className="review-body">
           <div className="card plan-card">
             {editing ? <>
               <Field label="What should the tool do?">
@@ -746,34 +765,20 @@ export function CreateFlow({
             <h3>Later runs</h3><ul>{preview.summary.laterRuns.map((line, i) => <li key={i}>{line}</li>)}</ul>
             <details><summary>Exact data sent</summary><pre tabIndex={0} aria-label="Exact data sent">{preview.payloadText}</pre></details>
           </details>}
+          </div>
+          <div className="composer-footer review-footer">
           {blocked && <p id="build-reason" role="status">{blocked}{draft && !busy && !accessBusy && description.trim() !== draft.goal && <> <button className="quiet" onClick={() => void act(describe)}>Update the plan</button></>}</p>}
           <div className="build-bar">
             <button className="primary" disabled={!!blocked} aria-describedby={blocked ? "build-reason" : undefined} onClick={() => void act(sendAndBuild)}>Build and test</button>
           </div>
-        </>
+          </div>
+        </div>
       )}
       {step === 2 && build && (
         <>
           <h2 ref={headingRef} tabIndex={-1}>Result</h2>
-          {!activeBuild && <BotAvatar seed={botSeed} state={build.phase === "ready" ? "success" : build.phase === "failed" ? "error" : "paused"} size={96} />}
-          {activeBuild && <BotStatus large seed={botSeed} state={build.phase === "candidate" ? "waiting" : build.phase === "checking" ? "working" : "building"} label={build.phase === "checking" || build.phase === "candidate" ? "Testing your tool…" : "Building your tool…"} />}
-          {activeBuild && (
-            <button
-              disabled={busy}
-              onClick={() =>
-                void act(async () =>
-                  setBuild(await backend.stopBuild(build.buildId)),
-                )
-              }
-            >
-              Stop build
-            </button>
-          )}
-          {build.phase === "stopped" && (
-            <p role="status">
-              Build stopped. Your plan is saved. Change the request or try again.
-            </p>
-          )}
+          <BuildProgress build={build} seed={botSeed} name={name} busy={busy}
+            stop={() => void act(async () => setBuild(await backend.stopBuild(build.buildId)))} />
           {(build.failure || build.phase === "stopped") && <div role="alert" className="notice notice-warning">
             <p>{build.failure ? friendlyFailure(build.failure.message, build.failure.kind) : "Build stopped. Your plan is saved."}</p>
             {build.failure?.kind === "missing_data"

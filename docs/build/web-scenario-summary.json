@@ -1,0 +1,96 @@
+{
+  "reviewed_on": "2026-11-02",
+  "scope": "Historical local web-task trials; repeated attempts, not unique tools. Execution success does not verify answer accuracy or freshness. Earlier OK-only logs do not establish file creation.",
+  "raw_logs_included": false,
+  "explicit_file_creations": 100,
+  "logs": [
+    {
+      "log": "stress-meta.out",
+      "sha256": "dad4bbfeba677cedcf7183e895e0bb3841f83bab88737d7b78150f9b22e2cabe",
+      "ok_records": 23,
+      "explicit_file_creations": 23,
+      "build_failures": 2,
+      "run_failures": 0
+    },
+    {
+      "log": "stress-modal.out",
+      "sha256": "710106687c4d17e723b292234c1d9149388acc2b728f69854a9fa634bf4d413a",
+      "ok_records": 24,
+      "explicit_file_creations": 0,
+      "build_failures": 1,
+      "run_failures": 0
+    },
+    {
+      "log": "stress2-meta.out",
+      "sha256": "7b349ef416c4130fd95d4180d838ff007d1d355b299bd2a2d6b0a117bf0ccb63",
+      "ok_records": 15,
+      "explicit_file_creations": 15,
+      "build_failures": 0,
+      "run_failures": 2
+    },
+    {
+      "log": "stress2-modal.out",
+      "sha256": "f17634e2431f89c450c2859277f2f882ce3eba1bc28b111a341f552c1224ae2c",
+      "ok_records": 16,
+      "explicit_file_creations": 16,
+      "build_failures": 1,
+      "run_failures": 0
+    },
+    {
+      "log": "stress3-meta.out",
+      "sha256": "13801093cdb24691e632a1b7da2749d1e36f0f80893c12c9fa22ea02886c6fec",
+      "ok_records": 14,
+      "explicit_file_creations": 14,
+      "build_failures": 2,
+      "run_failures": 0
+    },
+    {
+      "log": "stress3-modal.out",
+      "sha256": "f09c7caef9426e8ba4ed1ae218c974f928c1e26ed082e6d5d061ab8007839c6a",
+      "ok_records": 11,
+      "explicit_file_creations": 11,
+      "build_failures": 4,
+      "run_failures": 1
+    },
+    {
+      "log": "stress4-meta.out",
+      "sha256": "44509d3a2555c1705c9d279e4d9daceed9cbd317684512e32b81c9491d9788e8",
+      "ok_records": 8,
+      "explicit_file_creations": 8,
+      "build_failures": 2,
+      "run_failures": 0
+    },
+    {
+      "log": "stress5-meta.out",
+      "sha256": "5b4053a9890434e14eda7562decc9c90c3263edf1d920cb3b2f1283789d3cedf",
+      "ok_records": 3,
+      "explicit_file_creations": 3,
+      "build_failures": 2,
+      "run_failures": 0
+    },
+    {
+      "log": "stress6-petrol.out",
+      "sha256": "fc97d655c42d47289d6c57014ddc814ee621b3ac4967895885e3e041da4e5119",
+      "ok_records": 2,
+      "explicit_file_creations": 2,
+      "build_failures": 0,
+      "run_failures": 0
+    },
+    {
+      "log": "suite-meta.out",
+      "sha256": "29fb6faa6ed8d4c884e2e6d4099b0edea421a703d7ba1b365015e92aef8e7443",
+      "ok_records": 8,
+      "explicit_file_creations": 8,
+      "build_failures": 1,
+      "run_failures": 1
+    },
+    {
+      "log": "suite-modal.out",
+      "sha256": "446714692f3fce0a55b8038434c2f256d71c70af95dd9532691cc4751ae0b0da",
+      "ok_records": 9,
+      "explicit_file_creations": 0,
+      "build_failures": 1,
+      "run_failures": 0
+    }
+  ]
+}

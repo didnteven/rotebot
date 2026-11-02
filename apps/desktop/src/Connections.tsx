@@ -9,6 +9,12 @@ import type {
 import { Field, isHttpsUrl, Notice, useAction } from "./ui";
 import { googleConnectorIds, parseGoogleClientFile } from "./clientFile";
 import { ApiSetup } from "./ApiAccess";
+import { Icon, serviceIcon, type IconName } from "./Icon";
+
+function ServiceMark({ connector }: { connector: ConnectorInfo }) {
+  const icon: IconName = serviceIcon(connector);
+  return <span className={`service-mark service-${icon}`}><Icon name={icon} /></span>;
+}
 
 const stateName = (c: ConnectorInfo) =>
   c.state.kind === "connected"
@@ -44,15 +50,17 @@ export function Connections({
   const [addingApi, setAddingApi] = useState(false);
   const apis = connectors.filter((c) => c.registration === "api");
   return (
-    <section>
+    <section className="connections-page">
+      <div className="section-intro"><div><h2>Your services</h2><p>Connect once. Choose what each tool can use.</p></div>{!loading && <span className="status-badge status-success">{connectors.filter(c => c.state.kind === "connected").length} connected</span>}</div>
       {loading && <BotStatus label="Loading connections…" />}
       {!loading && connectors.length === 0 && <p>No services available yet. You can add a custom API below.</p>}
       {(() => {
         const card = (c: ConnectorInfo) => (
           <article className={`connector-row${selected === c.id ? " card-open" : ""}`} key={c.id}>
             <div className="connector-row-head">
-              <h2>{c.name}</h2>
-              {c.state.kind !== "not_connected" && <span className="badge">{stateName(c)}</span>}
+              <ServiceMark connector={c} />
+              <div className="connector-identity"><h2>{c.name}</h2><p>{c.category}</p></div>
+              <span className={`status-badge connection-state-${c.state.kind}`}>{stateName(c)}</span>
               <button
                 className={c.state.kind === "connected" ? "quiet" : undefined}
                 aria-label={c.state.kind === "connected" ? `Manage ${c.name}` : `Connect ${c.name}`}
@@ -114,13 +122,14 @@ function ApiCard({ backend, connector, changed }: { backend: Backend; connector:
   const [editing, setEditing] = useState<import("./backend/types").ApiConfig | null>(null);
   return <article className={`connector-row${open ? " card-open" : ""}`}>
     <div className="connector-row-head">
-      <h3>{connector.name}</h3>
-      <span className="badge">{stateName(connector)}</span>
+      <ServiceMark connector={connector} />
+      <div className="connector-identity"><h3>{connector.name}</h3><p>Custom API</p></div>
+      <span className={`status-badge connection-state-${connector.state.kind}`}>{stateName(connector)}</span>
       <button className="quiet" disabled={busy} aria-label="Test API connection" onClick={() => void act(async () => { setTested(""); setTesting(true); try { await backend.testConnection(connector.id); setTested("Tested just now: it works."); } finally { setTesting(false); await changed(); } })}>Test</button>
       <button className="quiet" aria-expanded={open} aria-label={`Manage ${connector.name}`} onClick={() => setOpen(!open)}>{open ? "Close" : "Manage"}</button>
     </div>
     {testing && <BotStatus label="Testing the API with your saved keys…" />}
-    {tested && !error && <p role="status">{tested}</p>}
+    {tested && !error && <p className="notice notice-success" role="status">{tested}</p>}
     {connector.state.kind === "error" && <p role="alert">{connector.state.message}</p>}
     {error && <p role="alert">{error}</p>}
     {open && (editing

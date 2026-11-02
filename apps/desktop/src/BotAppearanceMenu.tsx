@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { BotAvatar } from "./Bot";
 
-export function BotAppearanceMenu({ seed, disabled, shuffle, customize }: {
-  seed: string; disabled: boolean; shuffle: () => void; customize: () => void;
+export function BotAppearanceMenu({ seed, disabled, shuffle, customize, size = 64 }: {
+  seed: string; disabled: boolean; shuffle: () => void; customize: () => void; size?: number;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -36,7 +36,7 @@ export function BotAppearanceMenu({ seed, disabled, shuffle, customize }: {
     }
   }
   return <div className="bot-appearance" ref={container}>
-    <BotAvatar seed={seed} size={64} />
+    <BotAvatar seed={seed} size={size} />
     <button className="bot-edit-button" ref={trigger} type="button" disabled={disabled} aria-label="Edit character appearance" title="Edit character appearance" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={() => setOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}>
       <span className="bot-edit-glyph" aria-hidden="true"><span className="pencil-icon" /></span>

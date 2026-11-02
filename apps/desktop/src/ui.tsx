@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BotAvatar, botIdentity } from "./Bot";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Backend,
@@ -275,8 +276,8 @@ export function ReceiptCard({
 }) {
   const { act, error, busy } = useAction();
   return (
-    <article className="card">
-      <h2>Run receipt</h2>
+    <article className="card receipt-card">
+      <div className="receipt-header"><BotAvatar seed={botIdentity(receipt.toolId)} state={receipt.status === "committed" || receipt.status === "reconciled" ? "idle" : "paused"} size={44} /><h2>Run receipt</h2><time dateTime={new Date(receipt.atMs).toISOString()}>{new Date(receipt.atMs).toLocaleString()}</time></div>
       <p
         className={
           receipt.status === "committed" || receipt.status === "reconciled"

@@ -9,6 +9,13 @@ import type {
   Receipt,
 } from "./backend/types";
 import { DataTable, Notice, ReceiptCard, useAction } from "./ui";
+import { Icon, type IconName } from "./Icon";
+
+const activityKinds: Record<ActivityItem["kind"], { label: string; icon: IconName }> = {
+  build: { label: "Build", icon: "tools" }, run: { label: "Run", icon: "activity" },
+  outbound: { label: "Data sent", icon: "globe" }, connection: { label: "Connection", icon: "connections" },
+  show: { label: "Recording", icon: "files" }, settings: { label: "Settings", icon: "settings" },
+};
 
 export function Activity({ backend }: { backend: Backend }) {
   const [items, setItems] = useState<ActivityItem[] | null>(null),
@@ -30,12 +37,10 @@ export function Activity({ backend }: { backend: Backend }) {
       at: item.atMs,
       id: item.id,
       content: (
-        <article className="card">
+        <article className="card activity-card">
+          <div className="activity-meta"><span className="activity-kind"><Icon name={activityKinds[item.kind].icon} />{activityKinds[item.kind].label}</span><time dateTime={new Date(item.atMs).toISOString()}>{new Date(item.atMs).toLocaleString()}</time></div>
           <h2>{item.title}</h2>
           <p>{item.detail}</p>
-          <time dateTime={new Date(item.atMs).toISOString()}>
-            {new Date(item.atMs).toLocaleString()}
-          </time>
         </article>
       ),
     })),
@@ -46,14 +51,14 @@ export function Activity({ backend }: { backend: Backend }) {
     })),
   ].sort((a, b) => b.at - a.at);
   return (
-    <section>
+    <section className="activity-page">
       <Notice error={error} />
       {busy && <BotStatus label="Loading activity…" />}
       {error && <button onClick={() => void act(load)}>Reload activity</button>}
       {items && entries.length === 0 && (
-        <p>No activity yet. Build or run a tool to see its history here.</p>
+        <div className="empty-state activity-empty"><span className="empty-state-icon"><Icon name="activity" /></span><h2>A history of useful work</h2><p>No activity yet. Build or run a tool to see its history here.</p></div>
       )}
-      <ul className="plain-list">
+      <ul className="plain-list activity-timeline">
         {entries.map((e) => (
           <li key={e.id}>{e.content}</li>
         ))}
@@ -92,7 +97,7 @@ export function Privacy({
     void act(load);
   }, [backend]);
   return (
-    <section>
+    <section className="privacy-page">
       <Notice error={error} />
       {busy && !stopping && <BotStatus label="Updating privacy…" />}
       {error && <button onClick={() => void act(load)}>Reload privacy</button>}
