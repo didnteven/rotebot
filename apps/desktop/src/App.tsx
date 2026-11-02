@@ -140,6 +140,13 @@ function AppWorkspace({ backend }: { backend: Backend }) {
       unsubscribe?.();
     };
   }, [backend]);
+  // The backend works out each next run when asked, so a card left open would keep showing a time that has passed.
+  useEffect(() => {
+    const update = () => { void backend.listSchedules().then(setSchedules).catch(() => {}); };
+    const timer = setInterval(update, 60_000);
+    window.addEventListener("focus", update);
+    return () => { clearInterval(timer); window.removeEventListener("focus", update); };
+  }, [backend]);
   useEffect(() => {
     if (!isTauri()) return;
     let active = true;
@@ -537,14 +544,15 @@ function scheduleLine(s: Schedule | undefined) {
     : ` if ${w.near.trim() ? `${w.near.trim()} ` : ""}${w.kind === "above" ? ">" : "<"} ${w.value}`;
   return [how, s.nextRunMs ? `Next ${shortWhen(s.nextRunMs)}` : null, sends ? `${sends.charAt(0).toUpperCase()}${sends.slice(1)}${only}` : null].filter(Boolean).join(" · ");
 }
-/** "today 23:24", "tomorrow 7:00", "Sat 7 Nov 8:00". */
-function shortWhen(at: number) {
-  const d = new Date(at), today = new Date(), tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
+/** "7:00 this morning", "23:24 tonight", "7:00 tomorrow", "Sat 7 Nov 8:00". */
+export function shortWhen(at: number, now = new Date()) {
+  const d = new Date(at), tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
   const time = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-  const day = d.toDateString() === today.toDateString() ? "today" : d.toDateString() === tomorrow.toDateString() ? "tomorrow"
-    : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-  return `${day} ${time}`;
+  if (d.toDateString() === now.toDateString()) return `${time} ${d.getHours() < 12 ? "this morning" : d.getHours() < 18 ? "this afternoon" : "tonight"}`;
+  // In the small hours people still mean the coming morning by "tomorrow", so name the date instead.
+  if (d.toDateString() === tomorrow.toDateString() && now.getHours() >= 5) return `${time} tomorrow`;
+  return `${d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} ${time}`;
 }
 function friendlyLastRun(at: number | null) {
   if (at === null) return "Never run";

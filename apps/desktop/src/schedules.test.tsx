@@ -1,8 +1,8 @@
-import { render,screen,waitFor } from "@testing-library/react";
+import { fireEvent,render,screen,waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { expect,it,vi } from "vitest";
-import { App } from "./App";
+import { expect,it,onTestFinished,vi } from "vitest";
+import { App, shortWhen } from "./App";
 import { Today } from "./Today";
 import { ScheduleSection, datedFilename } from "./Schedule";
 import { MockBackend } from "./backend/mock";
@@ -93,6 +93,7 @@ it("a tool card shows its schedule and a Schedule button that opens the schedule
   const user=userEvent.setup(),backend=new MockBackend(),tool=await weather(backend);
   const summary={id:tool.id,name:"Tide",version:1,engine:"js-quickjs" as const,createdAtMs:1,lastRunAtMs:null,runCount:0,sample:false,state:"enabled" as const};
   vi.spyOn(backend,"listTools").mockResolvedValue([summary] as never);vi.spyOn(backend,"getTool").mockResolvedValue(tool);vi.spyOn(backend,"listConnectors").mockResolvedValue([mailbox()]);
+  vi.useFakeTimers({toFake:["Date"],now:new Date(2026,10,3,12)});onTestFinished(()=>{vi.useRealTimers();});
   const next=new Date();next.setDate(next.getDate()+1);next.setHours(7,0,0,0);
   const schedules:Schedule[]=[];vi.spyOn(backend,"listSchedules").mockImplementation(async()=>schedules);
   const first=render(<App backend={backend}/>);
@@ -104,7 +105,7 @@ it("a tool card shows its schedule and a Schedule button that opens the schedule
   schedules.push({id:"s",toolId:tool.id,frequency:{kind:"daily",time:"07:00"},outputs:{today:true,notification:true,folder:null,filename:"x.txt",email:{connectorId:"mail-gmail",to:"me@example.com"}},versionHash:tool.versionHash,binding:"b",folderIdentity:null,status:"enabled",approvedAtMs:1,lastDueMs:1,nextRunMs:next.getTime()});
   render(<App backend={backend}/>);
   await user.click(screen.getByRole("button",{name:"My tools"}));
-  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Daily · Next tomorrow 7:00 · Email + notify");
+  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Daily · Next 7:00 tomorrow · Email + notify");
   expect(screen.getByRole("button",{name:"Schedule: Tide"})).toHaveTextContent("Edit schedule");
 });
 
@@ -215,4 +216,34 @@ it("schedules a tool every hour or twice a day",async()=>{
   await user.click(screen.getByRole("button",{name:"Turn on schedule"}));
   await waitFor(()=>expect(save).toHaveBeenCalledWith(tool.id,expect.objectContaining({frequency:{kind:"hourly",time:"00:05"}})));
   expect(await screen.findByText(/Schedule is on\./)).toBeVisible();
+});
+
+it("says when the next run is in words that hold at any hour",()=>{
+  const at=(day:number,hour:number,minute=0)=>new Date(2026,10,day,hour,minute);
+  const justAfterMidnight=at(3,0,25),midday=at(3,12);
+  expect(shortWhen(+at(3,7),justAfterMidnight)).toBe("7:00 this morning");
+  expect(shortWhen(+at(3,14,15),justAfterMidnight)).toBe("14:15 this afternoon");
+  expect(shortWhen(+at(3,23,24),midday)).toBe("23:24 tonight");
+  expect(shortWhen(+at(4,7),midday)).toBe("7:00 tomorrow");
+  expect(shortWhen(+at(4,7),justAfterMidnight)).toMatch(/Nov.* 7:00$/);
+  expect(shortWhen(+at(7,8),midday)).toMatch(/Nov.* 8:00$/);
+});
+
+it("a card left open moves on to the next run once the shown one has passed",async()=>{
+  vi.useFakeTimers({toFake:["Date","setInterval","clearInterval"],now:new Date(2026,10,3,6,59)});onTestFinished(()=>{vi.useRealTimers();});
+  const user=userEvent.setup(),backend=new MockBackend(),tool=await weather(backend);
+  const summary={id:tool.id,name:"Tide",version:1,engine:"js-quickjs" as const,createdAtMs:1,lastRunAtMs:null,runCount:0,sample:false,state:"ready" as const};
+  vi.spyOn(backend,"listTools").mockResolvedValue([summary] as never);vi.spyOn(backend,"getTool").mockResolvedValue(tool);
+  const withNext=(next:Date):Schedule[]=>[{id:"s",toolId:tool.id,frequency:{kind:"daily",time:"07:00"},outputs:{today:true,notification:false,folder:null,filename:"x.txt"},versionHash:tool.versionHash,binding:"b",folderIdentity:null,status:"enabled",approvedAtMs:1,lastDueMs:1,nextRunMs:next.getTime()}];
+  const list=vi.spyOn(backend,"listSchedules").mockResolvedValue(withNext(new Date(2026,10,3,7)));
+  render(<App backend={backend}/>);
+  await user.click(screen.getByRole("button",{name:"My tools"}));
+  expect(await screen.findByTestId("schedule-line")).toHaveTextContent("Next 7:00 this morning");
+  vi.setSystemTime(new Date(2026,10,3,7,1));list.mockResolvedValue(withNext(new Date(2026,10,4,7)));
+  vi.advanceTimersByTime(60_000);
+  await waitFor(()=>expect(screen.getByTestId("schedule-line")).toHaveTextContent("Next 7:00 tomorrow"));
+  vi.setSystemTime(new Date(2026,10,4,7,1));list.mockResolvedValue(withNext(new Date(2026,10,5,7)));
+  fireEvent.focus(window);
+  await waitFor(()=>expect(screen.getByTestId("schedule-line")).toHaveTextContent("Next 7:00 tomorrow"));
+  expect(list.mock.calls.length).toBeGreaterThanOrEqual(3);
 });
