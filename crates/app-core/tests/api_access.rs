@@ -185,7 +185,7 @@ async fn public_source_auth_refusal_and_rate_limit_stop_without_a_repair_or_alte
             .unwrap()
             .parent()
             .unwrap()
-            .join("macroscope-runner");
+            .join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX));
         f.core.use_synthetic_runtime_for_tests(
             &runner,
             std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/profile.sb")),
@@ -676,7 +676,7 @@ async fn custom_api_is_read_by_the_existing_approved_build_and_saved_tool_pipeli
         .unwrap()
         .parent()
         .unwrap()
-        .join("macroscope-runner");
+        .join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX));
     f.core.use_synthetic_runtime_for_tests(
         &runner,
         std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/profile.sb")),

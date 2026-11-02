@@ -24,7 +24,7 @@ fn runner_path() -> std::path::PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join("macroscope-runner")
+        .join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX))
 }
 fn core(root: &Path, endpoint: String) -> AppCore {
     let core = AppCore::new(CoreConfig {

@@ -185,7 +185,7 @@ impl Fixture {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("macroscope-runner"),
+                .join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX)),
             Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/profile.sb")),
         );
         core.set_schedule_timezone(chrono_tz::Pacific::Auckland);

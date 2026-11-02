@@ -86,7 +86,7 @@ impl RunnerEngine {
         } else {
             parent
         };
-        let runner = target.join("macroscope-runner");
+        let runner = target.join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX));
         let bundled = target.join("macroscope-runner.sb");
         if in_bundle && (!runner.is_file() || !bundled.is_file()) {
             return Err(BrokerError::Runner(

@@ -551,7 +551,7 @@ mod actions {
             .unwrap()
             .parent()
             .unwrap()
-            .join("macroscope-runner");
+            .join(format!("macroscope-runner{}", std::env::consts::EXE_SUFFIX));
         core.use_synthetic_runtime_for_tests(
             &runner,
             Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/profile.sb")),
