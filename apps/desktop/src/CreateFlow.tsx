@@ -135,9 +135,9 @@ export function CreateFlow({
     [build, setBuild] = useState<BuildState | null>(null),
     [name, setName] = useState(initialDraft ? toolNameFromGoal(initialDraft.goal) : editTool?.name ?? "Clean import CSV");
   const [example, setExample] = useState(initialDraft?.exampleOutput ?? "");
-  const [editing, setEditing] = useState(false);
   const requestRef = useRef<HTMLTextAreaElement>(null);
   const headingRef = useScreenFocus<HTMLHeadingElement>(step);
+  const focusRequest = useRef(false);
   const [planBlockers, setPlanBlockers] = useState<string[]>([]);
   const [accessBusy, setAccessBusy] = useState(false);
   /** Connections or APIs picked before the plan is drafted. */
@@ -226,8 +226,9 @@ export function CreateFlow({
     return () => { active = false; };
   }, [step, backend, draft, map, outputName, example, status.effectiveRoute, status.selectedRoute, status.egress, reviewAttempt]);
   useEffect(() => {
-    if (step === 1 && editing) requestRef.current?.focus();
-  }, [step, editing]);
+    if (step === 0 && focusRequest.current) requestRef.current?.focus();
+    focusRequest.current = false;
+  }, [step]);
   const aiReady = status.egress === "cloud_allowed" && !!status.effectiveRoute && status.effectiveRoute !== "offline_demo";
   const suggested = useRef<string | null>(null);
   const buildStarted = useRef(false);
@@ -239,27 +240,31 @@ export function CreateFlow({
   const [layoutMissed, setLayoutMissed] = useState(false);
   useEffect(() => {
     if (step !== 1 || !draft || draft.kind !== "program" || (example.trim() && draft.suggestedName) || !aiReady || build || suggested.current === `${draft.draftId}:${draft.goal}`) return;
-    suggested.current = `${draft.draftId}:${draft.goal}`;
+    const key = `${draft.draftId}:${draft.goal}`;
+    suggested.current = key;
     const id = draft.draftId;
     setSuggesting(true);
     setLayoutMissed(false);
     void backend.suggestExampleOutput(id)
       // A build already sent keeps its plan: a late layout never changes it.
       .then(next => {
+        // The plan this layout was written for has since been discarded.
+        if (suggested.current !== key) return;
         if (next.suggestedName && !nameEdited.current && !editTool) setName(next.suggestedName);
         if (next.exampleOutput && !buildStarted.current) setExample(current => current.trim() ? current : next.exampleOutput!);
         if (!next.exampleOutput) setLayoutMissed(true);
       })
       // The person can still type the layout themselves.
-      .catch(() => setLayoutMissed(true))
-      .finally(() => setSuggesting(false));
+      .catch(() => { if (suggested.current === key) setLayoutMissed(true); })
+      .finally(() => { if (suggested.current === key) setSuggesting(false); });
   }, [step, draft, example, aiReady, backend, build]);
   /** What Clear removed, so Undo can put the task back exactly. */
-  const [clearedTask, setClearedTask] = useState<{ description: string; draft: TaskDraft | null; map: CsvMapping | null; build: BuildState | null; example: string; name: string; outputName: string; preview: OutboundPreview | null } | null>(null);
-  /** Starts the request over: the text and the plan, result and layout made from it. */
-  function clearTask() {
-    setClearedTask({ description, draft, map, build, example, name, outputName, preview });
-    setDescription("");
+  const [clearedTask, setClearedTask] = useState<{ description: string; draft: TaskDraft | null; map: CsvMapping | null; build: BuildState | null; example: string; name: string; outputName: string; preview: OutboundPreview | null; chosen: string[] } | null>(null);
+  const planExists = !!draft || !!build;
+  /** Connections a saved tool already reads are kept; ones picked for a discarded plan are not. */
+  const toolConnections = () => [...new Set((editTool?.program?.connectionSources ?? []).map(s => s.connectorId))].slice(0, 5);
+  /** Discards the plan and everything made from it, because all of it depends on the request. */
+  function discardPlan() {
     setDraft(null);
     setMap(null);
     setBuild(null);
@@ -267,11 +272,27 @@ export function CreateFlow({
     setPreview(null);
     setPlanBlockers([]);
     setLayoutMissed(false);
+    setSuggesting(false);
+    setReviewError(null);
     setError(null);
-    setEditing(false);
     nameEdited.current = false;
     suggested.current = null;
     pendingDraft.current = null;
+  }
+  function changeDescription(value: string) {
+    if (planExists) {
+      discardPlan();
+      setChosen(toolConnections());
+    }
+    setDescription(value);
+    setClearedTask(null);
+  }
+  /** Starts the request over: the text and the plan, result, layout and connections made from it. */
+  function clearTask() {
+    setClearedTask({ description, draft, map, build, example, name, outputName, preview, chosen });
+    setDescription("");
+    discardPlan();
+    setChosen(toolConnections());
     requestRef.current?.focus();
   }
   function undoClear() {
@@ -284,6 +305,7 @@ export function CreateFlow({
     setName(clearedTask.name);
     setOutputName(clearedTask.outputName);
     setPreview(clearedTask.preview);
+    setChosen(clearedTask.chosen);
     setClearedTask(null);
     requestRef.current?.focus();
   }
@@ -331,12 +353,17 @@ export function CreateFlow({
     if (editTool?.program) setOutputName(editTool.program.output_name);
   }
   async function describe() {
+    // Nothing changed since this plan was made, so its output and connections still apply.
+    if (draft && description.trim() === draft.goal) {
+      setStep(1);
+      return;
+    }
+    if (draft) discardPlan();
     const pending = pendingDraft.current;
     pendingDraft.current = null;
     await newDraft(() => pending && noInput && description.trim() === pending.goal ? Promise.resolve(pending)
       : noInput ? backend.draftTaskNoInput(description)
       : backend.draftTask(input!.handle, description));
-    setEditing(false);
     setStep(1);
   }
   async function sendAndBuild() {
@@ -350,13 +377,9 @@ export function CreateFlow({
   }
   function changeRequest() {
     setError(null);
-    if (!draft) {
-      setStep(0);
-      requestRef.current?.focus();
-      return;
-    }
-    setEditing(true);
-    setStep(1);
+    if (step === 0) requestRef.current?.focus();
+    else focusRequest.current = true;
+    setStep(0);
   }
   // Build and test is the go-ahead for the reads and the AI step a build tests with: the person
   // accepted their AI service and connections once, and the result lists what was used.
@@ -370,6 +393,7 @@ export function CreateFlow({
     void act(async () => setBuild(await backend.approveBuildSources(build.buildId, build.program!)));
   }, [build, draft, backend]);
   const activeBuild = build && !terminal(build);
+  const includedConnections = draft ? (draft.requiredConnections ?? []).map(s => s.connectorId) : chosen;
   const sites = [...new Set(build?.program?.webSources.map(s => hostOf(s.url)) ?? [])];
   const blocked = busy || accessBusy ? "Working…" : activeBuild ? "Stop the current build before sending another request."
     : status.effectiveRoute === null ? "Choose a model in Settings before building."
@@ -418,13 +442,15 @@ export function CreateFlow({
           <div className="composer-request">
           {editTool && <p role="note" className="muted">Editing “{editTool.name}”. Your current version is kept until you save.</p>}
           {editTool && !editTool.noInput && !input && <p className="muted">This tool reads a file. Choose a sample file to test the new version.</p>}
+          {draft && <p role="note" className="muted">Changing anything here starts a new plan, so the output and connections are set up again.</p>}
           <textarea
             aria-label="What should the tool do?"
             ref={requestRef}
             rows={4}
             placeholder="For example: Summarize today’s calendar and list my first meeting"
             value={description}
-            onChange={(e) => { setDescription(e.target.value); setClearedTask(null); }}
+            readOnly={busy || !!activeBuild}
+            onChange={(e) => changeDescription(e.target.value)}
           />
           {description.trim()
             ? <div className="actions task-clear"><button className="ghost" disabled={busy || !!activeBuild} onClick={clearTask}>Clear</button></div>
@@ -434,23 +460,23 @@ export function CreateFlow({
           <div className="source-section-heading"><h3>Files and services</h3><span>Optional</span></div>
           <p className="composer-source-help">Choose only what this task needs. Otherwise, leave this empty.</p>
           {input && !noInput
-            ? <div className="source-file-attached"><Icon name="files" /><div><strong><FileText text={input.handle.displayName} /></strong><span>Attached to this task</span></div><button className="ghost" disabled={busy} onClick={() => { setInput(null); setNoInput(true); }}>Remove file</button></div>
-            : <button className="source-file-picker" aria-label="+ Add a file" disabled={busy} onClick={() => void act(async () => {
+            ? <div className="source-file-attached"><Icon name="files" /><div><strong><FileText text={input.handle.displayName} /></strong><span>Attached to this task</span></div><button className="ghost" disabled={busy || !!activeBuild} onClick={() => { if (planExists) discardPlan(); setInput(null); setNoInput(true); }}>Remove file</button></div>
+            : <button className="source-file-picker" aria-label="+ Add a file" disabled={busy || !!activeBuild} onClick={() => void act(async () => {
                 const next = await backend.pickCsv();
-                if (next) { setInput(next); setNoInput(false); }
+                if (next) { if (planExists) discardPlan(); setInput(next); setNoInput(false); }
               })}><span className="source-file-icon"><Icon name="files" /></span><span><strong>Attach a file</strong><span>Choose a file from your Mac</span></span><span className="source-file-plus" aria-hidden="true">+</span></button>}
           <div className="source-service-heading"><h4>Connected services</h4><button className="ghost" disabled={busy} onClick={() => connect("")}>Manage connections</button></div>
           {!!usable.length && <div className="source-service-list" role="group" aria-label="Use data from">
             {usable.map(c => {
-              const on = chosen.includes(c.id);
-              return <button key={c.id} className={`source-service${on ? " source-service-selected" : ""}`} aria-label={c.name} aria-pressed={on} disabled={busy || (!on && chosen.length >= 5)}
-                onClick={() => setChosen(on ? chosen.filter(id => id !== c.id) : [...chosen, c.id])}>
+              const on = includedConnections.includes(c.id);
+              return <button key={c.id} className={`source-service${on ? " source-service-selected" : ""}`} aria-label={c.name} aria-pressed={on} disabled={busy || !!activeBuild || (!on && includedConnections.length >= 5)}
+                onClick={() => { if (planExists) discardPlan(); setChosen(on ? includedConnections.filter(id => id !== c.id) : [...includedConnections, c.id]); }}>
                 <span className="source-service-icon"><Icon name={serviceIcon(c)} /></span><span className="source-service-copy"><strong>{c.name}</strong><span>{on ? "Included in this task" : "Select to include"}</span></span><span className="source-select-mark" aria-hidden="true">{on ? "✓" : ""}</span>
               </button>;
             })}
           </div>}
           {!usable.length && <p className="source-empty">No services connected yet. You can still describe your task above.</p>}
-          {chosen.length >= 5 && <p className="composer-source-help" role="status">You can include up to five services. Deselect one to choose another.</p>}
+          {includedConnections.length >= 5 && <p className="composer-source-help" role="status">You can include up to five services. Deselect one to choose another.</p>}
           {input && !noInput && <CsvView preview={input} />}
           </div>
 
@@ -474,18 +500,11 @@ export function CreateFlow({
           </div>
           <div className="review-body">
           <div className="card plan-card">
-            {editing ? <>
-              <Field label="What should the tool do?">
-                <textarea ref={requestRef} rows={4} value={description} onChange={e => setDescription(e.target.value)} />
-              </Field>
-              <button disabled={busy || !description.trim() || !!activeBuild} onClick={() => void act(describe)}>Update plan</button>
-            </> : <>
-              <p className="plan-sentence">The tool will {draft.goal.charAt(0).toLowerCase()}{draft.goal.slice(1).replace(/[.!?]+$/, "")}.</p>
-              <dl className="plan-facts">
-                {!!draft.requiredConnections?.length && <><dt>Data</dt><dd>Using your {draft.requiredConnections.map(s => s.name).join(", ")} connection (read-only)</dd></>}
-              </dl>
-              <button className="quiet" onClick={() => setEditing(true)}>Change request</button>
-            </>}
+            <p className="plan-sentence">The tool will {draft.goal.charAt(0).toLowerCase()}{draft.goal.slice(1).replace(/[.!?]+$/, "")}.</p>
+            <dl className="plan-facts">
+              {!!draft.requiredConnections?.length && <><dt>Data</dt><dd>Using your {draft.requiredConnections.map(s => s.name).join(", ")} connection (read-only)</dd></>}
+            </dl>
+            <button className="quiet" onClick={changeRequest}>Change request</button>
           </div>
           {draft.questions.map((question) => (
             <fieldset key={question.id} disabled={busy}>
@@ -734,7 +753,7 @@ export function CreateFlow({
           </fieldset>}
           </details>
           </details>
-          {draft.kind === "program" && !editing && !activeBuild && !(chosen.length && draft.requiredConnections?.length && !draft.accessPlan) && <ApiAccessPanel key={draft.draftId} backend={backend} draft={draft} status={status} accept={acceptDraft} changed={connectionsChanged} onBusy={setAccessBusy} connect={connect} connectors={connectors} />}
+          {draft.kind === "program" && !activeBuild && !(chosen.length && draft.requiredConnections?.length && !draft.accessPlan) && <ApiAccessPanel key={draft.draftId} backend={backend} draft={draft} status={status} accept={acceptDraft} changed={connectionsChanged} onBusy={setAccessBusy} connect={connect} connectors={connectors} />}
           {connectOffers(draft.mentionedConnectors, connectors)
             .map(
               (c) =>
@@ -783,7 +802,7 @@ export function CreateFlow({
             <p>{build.failure ? friendlyFailure(build.failure.message, build.failure.kind) : "Build stopped. Your plan is saved."}</p>
             {build.failure?.kind === "missing_data"
               ? <div className="actions">
-                  <button className="primary" onClick={() => { setError(null); setEditing(false); setStep(1); }}>Check how to get this data</button>
+                  <button className="primary" onClick={() => { setError(null); setStep(1); }}>Check how to get this data</button>
                   <button onClick={() => { setError(null); setStep(0); }}>Use a file instead</button>
                   <button onClick={changeRequest}>Change the request</button>
                 </div>

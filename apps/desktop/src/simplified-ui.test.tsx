@@ -75,19 +75,112 @@ it("lists each site once in the Used line instead of asking for approval", async
   expect(saved).toHaveBeenCalledOnce();
 });
 
-it("No, change it focuses the plan request and requires a refreshed plan before sending", async () => {
+it("No, change it returns to the request, and a changed request needs a new plan", async () => {
   const { user, start } = await create();
   await user.click(button("Build and test"));
   await user.click(button("No, change it"));
+  expect(screen.getByRole("heading", { name: "What should it do?" })).toBeVisible();
   const request = screen.getByLabelText("What should the tool do?");
   expect(request).toHaveFocus();
   fireEvent.change(request, { target: { value: "Show tomorrow's weather" } });
-  expect(button("Build and test")).toBeDisabled();
-  expect(screen.getByText("Update the plan to use your changed request.")).toBeVisible();
-  await user.click(button("Update plan"));
+  await user.click(button("Check the plan"));
   await waitFor(() => expect(button("Build and test")).toBeEnabled());
   expect(start).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/The tool will show tomorrow's weather/)).toBeVisible();
+});
+
+async function planned(connectors: import("./backend/types").ConnectorInfo[] = []) {
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const draft = vi.spyOn(backend, "draftTaskNoInput");
+  const user = userEvent.setup();
+  render(<CreateFlow backend={backend} initialInput={null} status={await backend.modelAccess()} connectors={connectors} openSettings={vi.fn()} connect={vi.fn()} close={vi.fn()} saved={async () => {}} />);
+  return { backend, draft, user };
+}
+const request = () => screen.getByLabelText("What should the tool do?");
+const layout = () => screen.getByLabelText("What the result should look like");
+
+it("Change request keeps the plan when nothing is changed", async () => {
+  const { draft, user } = await planned();
+  await user.type(request(), "Get today's forecast for Auckland");
+  await user.click(button("Check the plan"));
+  await waitFor(() => expect(layout()).not.toHaveValue(""));
+  fireEvent.change(layout(), { target: { value: "My layout: {forecast}" } });
+  await user.click(button("Change request"));
+  expect(request()).toHaveFocus();
+  await user.click(button("Check the plan"));
+  expect(layout()).toHaveValue("My layout: {forecast}");
+  expect(draft).toHaveBeenCalledTimes(1);
+});
+
+it("changing the request discards the output and connections from the old plan", async () => {
+  const backend0 = new MockBackend();
+  const connector = (await backend0.listConnectors()).find(c => c.id === "gmail")!;
+  connector.state = { kind: "connected", sinceMs: 1, toolCount: 1 };
+  const { backend, draft, user } = await planned([connector]);
+  vi.spyOn(backend, "listConnectors").mockResolvedValue([connector]);
+  const chip = () => within(screen.getByRole("group", { name: "Use data from" })).getByRole("button", { name: connector.name });
+  await user.type(request(), "Get today's forecast");
+  await user.click(chip());
+  await user.click(button("Check the plan"));
+  await screen.findByText(/Using your .* connection \(read-only\)/);
+  await waitFor(() => expect(layout()).not.toHaveValue(""));
+  fireEvent.change(layout(), { target: { value: "Old layout: {forecast}" } });
+  await user.click(button("Change request"));
+  expect(chip()).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("note")).toHaveTextContent("starts a new plan");
+  await user.type(request(), " for Auckland");
+  expect(chip()).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  await user.click(button("Check the plan"));
+  await screen.findByText(/The tool will get today's forecast for Auckland/);
+  expect(draft).toHaveBeenCalledTimes(2);
+  expect(layout()).not.toHaveValue("Old layout: {forecast}");
+  expect(screen.queryByText(/Using your .* connection/)).not.toBeInTheDocument();
+});
+
+it("changing a connection also starts a new plan, and Clear can bring the old one back", async () => {
+  const backend0 = new MockBackend();
+  const connector = (await backend0.listConnectors()).find(c => c.id === "gmail")!;
+  connector.state = { kind: "connected", sinceMs: 1, toolCount: 1 };
+  const { backend, draft, user } = await planned([connector]);
+  vi.spyOn(backend, "listConnectors").mockResolvedValue([connector]);
+  const chip = () => within(screen.getByRole("group", { name: "Use data from" })).getByRole("button", { name: connector.name });
+  await user.type(request(), "Get today's forecast");
+  await user.click(chip());
+  await user.click(button("Check the plan"));
+  await screen.findByText(/Using your .* connection \(read-only\)/);
+  await user.click(button("Change request"));
+  await user.click(button("Clear"));
+  expect(chip()).toHaveAttribute("aria-pressed", "false");
+  await user.click(button("Undo"));
+  expect(chip()).toHaveAttribute("aria-pressed", "true");
+  await user.click(chip());
+  expect(chip()).toHaveAttribute("aria-pressed", "false");
+  expect(request()).toHaveValue("Get today's forecast");
+  await user.click(button("Check the plan"));
+  await screen.findByText(/The tool will get today's forecast/);
+  expect(draft).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText(/Using your .* connection/)).not.toBeInTheDocument();
+});
+
+it("a layout still being written for the old request never lands on the new plan", async () => {
+  const { backend, user } = await planned();
+  let finishOld: (draft: import("./backend/types").TaskDraft) => void = () => {};
+  const suggest = vi.spyOn(backend, "suggestExampleOutput").mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  await user.type(request(), "Get today's forecast");
+  await user.click(button("Check the plan"));
+  await waitFor(() => expect(suggest).toHaveBeenCalledTimes(1));
+  const old = await backend.draftTaskNoInput("old");
+  await user.click(button("Change request"));
+  await user.type(request(), " for Auckland");
+  suggest.mockResolvedValueOnce({ ...old, exampleOutput: "New layout: {forecast}" });
+  await user.click(button("Check the plan"));
+  await waitFor(() => expect(layout()).toHaveValue("New layout: {forecast}"));
+  finishOld({ ...old, exampleOutput: "Stale layout", suggestedName: "Stale name" });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(layout()).toHaveValue("New layout: {forecast}");
+  expect(screen.queryByText(/Writing the output layout/)).not.toBeInTheDocument();
 });
 
 it("friendly failure hides raw codes in Details and offers retry and a focused request change", async () => {
