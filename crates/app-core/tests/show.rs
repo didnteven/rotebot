@@ -1,6 +1,6 @@
 //! Show controller against a scripted observer (protocol-level) and, when built,
-//! the real Swift observer. The scripted observers are shell scripts, so Unix only.
-#![cfg(unix)]
+//! the real Swift observer. Show is available on macOS only.
+#![cfg(target_os = "macos")]
 
 use macroscope_app_core::dto::ShowState;
 use macroscope_app_core::show::ShowController;

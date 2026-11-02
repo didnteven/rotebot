@@ -282,8 +282,17 @@ mod windows {
         }
     }
     pub fn sync_directory(root: &File) -> Result<(), BrokerError> {
-        root.sync_all()?;
-        Ok(())
+        // NTFS journals directory entries itself; flushing a directory handle fails with
+        // ERROR_INVALID_FUNCTION, which means there is nothing to flush.
+        match root.sync_all() {
+            Err(e)
+                if e.raw_os_error().map(|v| v as u32)
+                    == Some(windows_sys::Win32::Foundation::ERROR_INVALID_FUNCTION) =>
+            {
+                Ok(())
+            }
+            result => Ok(result?),
+        }
     }
 }
 #[cfg(windows)]
