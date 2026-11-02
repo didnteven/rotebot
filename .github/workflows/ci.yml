@@ -6,15 +6,9 @@ permissions:
   contents: read
 
 jobs:
+  # The product: Rotebot runs generated programs only inside the macOS sandbox.
   desktop:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -25,16 +19,11 @@ jobs:
           node-version: 24.10.0
           cache: npm
       - run: npm ci
-      # SQLCipher's vendored OpenSSL needs a full Perl to configure; Git Bash's Perl lacks
-      # modules it uses, so point openssl-src at the runner's Strawberry Perl.
-      - if: runner.os == 'Windows'
-        run: |
-          test -x /c/Strawberry/perl/bin/perl.exe
-          echo "OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl.exe" >> "$GITHUB_ENV"
       - run: bash scripts/check.sh
       - run: npx tauri build --debug --no-bundle
         working-directory: apps/desktop
 
+  # Fast logic check of everything except the desktop shell.
   pure-crates:
     runs-on: ubuntu-latest
     steps:
@@ -45,3 +34,24 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --exclude macroscope-desktop --all-targets -- -D warnings
       - run: cargo test --locked --workspace --exclude macroscope-desktop
+
+  # Windows is not a supported platform yet (the sandbox refuses to run there), so this only
+  # keeps the workspace compiling and lint-clean for it; tests run on macOS and Linux.
+  windows-compile:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # SQLCipher's vendored OpenSSL needs a full Perl to configure; Git Bash's Perl lacks
+      # modules it uses, so point openssl-src at the runner's Strawberry Perl.
+      - run: |
+          test -x /c/Strawberry/perl/bin/perl.exe
+          echo "OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl.exe" >> "$GITHUB_ENV"
+      # tauri-build needs the runner binary named in externalBin even to compile the shell.
+      - run: TAURI_ENV_DEBUG=true node apps/desktop/scripts/prepare-runner.mjs
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
