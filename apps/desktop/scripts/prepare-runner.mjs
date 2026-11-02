@@ -44,7 +44,9 @@ const executable = messages.find(
 )?.executable;
 if (!executable) throw new Error("Cargo did not report the sandbox runner executable");
 
-const destination = path.join(desktop, "src-tauri/binaries", `macroscope-runner-${target}`);
+// Tauri expects externalBin files as <name>-<target triple>, plus .exe on Windows.
+const extension = target.includes("windows") ? ".exe" : "";
+const destination = path.join(desktop, "src-tauri/binaries", `macroscope-runner-${target}${extension}`);
 mkdirSync(path.dirname(destination), { recursive: true });
 copyFileSync(executable, destination);
 chmodSync(destination, 0o755);

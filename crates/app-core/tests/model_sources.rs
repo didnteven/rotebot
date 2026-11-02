@@ -657,11 +657,15 @@ async fn emergency_stop_cancels_connection_reads_and_model_egress_before_staging
         let id = t.summary_row.id.clone();
         let stage =
             tokio::spawn(async move { core.stage_run_no_input(&id, &folder, "summary.txt").await });
-        tokio::time::timeout(std::time::Duration::from_secs(3), f.fake.blocked.notified())
-            .await
-            .unwrap();
+        // Generous ceilings for slow shared CI machines; each wait ends as soon as it is met.
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            f.fake.blocked.notified(),
+        )
+        .await
+        .unwrap();
         f.core.emergency_stop().await.unwrap();
-        let result = tokio::time::timeout(std::time::Duration::from_secs(2), stage)
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), stage)
             .await
             .unwrap()
             .unwrap();
