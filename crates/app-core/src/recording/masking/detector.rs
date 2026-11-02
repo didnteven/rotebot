@@ -51,7 +51,9 @@ impl TextDetector {
                 r"\b\d{1,5}[A-Za-z]?(?:[/-]\d{1,5})?\s+(?:[A-Z][\p{L}'-]+\s+){0,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Terrace|Tce|Crescent|Cres|Court|Boulevard|Blvd|Highway|Hwy|Parade|Close|Grove|Square|Quay|Esplanade|STREET|ROAD|AVENUE|DRIVE|LANE|TERRACE)\b\.?",
             )?,
             // "Auckland 1011" / "NY 10001": a place name followed by a postcode.
-            postcode: re(r"\b(?:[A-Z][\p{L}'-]+(?:\s[A-Z][\p{L}'-]+)?\s\d{4}|[A-Z]{2}\s\d{5}(?:-\d{4})?)\b")?,
+            postcode: re(
+                r"\b(?:[A-Z][\p{L}'-]+(?:\s[A-Z][\p{L}'-]+)?\s\d{4}|[A-Z]{2}\s\d{5}(?:-\d{4})?)\b",
+            )?,
             level,
         })
     }
@@ -171,7 +173,7 @@ impl TextDetector {
             let phone = (7..=15).contains(&n)
                 && (raw.starts_with('+')
                     || raw.starts_with('(')
-                    || n >= 10 && n <= 15 && groups.len() == 1
+                    || (10..=15).contains(&n) && groups.len() == 1
                     || n >= 9 && digits.starts_with('0')
                     || groups == [3, 4]
                     || groups.len() == 3 && groups[0] == 3 && groups[1] == 3 && groups[2] == 4
@@ -179,8 +181,7 @@ impl TextDetector {
             if !amount
                 && !date
                 && (luhn(&digits)
-                    || standard
-                        && (nz_bank || ssn || (!inside_url || strict) && (ird || phone))
+                    || standard && (nz_bank || ssn || (!inside_url || strict) && (ird || phone))
                     || strict && n >= 6)
             {
                 spans.push(start..end);
@@ -204,9 +205,11 @@ impl TextDetector {
         }
         for m in self.postcode.find_iter(&text).filter(|_| strict) {
             // A bare year after a capitalised word ("Season 2024") is not a postcode.
-            let year = m.as_str().rsplit(' ').next().is_some_and(|y| {
-                y.len() == 4 && (y.starts_with("19") || y.starts_with("20"))
-            });
+            let year = m
+                .as_str()
+                .rsplit(' ')
+                .next()
+                .is_some_and(|y| y.len() == 4 && (y.starts_with("19") || y.starts_with("20")));
             if !year {
                 spans.push(m.range());
             }
@@ -326,7 +329,8 @@ fn chart_labels(s: &str) -> bool {
     while !rest.is_empty() {
         let letters_first = rest.starts_with(|c: char| c.is_ascii_alphabetic());
         let take = |r: &'_ str, digit: bool| -> usize {
-            r.find(|c: char| c.is_ascii_digit() != digit).unwrap_or(r.len())
+            r.find(|c: char| c.is_ascii_digit() != digit)
+                .unwrap_or(r.len())
         };
         let (a, b);
         if letters_first {

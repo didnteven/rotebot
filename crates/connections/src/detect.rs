@@ -184,7 +184,12 @@ impl DetectionLedger {
         // A service already reached through another connection needs no suggestion.
         let connected_services: HashSet<String> = statuses
             .iter()
-            .filter(|s| matches!(s.state, ConnectionState::Connected { .. } | ConnectionState::Connecting))
+            .filter(|s| {
+                matches!(
+                    s.state,
+                    ConnectionState::Connected { .. } | ConnectionState::Connecting
+                )
+            })
             .map(|s| catalog.service_of(&s.connector_id))
             .collect();
         for (id, kinds) in &self.counts {
@@ -320,19 +325,32 @@ mod tests {
     fn a_connected_sibling_of_the_same_service_removes_the_suggestion() {
         let catalog = Catalog::embedded();
         let mut ledger = DetectionLedger::default();
-        ledger.observe(&catalog, Signal::TaskText { text: "summarise my Gmail inbox".into() }, 1);
+        ledger.observe(
+            &catalog,
+            Signal::TaskText {
+                text: "summarise my Gmail inbox".into(),
+            },
+            1,
+        );
         let connected = |id: &str| ConnectionStatus {
             connector_id: id.into(),
-            state: ConnectionState::Connected { since_ms: 0, tool_count: 1 },
+            state: ConnectionState::Connected {
+                since_ms: 0,
+                tool_count: 1,
+            },
             mcp_url: "".into(),
             last_checked_ms: None,
         };
         let none = HashSet::new();
         assert!(!ledger.suggestions_at(&catalog, &[], &none, 1).is_empty());
         // Gmail by app password satisfies a mention that was matched to Gmail by Google sign-in.
-        assert!(ledger.suggestions_at(&catalog, &[connected("mail-gmail")], &none, 1).is_empty());
+        assert!(ledger
+            .suggestions_at(&catalog, &[connected("mail-gmail")], &none, 1)
+            .is_empty());
         // An unrelated connection does not.
-        assert!(!ledger.suggestions_at(&catalog, &[connected("slack")], &none, 1).is_empty());
+        assert!(!ledger
+            .suggestions_at(&catalog, &[connected("slack")], &none, 1)
+            .is_empty());
     }
     #[test]
     fn ledger_privacy_filtering_and_order() {

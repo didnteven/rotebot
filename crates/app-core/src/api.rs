@@ -85,11 +85,15 @@ pub fn same_service(a: &str, b: &str) -> bool {
 /// The version prefix every path on a service shares, taken from the saved address:
 /// `/v1` for `https://api.akahu.io/v1/me`, `/api/v2` for `…/api/v2/users`, empty when there is none.
 pub fn api_base_path(address: &str) -> String {
-    let Ok(url) = url::Url::parse(address) else { return String::new() };
+    let Ok(url) = url::Url::parse(address) else {
+        return String::new();
+    };
     let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
-    let version = |s: &str| s == "api" || s == "rest" || {
-        let s = s.strip_prefix(['v', 'V']).unwrap_or("");
-        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '.')
+    let version = |s: &str| {
+        s == "api" || s == "rest" || {
+            let s = s.strip_prefix(['v', 'V']).unwrap_or("");
+            !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '.')
+        }
     };
     match segments.iter().rposition(|s| version(s)) {
         Some(last) => format!("/{}", segments[..=last].join("/")),
@@ -99,7 +103,16 @@ pub fn api_base_path(address: &str) -> String {
 
 /// The array a list page keeps its entries in.
 fn list_field(v: &Value) -> Option<&'static str> {
-    ["items", "data", "results", "transactions", "accounts", "records"].into_iter().find(|k| v[*k].is_array())
+    [
+        "items",
+        "data",
+        "results",
+        "transactions",
+        "accounts",
+        "records",
+    ]
+    .into_iter()
+    .find(|k| v[*k].is_array())
 }
 
 /// The next page of a list the host can follow: a cursor (`cursor.next`, sent back as `?cursor=`)
@@ -107,8 +120,15 @@ fn list_field(v: &Value) -> Option<&'static str> {
 fn next_page(v: &Value, current: &str) -> Result<Option<String>, ReadError> {
     let mut url = url::Url::parse(current).map_err(|_| ReadError::Url)?;
     if let Some(c) = v["cursor"]["next"].as_str().filter(|c| !c.is_empty()) {
-        let kept: Vec<(String, String)> = url.query_pairs().filter(|(k, _)| k != "cursor").map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
-        url.query_pairs_mut().clear().extend_pairs(kept).append_pair("cursor", c);
+        let kept: Vec<(String, String)> = url
+            .query_pairs()
+            .filter(|(k, _)| k != "cursor")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs(kept)
+            .append_pair("cursor", c);
         return Ok(Some(url.into()));
     }
     for link in [&v["next"], &v["links"]["next"]] {
@@ -120,14 +140,22 @@ fn next_page(v: &Value, current: &str) -> Result<Option<String>, ReadError> {
             return Ok(Some(next.into()));
         }
     }
-    if v["offset"].is_string() || v["has_more"] == true || v["next_cursor"].is_string() || v["nextPageToken"].is_string() {
+    if v["offset"].is_string()
+        || v["has_more"] == true
+        || v["next_cursor"].is_string()
+        || v["nextPageToken"].is_string()
+    {
         return Err(ReadError::Paginated);
     }
     Ok(None)
 }
 
 pub(crate) fn read_tool(base: &str, known: &str) -> ConnectorTool {
-    let under = if base.is_empty() { String::new() } else { format!(" Paths are on this service under {base}: \"/accounts\" reads {base}/accounts.") };
+    let under = if base.is_empty() {
+        String::new()
+    } else {
+        format!(" Paths are on this service under {base}: \"/accounts\" reads {base}/accounts.")
+    };
     ConnectorTool {
         name: "read".into(),
         description: format!("Read one path on this API's service with a single GET, using the saved keys. Pass {{\"path\": \"/the/path\"}} (starts with /, no query string, same service only); with no path it reads the connection's default address.{under} Lists that come in pages (a cursor.next value or a next-page link) are read in full, up to 10 pages, and joined into one list. No URL, method or header overrides.{known}"),
@@ -161,7 +189,9 @@ impl AppCore {
             .get(&reference)
             .map_err(|_| CoreError::Vault("API credential unavailable".into()))?
             .map(|s| Secret::new(s.expose().to_vec()))
-            .ok_or_else(|| CoreError::Invalid("The saved key is unavailable; enter it again".into()))
+            .ok_or_else(|| {
+                CoreError::Invalid("The saved key is unavailable; enter it again".into())
+            })
     }
     pub(crate) fn api_secret(id: &str) -> CoreResult<SecretRef> {
         SecretRef::new(format!("api-credential:{id}"))
@@ -183,18 +213,26 @@ impl AppCore {
             .map_err(|e| invalid(&e.to_string()))?;
         let in_query = config.auth == ApiAuth::Query;
         let check_name = |name: &str| {
-            if in_query { rest::validate_param(name) } else { rest::validate_header(name) }
+            if in_query {
+                rest::validate_param(name)
+            } else {
+                rest::validate_header(name)
+            }
         };
         if config.auth == ApiAuth::Header || in_query {
             check_name(&config.header_name).map_err(|e| invalid(&e.to_string()))?;
         }
         if in_query && url::Url::parse(&config.url).is_ok_and(|u| u.query().is_some()) {
-            return Err(invalid("Leave the key out of the API URL; it is added from the secure box"));
+            return Err(invalid(
+                "Leave the key out of the API URL; it is added from the secure box",
+            ));
         }
         if config.extra_header_names.len() > MAX_EXTRA_HEADERS
             || (!config.extra_header_names.is_empty() && config.auth == ApiAuth::None)
         {
-            return Err(invalid("This API needs a credential before it can use extra key headers"));
+            return Err(invalid(
+                "This API needs a credential before it can use extra key headers",
+            ));
         }
         let mut seen = std::collections::HashSet::new();
         if config.auth == ApiAuth::Bearer {
@@ -276,7 +314,13 @@ impl AppCore {
         for (n, secret) in extras.into_iter().enumerate() {
             let saved = Self::api_extra_secret(&id, n)
                 .map_err(|e| e.to_string())
-                .and_then(|r| self.inner.cfg.vault.set(&r, secret).map_err(|e| e.to_string()));
+                .and_then(|r| {
+                    self.inner
+                        .cfg
+                        .vault
+                        .set(&r, secret)
+                        .map_err(|e| e.to_string())
+                });
             if saved.is_err() {
                 forget(n);
                 return Err(CoreError::Vault("API credential could not be saved".into()));
@@ -305,29 +349,44 @@ impl AppCore {
     ) -> CoreResult<ConnectorInfo> {
         self.validate_api_config(&config)?;
         let unusable = |s: &Secret| {
-            s.expose().is_empty() || s.expose().len() > 8192 || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
+            s.expose().is_empty()
+                || s.expose().len() > 8192
+                || s.expose().iter().any(|b| *b == b'\r' || *b == b'\n')
         };
-        if extras.len() != config.extra_header_names.len() || extras.iter().any(unusable)
+        if extras.len() != config.extra_header_names.len()
+            || extras.iter().any(unusable)
             || (config.auth != ApiAuth::None && credential.as_ref().is_none_or(unusable))
         {
-            return Err(CoreError::Invalid("Enter every API credential without line breaks".into()));
+            return Err(CoreError::Invalid(
+                "Enter every API credential without line breaks".into(),
+            ));
         }
         let _io = self.inner.api_io.lock().await;
         let _local = self.admit_local()?;
         let mut apis = self.saved_apis()?;
-        let index = apis.iter().position(|a| a.id == id).ok_or(CoreError::NotFound("API connection"))?;
+        let index = apis
+            .iter()
+            .position(|a| a.id == id)
+            .ok_or(CoreError::NotFound("API connection"))?;
         let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
         if origin(&apis[index].config.url) != origin(&config.url) {
-            return Err(CoreError::Invalid("A different service is a new connection".into()));
+            return Err(CoreError::Invalid(
+                "A different service is a new connection".into(),
+            ));
         }
         let vault = &self.inner.cfg.vault;
-        let saved = |r: CoreResult<macroscope_vault::SecretRef>, s: Secret| r.map_err(|e| e.to_string()).and_then(|r| vault.set(&r, s).map_err(|e| e.to_string()));
+        let saved = |r: CoreResult<macroscope_vault::SecretRef>, s: Secret| {
+            r.map_err(|e| e.to_string())
+                .and_then(|r| vault.set(&r, s).map_err(|e| e.to_string()))
+        };
         if let Some(main) = credential.filter(|_| config.auth != ApiAuth::None) {
-            saved(Self::api_secret(id), main).map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
+            saved(Self::api_secret(id), main)
+                .map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
         }
         let new_count = extras.len();
         for (n, secret) in extras.into_iter().enumerate() {
-            saved(Self::api_extra_secret(id, n), secret).map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
+            saved(Self::api_extra_secret(id, n), secret)
+                .map_err(|_| CoreError::Vault("API credential could not be saved".into()))?;
         }
         for n in new_count..apis[index].config.extra_header_names.len() {
             if let Ok(r) = Self::api_extra_secret(id, n) {
@@ -364,20 +423,32 @@ impl AppCore {
         tool: &str,
         args: &Value,
     ) -> CoreResult<String> {
-        let changed = || CoreError::Invalid("API access changed; reconnect and rebuild this tool".into());
+        let changed =
+            || CoreError::Invalid("API access changed; reconnect and rebuild this tool".into());
         let a = self.api_info(id)?;
         let object = args.as_object().ok_or_else(changed)?;
         // A tool names its connection; the connection's address may since have moved on the same service.
         let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
-        if origin(&a.mcp_url).is_none() || origin(&a.mcp_url) != origin(resource) || !matches!(a.state, ConnectionState::Connected { .. }) || tool != "read" || object.keys().any(|k| k != "path") {
+        if origin(&a.mcp_url).is_none()
+            || origin(&a.mcp_url) != origin(resource)
+            || !matches!(a.state, ConnectionState::Connected { .. })
+            || tool != "read"
+            || object.keys().any(|k| k != "path")
+        {
             return Err(changed());
         }
         match object.get("path") {
             None => Ok(a.mcp_url),
             Some(path) => {
                 let path = path.as_str().ok_or_else(changed)?;
-                if !path.starts_with('/') || path.starts_with("//") || path.contains(['?', '#', '{', '}', '\\']) || path.len() > 300 {
-                    return Err(CoreError::Invalid("A path starts with / and has no query string".into()));
+                if !path.starts_with('/')
+                    || path.starts_with("//")
+                    || path.contains(['?', '#', '{', '}', '\\'])
+                    || path.len() > 300
+                {
+                    return Err(CoreError::Invalid(
+                        "A path starts with / and has no query string".into(),
+                    ));
                 }
                 let mut url = url::Url::parse(&a.mcp_url).map_err(|_| changed())?;
                 let base = api_base_path(&a.mcp_url);
@@ -435,9 +506,12 @@ impl AppCore {
             ));
         }
         if example
-            && url::Url::parse(resource).map(|u| u.origin()) != url::Url::parse(&a.config.url).map(|u| u.origin())
+            && url::Url::parse(resource).map(|u| u.origin())
+                != url::Url::parse(&a.config.url).map(|u| u.origin())
         {
-            return Err(CoreError::Invalid("An example can only read the API's own service".into()));
+            return Err(CoreError::Invalid(
+                "An example can only read the API's own service".into(),
+            ));
         }
         let circuit = Self::api_origin_key(resource)?;
         if let Some(v) = self.db().setting(&circuit)? {
@@ -491,7 +565,10 @@ impl AppCore {
         // address, the activity log and the receipts never contain them.
         let mut query: Vec<(&str, &[u8])> = Vec::new();
         if a.config.auth == ApiAuth::Query {
-            query.push((a.config.header_name.as_str(), token.as_ref().unwrap().expose()));
+            query.push((
+                a.config.header_name.as_str(),
+                token.as_ref().unwrap().expose(),
+            ));
             for (name, value) in a.config.extra_header_names.iter().zip(&extra_values) {
                 query.push((name.as_str(), value.expose()));
             }
@@ -512,18 +589,29 @@ impl AppCore {
             self.db().insert_outbound(&db::OutboundRow {
                 id: new_id("api_read"),
                 at_ms: self.now(),
-                purpose: if testing { "API connection test" } else { "API read" }.into(),
+                purpose: if testing {
+                    "API connection test"
+                } else {
+                    "API read"
+                }
+                .into(),
                 destination: web::host_of_url(&page_url),
                 route: "api_connection".into(),
                 synthetic_only: false,
                 cost_micros: None,
-                payload_text: Some(json!({"connectionId":id,"method":"GET","page":pages + 1}).to_string()),
+                payload_text: Some(
+                    json!({"connectionId":id,"method":"GET","page":pages + 1}).to_string(),
+                ),
             })?;
             let admission = self
                 .inner
                 .policy
-                .admit(macroscope_policy::Job { epoch: self.inner.policy.epoch() })
-                .map_err(|_| CoreError::Invalid("Local only or Emergency stop blocks API reads".into()))?;
+                .admit(macroscope_policy::Job {
+                    epoch: self.inner.policy.epoch(),
+                })
+                .map_err(|_| {
+                    CoreError::Invalid("Local only or Emergency stop blocks API reads".into())
+                })?;
             let epoch = admission.epoch;
             let guard = HttpEpochGuard(Some(admission.guard));
             let result = tokio::select! { biased;
@@ -534,19 +622,34 @@ impl AppCore {
             let page = result.and_then(|text| {
                 if token.iter().chain(extra_values.iter()).any(|t| {
                     !t.expose().is_empty()
-                        && text.as_bytes().windows(t.expose().len()).any(|w| w == t.expose())
+                        && text
+                            .as_bytes()
+                            .windows(t.expose().len())
+                            .any(|w| w == t.expose())
                 }) {
                     return Err(ReadError::InvalidResponse);
                 }
                 serde_json::from_str::<Value>(&text).map_err(|_| ReadError::InvalidResponse)
             });
-            let value = match page { Ok(v) => v, Err(e) => break Err(e) };
-            let next = match next_page(&value, &page_url) { Ok(n) => n, Err(e) => break Err(e) };
+            let value = match page {
+                Ok(v) => v,
+                Err(e) => break Err(e),
+            };
+            let next = match next_page(&value, &page_url) {
+                Ok(n) => n,
+                Err(e) => break Err(e),
+            };
             match merged.as_mut() {
                 None => merged = Some(value),
                 Some(all) => {
-                    let Some(field) = list_field(all) else { break Err(ReadError::Paginated) };
-                    let (Some(list), Some(more)) = (all[field].as_array_mut(), value[field].as_array()) else { break Err(ReadError::Paginated) };
+                    let Some(field) = list_field(all) else {
+                        break Err(ReadError::Paginated);
+                    };
+                    let (Some(list), Some(more)) =
+                        (all[field].as_array_mut(), value[field].as_array())
+                    else {
+                        break Err(ReadError::Paginated);
+                    };
                     list.extend(more.iter().cloned());
                 }
             }
@@ -555,11 +658,17 @@ impl AppCore {
                 let mut all = merged.take().unwrap_or(Value::Null);
                 if pages > 1 {
                     for k in ["cursor", "next", "links"] {
-                        if let Some(o) = all.as_object_mut() { o.remove(k); }
+                        if let Some(o) = all.as_object_mut() {
+                            o.remove(k);
+                        }
                     }
                 }
                 let text = all.to_string();
-                break if text.len() > 4 * 1024 * 1024 { Err(ReadError::TooLarge) } else { Ok(text) };
+                break if text.len() > 4 * 1024 * 1024 {
+                    Err(ReadError::TooLarge)
+                } else {
+                    Ok(text)
+                };
             };
             if pages >= 10 || merged.as_ref().is_none_or(|m| list_field(m).is_none()) {
                 break Err(ReadError::TooLarge);
@@ -567,35 +676,48 @@ impl AppCore {
             page_url = next;
         };
         let _local = self.admit_local()?;
-        if example && testing && text.is_ok() && !matches!(apis[index].state, ConnectionState::Connected { .. }) {
+        if example
+            && testing
+            && text.is_ok()
+            && !matches!(apis[index].state, ConnectionState::Connected { .. })
+        {
             // The keys were accepted by the service at a tested path, so the connection is usable
             // even if its default address was wrong.
-            apis[index].state = ConnectionState::Connected { since_ms: self.now(), tool_count: 1 };
+            apis[index].state = ConnectionState::Connected {
+                since_ms: self.now(),
+                tool_count: 1,
+            };
         }
-        if !example { match &text {
-            Ok(_) => {
-                apis[index].state = ConnectionState::Connected {
-                    since_ms: self.now(),
-                    tool_count: 1,
-                };
-                if testing {
-                    self.db().set_setting(&circuit, &Value::Null)?;
-                }
-            }
-            Err(e) => {
-                apis[index].state = match e { ReadError::Unauthorized => ConnectionState::NeedsReauth,
-                    _ => ConnectionState::Error { message: format!("{e}.") } };
-                match e {
-                    ReadError::RateLimited { retry_at_ms } => self
-                        .db()
-                        .set_setting(&circuit, &json!({"retryAtMs":retry_at_ms}))?,
-                    ReadError::Unauthorized | ReadError::Forbidden => {
-                        self.db().set_setting(&circuit, &json!({"blocked":true}))?
+        if !example {
+            match &text {
+                Ok(_) => {
+                    apis[index].state = ConnectionState::Connected {
+                        since_ms: self.now(),
+                        tool_count: 1,
+                    };
+                    if testing {
+                        self.db().set_setting(&circuit, &Value::Null)?;
                     }
-                    _ => {}
+                }
+                Err(e) => {
+                    apis[index].state = match e {
+                        ReadError::Unauthorized => ConnectionState::NeedsReauth,
+                        _ => ConnectionState::Error {
+                            message: format!("{e}."),
+                        },
+                    };
+                    match e {
+                        ReadError::RateLimited { retry_at_ms } => self
+                            .db()
+                            .set_setting(&circuit, &json!({"retryAtMs":retry_at_ms}))?,
+                        ReadError::Unauthorized | ReadError::Forbidden => {
+                            self.db().set_setting(&circuit, &json!({"blocked":true}))?
+                        }
+                        _ => {}
+                    }
                 }
             }
-        } }
+        }
         self.db().set_setting(APIS, &json!(apis))?;
         if let Some(blocked) = self.web_fetch_blocked() {
             return Err(CoreError::Invalid(blocked));
@@ -631,7 +753,8 @@ impl AppCore {
         info.state = ConnectionState::NotConnected;
         apis.remove(index);
         self.db().set_setting(APIS, &json!(apis))?;
-        self.db().set_setting(&format!("api-examples:{id}"), &Value::Null)?;
+        self.db()
+            .set_setting(&format!("api-examples:{id}"), &Value::Null)?;
         Ok(info)
     }
 }

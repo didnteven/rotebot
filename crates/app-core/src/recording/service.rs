@@ -403,15 +403,13 @@ impl AppCore {
         Ok(s.frames.clone())
     }
     /// Hides more or less sensitive text in a stopped recording by masking its frames again.
-    pub fn set_recording_mask_level(
-        &self,
-        session_id: &str,
-        level: MaskLevel,
-    ) -> CoreResult<()> {
+    pub fn set_recording_mask_level(&self, session_id: &str, level: MaskLevel) -> CoreResult<()> {
         let mut slots = lock(&self.inner.recordings);
         let s = slot(&mut slots, session_id, self.now())?;
         if !s.frames.stopped {
-            return Err(invalid("Stop the recording before changing what is hidden."));
+            return Err(invalid(
+                "Stop the recording before changing what is hidden.",
+            ));
         }
         if s.analyzing || s.draft.is_some() {
             return Err(invalid("This recording has already been analyzed."));

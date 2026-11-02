@@ -42,8 +42,14 @@ async fn main() {
             let mut x = 0x9e37_79b9_u64 + n;
             for by in (0..h).step_by(6) {
                 for bx in (0..w).step_by(6) {
-                    x ^= x << 13; x ^= x >> 7; x ^= x << 17;
-                    let c = [(x & 0xff) as u8, ((x >> 8) & 0xff) as u8, ((x >> 16) & 0xff) as u8];
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    let c = [
+                        (x & 0xff) as u8,
+                        ((x >> 8) & 0xff) as u8,
+                        ((x >> 16) & 0xff) as u8,
+                    ];
                     for yy in by..(by + 6).min(h) {
                         for xx in bx..(bx + 6).min(w) {
                             let i = (yy * w + xx) * 4;
@@ -52,7 +58,9 @@ async fn main() {
                     }
                 }
             }
-            let labels: Vec<String> = (0..120).map(|i| format!("Bookmark label number {i}")).collect();
+            let labels: Vec<String> = (0..120)
+                .map(|i| format!("Bookmark label number {i}"))
+                .collect();
             let dto: macroscope_app_core::recording::RecordedFrameDto = serde_json::from_value(serde_json::json!({
                 "seq": 10 + n, "monoMs": 10_000 + n * 1000, "appName": "Google Chrome", "windowTitle": "",
                 "width": w, "height": h, "rgba": rgba, "axLabels": labels,

@@ -586,7 +586,7 @@ async fn web_fetch_and_stage_work_on_a_multi_thread_runtime() {
 #[cfg(feature = "synthetic-runtime-tests")]
 mod schedules {
     use super::*;
-    use macroscope_app_core::conditions::{Side, SendWhen};
+    use macroscope_app_core::conditions::{SendWhen, Side};
     use macroscope_app_core::schedules::*;
     use std::sync::atomic::{AtomicI64, Ordering};
     #[derive(Default)]
@@ -604,12 +604,23 @@ mod schedules {
         fail: bool,
     }
     impl ResultMailer for FakeMailer {
-        fn send<'a>(&'a self, connector_id: &'a str, to: &'a str, subject: &'a str, body: &'a str) -> MailFuture<'a> {
+        fn send<'a>(
+            &'a self,
+            connector_id: &'a str,
+            to: &'a str,
+            subject: &'a str,
+            body: &'a str,
+        ) -> MailFuture<'a> {
             Box::pin(async move {
                 if self.fail {
                     return Err("the mail server refused it".into());
                 }
-                self.sent.lock().unwrap().push((connector_id.into(), to.into(), subject.into(), body.into()));
+                self.sent.lock().unwrap().push((
+                    connector_id.into(),
+                    to.into(),
+                    subject.into(),
+                    body.into(),
+                ));
                 Ok(())
             })
         }
@@ -668,7 +679,12 @@ mod schedules {
         fn enable_with(&self, file: bool, email: Option<EmailDelivery>) -> Schedule {
             self.enable_when(file, email, SendWhen::Always)
         }
-        fn enable_when(&self, file: bool, email: Option<EmailDelivery>, send_when: SendWhen) -> Schedule {
+        fn enable_when(
+            &self,
+            file: bool,
+            email: Option<EmailDelivery>,
+            send_when: SendWhen,
+        ) -> Schedule {
             self.core
                 .set_schedule(
                     &self.tool.summary_row.id,
@@ -727,12 +743,24 @@ mod schedules {
         assert_eq!(f.core.list_outbound().unwrap().len(), before + 1);
         assert_eq!(f.core.list_outbound().unwrap()[0].purpose, "Web source");
         // The activity log says what happened in plain words, never the result or a bare action count.
-        let ran = f.core.list_activity().unwrap().into_iter().find(|a| a.kind == "run").unwrap();
-        assert_eq!(ran.detail.as_deref(), Some("Created weather-2026-10-28.txt"));
+        let ran = f
+            .core
+            .list_activity()
+            .unwrap()
+            .into_iter()
+            .find(|a| a.kind == "run")
+            .unwrap();
+        assert_eq!(
+            ran.detail.as_deref(),
+            Some("Created weather-2026-10-28.txt")
+        );
         assert!(f.run("2026-10-28T23:59:00+13:00").await.is_empty());
     }
     fn me() -> Option<EmailDelivery> {
-        Some(EmailDelivery { connector_id: "gmail-mail".into(), to: "me@example.com".into() })
+        Some(EmailDelivery {
+            connector_id: "gmail-mail".into(),
+            to: "me@example.com".into(),
+        })
     }
     #[tokio::test]
     async fn scheduled_result_is_emailed_to_the_approved_address_and_noted_on_today() {
@@ -747,9 +775,19 @@ mod schedules {
         assert_eq!(sent[0].0, "gmail-mail");
         assert_eq!(sent[0].1, "me@example.com");
         assert_eq!(sent[0].2, "Auckland weather · 2026-10-28");
-        assert!(sent[0].3.starts_with("Auckland high 21.5C"), "{}", sent[0].3);
-        assert_eq!(entries[0].note.as_deref(), Some("Emailed to me@example.com"));
-        assert_eq!(f.core.list_today().unwrap()[0].entries[0].note.as_deref(), Some("Emailed to me@example.com"));
+        assert!(
+            sent[0].3.starts_with("Auckland high 21.5C"),
+            "{}",
+            sent[0].3
+        );
+        assert_eq!(
+            entries[0].note.as_deref(),
+            Some("Emailed to me@example.com")
+        );
+        assert_eq!(
+            f.core.list_today().unwrap()[0].entries[0].note.as_deref(),
+            Some("Emailed to me@example.com")
+        );
         // One send per occurrence.
         assert!(f.run("2026-10-28T23:59:00+13:00").await.is_empty());
         assert_eq!(mailer.sent.lock().unwrap().len(), 1);
@@ -757,30 +795,51 @@ mod schedules {
     #[tokio::test]
     async fn a_refused_or_missing_mailbox_never_fails_the_run() {
         let f = Fixture::new().await;
-        f.core.set_mailer(Arc::new(FakeMailer { fail: true, ..Default::default() }));
+        f.core.set_mailer(Arc::new(FakeMailer {
+            fail: true,
+            ..Default::default()
+        }));
         f.enable_with(false, me());
         let e = &f.run("2026-10-28T07:00:00+13:00").await[0];
         assert_eq!(e.status, "done");
-        assert_eq!(e.note.as_deref(), Some("Email not sent: the mail server refused it"));
+        assert_eq!(
+            e.note.as_deref(),
+            Some("Email not sent: the mail server refused it")
+        );
         let f = Fixture::new().await;
         f.enable_with(false, me());
         let e = &f.run("2026-10-28T07:00:00+13:00").await[0];
         assert_eq!(e.status, "done");
-        assert_eq!(e.note.as_deref(), Some("Email not sent: email is not available"));
+        assert_eq!(
+            e.note.as_deref(),
+            Some("Email not sent: email is not available")
+        );
     }
     #[tokio::test]
-    async fn a_condition_that_is_not_met_holds_back_the_notification_and_email_but_today_records_the_run() {
+    async fn a_condition_that_is_not_met_holds_back_the_notification_and_email_but_today_records_the_run(
+    ) {
         let f = Fixture::new().await;
         let mailer = Arc::new(FakeMailer::default());
         f.core.set_mailer(mailer.clone());
-        f.enable_when(false, me(), SendWhen::Above { near: "high".into(), side: Side::After, value: 25.0 });
+        f.enable_when(
+            false,
+            me(),
+            SendWhen::Above {
+                near: "high".into(),
+                side: Side::After,
+                value: 25.0,
+            },
+        );
         let e = &f.run("2026-10-28T07:00:00+13:00").await[0];
         assert_eq!(e.status, "done");
         assert_eq!(e.body, "Auckland high 21.5C\n");
         assert!(!e.notification);
         assert!(f.notifications.0.lock().unwrap().is_empty());
         assert!(mailer.sent.lock().unwrap().is_empty());
-        assert_eq!(e.note.as_deref(), Some("“high” was 21.5, not above 25, so nothing was sent"));
+        assert_eq!(
+            e.note.as_deref(),
+            Some("“high” was 21.5, not above 25, so nothing was sent")
+        );
         assert_eq!(f.core.list_today().unwrap()[0].entries.len(), 1);
     }
     #[tokio::test]
@@ -788,12 +847,23 @@ mod schedules {
         let f = Fixture::new().await;
         let mailer = Arc::new(FakeMailer::default());
         f.core.set_mailer(mailer.clone());
-        f.enable_when(false, me(), SendWhen::Above { near: "C".into(), side: Side::Before, value: 20.0 });
+        f.enable_when(
+            false,
+            me(),
+            SendWhen::Above {
+                near: "C".into(),
+                side: Side::Before,
+                value: 20.0,
+            },
+        );
         let e = &f.run("2026-10-28T07:00:00+13:00").await[0];
         assert!(e.notification);
         assert_eq!(f.notifications.0.lock().unwrap().len(), 1);
         assert_eq!(mailer.sent.lock().unwrap().len(), 1);
-        assert_eq!(e.note.as_deref(), Some("“C” was 21.5, above 20. Emailed to me@example.com"));
+        assert_eq!(
+            e.note.as_deref(),
+            Some("“C” was 21.5, above 20. Emailed to me@example.com")
+        );
     }
     #[tokio::test]
     async fn changed_sends_the_first_run_and_holds_an_identical_next_run() {
@@ -807,43 +877,96 @@ mod schedules {
         let second = &f.run("2026-10-29T07:00:00+13:00").await[0];
         assert_eq!(second.status, "done");
         assert!(!second.notification);
-        assert_eq!(mailer.sent.lock().unwrap().len(), 1, "an unchanged result must not be emailed again");
-        assert_eq!(second.note.as_deref(), Some("The result didn’t change, so nothing was sent"));
+        assert_eq!(
+            mailer.sent.lock().unwrap().len(),
+            1,
+            "an unchanged result must not be emailed again"
+        );
+        assert_eq!(
+            second.note.as_deref(),
+            Some("The result didn’t change, so nothing was sent")
+        );
     }
     #[tokio::test]
     async fn an_unsound_condition_cannot_be_approved() {
         let f = Fixture::new().await;
         let request = |send_when| ScheduleRequest {
-            frequency: Frequency::Daily { time: "07:00".into() },
-            outputs: ScheduleOutputs { today: true, notification: true, folder: None, filename: "weather.txt".into(), email: None, send_when },
+            frequency: Frequency::Daily {
+                time: "07:00".into(),
+            },
+            outputs: ScheduleOutputs {
+                today: true,
+                notification: true,
+                folder: None,
+                filename: "weather.txt".into(),
+                email: None,
+                send_when,
+            },
             version_hash: f.tool.version_hash.clone(),
             approved: true,
         };
         let id = &f.tool.summary_row.id;
-        assert!(f.core.set_schedule(id, request(SendWhen::Contains { text: " ".into() })).is_err());
-        assert!(f.core.set_schedule(id, request(SendWhen::Below { near: "x".into(), side: Side::After, value: f64::NAN })).is_err());
+        assert!(f
+            .core
+            .set_schedule(id, request(SendWhen::Contains { text: " ".into() }))
+            .is_err());
+        assert!(f
+            .core
+            .set_schedule(
+                id,
+                request(SendWhen::Below {
+                    near: "x".into(),
+                    side: Side::After,
+                    value: f64::NAN
+                })
+            )
+            .is_err());
         assert!(f.core.set_schedule(id, request(SendWhen::Changed)).is_ok());
         // The condition is part of what was approved: it survives a reload.
-        assert_eq!(f.core.list_schedules().unwrap()[0].outputs.send_when, SendWhen::Changed);
+        assert_eq!(
+            f.core.list_schedules().unwrap()[0].outputs.send_when,
+            SendWhen::Changed
+        );
     }
     #[tokio::test]
     async fn only_one_plain_address_can_be_approved() {
         let f = Fixture::new().await;
-        for bad in ["", "me", "me@", "@example.com", "me@example", "a@b.com, c@d.com", "Me <me@example.com>", "me@example.com\nBcc: x@y.com", "me @example.com", "me@-example.com"] {
+        for bad in [
+            "",
+            "me",
+            "me@",
+            "@example.com",
+            "me@example",
+            "a@b.com, c@d.com",
+            "Me <me@example.com>",
+            "me@example.com\nBcc: x@y.com",
+            "me @example.com",
+            "me@-example.com",
+        ] {
             let request = ScheduleRequest {
-                frequency: Frequency::Daily { time: "07:00".into() },
+                frequency: Frequency::Daily {
+                    time: "07:00".into(),
+                },
                 outputs: ScheduleOutputs {
                     today: true,
                     notification: false,
                     folder: None,
                     filename: "weather.txt".into(),
-                    email: Some(EmailDelivery { connector_id: "gmail-mail".into(), to: bad.into() }),
+                    email: Some(EmailDelivery {
+                        connector_id: "gmail-mail".into(),
+                        to: bad.into(),
+                    }),
                     send_when: Default::default(),
                 },
                 version_hash: f.tool.version_hash.clone(),
                 approved: true,
             };
-            assert!(f.core.set_schedule(&f.tool.summary_row.id, request).is_err(), "{bad:?} was accepted");
+            assert!(
+                f.core
+                    .set_schedule(&f.tool.summary_row.id, request)
+                    .is_err(),
+                "{bad:?} was accepted"
+            );
         }
     }
     #[tokio::test]
@@ -854,7 +977,13 @@ mod schedules {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].status, "done");
         assert_eq!(entries[0].file_created, None);
-        let ran = f.core.list_activity().unwrap().into_iter().find(|a| a.kind == "run").unwrap();
+        let ran = f
+            .core
+            .list_activity()
+            .unwrap()
+            .into_iter()
+            .find(|a| a.kind == "run")
+            .unwrap();
         assert_eq!(ran.detail.as_deref(), Some("Finished"));
         assert_eq!(
             entries[0].note.as_deref(),
@@ -1051,11 +1180,24 @@ mod schedules {
         f.enable(true);
         let db = f.core.database();
         let mut row = db.tool(&f.tool.summary_row.id).unwrap().unwrap();
-        let mut version = db.version(&f.tool.summary_row.id, &f.tool.version_hash).unwrap().unwrap();
-        let (_, rev, scope) = db.active_grant(&f.tool.summary_row.id, &f.tool.version_hash).unwrap().unwrap();
+        let mut version = db
+            .version(&f.tool.summary_row.id, &f.tool.version_hash)
+            .unwrap()
+            .unwrap();
+        let (_, rev, scope) = db
+            .active_grant(&f.tool.summary_row.id, &f.tool.version_hash)
+            .unwrap()
+            .unwrap();
         version.hash = "edited-version".into();
         db.insert_version(&version).unwrap();
-        db.put_grant("edited", &f.tool.summary_row.id, &version.hash, rev + 1, &scope).unwrap();
+        db.put_grant(
+            "edited",
+            &f.tool.summary_row.id,
+            &version.hash,
+            rev + 1,
+            &scope,
+        )
+        .unwrap();
         row.active_version = Some(version.hash.clone());
         db.put_tool(&row).unwrap();
         let schedules = f.core.list_schedules().unwrap();

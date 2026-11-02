@@ -1,13 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, copyFileSync, chmodSync } from "node:fs";
+import { mkdirSync, copyFileSync, chmodSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 if (process.platform !== "darwin") process.exit(0);
 const desktop = fileURLToPath(new URL("../", import.meta.url));
 const workspace = path.resolve(desktop, "../..");
-const scratch = process.env.MACROSCOPE_SWIFT_SCRATCH ||
-  "/Volumes/250GB SAMSUNG 970 EVO PLUS /dev-tools/macroscope-claude-targets/stage-c/swift";
+// The external build volume is used when it is attached; otherwise (a fresh checkout, CI)
+// Swift's usual .build folder inside the package.
+const volume = "/Volumes/250GB SAMSUNG 970 EVO PLUS ";
+const scratch = process.env.MACROSCOPE_SWIFT_SCRATCH || (existsSync(volume)
+  ? path.join(volume, "dev-tools/macroscope-claude-targets/stage-c/swift")
+  : path.join(workspace, "native/macos-observer/.build"));
 const host = process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
 const target = process.env.TAURI_ENV_TARGET_TRIPLE || host;
 const arch = target === "aarch64-apple-darwin" ? "arm64" : target === "x86_64-apple-darwin" ? "x86_64" : null;

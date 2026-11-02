@@ -332,7 +332,12 @@ impl McpClient {
         self.protocol.as_deref() == Some("rest")
     }
     /// Gmail API read: needs the signed-in token, never anonymous.
-    async fn rest_call(&mut self, name: &str, args: &Value, approved: bool) -> Result<Value, McpError> {
+    async fn rest_call(
+        &mut self,
+        name: &str,
+        args: &Value,
+        approved: bool,
+    ) -> Result<Value, McpError> {
         // Reads may run freely; any change must arrive through the broker as an approved action.
         if !approved && !crate::gmail_rest::is_read_only(name) {
             return Err(McpError::ToolNotReadOnly);

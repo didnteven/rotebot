@@ -737,37 +737,62 @@ struct ApiKeys {
     extras: Vec<String>,
 }
 #[tauri::command]
-async fn save_api_connection(core: State<'_, Core>, config: ApiConfig, keys: Option<ApiKeys>, replaces: Option<String>) -> Cmd<ConnectorInfo> {
+async fn save_api_connection(
+    core: State<'_, Core>,
+    config: ApiConfig,
+    keys: Option<ApiKeys>,
+    replaces: Option<String>,
+) -> Cmd<ConnectorInfo> {
     core.0.validate_api_config(&config)?;
     // When editing, a blank key box keeps the saved key (extras only while the name stays in the same place).
-    let old = match &replaces { Some(id) => Some((id.clone(), core.0.api_config(id)?)), None => None };
+    let old = match &replaces {
+        Some(id) => Some((id.clone(), core.0.api_config(id)?)),
+        None => None,
+    };
     let (secret, extras) = if config.auth == ApiAuth::None {
         (None, Vec::new())
     } else {
         let keys = keys.ok_or_else(|| invalid("Enter the API key before saving"))?;
         let main = if macroscope_app_core::api::clean_key(&keys.main).is_empty() {
-            let (id, _) = old.as_ref().ok_or_else(|| invalid("Enter the API key before saving"))?;
+            let (id, _) = old
+                .as_ref()
+                .ok_or_else(|| invalid("Enter the API key before saving"))?;
             core.0.api_kept_secret(id, None)?
         } else {
-            macroscope_vault::Secret::new(macroscope_app_core::api::clean_key(&keys.main).into_bytes())
+            macroscope_vault::Secret::new(
+                macroscope_app_core::api::clean_key(&keys.main).into_bytes(),
+            )
         };
         let mut extras = Vec::new();
         for (n, value) in keys.extras.iter().enumerate() {
             if macroscope_app_core::api::clean_key(value).is_empty() {
-                let kept = old.as_ref().filter(|(_, c)| c.extra_header_names.get(n) == config.extra_header_names.get(n));
+                let kept = old.as_ref().filter(|(_, c)| {
+                    c.extra_header_names.get(n) == config.extra_header_names.get(n)
+                });
                 let (id, _) = kept.ok_or_else(|| invalid("Enter every API key before saving"))?;
                 extras.push(core.0.api_kept_secret(id, Some(n))?);
             } else {
-                extras.push(macroscope_vault::Secret::new(macroscope_app_core::api::clean_key(value).into_bytes()));
+                extras.push(macroscope_vault::Secret::new(
+                    macroscope_app_core::api::clean_key(value).into_bytes(),
+                ));
             }
         }
         (Some(main), extras)
     };
     // An edit on the same service changes the connection in place, so tools built on it keep working.
-    if let Some((old_id, _)) = old.as_ref().filter(|(_, c)| macroscope_app_core::api::same_service(&c.url, &config.url)) {
-        return Ok(core.0.update_api_connection(old_id, config, secret, extras).await?);
+    if let Some((old_id, _)) = old
+        .as_ref()
+        .filter(|(_, c)| macroscope_app_core::api::same_service(&c.url, &config.url))
+    {
+        return Ok(core
+            .0
+            .update_api_connection(old_id, config, secret, extras)
+            .await?);
     }
-    let saved = core.0.save_api_connection_with_extras(config, secret, extras).await?;
+    let saved = core
+        .0
+        .save_api_connection_with_extras(config, secret, extras)
+        .await?;
     // A different service is a new connection: the old one is removed only once the new one is saved.
     if let Some((old_id, _)) = old {
         let _ = core.0.disconnect_api(&old_id).await;
@@ -775,28 +800,49 @@ async fn save_api_connection(core: State<'_, Core>, config: ApiConfig, keys: Opt
     Ok(saved)
 }
 #[tauri::command]
-fn list_api_examples(core: State<'_, Core>, id: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+fn list_api_examples(
+    core: State<'_, Core>,
+    id: String,
+) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
     Ok(core.0.api_examples(&id)?)
 }
 #[tauri::command]
-async fn learn_api_for_task(core: State<'_, Core>, id: String, task: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+async fn learn_api_for_task(
+    core: State<'_, Core>,
+    id: String,
+    task: String,
+) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
     Ok(core.0.learn_api_for_task(&id, &task).await?)
 }
 
 #[tauri::command]
-async fn suggest_api_examples(core: State<'_, Core>, id: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+async fn suggest_api_examples(
+    core: State<'_, Core>,
+    id: String,
+) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
     Ok(core.0.suggest_api_examples(&id).await?)
 }
 #[tauri::command]
-async fn run_api_example(core: State<'_, Core>, id: String, url: String) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
+async fn run_api_example(
+    core: State<'_, Core>,
+    id: String,
+    url: String,
+) -> Cmd<Vec<macroscope_app_core::api_examples::ApiExample>> {
     Ok(core.0.run_api_example(&id, &url).await?)
 }
 #[tauri::command]
-async fn debug_api_connection(core: State<'_, Core>, id: String) -> Cmd<macroscope_app_core::api_examples::ApiDebug> {
+async fn debug_api_connection(
+    core: State<'_, Core>,
+    id: String,
+) -> Cmd<macroscope_app_core::api_examples::ApiDebug> {
     Ok(core.0.debug_api(&id).await?)
 }
 #[tauri::command]
-async fn add_api_address(core: State<'_, Core>, source_id: String, url: String) -> Cmd<ConnectorInfo> {
+async fn add_api_address(
+    core: State<'_, Core>,
+    source_id: String,
+    url: String,
+) -> Cmd<ConnectorInfo> {
     Ok(core.0.add_api_address(&source_id, &url).await?)
 }
 #[tauri::command]
@@ -1583,7 +1629,9 @@ fn context<R: Runtime>() -> tauri::Context<R> {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| open_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            open_main(app)
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())

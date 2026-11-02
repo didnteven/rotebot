@@ -2,7 +2,11 @@
 //! Unlike Google's Gmail MCP server (a Workspace Developer Preview), this works with any Google
 //! account that can use an OAuth client. Reads run when a tool runs; every change (draft, send,
 //! labels, trash) is a planned action the person reviews first, through the effect broker.
-use crate::{http, mcp::{McpError, Tool, ToolAnnotations}, oauth::AccessToken};
+use crate::{
+    http,
+    mcp::{McpError, Tool, ToolAnnotations},
+    oauth::AccessToken,
+};
 use base64::Engine;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -18,8 +22,14 @@ pub fn is_gmail_api(url: &str) -> bool {
 }
 
 pub fn tools() -> Vec<Tool> {
-    let read = || ToolAnnotations { read_only_hint: Some(true), destructive_hint: Some(false) };
-    let write = || ToolAnnotations { read_only_hint: Some(false), destructive_hint: Some(false) };
+    let read = || ToolAnnotations {
+        read_only_hint: Some(true),
+        destructive_hint: Some(false),
+    };
+    let write = || ToolAnnotations {
+        read_only_hint: Some(false),
+        destructive_hint: Some(false),
+    };
     let message = json!({
         "type": "object", "additionalProperties": false,
         "properties": {
@@ -103,20 +113,33 @@ pub fn tools() -> Vec<Tool> {
 
 /// True for tools that only read; everything else runs only as an approved, reviewed action.
 pub fn is_read_only(name: &str) -> bool {
-    tools().iter().any(|t| t.name == name && t.annotations.read_only_hint == Some(true))
+    tools()
+        .iter()
+        .any(|t| t.name == name && t.annotations.read_only_hint == Some(true))
 }
 
 fn text_result(value: Value) -> Value {
     json!({"content": [{"type": "text", "text": value.to_string()}], "structuredContent": value})
 }
 fn error_result(message: &str) -> Value {
-    let clean: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
+    let clean: String = message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(300)
+        .collect();
     json!({"isError": true, "content": [{"type": "text", "text": clean}]})
 }
 
-async fn get(http: &Client, auth: &AccessToken, url: &str, query: &[(&str, String)]) -> Result<Result<Value, String>, McpError> {
+async fn get(
+    http: &Client,
+    auth: &AccessToken,
+    url: &str,
+    query: &[(&str, String)],
+) -> Result<Result<Value, String>, McpError> {
     let mut target = url::Url::parse(url).map_err(|_| McpError::InvalidUrl)?;
-    target.query_pairs_mut().extend_pairs(query.iter().map(|(k, v)| (*k, v.as_str())));
+    target
+        .query_pairs_mut()
+        .extend_pairs(query.iter().map(|(k, v)| (*k, v.as_str())));
     let response: Response = http
         .get(target)
         .bearer_auth(auth.expose())
@@ -125,7 +148,10 @@ async fn get(http: &Client, auth: &AccessToken, url: &str, query: &[(&str, Strin
         .map_err(|_| McpError::Transport)?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(McpError::AuthRequired { resource_metadata_url: None, scope_hint: None });
+        return Err(McpError::AuthRequired {
+            resource_metadata_url: None,
+            scope_hint: None,
+        });
     }
     let body = http::bytes_limited(response, LIMIT).await?;
     let value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
@@ -133,11 +159,18 @@ async fn get(http: &Client, auth: &AccessToken, url: &str, query: &[(&str, Strin
         return Ok(Ok(value));
     }
     // Google explains refusals (API not enabled, scope missing, quota) in error.message.
-    let why = value["error"]["message"].as_str().unwrap_or("Gmail refused the request");
+    let why = value["error"]["message"]
+        .as_str()
+        .unwrap_or("Gmail refused the request");
     Ok(Err(format!("Gmail returned {}: {}", status.as_u16(), why)))
 }
 
-async fn post(http: &Client, auth: &AccessToken, url: &str, body: &Value) -> Result<Result<Value, String>, McpError> {
+async fn post(
+    http: &Client,
+    auth: &AccessToken,
+    url: &str,
+    body: &Value,
+) -> Result<Result<Value, String>, McpError> {
     let response: Response = http
         .post(url)
         .bearer_auth(auth.expose())
@@ -147,14 +180,19 @@ async fn post(http: &Client, auth: &AccessToken, url: &str, body: &Value) -> Res
         .map_err(|_| McpError::Transport)?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(McpError::AuthRequired { resource_metadata_url: None, scope_hint: None });
+        return Err(McpError::AuthRequired {
+            resource_metadata_url: None,
+            scope_hint: None,
+        });
     }
     let bytes = http::bytes_limited(response, LIMIT).await?;
     let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     if status.is_success() {
         return Ok(Ok(value));
     }
-    let why = value["error"]["message"].as_str().unwrap_or("Gmail refused the request");
+    let why = value["error"]["message"]
+        .as_str()
+        .unwrap_or("Gmail refused the request");
     Ok(Err(format!("Gmail returned {}: {}", status.as_u16(), why)))
 }
 
@@ -171,7 +209,10 @@ fn encode_subject(subject: &str) -> String {
     if subject.is_ascii() {
         subject.to_string()
     } else {
-        format!("=?UTF-8?B?{}?=", base64::engine::general_purpose::STANDARD.encode(subject))
+        format!(
+            "=?UTF-8?B?{}?=",
+            base64::engine::general_purpose::STANDARD.encode(subject)
+        )
     }
 }
 
@@ -209,7 +250,9 @@ fn raw_message(args: &Value) -> Result<String, String> {
 }
 
 fn thread_id(args: &Value) -> Option<&str> {
-    args["threadId"].as_str().filter(|id| !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric()))
+    args["threadId"].as_str().filter(|id| {
+        !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric())
+    })
 }
 
 fn header(message: &Value, name: &str) -> String {
@@ -217,7 +260,11 @@ fn header(message: &Value, name: &str) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .find(|h| h["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+        .find(|h| {
+            h["name"]
+                .as_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+        })
         .and_then(|h| h["value"].as_str())
         .unwrap_or_default()
         .chars()
@@ -250,7 +297,10 @@ fn body_text(part: &Value) -> Option<String> {
     for c in html.chars() {
         match c {
             '<' => in_tag = true,
-            '>' => { in_tag = false; out.push(' '); }
+            '>' => {
+                in_tag = false;
+                out.push(' ');
+            }
             _ if !in_tag => out.push(c),
             _ => {}
         }
@@ -258,11 +308,22 @@ fn body_text(part: &Value) -> Option<String> {
     Some(out.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-pub async fn call(http: &Client, auth: &AccessToken, name: &str, args: &Value) -> Result<Value, McpError> {
+pub async fn call(
+    http: &Client,
+    auth: &AccessToken,
+    name: &str,
+    args: &Value,
+) -> Result<Value, McpError> {
     call_at(BASE, http, auth, name, args).await
 }
 
-async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args: &Value) -> Result<Value, McpError> {
+async fn call_at(
+    base: &str,
+    http: &Client,
+    auth: &AccessToken,
+    name: &str,
+    args: &Value,
+) -> Result<Value, McpError> {
     match name {
         "search_threads" => {
             let query = args["query"].as_str().unwrap_or_default();
@@ -270,19 +331,44 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
                 return Ok(error_result("query is longer than 500 characters"));
             }
             let with_body = args["includeBody"].as_bool() == Some(true);
-            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, if with_body { 5 } else { MAX_THREADS });
-            let list = match get(http, auth, &format!("{base}/users/me/threads"), &[("q", query.to_string()), ("maxResults", size.to_string())]).await? {
+            let size = args["pageSize"]
+                .as_u64()
+                .unwrap_or(10)
+                .clamp(1, if with_body { 5 } else { MAX_THREADS });
+            let list = match get(
+                http,
+                auth,
+                &format!("{base}/users/me/threads"),
+                &[("q", query.to_string()), ("maxResults", size.to_string())],
+            )
+            .await?
+            {
                 Ok(v) => v,
                 Err(message) => return Ok(error_result(&message)),
             };
             let mut threads = Vec::new();
-            for item in list["threads"].as_array().into_iter().flatten().take(size as usize) {
-                let Some(id) = item["id"].as_str().filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric())) else { continue };
+            for item in list["threads"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(size as usize)
+            {
+                let Some(id) = item["id"]
+                    .as_str()
+                    .filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric()))
+                else {
+                    continue;
+                };
                 let url = format!("{base}/users/me/threads/{id}");
                 let q: Vec<(&str, String)> = if with_body {
                     vec![("format", "full".to_string())]
                 } else {
-                    vec![("format", "metadata".to_string()), ("metadataHeaders", "Subject".into()), ("metadataHeaders", "From".into()), ("metadataHeaders", "Date".into())]
+                    vec![
+                        ("format", "metadata".to_string()),
+                        ("metadataHeaders", "Subject".into()),
+                        ("metadataHeaders", "From".into()),
+                        ("metadataHeaders", "Date".into()),
+                    ]
                 };
                 let thread = match get(http, auth, &url, &q).await? {
                     Ok(v) => v,
@@ -300,27 +386,52 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
                     "messageCount": messages.len(),
                 });
                 if with_body {
-                    entry["body"] = json!(body_text(&last["payload"]).unwrap_or_default().chars().take(MAX_BODY_CHARS * 2 / size as usize).collect::<String>());
+                    entry["body"] = json!(body_text(&last["payload"])
+                        .unwrap_or_default()
+                        .chars()
+                        .take(MAX_BODY_CHARS * 2 / size as usize)
+                        .collect::<String>());
                 }
                 threads.push(entry);
             }
             Ok(text_result(json!({"threads": threads})))
         }
         "get_thread" => {
-            let Some(id) = args["threadId"].as_str().filter(|id| !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric())) else {
-                return Ok(error_result("threadId must be a thread id from search_threads"));
+            let Some(id) = args["threadId"].as_str().filter(|id| {
+                !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric())
+            }) else {
+                return Ok(error_result(
+                    "threadId must be a thread id from search_threads",
+                ));
             };
-            let thread = match get(http, auth, &format!("{base}/users/me/threads/{id}"), &[("format", "full".to_string())]).await? {
+            let thread = match get(
+                http,
+                auth,
+                &format!("{base}/users/me/threads/{id}"),
+                &[("format", "full".to_string())],
+            )
+            .await?
+            {
                 Ok(v) => v,
                 Err(message) => return Ok(error_result(&message)),
             };
-            let messages: Vec<Value> = thread["messages"].as_array().into_iter().flatten().take(MAX_MESSAGES).map(|m| {
-                let body: String = body_text(&m["payload"]).unwrap_or_default().chars().take(MAX_BODY_CHARS).collect();
-                json!({
-                    "id": m["id"], "from": header(m, "From"), "to": header(m, "To"),
-                    "date": header(m, "Date"), "subject": header(m, "Subject"), "body": body,
+            let messages: Vec<Value> = thread["messages"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(MAX_MESSAGES)
+                .map(|m| {
+                    let body: String = body_text(&m["payload"])
+                        .unwrap_or_default()
+                        .chars()
+                        .take(MAX_BODY_CHARS)
+                        .collect();
+                    json!({
+                        "id": m["id"], "from": header(m, "From"), "to": header(m, "To"),
+                        "date": header(m, "Date"), "subject": header(m, "Subject"), "body": body,
+                    })
                 })
-            }).collect();
+                .collect();
             Ok(text_result(json!({"id": id, "messages": messages})))
         }
         "list_labels" => {
@@ -328,8 +439,12 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
                 Ok(v) => v,
                 Err(message) => return Ok(error_result(&message)),
             };
-            let labels: Vec<Value> = list["labels"].as_array().into_iter().flatten()
-                .map(|l| json!({"id": l["id"], "name": l["name"]})).collect();
+            let labels: Vec<Value> = list["labels"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|l| json!({"id": l["id"], "name": l["name"]}))
+                .collect();
             Ok(text_result(json!({"labels": labels})))
         }
         "create_draft" | "send_message" => {
@@ -342,32 +457,75 @@ async fn call_at(base: &str, http: &Client, auth: &AccessToken, name: &str, args
                 message["threadId"] = json!(id);
             }
             let (url, body) = if name == "create_draft" {
-                (format!("{base}/users/me/drafts"), json!({"message": message}))
+                (
+                    format!("{base}/users/me/drafts"),
+                    json!({"message": message}),
+                )
             } else {
                 (format!("{base}/users/me/messages/send"), message)
             };
             match post(http, auth, &url, &body).await? {
-                Ok(v) => Ok(text_result(json!({"id": v["id"], "threadId": v["threadId"].clone().as_str().map(Value::from).unwrap_or_else(|| v["message"]["threadId"].clone()), "done": if name == "create_draft" { "draft saved" } else { "sent" }}))),
+                Ok(v) => Ok(text_result(
+                    json!({"id": v["id"], "threadId": v["threadId"].clone().as_str().map(Value::from).unwrap_or_else(|| v["message"]["threadId"].clone()), "done": if name == "create_draft" { "draft saved" } else { "sent" }}),
+                )),
                 Err(message) => Ok(error_result(&message)),
             }
         }
         "modify_thread" => {
-            let Some(id) = thread_id(args) else { return Ok(error_result("threadId must be a thread id from search_threads")) };
+            let Some(id) = thread_id(args) else {
+                return Ok(error_result(
+                    "threadId must be a thread id from search_threads",
+                ));
+            };
             let labels = |key: &str| -> Vec<String> {
-                args[key].as_array().into_iter().flatten().filter_map(Value::as_str)
-                    .filter(|l| !l.is_empty() && l.len() <= 100 && l.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ' | '/')))
-                    .map(str::to_string).take(20).collect()
+                args[key]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|l| {
+                        !l.is_empty()
+                            && l.len() <= 100
+                            && l.chars().all(|c| {
+                                c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ' | '/')
+                            })
+                    })
+                    .map(str::to_string)
+                    .take(20)
+                    .collect()
             };
             let body = json!({"addLabelIds": labels("addLabelIds"), "removeLabelIds": labels("removeLabelIds")});
-            match post(http, auth, &format!("{base}/users/me/threads/{id}/modify"), &body).await? {
-                Ok(_) => Ok(text_result(json!({"threadId": id, "done": "labels changed"}))),
+            match post(
+                http,
+                auth,
+                &format!("{base}/users/me/threads/{id}/modify"),
+                &body,
+            )
+            .await?
+            {
+                Ok(_) => Ok(text_result(
+                    json!({"threadId": id, "done": "labels changed"}),
+                )),
                 Err(message) => Ok(error_result(&message)),
             }
         }
         "trash_thread" => {
-            let Some(id) = thread_id(args) else { return Ok(error_result("threadId must be a thread id from search_threads")) };
-            match post(http, auth, &format!("{base}/users/me/threads/{id}/trash"), &json!({})).await? {
-                Ok(_) => Ok(text_result(json!({"threadId": id, "done": "moved to Trash"}))),
+            let Some(id) = thread_id(args) else {
+                return Ok(error_result(
+                    "threadId must be a thread id from search_threads",
+                ));
+            };
+            match post(
+                http,
+                auth,
+                &format!("{base}/users/me/threads/{id}/trash"),
+                &json!({}),
+            )
+            .await?
+            {
+                Ok(_) => Ok(text_result(
+                    json!({"threadId": id, "done": "moved to Trash"}),
+                )),
                 Err(message) => Ok(error_result(&message)),
             }
         }
@@ -383,14 +541,30 @@ mod tests {
     fn only_the_gmail_api_address_is_handled_here_and_only_reads_count_as_read_only() {
         assert!(is_gmail_api("https://gmail.googleapis.com/gmail/v1"));
         assert!(!is_gmail_api("https://gmailmcp.googleapis.com/mcp/v1"));
-        assert!(!is_gmail_api("https://gmail.googleapis.com.evil.example/gmail/v1"));
+        assert!(!is_gmail_api(
+            "https://gmail.googleapis.com.evil.example/gmail/v1"
+        ));
         for name in ["search_threads", "get_thread", "list_labels"] {
             assert!(is_read_only(name), "{name}");
         }
-        for name in ["create_draft", "send_message", "modify_thread", "trash_thread", "unknown"] {
+        for name in [
+            "create_draft",
+            "send_message",
+            "modify_thread",
+            "trash_thread",
+            "unknown",
+        ] {
             assert!(!is_read_only(name), "{name}");
         }
-        assert_eq!(tools().iter().find(|t| t.name == "trash_thread").unwrap().annotations.destructive_hint, Some(true));
+        assert_eq!(
+            tools()
+                .iter()
+                .find(|t| t.name == "trash_thread")
+                .unwrap()
+                .annotations
+                .destructive_hint,
+            Some(true)
+        );
     }
 
     #[test]
@@ -400,7 +574,8 @@ mod tests {
             {"mimeType": "text/html", "body": {"data": enc("<p>html</p>")}},
             {"mimeType": "text/plain", "body": {"data": enc("plain text")}}]});
         assert_eq!(body_text(&both).unwrap(), "plain text");
-        let html = json!({"mimeType": "text/html", "body": {"data": enc("<p>Hello <b>there</b></p>")}});
+        let html =
+            json!({"mimeType": "text/html", "body": {"data": enc("<p>Hello <b>there</b></p>")}});
         assert_eq!(body_text(&html).unwrap(), "Hello there");
     }
 
@@ -412,7 +587,12 @@ mod tests {
     }
 
     async fn fake_gmail() -> String {
-        use axum::{extract::{Path, Query}, http::{HeaderMap, StatusCode}, routing::get, Json, Router};
+        use axum::{
+            extract::{Path, Query},
+            http::{HeaderMap, StatusCode},
+            routing::get,
+            Json, Router,
+        };
         use std::collections::HashMap;
         let enc = |s: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s);
         let body = enc("Your voucher code is on its way.");
@@ -473,34 +653,94 @@ mod tests {
         let base = fake_gmail().await;
         let http = reqwest::Client::new();
         let auth = AccessToken::new("tok");
-        let found = call_at(&base, &http, &auth, "search_threads", &json!({"query": "newer_than:7d", "pageSize": 2})).await.unwrap();
+        let found = call_at(
+            &base,
+            &http,
+            &auth,
+            "search_threads",
+            &json!({"query": "newer_than:7d", "pageSize": 2}),
+        )
+        .await
+        .unwrap();
         let threads = &found["structuredContent"]["threads"];
-        assert_eq!(threads.as_array().unwrap().len(), 1, "an id with odd characters is skipped");
+        assert_eq!(
+            threads.as_array().unwrap().len(),
+            1,
+            "an id with odd characters is skipped"
+        );
         assert_eq!(threads[0]["subject"], "Voucher");
         assert_eq!(threads[0]["from"], "a@b.c");
         assert_eq!(threads[0]["date"], "Fri, 30 Oct 2026");
         assert_eq!(threads[0]["snippet"], "Hello");
-        let read = call_at(&base, &http, &auth, "get_thread", &json!({"threadId": "t1"})).await.unwrap();
-        assert_eq!(read["structuredContent"]["messages"][0]["body"], "Your voucher code is on its way.");
-        let refused = call_at(&base, &http, &auth, "search_threads", &json!({"query": "forbidden"})).await.unwrap();
+        let read = call_at(
+            &base,
+            &http,
+            &auth,
+            "get_thread",
+            &json!({"threadId": "t1"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            read["structuredContent"]["messages"][0]["body"],
+            "Your voucher code is on its way."
+        );
+        let refused = call_at(
+            &base,
+            &http,
+            &auth,
+            "search_threads",
+            &json!({"query": "forbidden"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(refused["isError"], true);
-        assert!(refused["content"][0]["text"].as_str().unwrap().contains("Gmail API has not been used"));
-        let bad = call_at(&base, &http, &auth, "get_thread", &json!({"threadId": "../x"})).await.unwrap();
+        assert!(refused["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Gmail API has not been used"));
+        let bad = call_at(
+            &base,
+            &http,
+            &auth,
+            "get_thread",
+            &json!({"threadId": "../x"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(bad["isError"], true);
-        assert!(call_at(&base, &http, &auth, "delete_everything", &json!({})).await.is_err());
-        let labels = call_at(&base, &http, &auth, "list_labels", &json!({})).await.unwrap();
+        assert!(
+            call_at(&base, &http, &auth, "delete_everything", &json!({}))
+                .await
+                .is_err()
+        );
+        let labels = call_at(&base, &http, &auth, "list_labels", &json!({}))
+            .await
+            .unwrap();
         assert_eq!(labels["structuredContent"]["labels"][0]["name"], "INBOX");
     }
 
     #[test]
     fn messages_are_built_safely_and_refuse_header_injection() {
         let raw = raw_message(&json!({"to": "a@b.c", "cc": "d@e.f", "subject": "Café menu", "body": "Hello ☕", "inReplyTo": "<id@x>"})).unwrap();
-        let text = String::from_utf8(base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw).unwrap()).unwrap();
+        let text = String::from_utf8(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(raw)
+                .unwrap(),
+        )
+        .unwrap();
         assert!(text.contains("To: a@b.c\r\nCc: d@e.f\r\n"));
         assert!(text.contains("In-Reply-To: <id@x>"));
-        assert!(text.contains("Subject: =?UTF-8?B?"), "non-ASCII subjects are encoded");
+        assert!(
+            text.contains("Subject: =?UTF-8?B?"),
+            "non-ASCII subjects are encoded"
+        );
         assert!(!text.contains("Café"));
-        for bad in [json!({"to": "a@b.c\r\nBcc: x@y.z", "subject": "s", "body": "b"}), json!({"to": "", "subject": "s", "body": "b"}), json!({"to": "a@b.c", "subject": "s\nBcc: x", "body": "b"})] {
+        for bad in [
+            json!({"to": "a@b.c\r\nBcc: x@y.z", "subject": "s", "body": "b"}),
+            json!({"to": "", "subject": "s", "body": "b"}),
+            json!({"to": "a@b.c", "subject": "s\nBcc: x", "body": "b"}),
+        ] {
             assert!(raw_message(&bad).is_err(), "{bad}");
         }
     }
@@ -510,19 +750,70 @@ mod tests {
         let base = fake_gmail().await;
         let http = reqwest::Client::new();
         let auth = AccessToken::new("tok");
-        let draft = call_at(&base, &http, &auth, "create_draft", &json!({"to": "a@b.c", "subject": "Hi", "body": "Draft body", "threadId": "t1"})).await.unwrap();
+        let draft = call_at(
+            &base,
+            &http,
+            &auth,
+            "create_draft",
+            &json!({"to": "a@b.c", "subject": "Hi", "body": "Draft body", "threadId": "t1"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(draft["structuredContent"]["done"], "draft saved");
         assert_eq!(draft["structuredContent"]["id"], "d1");
-        let sent = call_at(&base, &http, &auth, "send_message", &json!({"to": "a@b.c", "subject": "Hi", "body": "Sent body"})).await.unwrap();
+        let sent = call_at(
+            &base,
+            &http,
+            &auth,
+            "send_message",
+            &json!({"to": "a@b.c", "subject": "Hi", "body": "Sent body"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(sent["structuredContent"]["done"], "sent");
         assert_eq!(sent["structuredContent"]["id"], "m9");
-        let labelled = call_at(&base, &http, &auth, "modify_thread", &json!({"threadId": "t1", "removeLabelIds": ["INBOX"], "addLabelIds": ["bad;label"]})).await.unwrap();
+        let labelled = call_at(
+            &base,
+            &http,
+            &auth,
+            "modify_thread",
+            &json!({"threadId": "t1", "removeLabelIds": ["INBOX"], "addLabelIds": ["bad;label"]}),
+        )
+        .await
+        .unwrap();
         assert_eq!(labelled["structuredContent"]["done"], "labels changed");
-        let trashed = call_at(&base, &http, &auth, "trash_thread", &json!({"threadId": "t1"})).await.unwrap();
+        let trashed = call_at(
+            &base,
+            &http,
+            &auth,
+            "trash_thread",
+            &json!({"threadId": "t1"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(trashed["structuredContent"]["done"], "moved to Trash");
-        let missing = call_at(&base, &http, &auth, "send_message", &json!({"subject": "no recipient", "body": "b"})).await.unwrap();
+        let missing = call_at(
+            &base,
+            &http,
+            &auth,
+            "send_message",
+            &json!({"subject": "no recipient", "body": "b"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(missing["isError"], true);
-        let denied = call_at(&base, &http, &auth, "trash_thread", &json!({"threadId": "nope"})).await.unwrap();
-        assert!(denied["content"][0]["text"].as_str().unwrap().contains("Insufficient Permission"));
+        let denied = call_at(
+            &base,
+            &http,
+            &auth,
+            "trash_thread",
+            &json!({"threadId": "nope"}),
+        )
+        .await
+        .unwrap();
+        assert!(denied["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Insufficient Permission"));
     }
 }

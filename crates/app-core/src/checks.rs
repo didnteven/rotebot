@@ -1531,10 +1531,22 @@ mod tests {
     #[test]
     fn numbered_placeholder_lines_match_numbered_output() {
         let expected = normalize_shape_line("1. {first}");
-        assert!(shape_line_matches(&expected, &normalize_shape_line("1. Laura Kuenssberg: Healey risks breaking a promise")));
-        assert!(shape_line_matches(&normalize_shape_line("- {item}"), &normalize_shape_line("- Milk")));
-        assert!(!shape_line_matches(&normalize_shape_line("{first}"), &normalize_shape_line("anything at all")));
-        assert!(!shape_line_matches(&expected, &normalize_shape_line("Today's top headlines 2026-11-01")));
+        assert!(shape_line_matches(
+            &expected,
+            &normalize_shape_line("1. Laura Kuenssberg: Healey risks breaking a promise")
+        ));
+        assert!(shape_line_matches(
+            &normalize_shape_line("- {item}"),
+            &normalize_shape_line("- Milk")
+        ));
+        assert!(!shape_line_matches(
+            &normalize_shape_line("{first}"),
+            &normalize_shape_line("anything at all")
+        ));
+        assert!(!shape_line_matches(
+            &expected,
+            &normalize_shape_line("Today's top headlines 2026-11-01")
+        ));
     }
 
     #[test]
@@ -1602,7 +1614,9 @@ pub(crate) fn page_markup(output: &str) -> Option<String> {
         ))
         .unwrap()
     });
-    MARKUP.find(output).map(|m| m.as_str().chars().take(40).collect())
+    MARKUP
+        .find(output)
+        .map(|m| m.as_str().chars().take(40).collect())
 }
 
 /// A result whose labelled lines are mostly empty ("Total:", "Due date: N/A") found nothing:
@@ -1611,14 +1625,34 @@ pub(crate) fn empty_labels(output: &str) -> Option<String> {
     let mut labelled = 0;
     let mut empty = Vec::new();
     for line in output.lines().map(str::trim) {
-        let Some((label, value)) = line.split_once(':') else { continue };
+        let Some((label, value)) = line.split_once(':') else {
+            continue;
+        };
         let label = label.trim().trim_start_matches(['-', '*', '•']).trim();
-        if label.is_empty() || label.chars().count() > 60 || !label.chars().any(char::is_alphabetic) || value.starts_with("//") {
+        if label.is_empty()
+            || label.chars().count() > 60
+            || !label.chars().any(char::is_alphabetic)
+            || value.starts_with("//")
+        {
             continue;
         }
         labelled += 1;
         let v = value.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
-        if ["", "-", "—", "n/a", "na", "none", "null", "undefined", "unknown", "not found", "not available"].contains(&v.as_str()) {
+        if [
+            "",
+            "-",
+            "—",
+            "n/a",
+            "na",
+            "none",
+            "null",
+            "undefined",
+            "unknown",
+            "not found",
+            "not available",
+        ]
+        .contains(&v.as_str())
+        {
             empty.push(format!("{label}:"));
         }
     }
@@ -1636,7 +1670,12 @@ mod page_markup_tests {
         assert!(super::page_markup("Headline: <a href=\"/x\">Storm</a>").is_some());
         assert!(super::page_markup("Visible from: [[Morocco]], [[Spain]]").is_some());
         assert!(super::page_markup("Price: 5 &amp; rising").is_some());
-        for plain in ["Silver: $31.20 per ounce", "Top: a < b > c, 3 | 4", "Wind: 25 km/h {gusting}", "Total: 2 & 3"] {
+        for plain in [
+            "Silver: $31.20 per ounce",
+            "Top: a < b > c, 3 | 4",
+            "Wind: 25 km/h {gusting}",
+            "Total: 2 & 3",
+        ] {
             assert!(super::page_markup(plain).is_none(), "{plain}");
         }
     }
@@ -1647,11 +1686,17 @@ mod empty_label_tests {
     #[test]
     fn mostly_empty_labels_fail_and_filled_ones_pass() {
         let bills = "Bill Summary\n============\nWatercare\nPrevious balance: \nCurrent charges: \nTotal: \nDue date: \n";
-        assert_eq!(super::empty_labels(bills).as_deref(), Some("Previous balance:"));
+        assert_eq!(
+            super::empty_labels(bills).as_deref(),
+            Some("Previous balance:")
+        );
         assert!(super::empty_labels("Total: $84.20\nDue date: 12 Nov\nNotes:\n").is_none());
         assert!(super::empty_labels("Weather 8:00 sunny\nSee https://x.example\n").is_none());
         assert!(super::empty_labels("Total: N/A\nDue: unknown\n").is_some());
-        assert_eq!(super::empty_labels("Featured article tools:\n").as_deref(), Some("Featured article tools:"));
+        assert_eq!(
+            super::empty_labels("Featured article tools:\n").as_deref(),
+            Some("Featured article tools:")
+        );
         assert!(super::empty_labels("Europejara\n").is_none());
     }
 }

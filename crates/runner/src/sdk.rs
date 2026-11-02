@@ -287,6 +287,7 @@ fn decimal(ctx: Ctx<'_>, value: String, options: Object<'_>) -> Result<String> {
     macroscope_executor::money(&value, &currency, decimals)
         .map_err(|_| Exception::throw_type(&ctx, "invalid decimal money"))
 }
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn install(
     ctx: &Ctx<'_>,
     inputs: BTreeMap<String, String>,

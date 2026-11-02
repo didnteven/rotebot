@@ -202,7 +202,8 @@ pub(crate) fn error_detail(
                 .is_some_and(|l| l.contains("macroscope.output("))
         })
     {
-        detail.push_str(". macroscope.output takes two strings: the output file name, then the text");
+        detail
+            .push_str(". macroscope.output takes two strings: the output file name, then the text");
     }
     if reference.is_some_and(|id| {
         matches!(

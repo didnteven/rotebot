@@ -15,23 +15,30 @@ pub enum Side {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum SendWhen {
+    #[default]
     Always,
     /// The result differs from the previous run's.
     Changed,
-    Contains { text: String },
+    Contains {
+        text: String,
+    },
     /// A number read from the result is above `value`. Empty `near` means the first number
     /// in the first line.
-    Above { near: String, side: Side, value: f64 },
-    Below { near: String, side: Side, value: f64 },
+    Above {
+        near: String,
+        side: Side,
+        value: f64,
+    },
+    Below {
+        near: String,
+        side: Side,
+        value: f64,
+    },
 }
 // `value` is checked to be finite when a schedule is saved, so equality is reflexive.
 impl Eq for SendWhen {}
-impl Default for SendWhen {
-    fn default() -> Self {
-        Self::Always
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Decision {
@@ -45,9 +52,8 @@ impl SendWhen {
         matches!(self, Self::Always)
     }
     pub fn validate(&self) -> CoreResult<()> {
-        let text_ok = |s: &str, max: usize| {
-            s.chars().count() <= max && !s.chars().any(char::is_control)
-        };
+        let text_ok =
+            |s: &str, max: usize| s.chars().count() <= max && !s.chars().any(char::is_control);
         let ok = match self {
             Self::Always | Self::Changed => true,
             Self::Contains { text } => !text.trim().is_empty() && text_ok(text, 200),
@@ -74,7 +80,9 @@ impl SendWhen {
             Self::Always => send(None),
             Self::Changed => match previous {
                 // Nothing to compare with yet: send, so the person sees it working.
-                None => send(Some("First run, so there was nothing to compare with".into())),
+                None => send(Some(
+                    "First run, so there was nothing to compare with".into(),
+                )),
                 Some(p) if squash(p) == squash(output) => {
                     hold("The result didn’t change, so nothing was sent".into())
                 }
@@ -101,19 +109,31 @@ impl SendWhen {
                     } else {
                         format!(
                             "Couldn’t find a number {} “{}”, so it was sent anyway",
-                            if *side == Side::After { "after" } else { "before" },
+                            if *side == Side::After {
+                                "after"
+                            } else {
+                                "before"
+                            },
                             near.trim()
                         )
                     })),
                     Some(found) => {
-                        let hit = if above { found > *value } else { found < *value };
+                        let hit = if above {
+                            found > *value
+                        } else {
+                            found < *value
+                        };
                         let label = if near.trim().is_empty() {
                             "The number".to_string()
                         } else {
                             format!("“{}”", near.trim())
                         };
                         if hit {
-                            send(Some(format!("{label} was {}, {word} {}", show(found), show(*value))))
+                            send(Some(format!(
+                                "{label} was {}, {word} {}",
+                                show(found),
+                                show(*value)
+                            )))
                         } else {
                             hold(format!(
                                 "{label} was {}, not {word} {}, so nothing was sent",
@@ -166,8 +186,8 @@ fn numbers(text: &str) -> Vec<(usize, usize, f64)> {
             || prev.is_some_and(|c| c.is_ascii_alphabetic());
         if !part_of_date_or_time {
             if let Ok(mut v) = text[start..j].replace(',', "").parse::<f64>() {
-                let negative = prev == Some(b'-')
-                    && before_prev.is_none_or(|c| !c.is_ascii_alphanumeric());
+                let negative =
+                    prev == Some(b'-') && before_prev.is_none_or(|c| !c.is_ascii_alphanumeric());
                 if negative {
                     v = -v;
                 }
@@ -187,7 +207,9 @@ fn numbers(text: &str) -> Vec<(usize, usize, f64)> {
 fn read_number(output: &str, near: &str, side: Side) -> Option<f64> {
     let near = near.trim();
     if near.is_empty() {
-        return numbers(output.lines().next().unwrap_or("")).first().map(|n| n.2);
+        return numbers(output.lines().next().unwrap_or(""))
+            .first()
+            .map(|n| n.2);
     }
     let all = numbers(output);
     let (hay, needle) = (output.to_lowercase(), near.to_lowercase());
@@ -225,20 +247,31 @@ fn read_number(output: &str, near: &str, side: Side) -> Option<f64> {
 mod tests {
     use super::*;
     // Real outputs, produced by running programs in the sandbox on live API responses.
-    const TIDE: &str = "Mission Bay tide right now (2026-10-31T18:15): -0.98 m, Tide 9% (full being 100%)\n";
+    const TIDE: &str =
+        "Mission Bay tide right now (2026-10-31T18:15): -0.98 m, Tide 9% (full being 100%)\n";
     const WEATHER: &str = "Auckland today (2026-10-31): high 17.6C, low 11.6C\n";
-    const LOSER: &str = "Biggest loser today: LVWR (LiveWire Group Inc. Common Stock) -43.744% at $0.9001\n";
+    const LOSER: &str =
+        "Biggest loser today: LVWR (LiveWire Group Inc. Common Stock) -43.744% at $0.9001\n";
     const BTC: &str = "Bitcoin: $77,096.24\n";
-    const QUAKE: &str = "Latest NZ quake: magnitude 3.2, 20 km west of Porangahau (2026-10-30T06:00:40.350Z)\n";
+    const QUAKE: &str =
+        "Latest NZ quake: magnitude 3.2, 20 km west of Porangahau (2026-10-30T06:00:40.350Z)\n";
     const FX: &str = "1 EUR = 1.98 NZD (as of 2026-10-30)\n";
     const AIR: &str = "Auckland air quality: US AQI 66, PM2.5 14.7, PM10 24.3\n";
     const NEWS: &str = "Top BBC story: US approves sale of 500 Patriot missiles to Ukraine\n";
     const ISS: &str = "ISS is at latitude -51.7, longitude 132.8, altitude 435 km\n";
     fn above(near: &str, side: Side, value: f64) -> SendWhen {
-        SendWhen::Above { near: near.into(), side, value }
+        SendWhen::Above {
+            near: near.into(),
+            side,
+            value,
+        }
     }
     fn below(near: &str, side: Side, value: f64) -> SendWhen {
-        SendWhen::Below { near: near.into(), side, value }
+        SendWhen::Below {
+            near: near.into(),
+            side,
+            value,
+        }
     }
     fn read(out: &str, near: &str, side: Side) -> Option<f64> {
         read_number(out, near, side)
@@ -280,7 +313,10 @@ mod tests {
     fn real_alerts_fire_and_hold_with_a_plain_reason() {
         let d = above("Tide", Side::After, 80.0).decide(TIDE, None);
         assert!(!d.send);
-        assert_eq!(d.note.as_deref(), Some("“Tide” was 9, not above 80, so nothing was sent"));
+        assert_eq!(
+            d.note.as_deref(),
+            Some("“Tide” was 9, not above 80, so nothing was sent")
+        );
         let d = below("Tide", Side::After, 15.0).decide(TIDE, None);
         assert!(d.send);
         assert_eq!(d.note.as_deref(), Some("“Tide” was 9, below 15"));
@@ -288,8 +324,16 @@ mod tests {
         assert!(!below("%", Side::Before, -50.0).decide(LOSER, None).send);
         assert!(!above("$", Side::After, 80_000.0).decide(BTC, None).send);
         assert!(above("$", Side::After, 70_000.0).decide(BTC, None).send);
-        assert!(above("magnitude", Side::After, 3.0).decide(QUAKE, None).send);
-        assert!(!above("magnitude", Side::After, 5.0).decide(QUAKE, None).send);
+        assert!(
+            above("magnitude", Side::After, 3.0)
+                .decide(QUAKE, None)
+                .send
+        );
+        assert!(
+            !above("magnitude", Side::After, 5.0)
+                .decide(QUAKE, None)
+                .send
+        );
         assert!(!above("AQI", Side::After, 100.0).decide(AIR, None).send);
         assert!(above("PM2.5", Side::After, 10.0).decide(AIR, None).send);
         assert!(below("latitude", Side::After, -50.0).decide(ISS, None).send);
@@ -301,22 +345,40 @@ mod tests {
     fn a_missing_number_sends_anyway_and_says_so() {
         let d = above("Tide", Side::After, 80.0).decide("Tide data is not available", None);
         assert!(d.send);
-        assert_eq!(d.note.as_deref(), Some("Couldn’t find a number after “Tide”, so it was sent anyway"));
+        assert_eq!(
+            d.note.as_deref(),
+            Some("Couldn’t find a number after “Tide”, so it was sent anyway")
+        );
         let d = below("%", Side::Before, 0.0).decide("No change today", None);
         assert!(d.send);
-        assert_eq!(d.note.as_deref(), Some("Couldn’t find a number before “%”, so it was sent anyway"));
+        assert_eq!(
+            d.note.as_deref(),
+            Some("Couldn’t find a number before “%”, so it was sent anyway")
+        );
     }
     #[test]
     fn changed_and_contains() {
         assert!(SendWhen::Changed.decide(NEWS, None).send);
         let same = NEWS.replace("US approves", "US  approves");
         assert!(!SendWhen::Changed.decide(&same, Some(NEWS)).send);
-        assert!(SendWhen::Changed.decide("Top BBC story: Something else", Some(NEWS)).send);
-        let c = SendWhen::Contains { text: "ukraine".into() };
+        assert!(
+            SendWhen::Changed
+                .decide("Top BBC story: Something else", Some(NEWS))
+                .send
+        );
+        let c = SendWhen::Contains {
+            text: "ukraine".into(),
+        };
         assert!(c.decide(NEWS, None).send);
-        let d = SendWhen::Contains { text: "election".into() }.decide(NEWS, None);
+        let d = SendWhen::Contains {
+            text: "election".into(),
+        }
+        .decide(NEWS, None);
         assert!(!d.send);
-        assert_eq!(d.note.as_deref(), Some("The result doesn’t mention “election”, so nothing was sent"));
+        assert_eq!(
+            d.note.as_deref(),
+            Some("The result doesn’t mention “election”, so nothing was sent")
+        );
         assert!(SendWhen::Always.decide(NEWS, None).note.is_none());
     }
     #[test]
@@ -333,9 +395,15 @@ mod tests {
     fn only_sensible_conditions_can_be_saved() {
         assert!(SendWhen::Contains { text: "  ".into() }.validate().is_err());
         assert!(above("Tide", Side::After, f64::NAN).validate().is_err());
-        assert!(above("Tide", Side::After, f64::INFINITY).validate().is_err());
+        assert!(above("Tide", Side::After, f64::INFINITY)
+            .validate()
+            .is_err());
         assert!(above("Ti\nde", Side::After, 1.0).validate().is_err());
-        assert!(SendWhen::Contains { text: "x".repeat(201) }.validate().is_err());
+        assert!(SendWhen::Contains {
+            text: "x".repeat(201)
+        }
+        .validate()
+        .is_err());
         assert!(above("Tide", Side::After, 80.0).validate().is_ok());
         assert!(SendWhen::Changed.validate().is_ok());
     }

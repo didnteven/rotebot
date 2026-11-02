@@ -410,7 +410,10 @@ fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
         }
     }
     let error = failure(r#"var x = 1; macroscope.log("top level");"#);
-    assert!(error.message.contains("must define function run()"), "{error:?}");
+    assert!(
+        error.message.contains("must define function run()"),
+        "{error:?}"
+    );
     let error = failure(r#"function run(){throw "secret-value";}"#);
     assert_eq!(
         error.message,
@@ -437,7 +440,7 @@ fn runtime_details_redact_quoted_numeric_and_arbitrary_data() {
             answers: BTreeMap::new(),
             limits: Limits::default(),
             declared_model_prompt: None,
-        today: None,
+            today: None,
         });
         let Response::Error { error } = response else {
             panic!("{response:?}");
@@ -730,11 +733,16 @@ fn a_wrong_output_call_names_the_two_string_shape() {
     let error = failure("function run() {\n  macroscope.output('only text');\n}");
     assert!(error.message.contains("TypeError at line 2"), "{error:?}");
     assert!(
-        error.message.contains("macroscope.output takes two strings"),
+        error
+            .message
+            .contains("macroscope.output takes two strings"),
         "{error:?}"
     );
     let unrelated = failure("function run(){\n  let row;\n  row.trim();\n}");
-    assert!(!unrelated.message.contains("macroscope.output"), "{unrelated:?}");
+    assert!(
+        !unrelated.message.contains("macroscope.output"),
+        "{unrelated:?}"
+    );
 }
 
 #[test]
@@ -780,7 +788,15 @@ fn ordinary_web_pages_read_as_tables_text_links_and_embedded_json() {
         today: None,
     };
     let out = format!("{:?}", macroscope_runner::execute(request));
-    for expected in ["1Movers", "Top & bottom", "Symbol|Change", "ABOS=-90.83%;ONEG=+120.5%", "ABOS>/s/abos", "Movers", "Movers/Updated today"] {
+    for expected in [
+        "1Movers",
+        "Top & bottom",
+        "Symbol|Change",
+        "ABOS=-90.83%;ONEG=+120.5%",
+        "ABOS>/s/abos",
+        "Movers",
+        "Movers/Updated today",
+    ] {
         assert!(out.contains(expected), "{expected} missing from {out}");
     }
 }
@@ -801,9 +817,15 @@ fn words_that_contain_import_are_allowed_but_import_is_not() {
             })
         )
     };
-    let ok = run(r#"function run(){ var importance = macroscope.source("important_emails"); macroscope.output("out.txt", "Important: " + importance + "\n"); }"#);
+    let ok = run(
+        r#"function run(){ var importance = macroscope.source("important_emails"); macroscope.output("out.txt", "Important: " + importance + "\n"); }"#,
+    );
     assert!(ok.contains("Important: []"), "{ok}");
-    for code in ["function run(){import('x')}", "function run(){ var s = 'import'; }", "import x from 'y'; function run(){}"] {
+    for code in [
+        "function run(){import('x')}",
+        "function run(){ var s = 'import'; }",
+        "import x from 'y'; function run(){}",
+    ] {
         assert!(run(code).contains("imports are forbidden"), "{code}");
     }
 }

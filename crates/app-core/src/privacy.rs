@@ -107,7 +107,9 @@ impl AppCore {
         let name: String = name.chars().filter(|c| !c.is_control()).collect();
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 {
-            return Err(CoreError::Invalid("Give the tool a name of up to 80 characters.".into()));
+            return Err(CoreError::Invalid(
+                "Give the tool a name of up to 80 characters.".into(),
+            ));
         }
         let mut row = self
             .db()
@@ -115,7 +117,11 @@ impl AppCore {
             .ok_or(CoreError::NotFound("tool"))?;
         let old = std::mem::replace(&mut row.name, name.to_string());
         self.db().put_tool(&row)?;
-        self.activity("settings", format!("Renamed tool “{old}” to “{name}”"), None);
+        self.activity(
+            "settings",
+            format!("Renamed tool “{old}” to “{name}”"),
+            None,
+        );
         self.tool_detail(&row)
     }
 

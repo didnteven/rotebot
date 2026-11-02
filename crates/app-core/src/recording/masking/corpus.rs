@@ -351,7 +351,14 @@ fn labelled_screen_corpus_old_vs_new() {
     let mut check = |rows: &[&[&str]], sensitive: bool| {
         let f = screen(rows);
         before.add(sensitive, old_detects(&f, &old));
-        let kept = mask(f, &[], &new, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
+        let kept = mask(
+            f,
+            &[],
+            &new,
+            &mut MaskHistory::default(),
+            MaskLevel::Standard,
+        )
+        .unwrap();
         let actual = !kept.text().masks.is_empty();
         after.add(sensitive, actual);
         if sensitive != actual {
@@ -474,7 +481,14 @@ fn spans_preserve_labels_and_neighbours_and_burn_every_sensitive_pixel() {
         let f = screen(&[&[&text]]);
         let b = &f.ocr_boxes[0];
         let expected = sub_rect(b, prefix.len()..prefix.len() + secret.len());
-        let masked = mask(f, &[], &detector, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
+        let masked = mask(
+            f,
+            &[],
+            &detector,
+            &mut MaskHistory::default(),
+            MaskLevel::Standard,
+        )
+        .unwrap();
         let masks = &masked.text().masks;
         assert!(covered(masks, expected));
         assert_eq!(masks.len(), 1, "{text}");
@@ -509,7 +523,14 @@ fn spans_preserve_labels_and_neighbours_and_burn_every_sensitive_pixel() {
         let f = screen(&rows);
         let label = f.ocr_boxes[0].rect;
         let value = f.ocr_boxes[1].rect;
-        let kept = mask(f, &[], &detector, &mut MaskHistory::default(), MaskLevel::Standard).unwrap();
+        let kept = mask(
+            f,
+            &[],
+            &detector,
+            &mut MaskHistory::default(),
+            MaskLevel::Standard,
+        )
+        .unwrap();
         assert!(covered(&kept.text().masks, value));
         assert!(!kept.text().masks.iter().any(|m| m.rect.intersects(label)));
         assert_eq!(kept.text().ocr_boxes[0].text, "Account number");
@@ -615,13 +636,20 @@ fn invalid_adapter_spans_and_errors_never_publish_a_frame_or_history() {
         fn is_sensitive(&self, _: &str) -> Result<bool, DetectorError> {
             Ok(false)
         }
+        #[allow(clippy::single_range_in_vec_init)]
         fn sensitive_ranges(&self, _: &str) -> Result<Vec<Range<usize>>, DetectorError> {
             Ok(vec![1..2])
         }
     }
     let mut history = MaskHistory::default();
     assert!(matches!(
-        mask(screen(&[&["é"]]), &[], &Invalid, &mut history, MaskLevel::Standard),
+        mask(
+            screen(&[&["é"]]),
+            &[],
+            &Invalid,
+            &mut history,
+            MaskLevel::Standard
+        ),
         Err(DropReason::DetectorError)
     ));
 }

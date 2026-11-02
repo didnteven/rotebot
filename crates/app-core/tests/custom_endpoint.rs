@@ -646,7 +646,12 @@ async fn modal_token_id_and_secret_are_stored_as_one_bearer() {
             .expose(),
         b"wk-abc123.ws-def456"
     );
-    for (id, secret) in [("", "ws-x"), ("wk-x", ""), ("wk x", "ws-x"), ("wk-x", "ws.x")] {
+    for (id, secret) in [
+        ("", "ws-x"),
+        ("wk-x", ""),
+        ("wk x", "ws-x"),
+        ("wk-x", "ws.x"),
+    ] {
         assert!(f
             .core
             .save_custom_endpoint_modal_token(id, secret)

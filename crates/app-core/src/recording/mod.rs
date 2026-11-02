@@ -206,7 +206,9 @@ impl RawFrame {
     }
 
     fn decode(&self) -> Option<RecordedFrame> {
-        let mut reader = png::Decoder::new(std::io::Cursor::new(self.png.as_slice())).read_info().ok()?;
+        let mut reader = png::Decoder::new(std::io::Cursor::new(self.png.as_slice()))
+            .read_info()
+            .ok()?;
         let mut rgba = vec![0; reader.output_buffer_size().unwrap_or(0)];
         let info = reader.next_frame(&mut rgba).ok()?;
         rgba.truncate(info.buffer_size());
@@ -290,13 +292,7 @@ impl RecordingSession {
             if let Some(raw) = RawFrame::capture(&frame, regions) {
                 self.raw.push(raw);
             }
-            masking::mask(
-                frame,
-                regions,
-                detector,
-                &mut self.mask_history,
-                self.level,
-            )
+            masking::mask(frame, regions, detector, &mut self.mask_history, self.level)
         };
         self.attempts = self.attempts.saturating_add(1);
         match result {
@@ -341,15 +337,18 @@ impl RecordingSession {
         let raw = std::mem::take(&mut self.raw);
         for raw_frame in &raw {
             let seq = raw_frame.seq;
-            let result = raw_frame.decode().ok_or(DropReason::EncodingError).and_then(|frame| {
-                masking::mask(
-                    frame,
-                    &raw_frame.regions,
-                    detector,
-                    &mut self.mask_history,
-                    level,
-                )
-            });
+            let result = raw_frame
+                .decode()
+                .ok_or(DropReason::EncodingError)
+                .and_then(|frame| {
+                    masking::mask(
+                        frame,
+                        &raw_frame.regions,
+                        detector,
+                        &mut self.mask_history,
+                        level,
+                    )
+                });
             match result {
                 Ok(frame) => self.frames.push(frame),
                 Err(reason) => {

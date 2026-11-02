@@ -115,7 +115,11 @@ async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -
     // SCENARIO_SUGGEST=1: only ask for the output layout and tool name, as the create screen does.
     if std::env::var("SCENARIO_SUGGEST").is_ok() {
         return match core.suggest_example_output(&draft.draft_id).await {
-            Ok(d) => format!("SUGGESTED name={:?}\n{}", d.suggested_name, d.example_output.unwrap_or_default()),
+            Ok(d) => format!(
+                "SUGGESTED name={:?}\n{}",
+                d.suggested_name,
+                d.example_output.unwrap_or_default()
+            ),
             Err(e) => format!("SUGGEST FAILED: {e}"),
         };
     }
@@ -154,11 +158,25 @@ async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -
         let why = state.failure.map(|f| f.message).unwrap_or_default();
         // SCENARIO_DEBUG=1 also shows the declared sources and the program, to see what the model wrote.
         let detail = if std::env::var("SCENARIO_DEBUG").is_ok() {
-            state.program.as_ref().map(|p| {
-                let sources: Vec<String> = p.web_sources.iter().map(|w| format!("{}={}", w.name, w.url)).collect();
-                format!("\n  declared: {}\n  code: {}", sources.join(", "), p.code.chars().take(1500).collect::<String>())
-            }).unwrap_or_default()
-        } else { String::new() };
+            state
+                .program
+                .as_ref()
+                .map(|p| {
+                    let sources: Vec<String> = p
+                        .web_sources
+                        .iter()
+                        .map(|w| format!("{}={}", w.name, w.url))
+                        .collect();
+                    format!(
+                        "\n  declared: {}\n  code: {}",
+                        sources.join(", "),
+                        p.code.chars().take(1500).collect::<String>()
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         return format!("BUILD FAILED: {why}\n  steps: {steps}{detail}");
     }
     let hosts = state

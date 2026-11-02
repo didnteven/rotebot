@@ -441,7 +441,9 @@ fn catalog_live_facts_and_defaults() {
         if connector.id == "gmail" {
             // Gmail uses Google's regular REST API (documented, not an MCP probe).
             assert_eq!(connector.verification, Verification::VerifiedDocs);
-            assert!(connector.mcp_url.starts_with("https://gmail.googleapis.com/gmail/v1"));
+            assert!(connector
+                .mcp_url
+                .starts_with("https://gmail.googleapis.com/gmail/v1"));
         } else {
             assert_eq!(connector.verification, Verification::VerifiedLive);
             assert_eq!(connector.source, "unauthenticated probe 2026-10-27");

@@ -312,7 +312,10 @@ mod connection_prompt_tests {
         for c in macroscope_connections::catalog::Catalog::embedded().connectors {
             if c.id != "custom" {
                 let name = c.name.split(" (").next().unwrap();
-                assert!(SYSTEM_INSTRUCTIONS.contains(name), "{name} missing from the analysis prompt");
+                assert!(
+                    SYSTEM_INSTRUCTIONS.contains(name),
+                    "{name} missing from the analysis prompt"
+                );
             }
         }
     }

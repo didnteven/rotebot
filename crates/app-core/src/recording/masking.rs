@@ -13,6 +13,7 @@ pub trait SensitiveDetector {
 
     /// UTF-8 byte ranges in the original input. Older adapters remain fail-closed
     /// by masking the whole input when their boolean detector finds a match.
+    #[allow(clippy::single_range_in_vec_init)]
     fn sensitive_ranges(&self, text: &str) -> Result<Vec<Range<usize>>, DetectorError> {
         Ok(if self.is_sensitive(text)? {
             vec![0..text.len()]

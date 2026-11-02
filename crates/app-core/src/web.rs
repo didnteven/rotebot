@@ -18,13 +18,20 @@ pub(crate) fn access_failure(message: &str) -> bool {
 pub(crate) fn unreachable_site_message(failures: &[String]) -> Option<String> {
     let detail = failures.iter().find(|d| {
         d.contains("could not be fetched")
-            && (d.contains("timed out") || d.contains("connection failed") || d.contains("did not answer"))
+            && (d.contains("timed out")
+                || d.contains("connection failed")
+                || d.contains("did not answer"))
     })?;
     let host = detail
         .split("could not be fetched from ")
         .nth(1)
         .and_then(|rest| rest.split(':').next())
-        .or_else(|| detail.split(": ").nth(1).and_then(|rest| rest.split(" did not answer").next()))
+        .or_else(|| {
+            detail
+                .split(": ")
+                .nth(1)
+                .and_then(|rest| rest.split(" did not answer").next())
+        })
         .filter(|h| !h.is_empty() && !h.contains(' '))
         .unwrap_or("The site");
     Some(format!(
@@ -58,22 +65,27 @@ pub(crate) fn page_preview(text: &str) -> Option<serde_json::Value> {
     static HIDDEN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?is)<!--.*?-->|<script\b.*?</script\s*>|<style\b.*?</style\s*>|<noscript\b.*?</noscript\s*>|<svg\b.*?</svg\s*>|<template\b.*?</template\s*>|<head\b.*?</head\s*>").unwrap()
     });
-    static TABLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<table\b.*?</table\s*>").unwrap());
-    static ROW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<tr\b.*?(?:</tr\s*>|$)").unwrap());
-    static CELL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<t([hd])\b[^>]*>(.*?)(?:</t[hd]\s*>|$)").unwrap());
+    static TABLE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<table\b.*?</table\s*>").unwrap());
+    static ROW: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<tr\b.*?(?:</tr\s*>|$)").unwrap());
+    static CELL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<t([hd])\b[^>]*>(.*?)(?:</t[hd]\s*>|$)").unwrap());
     static BLOCK: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)<br\s*/?>|</?(?:p|div|li|ul|ol|tr|table|h[1-6]|section|article|header|footer|main|nav|dt|dd)\b[^>]*>").unwrap()
     });
     static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
-    static HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<h([1-6])\b[^>]*>(.*?)</h[1-6]\s*>").unwrap());
-    static TITLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<title\b[^>]*>(.*?)</title\s*>").unwrap());
+    static HEADING: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<h([1-6])\b[^>]*>(.*?)</h[1-6]\s*>").unwrap());
+    static TITLE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<title\b[^>]*>(.*?)</title\s*>").unwrap());
     static JSON: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?is)<script\b[^>]*(?:type\s*=\s*["']?[^"'>]*json|id\s*=\s*["']?__NEXT_DATA__)[^>]*>(.*?)</script\s*>"#).unwrap()
     });
     static MARKUP: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)<(?:html|body|p|a|div|table|span|li|h[1-6])\b").unwrap());
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
-        fn largest<'a>(v: &'a serde_json::Value, path: String, depth: usize) -> Option<(String, &'a str)> {
+        fn largest(v: &serde_json::Value, path: String, depth: usize) -> Option<(String, &str)> {
             match v {
                 serde_json::Value::String(s) => Some((path, s.as_str())),
                 serde_json::Value::Array(items) if depth < 8 => items
@@ -99,7 +111,8 @@ pub(crate) fn page_preview(text: &str) -> Option<serde_json::Value> {
     if MARKUP.find_iter(text).take(3).count() < 3 {
         return None;
     }
-    static NUMERIC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));").unwrap());
+    static NUMERIC: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));").unwrap());
     let decode = |s: &str| {
         NUMERIC
             .replace_all(s, |c: &regex::Captures| {
@@ -117,7 +130,12 @@ pub(crate) fn page_preview(text: &str) -> Option<serde_json::Value> {
             .replace("&#39;", "'")
             .replace("&amp;", "&")
     };
-    let flat = |s: &str| decode(&TAG.replace_all(s, " ")).split_whitespace().collect::<Vec<_>>().join(" ");
+    let flat = |s: &str| {
+        decode(&TAG.replace_all(s, " "))
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let visible = HIDDEN.replace_all(text, " ");
     let tables: Vec<serde_json::Value> = TABLE
         .find_iter(&visible)
@@ -333,19 +351,39 @@ mod tests {
     #[test]
     fn a_site_that_does_not_answer_is_named_plainly() {
         let timed_out = vec!["Web source 'stocks' could not be fetched from api.nasdaq.com: web source fetch failed: timed out after 10 s.".to_string()];
-        assert!(unreachable_site_message(&timed_out).unwrap().starts_with("api.nasdaq.com didn't answer"));
+        assert!(unreachable_site_message(&timed_out)
+            .unwrap()
+            .starts_with("api.nasdaq.com didn't answer"));
         let repeated = vec!["Web source 'stocks' could not be fetched: api.nasdaq.com did not answer earlier in this build, so use a different site.".to_string()];
-        assert!(unreachable_site_message(&repeated).unwrap().starts_with("api.nasdaq.com didn't answer"));
-        assert!(unreachable_site_message(&["Web source 'a' could not be fetched from a.test: web source fetch failed: HTTP 404.".to_string()]).is_none());
+        assert!(unreachable_site_message(&repeated)
+            .unwrap()
+            .starts_with("api.nasdaq.com didn't answer"));
+        assert!(unreachable_site_message(&[
+            "Web source 'a' could not be fetched from a.test: web source fetch failed: HTTP 404."
+                .to_string()
+        ])
+        .is_none());
     }
 
     #[test]
     fn only_sites_the_person_named_count_as_chosen() {
         let url = "https://api.nasdaq.com/api/screener/stocks";
         assert!(chosen_up_front("Top movers from Nasdaq.com", None, url));
-        assert!(!chosen_up_front("The most fearful stock right now", None, url));
-        assert!(chosen_up_front("x", Some(r#"{"baseUrl":"https://api.nasdaq.com"}"#), url));
-        assert!(chosen_up_front("read http://127.0.0.1:9/denied", None, "http://127.0.0.1:9/denied"));
+        assert!(!chosen_up_front(
+            "The most fearful stock right now",
+            None,
+            url
+        ));
+        assert!(chosen_up_front(
+            "x",
+            Some(r#"{"baseUrl":"https://api.nasdaq.com"}"#),
+            url
+        ));
+        assert!(chosen_up_front(
+            "read http://127.0.0.1:9/denied",
+            None,
+            "http://127.0.0.1:9/denied"
+        ));
     }
 
     #[test]
@@ -354,16 +392,28 @@ mod tests {
         let preview = page_preview(page).unwrap();
         assert_eq!(preview["title"], "Movers");
         assert_eq!(preview["headings"][0], "h1: Top losers 'today'");
-        assert_eq!(preview["tables"][0]["headers"], serde_json::json!(["Symbol", "Change"]));
-        assert_eq!(preview["tables"][0]["first_rows"][0], serde_json::json!(["ABOS", "-90.83%"]));
+        assert_eq!(
+            preview["tables"][0]["headers"],
+            serde_json::json!(["Symbol", "Change"])
+        );
+        assert_eq!(
+            preview["tables"][0]["first_rows"][0],
+            serde_json::json!(["ABOS", "-90.83%"])
+        );
         assert_eq!(preview["tables"][0]["row_count"], 1);
-        assert!(preview["visible_text_start"].as_str().unwrap().starts_with("Top losers 'today'"));
+        assert!(preview["visible_text_start"]
+            .as_str()
+            .unwrap()
+            .starts_with("Top losers 'today'"));
         assert_eq!(preview["embedded_json_start"][0], "{\"a\":1}");
         assert!(page_preview("{\"a\": 1}").is_none());
         let wrapped = serde_json::json!({"parse": {"title": "x", "text": {"*": format!("<style>.a{{}}</style><div><p>Today's article: <b><a href='/wiki/Moa'>Moa</a></b></p>{}</div>", " ".repeat(200))}}}).to_string();
         let inner = page_preview(&wrapped).unwrap();
         assert_eq!(inner["json_path"], "/parse/text/*");
-        assert!(inner["visible_text_start"].as_str().unwrap().starts_with("Today's article: Moa"));
+        assert!(inner["visible_text_start"]
+            .as_str()
+            .unwrap()
+            .starts_with("Today's article: Moa"));
     }
 
     #[test]

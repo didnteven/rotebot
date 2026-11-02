@@ -262,7 +262,12 @@ impl TaskDraftV2 {
             return Err(DraftError("the goal cannot be empty"));
         }
         draft.goal = goal.to_string();
-        if let Some(note) = edit.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(note) = edit
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
             draft.goal = format!("{} {}", draft.goal.trim_end_matches('.'), note);
         }
         for step in &mut draft.steps {
@@ -305,7 +310,11 @@ pub fn apply_answers(
     answers: &BTreeMap<String, String>,
 ) -> Result<ClarifiedTask, DraftError> {
     draft.validate()?;
-    if draft.steps.iter().all(|s| s.capability == Capability::Manual) {
+    if draft
+        .steps
+        .iter()
+        .all(|s| s.capability == Capability::Manual)
+    {
         return Err(DraftError(
             "A tool can't do any part of this chore: it needs clicking, typing or other apps. Nothing was built",
         ));
@@ -397,23 +406,47 @@ mod edit_tests {
     use super::*;
 
     fn step(id: &str, order: u32, capability: Capability) -> DraftStep {
-        DraftStep { id: id.into(), order, app: "App".into(), action: format!("Do {id}"), capability, evidence_frames: vec![1] }
+        DraftStep {
+            id: id.into(),
+            order,
+            app: "App".into(),
+            action: format!("Do {id}"),
+            capability,
+            evidence_frames: vec![1],
+        }
     }
     fn question(id: &str) -> DraftQuestion {
-        let opt = |o: &str, any| DraftOption { id: o.into(), label: o.into(), any_is_fine: any };
-        DraftQuestion { id: id.into(), prompt: "Which?".into(), evidence_frames: vec![1], options: vec![opt("a", false), opt("b", true)], default: "a".into() }
+        let opt = |o: &str, any| DraftOption {
+            id: o.into(),
+            label: o.into(),
+            any_is_fine: any,
+        };
+        DraftQuestion {
+            id: id.into(),
+            prompt: "Which?".into(),
+            evidence_frames: vec![1],
+            options: vec![opt("a", false), opt("b", true)],
+            default: "a".into(),
+        }
     }
     fn draft() -> TaskDraftV2 {
         TaskDraftV2 {
             schema_version: 2,
             goal: "Summarise the inbox.".into(),
-            steps: vec![step("read", 1, Capability::Connection), step("open", 2, Capability::Manual), step("save", 3, Capability::OutputFile)],
+            steps: vec![
+                step("read", 1, Capability::Connection),
+                step("open", 2, Capability::Manual),
+                step("save", 3, Capability::OutputFile),
+            ],
             variables: vec![],
             constants: vec![],
             output_description: "A text file".into(),
             example_output: None,
             trigger: "On demand".into(),
-            unsupported_steps: vec![UnsupportedStep { step_id: "open".into(), reason: "Needs clicking".into() }],
+            unsupported_steps: vec![UnsupportedStep {
+                step_id: "open".into(),
+                reason: "Needs clicking".into(),
+            }],
             ambiguities: vec![],
             questions: vec![question("q1"), question("q2")],
         }
@@ -428,18 +461,50 @@ mod edit_tests {
             note: Some("Skip newsletters.".into()),
         };
         let out = draft().edited(&edit).unwrap();
-        assert_eq!(out.goal, "Summarise the newest five emails Skip newsletters.");
-        assert_eq!(out.steps.iter().map(|s| (s.id.as_str(), s.order)).collect::<Vec<_>>(), [("read", 1), ("save", 2)]);
+        assert_eq!(
+            out.goal,
+            "Summarise the newest five emails Skip newsletters."
+        );
+        assert_eq!(
+            out.steps
+                .iter()
+                .map(|s| (s.id.as_str(), s.order))
+                .collect::<Vec<_>>(),
+            [("read", 1), ("save", 2)]
+        );
         assert_eq!(out.steps[0].action, "Read the five newest emails");
         assert!(out.unsupported_steps.is_empty());
     }
 
     #[test]
     fn the_output_step_and_unknown_steps_cannot_be_removed_and_goal_cannot_be_empty() {
-        let base = DraftEdit { goal: "Goal".into(), ..DraftEdit::default() };
-        assert!(draft().edited(&DraftEdit { removed_steps: vec!["save".into()], ..base.clone() }).is_err());
-        assert!(draft().edited(&DraftEdit { removed_steps: vec!["nope".into()], ..base.clone() }).is_err());
-        assert!(draft().edited(&DraftEdit { goal: "  ".into(), ..base.clone() }).is_err());
-        assert!(draft().edited(&DraftEdit { step_actions: BTreeMap::from([("read".into(), " ".into())]), ..base }).is_err());
+        let base = DraftEdit {
+            goal: "Goal".into(),
+            ..DraftEdit::default()
+        };
+        assert!(draft()
+            .edited(&DraftEdit {
+                removed_steps: vec!["save".into()],
+                ..base.clone()
+            })
+            .is_err());
+        assert!(draft()
+            .edited(&DraftEdit {
+                removed_steps: vec!["nope".into()],
+                ..base.clone()
+            })
+            .is_err());
+        assert!(draft()
+            .edited(&DraftEdit {
+                goal: "  ".into(),
+                ..base.clone()
+            })
+            .is_err());
+        assert!(draft()
+            .edited(&DraftEdit {
+                step_actions: BTreeMap::from([("read".into(), " ".into())]),
+                ..base
+            })
+            .is_err());
     }
 }

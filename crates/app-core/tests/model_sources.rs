@@ -446,11 +446,22 @@ async fn model_answer_replays_into_exact_output_and_private_answers_are_absent_f
     );
     assert_eq!(f.fake.models.lock().unwrap().len(), 2);
     // The test run's model calls were saved with the tool, and the run added its own.
-    let saved = t.model_cost.as_ref().expect("test run cost saved with the tool");
+    let saved = t
+        .model_cost
+        .as_ref()
+        .expect("test run cost saved with the tool");
     assert_eq!(saved.test_calls, 1);
     assert_eq!(saved.run_count, 0);
-    let after = f.core.get_tool(&t.summary_row.id).unwrap().model_cost.unwrap();
-    assert_eq!((after.test_calls, after.run_count, after.last_run_calls), (1, 1, 1));
+    let after = f
+        .core
+        .get_tool(&t.summary_row.id)
+        .unwrap()
+        .model_cost
+        .unwrap();
+    assert_eq!(
+        (after.test_calls, after.run_count, after.last_run_calls),
+        (1, 1, 1)
+    );
     let logs = f.core.list_outbound().unwrap();
     assert_eq!(logs.iter().filter(|l| l.purpose == "Model step").count(), 2);
     let text = serde_json::to_string(&logs).unwrap();

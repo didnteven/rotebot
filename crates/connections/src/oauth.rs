@@ -589,7 +589,10 @@ impl OAuthClient {
     pub(crate) fn save_secret<T: Serialize>(&self, key: &str, value: &T) -> Result<(), OAuthError> {
         self.save(key, value)
     }
-    pub(crate) fn load_secret<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>, OAuthError> {
+    pub(crate) fn load_secret<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, OAuthError> {
         self.load(key)
     }
     pub(crate) fn delete_secret(&self, key: &str) -> Result<(), OAuthError> {

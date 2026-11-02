@@ -160,7 +160,12 @@ impl CaptureHost {
         if session.is_some() {
             self.status.picker_state = "stopped".into();
             // A frame-skip code stays visible after Stop so the person can be told why.
-            if !self.status.reason.as_deref().is_some_and(|r| r.starts_with("uncertain_")) {
+            if !self
+                .status
+                .reason
+                .as_deref()
+                .is_some_and(|r| r.starts_with("uncertain_"))
+            {
                 self.status.reason = Some(reason.into());
             }
         }
@@ -279,7 +284,9 @@ impl AppCore {
         let mut output = child.stdout.take().expect("piped stdout");
         let epoch = self.inner.policy.epoch();
         let control = if let Some(id) = &session {
-            Some(json!({"v":1,"type":"start","payloadBytes":0,"sessionId":id,"policyEpoch":epoch,"normalWindowConfirmed":std::mem::take(&mut host.normal_window_confirmed)}))
+            Some(
+                json!({"v":1,"type":"start","payloadBytes":0,"sessionId":id,"policyEpoch":epoch,"normalWindowConfirmed":std::mem::take(&mut host.normal_window_confirmed)}),
+            )
         } else if requesting {
             Some(
                 json!({"v":1,"type":"request_permission","payloadBytes":0,"sessionId":"","policyEpoch":0}),

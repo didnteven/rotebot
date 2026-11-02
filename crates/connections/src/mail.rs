@@ -4,9 +4,9 @@
 //! effect broker. The app password lives only in the secret store and is never logged.
 use crate::mcp::{McpError, Tool, ToolAnnotations};
 use async_imap::types::{Flag, NameAttribute};
-use mail_parser::MimeHeaders;
 use base64::Engine;
 use futures::TryStreamExt;
+use mail_parser::MimeHeaders;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -74,7 +74,13 @@ pub enum MailError {
     Invalid(String),
 }
 fn refused(text: impl AsRef<str>) -> MailError {
-    MailError::Refused(text.as_ref().chars().filter(|c| !c.is_control()).take(200).collect())
+    MailError::Refused(
+        text.as_ref()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect(),
+    )
 }
 fn imap_error(e: async_imap::error::Error) -> MailError {
     use async_imap::error::Error as E;
@@ -91,20 +97,33 @@ impl MailConfig {
         let host_ok = |h: &str| {
             !h.is_empty()
                 && h.len() <= 253
-                && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                && h.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
                 && !h.starts_with(['-', '.'])
         };
-        if bad(&self.email) || self.email.len() > 254 || self.email.matches('@').count() != 1 || self.email.contains([' ', '<', '>', ',']) {
+        if bad(&self.email)
+            || self.email.len() > 254
+            || self.email.matches('@').count() != 1
+            || self.email.contains([' ', '<', '>', ','])
+        {
             return Err(MailError::Invalid("Enter the full email address.".into()));
         }
         if bad(&self.password) || self.password.len() > 256 {
             return Err(MailError::Invalid("Enter the app password.".into()));
         }
-        if !host_ok(&self.imap_host) || !host_ok(&self.smtp_host) || self.imap_port == 0 || self.smtp_port == 0 {
-            return Err(MailError::Invalid("Enter valid mail server names and ports.".into()));
+        if !host_ok(&self.imap_host)
+            || !host_ok(&self.smtp_host)
+            || self.imap_port == 0
+            || self.smtp_port == 0
+        {
+            return Err(MailError::Invalid(
+                "Enter valid mail server names and ports.".into(),
+            ));
         }
         if !self.tls && !["127.0.0.1", "localhost"].contains(&self.imap_host.as_str()) {
-            return Err(MailError::Invalid("Mail servers must use an encrypted connection.".into()));
+            return Err(MailError::Invalid(
+                "Mail servers must use an encrypted connection.".into(),
+            ));
         }
         Ok(())
     }
@@ -121,7 +140,11 @@ enum Conn {
     Plain(TcpStream),
 }
 impl AsyncRead for Conn {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
             Conn::Tls(s) => Pin::new(s).poll_read(cx, buf),
             Conn::Plain(s) => Pin::new(s).poll_read(cx, buf),
@@ -129,7 +152,11 @@ impl AsyncRead for Conn {
     }
 }
 impl AsyncWrite for Conn {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {
             Conn::Tls(s) => Pin::new(s).poll_write(cx, buf),
             Conn::Plain(s) => Pin::new(s).poll_write(cx, buf),
@@ -167,7 +194,8 @@ async fn tcp(host: &str, port: u16) -> Result<TcpStream, MailError> {
         .map_err(|_| MailError::Unreachable(host.into()))
 }
 async fn upgrade(host: &str, stream: TcpStream) -> Result<Conn, MailError> {
-    let name = ServerName::try_from(host.to_string()).map_err(|_| MailError::Unreachable(host.into()))?;
+    let name =
+        ServerName::try_from(host.to_string()).map_err(|_| MailError::Unreachable(host.into()))?;
     let tls = timeout(STEP, tls_connector().connect(name, stream))
         .await
         .map_err(|_| MailError::Unreachable(host.into()))?
@@ -217,13 +245,23 @@ struct Folder {
 }
 async fn folders(session: &mut Session) -> Result<Vec<Folder>, MailError> {
     let names: Vec<_> = timeout(STEP, async {
-        session.list(Some(""), Some("*")).await.map_err(imap_error)?.try_collect::<Vec<_>>().await.map_err(imap_error)
+        session
+            .list(Some(""), Some("*"))
+            .await
+            .map_err(imap_error)?
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(imap_error)
     })
     .await
     .map_err(|_| MailError::Unreachable("the mail server".into()))??;
     Ok(names
         .iter()
-        .filter(|n| !n.attributes().iter().any(|a| matches!(a, NameAttribute::NoSelect)))
+        .filter(|n| {
+            !n.attributes()
+                .iter()
+                .any(|a| matches!(a, NameAttribute::NoSelect))
+        })
         .map(|n| Folder {
             name: n.name().to_string(),
             special: n
@@ -246,7 +284,10 @@ async fn folders(session: &mut Session) -> Result<Vec<Folder>, MailError> {
 fn role_folder(all: &[Folder], role: &str, fallbacks: &[&str]) -> Option<String> {
     all.iter()
         .find(|f| f.special.iter().any(|s| s == role))
-        .or_else(|| all.iter().find(|f| fallbacks.iter().any(|n| f.name.eq_ignore_ascii_case(n))))
+        .or_else(|| {
+            all.iter()
+                .find(|f| fallbacks.iter().any(|n| f.name.eq_ignore_ascii_case(n)))
+        })
         .map(|f| f.name.clone())
 }
 fn folder_arg(args: &Value, key: &str) -> Result<String, String> {
@@ -257,16 +298,27 @@ fn folder_arg(args: &Value, key: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 fn uid_arg(args: &Value) -> Result<String, String> {
-    let uid = args["uid"].as_str().map(str::to_string).or_else(|| args["uid"].as_u64().map(|u| u.to_string()));
-    uid.filter(|u| !u.is_empty() && u.len() <= 12 && u.chars().all(|c| c.is_ascii_digit()) && u != "0")
-        .ok_or_else(|| "uid must be a message uid from search_messages".to_string())
+    let uid = args["uid"]
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| args["uid"].as_u64().map(|u| u.to_string()));
+    uid.filter(|u| {
+        !u.is_empty() && u.len() <= 12 && u.chars().all(|c| c.is_ascii_digit()) && u != "0"
+    })
+    .ok_or_else(|| "uid must be a message uid from search_messages".to_string())
 }
 
 // ---------- tools ----------
 
 pub fn tools() -> Vec<Tool> {
-    let read = || ToolAnnotations { read_only_hint: Some(true), destructive_hint: Some(false) };
-    let write = || ToolAnnotations { read_only_hint: Some(false), destructive_hint: Some(false) };
+    let read = || ToolAnnotations {
+        read_only_hint: Some(true),
+        destructive_hint: Some(false),
+    };
+    let write = || ToolAnnotations {
+        read_only_hint: Some(false),
+        destructive_hint: Some(false),
+    };
     let folder = json!({"type": "string", "description": "Folder name (default INBOX)"});
     let uid = json!({"type": "string", "description": "A message uid from search_messages"});
     let message = json!({
@@ -329,14 +381,20 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 pub fn is_read_only(name: &str) -> bool {
-    tools().iter().any(|t| t.name == name && t.annotations.read_only_hint == Some(true))
+    tools()
+        .iter()
+        .any(|t| t.name == name && t.annotations.read_only_hint == Some(true))
 }
 
 fn text_result(value: Value) -> Value {
     json!({"content": [{"type": "text", "text": value.to_string()}], "structuredContent": value})
 }
 fn error_result(message: &str) -> Value {
-    let clean: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
+    let clean: String = message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(300)
+        .collect();
     json!({"isError": true, "content": [{"type": "text", "text": clean}]})
 }
 
@@ -348,7 +406,10 @@ pub async fn call(cfg: &MailConfig, name: &str, args: &Value) -> Result<Value, M
     }
     match run(cfg, name, args).await {
         Ok(v) => Ok(text_result(v)),
-        Err(MailError::Auth) => Err(McpError::AuthRequired { resource_metadata_url: None, scope_hint: None }),
+        Err(MailError::Auth) => Err(McpError::AuthRequired {
+            resource_metadata_url: None,
+            scope_hint: None,
+        }),
         Err(MailError::Unreachable(_)) => Err(McpError::Transport),
         Err(other) => Ok(error_result(&other.to_string())),
     }
@@ -363,8 +424,12 @@ async fn run(cfg: &MailConfig, name: &str, args: &Value) -> Result<Value, MailEr
         if !cfg.gmail() {
             if let Ok(mut session) = open(cfg).await {
                 if let Ok(all) = folders(&mut session).await {
-                    if let Some(sent) = role_folder(&all, "\\sent", &["Sent", "Sent Items", "Sent Messages"]) {
-                        let _ = session.append(&sent, Some("(\\Seen)"), None, &message).await;
+                    if let Some(sent) =
+                        role_folder(&all, "\\sent", &["Sent", "Sent Items", "Sent Messages"])
+                    {
+                        let _ = session
+                            .append(&sent, Some("(\\Seen)"), None, &message)
+                            .await;
                     }
                 }
                 let _ = session.logout().await;
@@ -373,14 +438,22 @@ async fn run(cfg: &MailConfig, name: &str, args: &Value) -> Result<Value, MailEr
         return Ok(json!({"done": "sent"}));
     }
     let mut session = open(cfg).await?;
-    let result = timeout(Duration::from_secs(90), run_imap(cfg, &mut session, name, args))
-        .await
-        .map_err(|_| MailError::Unreachable("the mail server".into()))?;
+    let result = timeout(
+        Duration::from_secs(90),
+        run_imap(cfg, &mut session, name, args),
+    )
+    .await
+    .map_err(|_| MailError::Unreachable("the mail server".into()))?;
     let _ = session.logout().await;
     result
 }
 
-async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Value) -> Result<Value, MailError> {
+async fn run_imap(
+    cfg: &MailConfig,
+    session: &mut Session,
+    name: &str,
+    args: &Value,
+) -> Result<Value, MailError> {
     let bad = |m: String| MailError::Invalid(m);
     match name {
         "list_folders" => {
@@ -390,19 +463,37 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
         "search_messages" => {
             let folder = folder_arg(args, "folder").map_err(bad)?;
             let with_body = args["includeBody"].as_bool() == Some(true);
-            let size = args["pageSize"].as_u64().unwrap_or(10).clamp(1, if with_body { 5 } else { MAX_RESULTS }) as usize;
-            let criteria = search_criteria(args["query"].as_str().unwrap_or_default(), cfg.gmail(), now_secs()).map_err(bad)?;
+            let size = args["pageSize"]
+                .as_u64()
+                .unwrap_or(10)
+                .clamp(1, if with_body { 5 } else { MAX_RESULTS }) as usize;
+            let criteria = search_criteria(
+                args["query"].as_str().unwrap_or_default(),
+                cfg.gmail(),
+                now_secs(),
+            )
+            .map_err(bad)?;
             session.examine(&folder).await.map_err(imap_error)?;
-            let mut uids: Vec<u32> = session.uid_search(&criteria).await.map_err(imap_error)?.into_iter().collect();
+            let mut uids: Vec<u32> = session
+                .uid_search(&criteria)
+                .await
+                .map_err(imap_error)?
+                .into_iter()
+                .collect();
             uids.sort_unstable_by(|a, b| b.cmp(a));
             uids.truncate(size);
             let mut messages = Vec::new();
             if !uids.is_empty() {
-                let set = uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+                let set = uids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
                 let query = if with_body {
                     format!("(UID FLAGS BODY.PEEK[]<0.{MAX_FETCH_BYTES}>)")
                 } else {
-                    "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])".to_string()
+                    "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])"
+                        .to_string()
                 };
                 let per_message = MAX_BODY_CHARS * 2 / uids.len().max(1);
                 let fetched: Vec<_> = session
@@ -414,7 +505,8 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
                     .map_err(imap_error)?;
                 for f in &fetched {
                     let Some(uid) = f.uid else { continue };
-                    let parsed = if with_body { f.body() } else { f.header() }.and_then(|h| mail_parser::MessageParser::default().parse(h));
+                    let parsed = if with_body { f.body() } else { f.header() }
+                        .and_then(|h| mail_parser::MessageParser::default().parse(h));
                     let unread = !f.flags().any(|fl| matches!(fl, Flag::Seen));
                     let mut entry = json!({
                         "uid": uid.to_string(), "folder": folder,
@@ -425,12 +517,18 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
                         "messageId": parsed.as_ref().and_then(|m| m.message_id()).map(|id| format!("<{id}>")).unwrap_or_default(),
                     });
                     if let (true, Some(m)) = (with_body, parsed.as_ref()) {
-                        entry["body"] = json!(m.body_text(0).map(|b| b.to_string()).unwrap_or_default().chars().take(per_message.min(MAX_BODY_CHARS)).collect::<String>());
+                        entry["body"] = json!(m
+                            .body_text(0)
+                            .map(|b| b.to_string())
+                            .unwrap_or_default()
+                            .chars()
+                            .take(per_message.min(MAX_BODY_CHARS))
+                            .collect::<String>());
                         entry["attachments"] = json!(m.attachments().take(20).map(|a| json!({"name": a.attachment_name().map(clean_line).unwrap_or_default(), "size": a.len()})).collect::<Vec<_>>());
                     }
                     messages.push((uid, entry));
                 }
-                messages.sort_by(|a, b| b.0.cmp(&a.0));
+                messages.sort_by_key(|a| std::cmp::Reverse(a.0));
             }
             Ok(json!({"messages": messages.into_iter().map(|(_, m)| m).collect::<Vec<_>>()}))
         }
@@ -445,11 +543,28 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
                 .try_collect()
                 .await
                 .map_err(imap_error)?;
-            let raw = fetched.iter().find_map(|f| f.body()).ok_or_else(|| refused("that message no longer exists"))?;
-            let m = mail_parser::MessageParser::default().parse(raw).ok_or_else(|| refused("that message could not be read"))?;
-            let body: String = m.body_text(0).map(|b| b.to_string()).unwrap_or_default().chars().take(MAX_BODY_CHARS).collect();
-            let attachments: Vec<Value> = m.attachments().take(20).map(|a| json!({
-                "name": a.attachment_name().map(clean_line).unwrap_or_default(), "size": a.len()})).collect();
+            let raw = fetched
+                .iter()
+                .find_map(|f| f.body())
+                .ok_or_else(|| refused("that message no longer exists"))?;
+            let m = mail_parser::MessageParser::default()
+                .parse(raw)
+                .ok_or_else(|| refused("that message could not be read"))?;
+            let body: String = m
+                .body_text(0)
+                .map(|b| b.to_string())
+                .unwrap_or_default()
+                .chars()
+                .take(MAX_BODY_CHARS)
+                .collect();
+            let attachments: Vec<Value> = m
+                .attachments()
+                .take(20)
+                .map(|a| {
+                    json!({
+                "name": a.attachment_name().map(clean_line).unwrap_or_default(), "size": a.len()})
+                })
+                .collect();
             Ok(json!({
                 "uid": uid, "folder": folder, "from": from_text(&m), "to": address_text(m.to()), "cc": address_text(m.cc()),
                 "date": m.date().map(|d| d.to_rfc3339()).unwrap_or_default(),
@@ -461,9 +576,16 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
         "create_draft" => {
             let (message, _) = build_message(cfg, args, true).map_err(bad)?;
             let all = folders(session).await?;
-            let drafts = role_folder(&all, "\\drafts", &["Drafts", "[Gmail]/Drafts", "Draft Messages", "Draft"])
-                .ok_or_else(|| refused("no Drafts folder was found"))?;
-            session.append(&drafts, Some("(\\Draft)"), None, &message).await.map_err(imap_error)?;
+            let drafts = role_folder(
+                &all,
+                "\\drafts",
+                &["Drafts", "[Gmail]/Drafts", "Draft Messages", "Draft"],
+            )
+            .ok_or_else(|| refused("no Drafts folder was found"))?;
+            session
+                .append(&drafts, Some("(\\Draft)"), None, &message)
+                .await
+                .map_err(imap_error)?;
             Ok(json!({"done": "draft saved", "folder": drafts}))
         }
         "mark_message" => {
@@ -471,14 +593,28 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
             let uid = uid_arg(args).map_err(bad)?;
             session.select(&folder).await.map_err(imap_error)?;
             for (key, sign) in [("addFlags", "+"), ("removeFlags", "-")] {
-                let flags: Vec<&str> = args[key].as_array().into_iter().flatten().filter_map(Value::as_str)
-                    .filter(|f| ["Seen", "Flagged", "Answered"].contains(f)).collect();
+                let flags: Vec<&str> = args[key]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|f| ["Seen", "Flagged", "Answered"].contains(f))
+                    .collect();
                 if flags.is_empty() {
                     continue;
                 }
-                let list = flags.iter().map(|f| format!("\\{f}")).collect::<Vec<_>>().join(" ");
-                let _: Vec<_> = session.uid_store(&uid, format!("{sign}FLAGS.SILENT ({list})")).await.map_err(imap_error)?
-                    .try_collect().await.map_err(imap_error)?;
+                let list = flags
+                    .iter()
+                    .map(|f| format!("\\{f}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let _: Vec<_> = session
+                    .uid_store(&uid, format!("{sign}FLAGS.SILENT ({list})"))
+                    .await
+                    .map_err(imap_error)?
+                    .try_collect()
+                    .await
+                    .map_err(imap_error)?;
             }
             Ok(json!({"uid": uid, "done": "flags changed"}))
         }
@@ -487,8 +623,18 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
             let uid = uid_arg(args).map_err(bad)?;
             let target = if name == "trash_message" {
                 let all = folders(session).await?;
-                role_folder(&all, "\\trash", &["Trash", "[Gmail]/Trash", "Deleted Items", "Deleted Messages", "Bin"])
-                    .ok_or_else(|| refused("no Trash folder was found"))?
+                role_folder(
+                    &all,
+                    "\\trash",
+                    &[
+                        "Trash",
+                        "[Gmail]/Trash",
+                        "Deleted Items",
+                        "Deleted Messages",
+                        "Bin",
+                    ],
+                )
+                .ok_or_else(|| refused("no Trash folder was found"))?
             } else {
                 folder_arg(args, "toFolder").map_err(bad)?
             };
@@ -496,11 +642,24 @@ async fn run_imap(cfg: &MailConfig, session: &mut Session, name: &str, args: &Va
             if session.uid_mv(&uid, &target).await.is_err() {
                 // Older servers without MOVE: copy, then remove the original from this folder.
                 session.uid_copy(&uid, &target).await.map_err(imap_error)?;
-                let _: Vec<_> = session.uid_store(&uid, "+FLAGS.SILENT (\\Deleted)").await.map_err(imap_error)?
-                    .try_collect().await.map_err(imap_error)?;
-                let _: Vec<_> = session.uid_expunge(&uid).await.map_err(imap_error)?.try_collect().await.map_err(imap_error)?;
+                let _: Vec<_> = session
+                    .uid_store(&uid, "+FLAGS.SILENT (\\Deleted)")
+                    .await
+                    .map_err(imap_error)?
+                    .try_collect()
+                    .await
+                    .map_err(imap_error)?;
+                let _: Vec<_> = session
+                    .uid_expunge(&uid)
+                    .await
+                    .map_err(imap_error)?
+                    .try_collect()
+                    .await
+                    .map_err(imap_error)?;
             }
-            Ok(json!({"uid": uid, "done": if name == "trash_message" { "moved to Trash" } else { "moved" }, "folder": target}))
+            Ok(
+                json!({"uid": uid, "done": if name == "trash_message" { "moved to Trash" } else { "moved" }, "folder": target}),
+            )
         }
         _ => Err(bad("unknown tool".into())),
     }
@@ -530,7 +689,10 @@ fn from_text(m: &mail_parser::Message<'_>) -> String {
 // ---------- search ----------
 
 fn now_secs() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 /// (year, month 1-12, day 1-31) of a day count since 1970-01-01.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
@@ -545,7 +707,9 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
-const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 fn imap_date(secs: i64) -> String {
     let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
     format!("{d}-{}-{y}", MONTHS[m as usize - 1])
@@ -555,18 +719,34 @@ fn rfc2822_date(secs: i64) -> String {
     let (y, m, d) = civil_from_days(days);
     let rem = secs.rem_euclid(86_400);
     let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][days.rem_euclid(7) as usize];
-    format!("{weekday}, {d} {} {y} {:02}:{:02}:{:02} +0000", MONTHS[m as usize - 1], rem / 3600, rem % 3600 / 60, rem % 60)
+    format!(
+        "{weekday}, {d} {} {y} {:02}:{:02}:{:02} +0000",
+        MONTHS[m as usize - 1],
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 fn quoted(s: &str) -> Result<String, String> {
     if s.chars().any(char::is_control) || s.len() > 500 {
         return Err("the search text has a line break or is too long".into());
     }
-    Ok(format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
+    Ok(format!(
+        "\"{}\"",
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    ))
 }
 fn iso_to_imap(s: &str) -> Result<String, String> {
     let p: Vec<&str> = s.split('-').collect();
-    let ok = p.len() == 3 && p[0].len() == 4 && p[1].len() == 2 && p[2].len() == 2 && p.iter().all(|x| x.chars().all(|c| c.is_ascii_digit()));
-    let (m, d) = (p.get(1).and_then(|x| x.parse::<usize>().ok()).unwrap_or(0), p.get(2).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0));
+    let ok = p.len() == 3
+        && p[0].len() == 4
+        && p[1].len() == 2
+        && p[2].len() == 2
+        && p.iter().all(|x| x.chars().all(|c| c.is_ascii_digit()));
+    let (m, d) = (
+        p.get(1).and_then(|x| x.parse::<usize>().ok()).unwrap_or(0),
+        p.get(2).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0),
+    );
     if !ok || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return Err("dates look like 2026-10-31".into());
     }
@@ -609,8 +789,15 @@ fn search_criteria(query: &str, gmail: bool, now: i64) -> Result<String, String>
             Some(("before", v)) => format!("BEFORE {}", iso_to_imap(v)?),
             Some(("newer_than", v)) => {
                 let (n, unit) = v.split_at(v.len().saturating_sub(1));
-                let n: i64 = n.parse().map_err(|_| "newer_than looks like 7d, 2w or 1m".to_string())?;
-                let days = match unit { "d" => n, "w" => n * 7, "m" => n * 30, _ => return Err("newer_than looks like 7d, 2w or 1m".into()) };
+                let n: i64 = n
+                    .parse()
+                    .map_err(|_| "newer_than looks like 7d, 2w or 1m".to_string())?;
+                let days = match unit {
+                    "d" => n,
+                    "w" => n * 7,
+                    "m" => n * 30,
+                    _ => return Err("newer_than looks like 7d, 2w or 1m".into()),
+                };
                 format!("SINCE {}", imap_date(now - days.clamp(0, 3650) * 86_400))
             }
             Some(("is", "unread")) => "UNSEEN".into(),
@@ -643,11 +830,18 @@ fn bare_address(entry: &str) -> Result<String, String> {
         && inner.matches('@').count() == 1
         && !inner.starts_with(['@', '-'])
         && !inner.ends_with('@')
-        && !inner.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"' | ','));
-    ok.then(|| inner.to_string()).ok_or_else(|| format!("“{}” is not a valid email address", clean_line(entry)))
+        && !inner
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"' | ','));
+    ok.then(|| inner.to_string())
+        .ok_or_else(|| format!("“{}” is not a valid email address", clean_line(entry)))
 }
 fn addresses(list: &str) -> Result<Vec<String>, String> {
-    list.split(',').map(str::trim).filter(|s| !s.is_empty()).map(bare_address).collect()
+    list.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(bare_address)
+        .collect()
 }
 fn random_hex() -> String {
     let mut b = [0u8; 12];
@@ -658,12 +852,19 @@ fn encode_subject(subject: &str) -> String {
     if subject.is_ascii() {
         subject.to_string()
     } else {
-        format!("=?UTF-8?B?{}?=", base64::engine::general_purpose::STANDARD.encode(subject))
+        format!(
+            "=?UTF-8?B?{}?=",
+            base64::engine::general_purpose::STANDARD.encode(subject)
+        )
     }
 }
 /// The RFC 5322 message and the envelope recipients (to, cc and bcc together).
 /// A draft keeps its Bcc line; a message that is sent never carries one.
-fn build_message(cfg: &MailConfig, args: &Value, keep_bcc: bool) -> Result<(Vec<u8>, Vec<String>), String> {
+fn build_message(
+    cfg: &MailConfig,
+    args: &Value,
+    keep_bcc: bool,
+) -> Result<(Vec<u8>, Vec<String>), String> {
     let to = header_value(args["to"].as_str(), true)?;
     let cc = header_value(args["cc"].as_str(), false)?;
     let bcc = header_value(args["bcc"].as_str(), false)?;
@@ -728,15 +929,28 @@ async fn reply<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(u16, String), Ma
             }
         }
         let text = String::from_utf8_lossy(&line).trim_end().to_string();
-        let code: u16 = text.get(..3).and_then(|c| c.parse().ok()).ok_or_else(|| refused("unexpected reply"))?;
+        let code: u16 = text
+            .get(..3)
+            .and_then(|c| c.parse().ok())
+            .ok_or_else(|| refused("unexpected reply"))?;
         if text.as_bytes().get(3) != Some(&b'-') {
             return Ok((code, text.get(4..).unwrap_or_default().to_string()));
         }
     }
 }
-async fn command<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, line: &str, want: &[u16]) -> Result<(u16, String), MailError> {
-    stream.write_all(line.as_bytes()).await.map_err(|_| MailError::Unreachable("the mail server".into()))?;
-    stream.write_all(b"\r\n").await.map_err(|_| MailError::Unreachable("the mail server".into()))?;
+async fn command<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
+    line: &str,
+    want: &[u16],
+) -> Result<(u16, String), MailError> {
+    stream
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|_| MailError::Unreachable("the mail server".into()))?;
+    stream
+        .write_all(b"\r\n")
+        .await
+        .map_err(|_| MailError::Unreachable("the mail server".into()))?;
     let (code, text) = reply(stream).await?;
     if want.contains(&code) {
         Ok((code, text))
@@ -747,7 +961,11 @@ async fn command<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, line: &str, 
     }
 }
 
-async fn smtp_send(cfg: &MailConfig, message: &[u8], recipients: &[String]) -> Result<(), MailError> {
+async fn smtp_send(
+    cfg: &MailConfig,
+    message: &[u8],
+    recipients: &[String],
+) -> Result<(), MailError> {
     cfg.validate()?;
     let host = &cfg.smtp_host;
     let mut stream = if cfg.smtp_starttls || !cfg.tls {
@@ -759,7 +977,9 @@ async fn smtp_send(cfg: &MailConfig, message: &[u8], recipients: &[String]) -> R
         command(&mut plain, "EHLO macroscope.local", &[250]).await?;
         if cfg.tls {
             command(&mut plain, "STARTTLS", &[220]).await?;
-            let Conn::Plain(raw) = plain else { unreachable!() };
+            let Conn::Plain(raw) = plain else {
+                unreachable!()
+            };
             upgrade(host, raw).await?
         } else {
             plain
@@ -773,7 +993,8 @@ async fn smtp_send(cfg: &MailConfig, message: &[u8], recipients: &[String]) -> R
         tls
     };
     command(&mut stream, "EHLO macroscope.local", &[250]).await?;
-    let auth = base64::engine::general_purpose::STANDARD.encode(format!("\0{}\0{}", cfg.email, cfg.password));
+    let auth = base64::engine::general_purpose::STANDARD
+        .encode(format!("\0{}\0{}", cfg.email, cfg.password));
     command(&mut stream, &format!("AUTH PLAIN {auth}"), &[235]).await?;
     command(&mut stream, &format!("MAIL FROM:<{}>", cfg.email), &[250]).await?;
     for r in recipients {
@@ -794,7 +1015,10 @@ async fn smtp_send(cfg: &MailConfig, message: &[u8], recipients: &[String]) -> R
         data.extend_from_slice(b"\r\n");
     }
     data.extend_from_slice(b".\r\n");
-    stream.write_all(&data).await.map_err(|_| MailError::Unreachable("the mail server".into()))?;
+    stream
+        .write_all(&data)
+        .await
+        .map_err(|_| MailError::Unreachable("the mail server".into()))?;
     let (code, text) = reply(&mut stream).await?;
     if code != 250 {
         return Err(refused(format!("{code} {text}")));
@@ -808,7 +1032,16 @@ mod tests {
     use super::*;
 
     fn cfg() -> MailConfig {
-        MailConfig { email: "me@example.com".into(), password: "secret".into(), imap_host: "imap.example.com".into(), imap_port: 993, smtp_host: "smtp.example.com".into(), smtp_port: 465, smtp_starttls: false, tls: true }
+        MailConfig {
+            email: "me@example.com".into(),
+            password: "secret".into(),
+            imap_host: "imap.example.com".into(),
+            imap_port: 993,
+            smtp_host: "smtp.example.com".into(),
+            smtp_port: 465,
+            smtp_starttls: false,
+            tls: true,
+        }
     }
 
     #[test]
@@ -825,12 +1058,27 @@ mod tests {
     fn queries_become_safe_imap_criteria() {
         let now = 1_793_394_000;
         assert_eq!(search_criteria("", false, now).unwrap(), "ALL");
-        assert_eq!(search_criteria("from:amy is:unread \"big news\"", false, now).unwrap(), "FROM \"amy\" UNSEEN TEXT \"big news\"");
-        assert_eq!(search_criteria("newer_than:7d", false, now).unwrap(), "SINCE 23-Oct-2026");
-        assert_eq!(search_criteria("since:2026-10-01 before:2026-11-01", false, now).unwrap(), "SINCE 1-Oct-2026 BEFORE 1-Nov-2026");
-        assert_eq!(search_criteria("a \"b\" newer_than:2d", true, now).unwrap(), "X-GM-RAW \"a \\\"b\\\" newer_than:2d\"");
+        assert_eq!(
+            search_criteria("from:amy is:unread \"big news\"", false, now).unwrap(),
+            "FROM \"amy\" UNSEEN TEXT \"big news\""
+        );
+        assert_eq!(
+            search_criteria("newer_than:7d", false, now).unwrap(),
+            "SINCE 23-Oct-2026"
+        );
+        assert_eq!(
+            search_criteria("since:2026-10-01 before:2026-11-01", false, now).unwrap(),
+            "SINCE 1-Oct-2026 BEFORE 1-Nov-2026"
+        );
+        assert_eq!(
+            search_criteria("a \"b\" newer_than:2d", true, now).unwrap(),
+            "X-GM-RAW \"a \\\"b\\\" newer_than:2d\""
+        );
         // quotes and backslashes are escaped, line breaks are refused
-        assert_eq!(search_criteria("say\\\"x", false, now).unwrap(), "TEXT \"say\\\\x\"");
+        assert_eq!(
+            search_criteria("say\\\"x", false, now).unwrap(),
+            "TEXT \"say\\\\x\""
+        );
         assert!(search_criteria("a\r\nb LOGOUT", false, now).is_err());
         assert!(search_criteria("since:soon", false, now).is_err());
     }
@@ -841,12 +1089,24 @@ mod tests {
         let (sent, rcpts) = build_message(&cfg(), &args, false).unwrap();
         let text = String::from_utf8(sent).unwrap();
         assert_eq!(rcpts, ["a@b.c", "d@e.f", "x@y.z"]);
-        assert!(!text.contains("Bcc:") && text.contains("From: me@example.com") && text.contains("In-Reply-To: <id@x>"));
-        assert!(text.contains("Subject: =?UTF-8?B?") && text.contains("Message-ID: <") && text.contains("@example.com>"));
+        assert!(
+            !text.contains("Bcc:")
+                && text.contains("From: me@example.com")
+                && text.contains("In-Reply-To: <id@x>")
+        );
+        assert!(
+            text.contains("Subject: =?UTF-8?B?")
+                && text.contains("Message-ID: <")
+                && text.contains("@example.com>")
+        );
         let (draft, _) = build_message(&cfg(), &args, true).unwrap();
         assert!(String::from_utf8(draft).unwrap().contains("Bcc: x@y.z"));
-        for bad in [json!({"to": "a@b.c\r\nBcc: x@y.z", "subject": "s", "body": "b"}), json!({"to": "", "subject": "s", "body": "b"}),
-            json!({"to": "not an address", "subject": "s", "body": "b"}), json!({"to": "a@b.c", "subject": "s\nX: y", "body": "b"})] {
+        for bad in [
+            json!({"to": "a@b.c\r\nBcc: x@y.z", "subject": "s", "body": "b"}),
+            json!({"to": "", "subject": "s", "body": "b"}),
+            json!({"to": "not an address", "subject": "s", "body": "b"}),
+            json!({"to": "a@b.c", "subject": "s\nX: y", "body": "b"}),
+        ] {
             assert!(build_message(&cfg(), &bad, false).is_err(), "{bad}");
         }
     }
@@ -856,7 +1116,14 @@ mod tests {
         for n in ["search_messages", "get_message", "list_folders"] {
             assert!(is_read_only(n), "{n}");
         }
-        for n in ["create_draft", "send_message", "mark_message", "move_message", "trash_message", "nope"] {
+        for n in [
+            "create_draft",
+            "send_message",
+            "mark_message",
+            "move_message",
+            "trash_message",
+            "nope",
+        ] {
             assert!(!is_read_only(n), "{n}");
         }
         assert!(cfg().validate().is_ok());
@@ -868,19 +1135,37 @@ mod tests {
         assert!(c.validate().is_err());
         let mut c = cfg();
         c.tls = false;
-        assert!(c.validate().is_err(), "plain text is only for a local test server");
+        assert!(
+            c.validate().is_err(),
+            "plain text is only for a local test server"
+        );
         assert_eq!(format!("{:?}", cfg()), "MailConfig([REDACTED])");
     }
 
     #[test]
     fn folders_are_found_by_role_then_by_common_name() {
         let all = vec![
-            Folder { name: "INBOX".into(), special: vec![] },
-            Folder { name: "[Gmail]/Bin".into(), special: vec!["\\trash".into()] },
-            Folder { name: "Drafts".into(), special: vec![] },
+            Folder {
+                name: "INBOX".into(),
+                special: vec![],
+            },
+            Folder {
+                name: "[Gmail]/Bin".into(),
+                special: vec!["\\trash".into()],
+            },
+            Folder {
+                name: "Drafts".into(),
+                special: vec![],
+            },
         ];
-        assert_eq!(role_folder(&all, "\\trash", &["Trash"]).unwrap(), "[Gmail]/Bin");
-        assert_eq!(role_folder(&all, "\\drafts", &["Drafts"]).unwrap(), "Drafts");
+        assert_eq!(
+            role_folder(&all, "\\trash", &["Trash"]).unwrap(),
+            "[Gmail]/Bin"
+        );
+        assert_eq!(
+            role_folder(&all, "\\drafts", &["Drafts"]).unwrap(),
+            "Drafts"
+        );
         assert!(role_folder(&all, "\\sent", &["Sent"]).is_none());
     }
 
@@ -920,7 +1205,11 @@ mod tests {
                         seen.lock().unwrap().commands.push(rest.to_string());
                         let up = rest.to_ascii_uppercase();
                         let out = if up.starts_with("LOGIN") {
-                            if rest.contains("secret") { format!("{tag} OK logged in\r\n") } else { format!("{tag} NO [AUTHENTICATIONFAILED] bad\r\n") }
+                            if rest.contains("secret") {
+                                format!("{tag} OK logged in\r\n")
+                            } else {
+                                format!("{tag} NO [AUTHENTICATIONFAILED] bad\r\n")
+                            }
                         } else if up.starts_with("LIST") {
                             format!("* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n* LIST (\\HasNoChildren \\Drafts) \"/\" \"Drafts\"\r\n* LIST (\\HasNoChildren \\Trash) \"/\" \"Deleted Stuff\"\r\n* LIST (\\HasNoChildren \\Sent) \"/\" \"Sent\"\r\n{tag} OK done\r\n")
                         } else if up.starts_with("EXAMINE") || up.starts_with("SELECT") {
@@ -935,19 +1224,33 @@ mod tests {
                             }
                             o + &format!("{tag} OK done\r\n")
                         } else if up.starts_with("UID FETCH") {
-                            format!("* 1 FETCH (UID 1 BODY[] {{{}}}\r\n{FULL})\r\n{tag} OK done\r\n", FULL.len())
+                            format!(
+                                "* 1 FETCH (UID 1 BODY[] {{{}}}\r\n{FULL})\r\n{tag} OK done\r\n",
+                                FULL.len()
+                            )
                         } else if up.starts_with("APPEND") {
-                            let size: usize = rest.rsplit('{').next().unwrap().trim_end_matches('}').parse().unwrap();
+                            let size: usize = rest
+                                .rsplit('{')
+                                .next()
+                                .unwrap()
+                                .trim_end_matches('}')
+                                .parse()
+                                .unwrap();
                             w.write_all(b"+ go ahead\r\n").await.unwrap();
                             let mut data = vec![0u8; size];
                             r.read_exact(&mut data).await.unwrap();
                             let mut end = String::new();
                             r.read_line(&mut end).await.unwrap();
                             let folder = rest.split('"').nth(1).unwrap_or_default().to_string();
-                            seen.lock().unwrap().appended.push((folder, String::from_utf8_lossy(&data).into_owned()));
+                            seen.lock()
+                                .unwrap()
+                                .appended
+                                .push((folder, String::from_utf8_lossy(&data).into_owned()));
                             format!("{tag} OK appended\r\n")
                         } else if up.starts_with("LOGOUT") {
-                            w.write_all(format!("* BYE\r\n{tag} OK bye\r\n").as_bytes()).await.unwrap();
+                            w.write_all(format!("* BYE\r\n{tag} OK bye\r\n").as_bytes())
+                                .await
+                                .unwrap();
                             return;
                         } else {
                             format!("{tag} OK done\r\n")
@@ -987,12 +1290,34 @@ mod tests {
                             }
                             continue;
                         }
-                        seen.lock().unwrap().smtp.push(format!("> {}", if line.starts_with("AUTH") { "AUTH [hidden]".to_string() } else { line.clone() }));
-                        let out: &[u8] = if line.starts_with("EHLO") { b"250-hello\r\n250 AUTH PLAIN\r\n" }
-                            else if line.starts_with("AUTH") { if line.contains(&base64::engine::general_purpose::STANDARD.encode("\0me@example.com\0secret")) { b"235 ok\r\n" } else { b"535 bad\r\n" } }
-                            else if line.starts_with("DATA") { in_data = true; b"354 go\r\n" }
-                            else if line.starts_with("QUIT") { w.write_all(b"221 bye\r\n").await.unwrap(); return; }
-                            else { b"250 ok\r\n" };
+                        seen.lock().unwrap().smtp.push(format!(
+                            "> {}",
+                            if line.starts_with("AUTH") {
+                                "AUTH [hidden]".to_string()
+                            } else {
+                                line.clone()
+                            }
+                        ));
+                        let out: &[u8] = if line.starts_with("EHLO") {
+                            b"250-hello\r\n250 AUTH PLAIN\r\n"
+                        } else if line.starts_with("AUTH") {
+                            if line.contains(
+                                &base64::engine::general_purpose::STANDARD
+                                    .encode("\0me@example.com\0secret"),
+                            ) {
+                                b"235 ok\r\n"
+                            } else {
+                                b"535 bad\r\n"
+                            }
+                        } else if line.starts_with("DATA") {
+                            in_data = true;
+                            b"354 go\r\n"
+                        } else if line.starts_with("QUIT") {
+                            w.write_all(b"221 bye\r\n").await.unwrap();
+                            return;
+                        } else {
+                            b"250 ok\r\n"
+                        };
                         w.write_all(out).await.unwrap();
                     }
                 });
@@ -1002,7 +1327,16 @@ mod tests {
     }
 
     fn local(imap: u16, smtp: u16) -> MailConfig {
-        MailConfig { email: "me@example.com".into(), password: "secret".into(), imap_host: "127.0.0.1".into(), imap_port: imap, smtp_host: "127.0.0.1".into(), smtp_port: smtp, smtp_starttls: false, tls: false }
+        MailConfig {
+            email: "me@example.com".into(),
+            password: "secret".into(),
+            imap_host: "127.0.0.1".into(),
+            imap_port: imap,
+            smtp_host: "127.0.0.1".into(),
+            smtp_port: smtp,
+            smtp_starttls: false,
+            tls: false,
+        }
     }
 
     #[tokio::test]
@@ -1015,9 +1349,18 @@ mod tests {
         assert!(matches!(verify(&wrong).await, Err(MailError::Auth)));
 
         let folders = call(&cfg, "list_folders", &json!({})).await.unwrap();
-        assert_eq!(folders["structuredContent"]["folders"], json!(["INBOX", "Drafts", "Deleted Stuff", "Sent"]));
+        assert_eq!(
+            folders["structuredContent"]["folders"],
+            json!(["INBOX", "Drafts", "Deleted Stuff", "Sent"])
+        );
 
-        let found = call(&cfg, "search_messages", &json!({"query": "from:amy", "pageSize": 5})).await.unwrap();
+        let found = call(
+            &cfg,
+            "search_messages",
+            &json!({"query": "from:amy", "pageSize": 5}),
+        )
+        .await
+        .unwrap();
         let messages = found["structuredContent"]["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["uid"], "2", "newest first");
@@ -1026,43 +1369,119 @@ mod tests {
         assert_eq!(messages[0]["unread"], true);
         assert_eq!(messages[1]["unread"], false);
         assert_eq!(messages[0]["messageId"], "<abc@example.org>");
-        assert!(seen.lock().unwrap().commands.iter().any(|c| c == "UID SEARCH FROM \"amy\""));
+        assert!(seen
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .any(|c| c == "UID SEARCH FROM \"amy\""));
 
         // includeBody returns the text in the same read, so one fixed read can get the latest email's content.
-        let with_body = call(&cfg, "search_messages", &json!({"query": "from:amy", "pageSize": 1, "includeBody": true})).await.unwrap();
+        let with_body = call(
+            &cfg,
+            "search_messages",
+            &json!({"query": "from:amy", "pageSize": 1, "includeBody": true}),
+        )
+        .await
+        .unwrap();
         let first = &with_body["structuredContent"]["messages"][0];
-        assert_eq!(first["body"].as_str().unwrap().trim(), "Your voucher code is ABC123.");
+        assert_eq!(
+            first["body"].as_str().unwrap().trim(),
+            "Your voucher code is ABC123."
+        );
         assert_eq!(first["subject"], "Voucher");
 
-        let read = call(&cfg, "get_message", &json!({"uid": "1"})).await.unwrap();
-        assert_eq!(read["structuredContent"]["body"].as_str().unwrap().trim(), "Your voucher code is ABC123.");
+        let read = call(&cfg, "get_message", &json!({"uid": "1"}))
+            .await
+            .unwrap();
+        assert_eq!(
+            read["structuredContent"]["body"].as_str().unwrap().trim(),
+            "Your voucher code is ABC123."
+        );
         assert_eq!(read["structuredContent"]["subject"], "Voucher");
 
-        let draft = call(&cfg, "create_draft", &json!({"to": "a@b.c", "subject": "Hello", "body": "Draft text"})).await.unwrap();
+        let draft = call(
+            &cfg,
+            "create_draft",
+            &json!({"to": "a@b.c", "subject": "Hello", "body": "Draft text"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(draft["structuredContent"]["folder"], "Drafts");
         assert_eq!(seen.lock().unwrap().appended[0].0, "Drafts");
         assert!(seen.lock().unwrap().appended[0].1.contains("To: a@b.c"));
 
-        let sent = call(&cfg, "send_message", &json!({"to": "a@b.c", "bcc": "z@y.x", "subject": "Hello", "body": "Body\n.line"})).await.unwrap();
+        let sent = call(
+            &cfg,
+            "send_message",
+            &json!({"to": "a@b.c", "bcc": "z@y.x", "subject": "Hello", "body": "Body\n.line"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(sent["structuredContent"]["done"], "sent");
         let smtp = seen.lock().unwrap().smtp.clone();
         assert!(smtp.contains(&"> MAIL FROM:<me@example.com>".to_string()));
-        assert!(smtp.contains(&"> RCPT TO:<z@y.x>".to_string()), "bcc recipients get the message");
-        assert!(!smtp.iter().any(|l| l.starts_with("Bcc:")), "but the message does not name them");
-        assert!(!smtp.iter().any(|l| l.contains("secret")), "the password is never echoed");
-        assert!(seen.lock().unwrap().appended.iter().any(|(f, _)| f == "Sent"), "a copy goes to Sent on non-Gmail servers");
+        assert!(
+            smtp.contains(&"> RCPT TO:<z@y.x>".to_string()),
+            "bcc recipients get the message"
+        );
+        assert!(
+            !smtp.iter().any(|l| l.starts_with("Bcc:")),
+            "but the message does not name them"
+        );
+        assert!(
+            !smtp.iter().any(|l| l.contains("secret")),
+            "the password is never echoed"
+        );
+        assert!(
+            seen.lock()
+                .unwrap()
+                .appended
+                .iter()
+                .any(|(f, _)| f == "Sent"),
+            "a copy goes to Sent on non-Gmail servers"
+        );
 
-        call(&cfg, "mark_message", &json!({"uid": "2", "addFlags": ["Seen", "Bogus"]})).await.unwrap();
-        call(&cfg, "trash_message", &json!({"uid": "2"})).await.unwrap();
-        call(&cfg, "move_message", &json!({"uid": "2", "toFolder": "Archive"})).await.unwrap();
+        call(
+            &cfg,
+            "mark_message",
+            &json!({"uid": "2", "addFlags": ["Seen", "Bogus"]}),
+        )
+        .await
+        .unwrap();
+        call(&cfg, "trash_message", &json!({"uid": "2"}))
+            .await
+            .unwrap();
+        call(
+            &cfg,
+            "move_message",
+            &json!({"uid": "2", "toFolder": "Archive"}),
+        )
+        .await
+        .unwrap();
         let commands = seen.lock().unwrap().commands.clone();
-        assert!(commands.contains(&"UID STORE 2 +FLAGS.SILENT (\\Seen)".to_string()), "{commands:?}");
-        assert!(commands.contains(&"UID MOVE 2 \"Deleted Stuff\"".to_string()), "trash goes to the folder marked Trash");
+        assert!(
+            commands.contains(&"UID STORE 2 +FLAGS.SILENT (\\Seen)".to_string()),
+            "{commands:?}"
+        );
+        assert!(
+            commands.contains(&"UID MOVE 2 \"Deleted Stuff\"".to_string()),
+            "trash goes to the folder marked Trash"
+        );
         assert!(commands.contains(&"UID MOVE 2 \"Archive\"".to_string()));
 
-        let refused = call(&cfg, "send_message", &json!({"to": "bad address", "subject": "s", "body": "b"})).await.unwrap();
+        let refused = call(
+            &cfg,
+            "send_message",
+            &json!({"to": "bad address", "subject": "s", "body": "b"}),
+        )
+        .await
+        .unwrap();
         assert_eq!(refused["isError"], true);
         assert!(call(&cfg, "delete_everything", &json!({})).await.is_err());
-        assert!(matches!(call(&wrong, "list_folders", &json!({})).await, Err(McpError::AuthRequired { .. })));
+        assert!(matches!(
+            call(&wrong, "list_folders", &json!({})).await,
+            Err(McpError::AuthRequired { .. })
+        ));
     }
 }

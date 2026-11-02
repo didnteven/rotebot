@@ -7,10 +7,10 @@
 //! checks, outbound input samples are synthetic, and runs commit the exact staged bytes
 //! the user approved.
 
-pub mod bots;
 pub mod api;
 pub mod api_discovery;
 pub mod api_examples;
+pub mod bots;
 pub mod checks;
 pub mod conditions;
 pub mod connections;
@@ -924,6 +924,7 @@ impl AppCore {
     /// current output, so the model can fix a parser against the real page.
     /// It never includes selected input rows or connection results; failed
     /// details are shapes (`#` for numbers) or sanitized runtime diagnostics.
+    #[allow(clippy::too_many_arguments)]
     fn program_correction_packet(
         draft: &TaskDraft,
         previous: Option<&macroscope_builder::Program>,
@@ -1005,7 +1006,9 @@ impl AppCore {
     /// The sentence a program threw on purpose (`throw new Error("...")`, the builder's rule for
     /// missing or unsupported input). Runtime faults carry another name, such as TypeError.
     fn deliberate_error(detail: &str) -> Option<String> {
-        let rest = detail.split("JavaScript execution failed: Error at line ").nth(1)?;
+        let rest = detail
+            .split("JavaScript execution failed: Error at line ")
+            .nth(1)?;
         let message = rest.split_once(": ")?.1;
         let message = message
             .trim()
@@ -1019,7 +1022,10 @@ impl AppCore {
     /// when the refused site was named by the person or the API plan; a site the
     /// model picked itself is replaced in the repair round with a different one.
     fn refused_source_was_chosen(draft: &TaskDraft, sources: &[WebSource], error: &str) -> bool {
-        let plan = draft.access_plan.as_ref().and_then(|p| serde_json::to_string(p).ok());
+        let plan = draft
+            .access_plan
+            .as_ref()
+            .and_then(|p| serde_json::to_string(p).ok());
         sources
             .iter()
             .filter(|s| error.contains(&format!("Web source '{}'", s.name)))
@@ -2189,10 +2195,9 @@ impl AppCore {
                 }
             }
         }
-        if fetch_error
-            .as_deref()
-            .is_some_and(|e| web::access_failure(e) && Self::refused_source_was_chosen(&draft, &declared_sources, e))
-        {
+        if fetch_error.as_deref().is_some_and(|e| {
+            web::access_failure(e) && Self::refused_source_was_chosen(&draft, &declared_sources, e)
+        }) {
             let message = fetch_error.clone().unwrap();
             self.update_build(&build_id, |s| {
                 s.checks = vec![CheckResult {
@@ -2336,10 +2341,12 @@ impl AppCore {
                         self.fail_build(
                             &build_id,
                             BuildFailureKind::Checks,
-                            web::unreachable_site_message(&failed).unwrap_or_else(|| format!(
-                            "Checks failed: {}. Edit the rules and build again.",
-                            Self::plain_check_failure(&failed.join(", "))
-                        )),
+                            web::unreachable_site_message(&failed).unwrap_or_else(|| {
+                                format!(
+                                    "Checks failed: {}. Edit the rules and build again.",
+                                    Self::plain_check_failure(&failed.join(", "))
+                                )
+                            }),
                         )?;
                     }
                     return Ok(());
@@ -2434,10 +2441,12 @@ impl AppCore {
                 )?;
                     // A source is unusable when it could not be fetched, or when it was fetched
                     // and the program stopped because the page did not hold the data.
-                    let lacking: Vec<(String, String)> = if failed_checks
-                        .iter()
-                        .any(|c| c.detail.as_deref().and_then(Self::deliberate_error).is_some())
-                    {
+                    let lacking: Vec<(String, String)> = if failed_checks.iter().any(|c| {
+                        c.detail
+                            .as_deref()
+                            .and_then(Self::deliberate_error)
+                            .is_some()
+                    }) {
                         declared_sources
                             .iter()
                             .filter(|w| fetched.contains_key(&w.name))
@@ -2447,7 +2456,8 @@ impl AppCore {
                         Vec::new()
                     };
                     if searched_sources.is_none()
-                        && ((!unreachable.is_empty() && failed_checks.iter().any(|c| c.id == "web_sources"))
+                        && ((!unreachable.is_empty()
+                            && failed_checks.iter().any(|c| c.id == "web_sources"))
                             || !lacking.is_empty())
                     {
                         self.push_phase(
@@ -2474,7 +2484,9 @@ impl AppCore {
                         .flatten()
                         .filter(|f| {
                             let host = web::host_of_url(f["url"].as_str().unwrap_or(""));
-                            !unreachable.iter().any(|(url, _)| web::host_of_url(url) == host)
+                            !unreachable
+                                .iter()
+                                .any(|(url, _)| web::host_of_url(url) == host)
                         })
                         .cloned()
                         .collect();
@@ -2569,7 +2581,9 @@ impl AppCore {
                     {
                         let within = !corrected.connection_sources.is_empty()
                             && corrected.connection_sources.iter().all(|s| {
-                                approved.connection_sources.iter().any(|a| a.connector_id == s.connector_id && a.tool_name == s.tool_name)
+                                approved.connection_sources.iter().any(|a| {
+                                    a.connector_id == s.connector_id && a.tool_name == s.tool_name
+                                })
                             });
                         if !within {
                             corrected.connection_sources = approved.connection_sources.clone();
@@ -2613,7 +2627,9 @@ impl AppCore {
                             self.allow_insecure_web(),
                         ) {
                             Ok(hosts) => (hosts, None),
-                            Err(message) if fix_round < 2 + source_swaps => (Vec::new(), Some(message)),
+                            Err(message) if fix_round < 2 + source_swaps => {
+                                (Vec::new(), Some(message))
+                            }
                             Err(message) => {
                                 self.fail_build(&build_id, BuildFailureKind::Checks, message)?;
                                 return Ok(());
@@ -2644,7 +2660,10 @@ impl AppCore {
                                 // Reported as the first source failing, so the check fails and the
                                 // next round sees the rule in failed_checks.
                                 fetch_error = Some(match program.web_sources.first() {
-                                    Some(first) if !message.contains("Web source '") => format!("Web source '{}' could not be used: {message}", first.name),
+                                    Some(first) if !message.contains("Web source '") => format!(
+                                        "Web source '{}' could not be used: {message}",
+                                        first.name
+                                    ),
                                     _ => message,
                                 });
                             } else if let Some(source) = repeated {
@@ -2688,12 +2707,15 @@ impl AppCore {
                         }
                     }
                     // Changed read arguments are read again; the previous answers are never reused for them.
-                    if let (Some(new), Some(old)) = (candidate2.program.as_ref(), candidate.program.as_ref()) {
+                    if let (Some(new), Some(old)) =
+                        (candidate2.program.as_ref(), candidate.program.as_ref())
+                    {
                         if new.connection_sources != old.connection_sources {
                             for source in &old.connection_sources {
                                 fetched.remove(&source.name);
                             }
-                            let read = self.fetch_connection_sources(new, &draft.required_connections);
+                            let read =
+                                self.fetch_connection_sources(new, &draft.required_connections);
                             let result = tokio::select! {
                                 biased;
                                 _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
@@ -2702,7 +2724,11 @@ impl AppCore {
                             match result {
                                 Ok(texts) => fetched.extend(texts),
                                 Err(e) => {
-                                    self.fail_build(&build_id, BuildFailureKind::Checks, e.to_string())?;
+                                    self.fail_build(
+                                        &build_id,
+                                        BuildFailureKind::Checks,
+                                        e.to_string(),
+                                    )?;
                                     return Ok(());
                                 }
                             }
@@ -2796,11 +2822,16 @@ impl AppCore {
                             // web page: the model can see what the page holds, so a repeated "missing"
                             // there is a parser to fix or a page to replace.
                             if !passed2
-                                && candidate2.program.as_ref().is_none_or(|p| p.web_sources.is_empty())
+                                && candidate2
+                                    .program
+                                    .as_ref()
+                                    .is_none_or(|p| p.web_sources.is_empty())
                             {
                                 let before: Vec<String> = failed_checks
                                     .iter()
-                                    .filter_map(|c| c.detail.as_deref().and_then(Self::deliberate_error))
+                                    .filter_map(|c| {
+                                        c.detail.as_deref().and_then(Self::deliberate_error)
+                                    })
                                     .collect();
                                 if let Some(message) = failed2
                                     .iter()
@@ -2811,7 +2842,11 @@ impl AppCore {
                                         s.checks = check_list2.clone();
                                         s.comparison = comparison2.clone();
                                     })?;
-                                    self.fail_build(&build_id, BuildFailureKind::MissingData, message)?;
+                                    self.fail_build(
+                                        &build_id,
+                                        BuildFailureKind::MissingData,
+                                        message,
+                                    )?;
                                     return Ok(());
                                 }
                             }
@@ -2820,7 +2855,10 @@ impl AppCore {
                             // to four other sites on its own.
                             let source_only = !passed2
                                 && fetch_error.is_some()
-                                && check_list2.iter().filter(|c| !c.passed).all(|c| c.id == "web_sources");
+                                && check_list2
+                                    .iter()
+                                    .filter(|c| !c.passed)
+                                    .all(|c| c.id == "web_sources");
                             if source_only && new_site_tried && source_swaps < 4 {
                                 source_swaps += 1;
                             }
@@ -2828,7 +2866,10 @@ impl AppCore {
                                 && !reviewed
                                 && route != ModelRoute::OfflineDemo
                                 && fix_round < 2 + source_swaps
-                                && candidate2.program.as_ref().is_some_and(|p| !p.web_sources.is_empty())
+                                && candidate2
+                                    .program
+                                    .as_ref()
+                                    .is_some_and(|p| !p.web_sources.is_empty())
                             {
                                 self.update_build(&build_id, |s| {
                                     s.checks = check_list2.clone();
@@ -2858,7 +2899,11 @@ impl AppCore {
                                 && fix_round < 2 + source_swaps
                                 && !fetch_error.as_deref().is_some_and(|e| {
                                     web::access_failure(e)
-                                        && Self::refused_source_was_chosen(&draft, &declared_sources, e)
+                                        && Self::refused_source_was_chosen(
+                                            &draft,
+                                            &declared_sources,
+                                            e,
+                                        )
                                 })
                             {
                                 self.update_build(&build_id, |s| {
@@ -2888,10 +2933,12 @@ impl AppCore {
                                 self.fail_build(
                                     &build_id,
                                     BuildFailureKind::Checks,
-                                    web::unreachable_site_message(&failed2).unwrap_or_else(|| format!(
-                                        "Checks failed: {}. Edit the rules and build again.",
-                                        Self::plain_check_failure(&failed2.join(", "))
-                                    )),
+                                    web::unreachable_site_message(&failed2).unwrap_or_else(|| {
+                                        format!(
+                                            "Checks failed: {}. Edit the rules and build again.",
+                                            Self::plain_check_failure(&failed2.join(", "))
+                                        )
+                                    }),
                                 )?;
                             }
                         }
@@ -3628,8 +3675,15 @@ impl AppCore {
         output_name: &str,
         schedule: Option<&schedules::Schedule>,
     ) -> CoreResult<StageResult> {
-        self.stage_inner_files(tool_id, input_handle, dir_handle, output_name, schedule, true)
-            .await
+        self.stage_inner_files(
+            tool_id,
+            input_handle,
+            dir_handle,
+            output_name,
+            schedule,
+            true,
+        )
+        .await
     }
 
     /// `create_file` false stages only the planned connection actions, so a tool
@@ -3927,7 +3981,8 @@ impl AppCore {
                         sources: source_data,
                         answers: &model_answers,
                         output_name: Some(&program.output_name),
-                        create_file: create_file && schedule.is_none_or(|s| s.outputs.folder.is_some()),
+                        create_file: create_file
+                            && schedule.is_none_or(|s| s.outputs.folder.is_some()),
                         has_input_file: !detail.no_input,
                         extra_binding: Some(
                             json!({"source_urls": urls, "connection_sources":program.connection_sources,"source_digests": web::digests(source_data), "schedule_grant": schedule}),

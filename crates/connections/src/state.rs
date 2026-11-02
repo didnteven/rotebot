@@ -238,7 +238,10 @@ impl ConnectionsService {
         .await;
         match result {
             Ok(tool_count) => {
-                self.statuses[index].state = ConnectionState::Connected { since_ms: now_ms(), tool_count };
+                self.statuses[index].state = ConnectionState::Connected {
+                    since_ms: now_ms(),
+                    tool_count,
+                };
                 self.statuses[index].last_checked_ms = Some(now_ms());
                 self.persist()?;
                 Ok(self.statuses[index].clone())

@@ -260,7 +260,7 @@ async fn external_ingress_cannot_claim_builtin_sample_authority() {
 #[test]
 fn rgba_decoder_rejects_oversize_before_allocating_the_declared_length() {
     let input = serde::de::value::SeqDeserializer::<_, serde::de::value::Error>::new(
-        std::iter::repeat(0u8).take(MAX_RGBA + 1),
+        std::iter::repeat_n(0u8, MAX_RGBA + 1),
     );
     assert!(bounded_rgba(input).is_err());
 }
@@ -404,7 +404,9 @@ async fn a_frame_can_be_removed_while_reviewing_and_the_review_is_rebuilt_withou
     let again = c.preview_recording(&id).await.unwrap();
     assert!(again.frames.iter().all(|f| f.seq != first));
     assert_ne!(again.payload_hash, p.payload_hash);
-    assert!(!again.cleared_text_json.contains(&format!("\"seq\":{first},")));
+    assert!(!again
+        .cleared_text_json
+        .contains(&format!("\"seq\":{first},")));
 }
 
 #[tokio::test]

@@ -197,7 +197,11 @@ async fn correction_passes_on_second_attempt_ready_with_both_events() {
     );
     let requests = model_server.received_requests().await.unwrap();
     let model_calls = model_requests(&requests);
-    assert_eq!(model_calls.len(), 3, "one correction round, then one review of the corrected output");
+    assert_eq!(
+        model_calls.len(),
+        3,
+        "one correction round, then one review of the corrected output"
+    );
     assert_eq!(count2.load(Ordering::SeqCst), 3);
     let wire_body: serde_json::Value =
         serde_json::from_slice(&model_calls[1].body).expect("wire body is JSON");
@@ -319,7 +323,11 @@ async fn correction_failure_stays_failed_with_second_details() {
     );
     let requests = model_server.received_requests().await.unwrap();
     let model_calls = model_requests(&requests);
-    assert_eq!(model_calls.len(), 4, "initial build plus at most three corrections");
+    assert_eq!(
+        model_calls.len(),
+        4,
+        "initial build plus at most three corrections"
+    );
     assert_eq!(counter.load(Ordering::SeqCst), 4);
     let second_body_raw = String::from_utf8_lossy(&model_calls[1].body);
     assert!(!second_body_raw.contains(INPUT_CANARY));
@@ -496,7 +504,10 @@ impl SourceCorrection {
         let started = self.core.start_build(&draft.draft_id, true).await.unwrap();
         let state = wait(&self.core, &started.build_id).await;
         // Up to three program corrections, plus up to four tries of a new site when a source cannot be used.
-        assert!((2..=8).contains(&count.load(Ordering::SeqCst)), "initial build plus one to seven corrections");
+        assert!(
+            (2..=8).contains(&count.load(Ordering::SeqCst)),
+            "initial build plus one to seven corrections"
+        );
         state
     }
 
@@ -707,10 +718,12 @@ async fn failing_review_change_keeps_the_passing_program() {
         .any(|e| e.message.contains("version that passed was kept")));
 }
 
-const MISSING_SENTENCE: &str = "No bank statement file was selected for the money-in-per-day summary.";
+const MISSING_SENTENCE: &str =
+    "No bank statement file was selected for the money-in-per-day summary.";
 
 #[tokio::test]
-async fn a_program_that_says_its_data_is_missing_twice_stops_after_one_correction_with_a_missing_data_failure() {
+async fn a_program_that_says_its_data_is_missing_twice_stops_after_one_correction_with_a_missing_data_failure(
+) {
     let temp = tempfile::tempdir().unwrap();
     let model_server = MockServer::start().await;
     let refuses = Program {
@@ -736,7 +749,11 @@ async fn a_program_that_says_its_data_is_missing_twice_stops_after_one_correctio
     assert_eq!(failure.kind, BuildFailureKind::MissingData, "{failure:?}");
     assert_eq!(failure.message, MISSING_SENTENCE);
     let requests = model_server.received_requests().await.unwrap();
-    assert_eq!(model_requests(&requests).len(), 2, "one build and one correction, not three corrections");
+    assert_eq!(
+        model_requests(&requests).len(),
+        2,
+        "one build and one correction, not three corrections"
+    );
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 }
 
@@ -757,13 +774,22 @@ async fn an_ordinary_runtime_error_is_not_mistaken_for_missing_data() {
     core.save_api_key("mk-correction-test-canary-1234567890")
         .await
         .unwrap();
-    let draft = core.draft_task_no_input("A task whose program has a bug").unwrap();
+    let draft = core
+        .draft_task_no_input("A task whose program has a bug")
+        .unwrap();
     let started = core.start_build(&draft.draft_id, true).await.unwrap();
     let state = wait(&core, &started.build_id).await;
     assert_eq!(state.phase, BuildPhase::Failed, "{state:?}");
-    assert_eq!(state.failure.expect("failure").kind, BuildFailureKind::Checks);
+    assert_eq!(
+        state.failure.expect("failure").kind,
+        BuildFailureKind::Checks
+    );
     let requests = model_server.received_requests().await.unwrap();
-    assert_eq!(model_requests(&requests).len(), 4, "a real fault still gets every correction");
+    assert_eq!(
+        model_requests(&requests).len(),
+        4,
+        "a real fault still gets every correction"
+    );
 }
 
 #[tokio::test]
@@ -781,7 +807,10 @@ async fn a_source_that_cannot_be_used_starts_one_web_search_whose_addresses_reac
     let live_base = live.uri();
     let program = |base: &str| {
         let mut p = program_for(base, "");
-        p.web_sources[0] = WebSource { name: "weather".into(), url: format!("{base}/weather") };
+        p.web_sources[0] = WebSource {
+            name: "weather".into(),
+            url: format!("{base}/weather"),
+        };
         p.code = r#"function run() {
             const data = JSON.parse(macroscope.source("weather"));
             macroscope.output("weather.txt", "Gisborne high : " + data.high + ", low : " + data.low);
@@ -804,24 +833,43 @@ async fn a_source_that_cannot_be_used_starts_one_web_search_whose_addresses_reac
     Mock::given(method("POST"))
         .and(path("/responses"))
         .respond_with(move |r: &wiremock::Request| {
-            if r.body_json::<serde_json::Value>().unwrap().get("tools").is_some() {
+            if r.body_json::<serde_json::Value>()
+                .unwrap()
+                .get("tools")
+                .is_some()
+            {
                 return ResponseTemplate::new(200).set_body_json(search.clone());
             }
-            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 { &first } else { &corrected };
+            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                &first
+            } else {
+                &corrected
+            };
             ResponseTemplate::new(200).set_body_json(body.clone())
         })
         .mount(&model)
         .await;
     let core = core_at(temp.path(), model.uri());
-    core.save_api_key("mk-source-search-test-1234567890").await.unwrap();
-    let draft = core.draft_task_no_input("Gisborne weather summary to weather.txt").unwrap();
+    core.save_api_key("mk-source-search-test-1234567890")
+        .await
+        .unwrap();
     let draft = core
-        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", Some(EXAMPLE.into()))
+        .draft_task_no_input("Gisborne weather summary to weather.txt")
+        .unwrap();
+    let draft = core
+        .update_task(
+            &draft.draft_id,
+            TaskKind::Program,
+            "weather.txt",
+            Some(EXAMPLE.into()),
+        )
         .unwrap();
     let started = core.start_build(&draft.draft_id, true).await.unwrap();
     let state = wait(&core, &started.build_id).await;
     assert_eq!(state.phase, BuildPhase::Ready, "{state:?}");
-    assert!(state.program.unwrap().web_sources[0].url.starts_with(&live_base));
+    assert!(state.program.unwrap().web_sources[0]
+        .url
+        .starts_with(&live_base));
     let requests = model.received_requests().await.unwrap();
     let bodies: Vec<serde_json::Value> = model_requests(&requests)
         .iter()
@@ -830,7 +878,10 @@ async fn a_source_that_cannot_be_used_starts_one_web_search_whose_addresses_reac
     let searches: Vec<_> = bodies.iter().filter(|b| b.get("tools").is_some()).collect();
     assert_eq!(searches.len(), 1, "one search per build");
     let asked = searches[0]["input"][1]["content"].as_str().unwrap();
-    assert!(asked.contains(&format!("{gone}/weather")), "the search is told which address failed");
+    assert!(
+        asked.contains(&format!("{gone}/weather")),
+        "the search is told which address failed"
+    );
     let correction: serde_json::Value = bodies
         .iter()
         .filter(|b| b.get("tools").is_none())
@@ -840,11 +891,22 @@ async fn a_source_that_cannot_be_used_starts_one_web_search_whose_addresses_reac
     let results = correction["web_search_results"].as_array().unwrap();
     assert_eq!(results[0]["url"], found.as_str());
     assert!(
-        results.iter().all(|r| !r["url"].as_str().unwrap().contains("gone.invalid")),
+        results
+            .iter()
+            .all(|r| !r["url"].as_str().unwrap().contains("gone.invalid")),
         "an address on the failed host is never offered: {results:?}"
     );
-    assert!(results.iter().any(|r| r["url"] == format!("{live_base}/docs").as_str()), "pages the search reached are kept");
-    assert!(core.list_outbound().unwrap().iter().any(|o| o.purpose == "Finding a data source"));
+    assert!(
+        results
+            .iter()
+            .any(|r| r["url"] == format!("{live_base}/docs").as_str()),
+        "pages the search reached are kept"
+    );
+    assert!(core
+        .list_outbound()
+        .unwrap()
+        .iter()
+        .any(|o| o.purpose == "Finding a data source"));
 }
 
 #[tokio::test]
@@ -854,7 +916,9 @@ async fn a_page_without_the_data_also_starts_the_search_and_keeps_its_site() {
     let web = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/empty"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("<html><body>Loading…</body></html>"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("<html><body>Loading…</body></html>"),
+        )
         .mount(&web)
         .await;
     Mock::given(method("GET"))
@@ -864,7 +928,10 @@ async fn a_page_without_the_data_also_starts_the_search_and_keeps_its_site() {
         .await;
     let program = |page: &str, code: &str| {
         let mut p = program_for(&web.uri(), code);
-        p.web_sources[0] = WebSource { name: "weather".into(), url: format!("{}/{page}", web.uri()) };
+        p.web_sources[0] = WebSource {
+            name: "weather".into(),
+            url: format!("{}/{page}", web.uri()),
+        };
         p
     };
     let first = responses_body(&program(
@@ -890,19 +957,36 @@ async fn a_page_without_the_data_also_starts_the_search_and_keeps_its_site() {
     Mock::given(method("POST"))
         .and(path("/responses"))
         .respond_with(move |r: &wiremock::Request| {
-            if r.body_json::<serde_json::Value>().unwrap().get("tools").is_some() {
+            if r.body_json::<serde_json::Value>()
+                .unwrap()
+                .get("tools")
+                .is_some()
+            {
                 return ResponseTemplate::new(200).set_body_json(search.clone());
             }
-            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 { &first } else { &corrected };
+            let body = if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                &first
+            } else {
+                &corrected
+            };
             ResponseTemplate::new(200).set_body_json(body.clone())
         })
         .mount(&model)
         .await;
     let core = core_at(temp.path(), model.uri());
-    core.save_api_key("mk-source-search-test-1234567890").await.unwrap();
-    let draft = core.draft_task_no_input("Gisborne weather summary to weather.txt").unwrap();
+    core.save_api_key("mk-source-search-test-1234567890")
+        .await
+        .unwrap();
     let draft = core
-        .update_task(&draft.draft_id, TaskKind::Program, "weather.txt", Some(EXAMPLE.into()))
+        .draft_task_no_input("Gisborne weather summary to weather.txt")
+        .unwrap();
+    let draft = core
+        .update_task(
+            &draft.draft_id,
+            TaskKind::Program,
+            "weather.txt",
+            Some(EXAMPLE.into()),
+        )
         .unwrap();
     let started = core.start_build(&draft.draft_id, true).await.unwrap();
     let state = wait(&core, &started.build_id).await;
@@ -912,7 +996,10 @@ async fn a_page_without_the_data_also_starts_the_search_and_keeps_its_site() {
         .iter()
         .map(|r| serde_json::from_slice(&r.body).unwrap())
         .collect();
-    assert_eq!(bodies.iter().filter(|b| b.get("tools").is_some()).count(), 1);
+    assert_eq!(
+        bodies.iter().filter(|b| b.get("tools").is_some()).count(),
+        1
+    );
     let correction: serde_json::Value = bodies
         .iter()
         .filter(|b| b.get("tools").is_none())

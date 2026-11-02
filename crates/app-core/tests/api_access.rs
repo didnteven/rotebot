@@ -556,7 +556,7 @@ async fn missing_access_uses_hosted_search_and_fetched_documentation_before_show
     assert!(report.searched);
     assert!(report.api.is_some());
     assert!(!next.ready_to_build);
-    assert!(f.conns.allow_documentation_url(&report.sources[0]) == false); // HTTP is test-only and never browser-authorized.
+    assert!(!f.conns.allow_documentation_url(&report.sources[0])); // HTTP is test-only and never browser-authorized.
     let requests = server.received_requests().await.unwrap();
     let search = requests
         .iter()
@@ -696,7 +696,7 @@ async fn custom_api_is_read_by_the_existing_approved_build_and_saved_tool_pipeli
         .update_task(&d.draft_id, TaskKind::Program, "records.txt", None)
         .unwrap();
     f.conns
-        .select_for_task(&d.draft_id, &[a.id.clone()])
+        .select_for_task(&d.draft_id, std::slice::from_ref(&a.id))
         .await
         .unwrap();
     let build = f.core.start_build(&d.draft_id, true).await.unwrap();
@@ -815,10 +815,16 @@ async fn an_api_that_needs_an_app_id_header_sends_both_keys_from_the_vault_and_n
     Mock::given(method("GET"))
         .and(path("/accounts"))
         .and(|r: &wiremock::Request| {
-            r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-USER-TOKEN")
-                && r.headers.get("x-app-id").is_some_and(|v| v == "SYNTHETIC-APP-ID")
+            r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-USER-TOKEN")
+                && r.headers
+                    .get("x-app-id")
+                    .is_some_and(|v| v == "SYNTHETIC-APP-ID")
         })
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"Everyday"}]})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"Everyday"}]})),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -832,9 +838,32 @@ async fn an_api_that_needs_an_app_id_header_sends_both_keys_from_the_vault_and_n
         extra_header_names: extras.into_iter().map(String::from).collect(),
     };
     // A second header with no value, a repeated header, and a third header are all refused.
-    assert!(f.core.save_api_connection(config(vec!["X-App-Id"]), Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec()))).await.is_err());
-    assert!(f.core.save_api_connection_with_extras(config(vec!["Authorization"]), Some(Secret::new(b"t".to_vec())), vec![Secret::new(b"v".to_vec())]).await.is_err());
-    assert!(f.core.save_api_connection_with_extras(config(vec!["X-A", "X-B", "X-C"]), Some(Secret::new(b"t".to_vec())), (1..=3).map(|n| Secret::new(vec![b'0' + n])).collect()).await.is_err());
+    assert!(f
+        .core
+        .save_api_connection(
+            config(vec!["X-App-Id"]),
+            Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec()))
+        )
+        .await
+        .is_err());
+    assert!(f
+        .core
+        .save_api_connection_with_extras(
+            config(vec!["Authorization"]),
+            Some(Secret::new(b"t".to_vec())),
+            vec![Secret::new(b"v".to_vec())]
+        )
+        .await
+        .is_err());
+    assert!(f
+        .core
+        .save_api_connection_with_extras(
+            config(vec!["X-A", "X-B", "X-C"]),
+            Some(Secret::new(b"t".to_vec())),
+            (1..=3).map(|n| Secret::new(vec![b'0' + n])).collect()
+        )
+        .await
+        .is_err());
     let a = f
         .core
         .save_api_connection_with_extras(
@@ -851,13 +880,16 @@ async fn an_api_that_needs_an_app_id_header_sends_both_keys_from_the_vault_and_n
 }
 
 #[tokio::test]
-async fn a_key_in_the_web_address_and_a_plainly_named_header_both_work_and_stay_out_of_every_record() {
+async fn a_key_in_the_web_address_and_a_plainly_named_header_both_work_and_stay_out_of_every_record(
+) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/me/posts"))
         .and(|r: &wiremock::Request| {
             let q: std::collections::HashMap<_, _> = r.url.query_pairs().into_owned().collect();
-            q.get("access_token").is_some_and(|v| v == "SYNTHETIC-USER-TOKEN") && q.get("app_id").is_some_and(|v| v == "SYNTHETIC-APP-ID")
+            q.get("access_token")
+                .is_some_and(|v| v == "SYNTHETIC-USER-TOKEN")
+                && q.get("app_id").is_some_and(|v| v == "SYNTHETIC-APP-ID")
         })
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data":[{"id":"1"}]})))
         .expect(1)
@@ -866,7 +898,12 @@ async fn a_key_in_the_web_address_and_a_plainly_named_header_both_work_and_stay_
     Mock::given(method("GET"))
         .and(path("/streams"))
         .and(|r: &wiremock::Request| {
-            r.headers.get("client-id").is_some_and(|v| v == "SYNTHETIC-CLIENT-ID") && r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-USER-TOKEN")
+            r.headers
+                .get("client-id")
+                .is_some_and(|v| v == "SYNTHETIC-CLIENT-ID")
+                && r.headers
+                    .get("authorization")
+                    .is_some_and(|v| v == "Bearer SYNTHETIC-USER-TOKEN")
         })
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data":[]})))
         .expect(1)
@@ -882,38 +919,111 @@ async fn a_key_in_the_web_address_and_a_plainly_named_header_both_work_and_stay_
         extra_header_names: vec![extra.into()],
     };
     // A key already pasted into the address is refused: it would be saved in plain view.
-    assert!(f.core.save_api_connection_with_extras(config("/me/posts?access_token=x", ApiAuth::Query, "access_token", "app_id"), Some(Secret::new(b"t".to_vec())), vec![Secret::new(b"v".to_vec())]).await.is_err());
-    assert!(f.core.save_api_connection_with_extras(config("/me/posts", ApiAuth::Query, "bad name", "app_id"), Some(Secret::new(b"t".to_vec())), vec![Secret::new(b"v".to_vec())]).await.is_err());
-    let q = f.core.save_api_connection_with_extras(config("/me/posts", ApiAuth::Query, "access_token", "app_id"), Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec())), vec![Secret::new(b"SYNTHETIC-APP-ID".to_vec())]).await.unwrap();
-    assert!(matches!(f.conns.test(&q.id).await.unwrap().state, ConnectionState::Connected { .. }));
-    assert!(!q.mcp_url.contains("SYNTHETIC"), "the saved address never carries the key");
-    let h = f.core.save_api_connection_with_extras(config("/streams", ApiAuth::Bearer, "", "Client-Id"), Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec())), vec![Secret::new(b"SYNTHETIC-CLIENT-ID".to_vec())]).await.unwrap();
-    assert!(matches!(f.conns.test(&h.id).await.unwrap().state, ConnectionState::Connected { .. }));
+    assert!(f
+        .core
+        .save_api_connection_with_extras(
+            config(
+                "/me/posts?access_token=x",
+                ApiAuth::Query,
+                "access_token",
+                "app_id"
+            ),
+            Some(Secret::new(b"t".to_vec())),
+            vec![Secret::new(b"v".to_vec())]
+        )
+        .await
+        .is_err());
+    assert!(f
+        .core
+        .save_api_connection_with_extras(
+            config("/me/posts", ApiAuth::Query, "bad name", "app_id"),
+            Some(Secret::new(b"t".to_vec())),
+            vec![Secret::new(b"v".to_vec())]
+        )
+        .await
+        .is_err());
+    let q = f
+        .core
+        .save_api_connection_with_extras(
+            config("/me/posts", ApiAuth::Query, "access_token", "app_id"),
+            Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec())),
+            vec![Secret::new(b"SYNTHETIC-APP-ID".to_vec())],
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.conns.test(&q.id).await.unwrap().state,
+        ConnectionState::Connected { .. }
+    ));
+    assert!(
+        !q.mcp_url.contains("SYNTHETIC"),
+        "the saved address never carries the key"
+    );
+    let h = f
+        .core
+        .save_api_connection_with_extras(
+            config("/streams", ApiAuth::Bearer, "", "Client-Id"),
+            Some(Secret::new(b"SYNTHETIC-USER-TOKEN".to_vec())),
+            vec![Secret::new(b"SYNTHETIC-CLIENT-ID".to_vec())],
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.conns.test(&h.id).await.unwrap().state,
+        ConnectionState::Connected { .. }
+    ));
     let outbound = serde_json::to_string(&f.core.list_outbound().unwrap()).unwrap();
     assert!(!outbound.contains("SYNTHETIC"));
 }
 
 #[tokio::test]
-async fn an_api_already_saved_for_the_proposed_address_is_reused_instead_of_asking_for_setup_again() {
+async fn an_api_already_saved_for_the_proposed_address_is_reused_instead_of_asking_for_setup_again()
+{
     let server = MockServer::start().await;
     Mock::given(path("/responses"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("custom_api", None, proposal(&server, "bearer")), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            plan("custom_api", None, proposal(&server, "bearer")),
+            vec![],
+        )))
         .mount(&server)
         .await;
-    Mock::given(method("GET")).and(path("/records")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/records"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]})))
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/records").await;
-    let d = f.core.draft_task_no_input("Read my Example records").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Read my Example records")
+        .unwrap();
     // Saved but never tested: say so, and do not offer a second setup box for the same address.
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
-    let next = f.core.research_task_access(&f.conns, &d.draft_id, &p.payload_hash).await.unwrap();
+    let next = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap();
     let report = next.access_plan.as_ref().unwrap();
-    assert!(report.summary.contains("not passed its test") && report.api.is_none() && report.state != "needs_connection");
+    assert!(
+        report.summary.contains("not passed its test")
+            && report.api.is_none()
+            && report.state != "needs_connection"
+    );
     // Once it passes its test, the task simply uses it.
     f.conns.test(&saved.id).await.unwrap();
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
-    assert!(p.payload_text.contains(&format!("{}/records", server.uri())), "the model is told what each connected API reads");
-    let next = f.core.research_task_access(&f.conns, &d.draft_id, &p.payload_hash).await.unwrap();
+    assert!(
+        p.payload_text
+            .contains(&format!("{}/records", server.uri())),
+        "the model is told what each connected API reads"
+    );
+    let next = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap();
     let report = next.access_plan.as_ref().unwrap();
     assert_eq!(report.state, "existing_connection");
     assert_eq!(report.connector_id.as_deref(), Some(saved.id.as_str()));
@@ -936,54 +1046,147 @@ async fn a_model_suggests_example_calls_that_run_with_the_keys_and_keep_only_fie
         .await;
     Mock::given(method("GET"))
         .and(path("/accounts"))
-        .and(|r: &wiremock::Request| r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"SYNTHETIC-PRIVATE-NAME","balance":{"available":123}}]})))
+        .and(|r: &wiremock::Request| {
+            r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"items":[{"name":"SYNTHETIC-PRIVATE-NAME","balance":{"available":123}}]}),
+        ))
         .mount(&server)
         .await;
-    Mock::given(method("GET")).and(path("/records")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/records"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]})))
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/records").await;
-    assert!(matches!(f.conns.test(&saved.id).await.unwrap().state, ConnectionState::Connected { .. }));
+    assert!(matches!(
+        f.conns.test(&saved.id).await.unwrap().state,
+        ConnectionState::Connected { .. }
+    ));
     let examples = f.core.suggest_api_examples(&saved.id).await.unwrap();
     // Off-site, query-string and non-path suggestions are dropped before anything is shown.
-    assert_eq!(examples.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["List accounts", "Missing"]);
-    let stored = f.core.run_api_example(&saved.id, &examples[0].url).await.unwrap();
+    assert_eq!(
+        examples
+            .iter()
+            .map(|e| e.label.as_str())
+            .collect::<Vec<_>>(),
+        ["List accounts", "Missing"]
+    );
+    let stored = f
+        .core
+        .run_api_example(&saved.id, &examples[0].url)
+        .await
+        .unwrap();
     assert_eq!(stored[0].ok, Some(true));
     let result = stored[0].result.clone().unwrap();
-    assert!(result.contains("balance") && result.contains("available") && !result.contains("SYNTHETIC-PRIVATE-NAME") && !result.contains("123"), "{result}");
+    assert!(
+        result.contains("balance")
+            && result.contains("available")
+            && !result.contains("SYNTHETIC-PRIVATE-NAME")
+            && !result.contains("123"),
+        "{result}"
+    );
     // A failing example is reported, and leaves the working connection working.
-    let stored = f.core.run_api_example(&saved.id, &examples[1].url).await.unwrap();
+    let stored = f
+        .core
+        .run_api_example(&saved.id, &examples[1].url)
+        .await
+        .unwrap();
     assert_eq!(stored[1].ok, Some(false));
-    assert!(matches!(f.conns.list().into_iter().find(|c| c.id == saved.id).unwrap().state, ConnectionState::Connected { .. }));
-    assert_eq!(f.core.api_examples(&saved.id).unwrap().len(), 2, "kept beside the API");
+    assert!(matches!(
+        f.conns
+            .list()
+            .into_iter()
+            .find(|c| c.id == saved.id)
+            .unwrap()
+            .state,
+        ConnectionState::Connected { .. }
+    ));
+    assert_eq!(
+        f.core.api_examples(&saved.id).unwrap().len(),
+        2,
+        "kept beside the API"
+    );
     // An address that was never suggested cannot be run with the keys.
-    assert!(f.core.run_api_example(&saved.id, &format!("{}/anything", server.uri())).await.is_err());
+    assert!(f
+        .core
+        .run_api_example(&saved.id, &format!("{}/anything", server.uri()))
+        .await
+        .is_err());
 }
 
 #[tokio::test]
 async fn debugging_a_connection_says_whether_the_address_or_the_keys_are_wrong() {
     let server = MockServer::start().await;
-    Mock::given(method("GET")).and(path("/v1")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/accounts"))
-        .and(|r: &wiremock::Request| !r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(401)).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/accounts"))
-        .and(|r: &wiremock::Request| r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/v1"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .and(|r: &wiremock::Request| {
+            !r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .and(|r: &wiremock::Request| {
+            r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]})))
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
     // The bare base address: wrong whatever the keys are.
     let base = f.api(&server, "/v1").await;
     let report = f.core.debug_api(&base.id).await.unwrap();
-    assert!(report.try_examples && report.verdict.contains("address itself is wrong"), "{:?}", report);
+    assert!(
+        report.try_examples && report.verdict.contains("address itself is wrong"),
+        "{:?}",
+        report
+    );
     assert_eq!(report.steps.len(), 2);
     // The right address with the right key works.
     let good = f.api(&server, "/v1/accounts").await;
     let report = f.core.debug_api(&good.id).await.unwrap();
-    assert!(report.verdict.starts_with("It works") && !report.try_examples, "{}", report.verdict);
+    assert!(
+        report.verdict.starts_with("It works") && !report.try_examples,
+        "{}",
+        report.verdict
+    );
     // The right address with a wrong key: the address exists, the keys are what to re-check.
-    let wrong = f.core.save_api_connection(ApiConfig { name: "Wrong key".into(), url: format!("{}/v1/accounts", server.uri()), auth: ApiAuth::Bearer, header_name: String::new(), docs_url: None, extra_header_names: vec![] }, Some(Secret::new(b"SYNTHETIC-WRONG".to_vec()))).await.unwrap();
+    let wrong = f
+        .core
+        .save_api_connection(
+            ApiConfig {
+                name: "Wrong key".into(),
+                url: format!("{}/v1/accounts", server.uri()),
+                auth: ApiAuth::Bearer,
+                header_name: String::new(),
+                docs_url: None,
+                extra_header_names: vec![],
+            },
+            Some(Secret::new(b"SYNTHETIC-WRONG".to_vec())),
+        )
+        .await
+        .unwrap();
     let report = f.core.debug_api(&wrong.id).await.unwrap();
-    assert!(report.verdict.contains("keys were not accepted") && !report.try_examples, "{}", report.verdict);
+    assert!(
+        report.verdict.contains("keys were not accepted") && !report.try_examples,
+        "{}",
+        report.verdict
+    );
     assert!(report.steps[0].detail.contains("address exists"));
     let all = serde_json::to_string(&report).unwrap();
     assert!(!all.contains("SYNTHETIC"));
@@ -992,87 +1195,244 @@ async fn debugging_a_connection_says_whether_the_address_or_the_keys_are_wrong()
 #[tokio::test]
 async fn debugging_repairs_a_key_pasted_with_bearer_or_quotes_and_keeps_it_only_if_that_works() {
     let server = MockServer::start().await;
-    Mock::given(method("GET")).and(path("/v1/accounts"))
-        .and(|r: &wiremock::Request| r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/accounts"))
-        .and(|r: &wiremock::Request| !r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .and(|r: &wiremock::Request| {
+            r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .and(|r: &wiremock::Request| {
+            !r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
-    let save = |key: &str| f.core.save_api_connection(ApiConfig { name: "Pasted".into(), url: format!("{}/v1/accounts", server.uri()), auth: ApiAuth::Bearer, header_name: String::new(), docs_url: None, extra_header_names: vec![] }, Some(Secret::new(key.as_bytes().to_vec())));
-    for pasted in ["Bearer Bearer SYNTHETIC-API-CREDENTIAL-0001", "\"SYNTHETIC-API-CREDENTIAL-0001\"", "Authorization: Bearer SYNTHETIC-API-CREDENTIAL-0001  "] {
+    let save = |key: &str| {
+        f.core.save_api_connection(
+            ApiConfig {
+                name: "Pasted".into(),
+                url: format!("{}/v1/accounts", server.uri()),
+                auth: ApiAuth::Bearer,
+                header_name: String::new(),
+                docs_url: None,
+                extra_header_names: vec![],
+            },
+            Some(Secret::new(key.as_bytes().to_vec())),
+        )
+    };
+    for pasted in [
+        "Bearer Bearer SYNTHETIC-API-CREDENTIAL-0001",
+        "\"SYNTHETIC-API-CREDENTIAL-0001\"",
+        "Authorization: Bearer SYNTHETIC-API-CREDENTIAL-0001  ",
+    ] {
         let saved = save(pasted).await.unwrap();
         let report = f.core.debug_api(&saved.id).await.unwrap();
-        assert!(report.fixed && report.verdict.contains("repaired"), "{pasted}: {report:?}");
+        assert!(
+            report.fixed && report.verdict.contains("repaired"),
+            "{pasted}: {report:?}"
+        );
         // The repair is kept: the connection now passes its own test.
-        assert!(matches!(f.conns.test(&saved.id).await.unwrap().state, ConnectionState::Connected { .. }));
-        assert!(!serde_json::to_string(&report).unwrap().contains("SYNTHETIC"));
+        assert!(matches!(
+            f.conns.test(&saved.id).await.unwrap().state,
+            ConnectionState::Connected { .. }
+        ));
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("SYNTHETIC"));
     }
     // A key that is simply wrong is put back exactly as it was and the hints stay.
     let wrong = save("Bearer SYNTHETIC-WRONG").await.unwrap();
     let report = f.core.debug_api(&wrong.id).await.unwrap();
-    assert!(!report.fixed && report.verdict.contains("not accepted"), "{report:?}");
-    assert!(report.steps.iter().any(|s| s.detail.contains("put your keys back")));
+    assert!(
+        !report.fixed && report.verdict.contains("not accepted"),
+        "{report:?}"
+    );
+    assert!(report
+        .steps
+        .iter()
+        .any(|s| s.detail.contains("put your keys back")));
 }
 
 #[tokio::test]
-async fn with_no_documentation_and_no_model_ideas_the_common_places_are_tested_and_a_working_one_is_found() {
+async fn with_no_documentation_and_no_model_ideas_the_common_places_are_tested_and_a_working_one_is_found(
+) {
     let server = MockServer::start().await;
-    Mock::given(path("/responses")).respond_with(ResponseTemplate::new(200).set_body_json(answer(json!({"examples":[]}), vec![]))).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/accounts")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"x"}]}))).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/me")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
+    Mock::given(path("/responses"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(answer(json!({"examples":[]}), vec![])),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"name":"x"}]})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/v1").await;
     let examples = f.core.suggest_api_examples(&saved.id).await.unwrap();
-    assert!(examples.iter().any(|e| e.url.ends_with("/v1/accounts")) && examples.iter().all(|e| e.url.starts_with(&server.uri())), "{examples:?}");
+    assert!(
+        examples.iter().any(|e| e.url.ends_with("/v1/accounts"))
+            && examples.iter().all(|e| e.url.starts_with(&server.uri())),
+        "{examples:?}"
+    );
     let mut last = examples.clone();
-    for e in &examples { last = f.core.run_api_example(&saved.id, &e.url).await.unwrap(); }
-    let working: Vec<_> = last.iter().filter(|e| e.ok == Some(true)).map(|e| e.url.clone()).collect();
+    for e in &examples {
+        last = f.core.run_api_example(&saved.id, &e.url).await.unwrap();
+    }
+    let working: Vec<_> = last
+        .iter()
+        .filter(|e| e.ok == Some(true))
+        .map(|e| e.url.clone())
+        .collect();
     assert_eq!(working.len(), 1);
     assert!(working[0].ends_with("/v1/accounts"));
 }
 
 #[tokio::test]
-async fn working_keys_are_tried_on_another_address_of_the_same_service_before_any_setup_is_proposed() {
+async fn working_keys_are_tried_on_another_address_of_the_same_service_before_any_setup_is_proposed(
+) {
     let server = MockServer::start().await;
-    Mock::given(path("/responses")).respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("custom_api", None, proposal(&server, "bearer")), vec![]))).mount(&server).await;
-    Mock::given(path("/docs")).respond_with(ResponseTemplate::new(200).set_body_string(format!("GET {}/records", server.uri()))).mount(&server).await;
-    Mock::given(method("GET")).and(path("/me")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":1}))).mount(&server).await;
-    Mock::given(method("GET")).and(path("/records"))
-        .and(|r: &wiremock::Request| r.headers.get("authorization").is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"balance":{"available":1}}]}))).mount(&server).await;
+    Mock::given(path("/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            plan("custom_api", None, proposal(&server, "bearer")),
+            vec![],
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(path("/docs"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(format!("GET {}/records", server.uri())),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/me"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":1})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/records"))
+        .and(|r: &wiremock::Request| {
+            r.headers
+                .get("authorization")
+                .is_some_and(|v| v == "Bearer SYNTHETIC-API-CREDENTIAL-0001")
+        })
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"items":[{"balance":{"available":1}}]})),
+        )
+        .mount(&server)
+        .await;
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/me").await;
     f.conns.test(&saved.id).await.unwrap();
-    let d = f.core.draft_task_no_input("Read my Example records").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Read my Example records")
+        .unwrap();
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
-    let next = f.core.research_task_access(&f.conns, &d.draft_id, &p.payload_hash).await.unwrap();
+    let next = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap();
     let report = next.access_plan.as_ref().unwrap();
     assert_eq!(report.state, "same_service_works", "{report:?}");
     assert_eq!(report.reuse_keys_from.as_deref(), Some(saved.id.as_str()));
     assert!(report.summary.contains("already work on this service"));
     // One click records that path on the same connection: no second connection, no second set of keys.
     let before = f.conns.list().len();
-    let kept = f.core.add_api_address(&saved.id, &report.api.as_ref().unwrap().url).await.unwrap();
+    let kept = f
+        .core
+        .add_api_address(&saved.id, &report.api.as_ref().unwrap().url)
+        .await
+        .unwrap();
     assert_eq!(kept.id, saved.id);
     assert_eq!(f.conns.list().len(), before);
     let known = f.core.api_examples(&saved.id).unwrap();
-    assert!(known.iter().any(|e| e.url.ends_with("/records") && e.ok == Some(true)));
+    assert!(known
+        .iter()
+        .any(|e| e.url.ends_with("/records") && e.ok == Some(true)));
     // The planner is taught the path, with field names only.
     let tools = f.conns.preview_tools(&saved.id).await.unwrap();
-    assert!(tools[0].description.contains("/records returns") && tools[0].description.contains("balance"), "{}", tools[0].description);
-    assert!(f.core.add_api_address(&saved.id, "https://elsewhere.example/records").await.is_err());
+    assert!(
+        tools[0].description.contains("/records returns")
+            && tools[0].description.contains("balance"),
+        "{}",
+        tools[0].description
+    );
+    assert!(f
+        .core
+        .add_api_address(&saved.id, "https://elsewhere.example/records")
+        .await
+        .is_err());
     // A path the keys cannot read is not kept.
-    Mock::given(method("GET")).and(path("/nope")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
-    assert!(f.core.add_api_address(&saved.id, &format!("{}/nope", server.uri())).await.is_err());
-    assert!(!f.core.api_examples(&saved.id).unwrap().iter().any(|e| e.url.ends_with("/nope")));
+    Mock::given(method("GET"))
+        .and(path("/nope"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    assert!(f
+        .core
+        .add_api_address(&saved.id, &format!("{}/nope", server.uri()))
+        .await
+        .is_err());
+    assert!(!f
+        .core
+        .api_examples(&saved.id)
+        .unwrap()
+        .iter()
+        .any(|e| e.url.ends_with("/nope")));
     // Reads may name any path on the service, and nothing else.
-    let target = f.core.validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({"path":"/records"})).unwrap();
+    let target = f
+        .core
+        .validate_api_read(
+            &saved.id,
+            &saved.mcp_url,
+            "read",
+            &json!({"path":"/records"}),
+        )
+        .unwrap();
     assert_eq!(target, format!("{}/records", server.uri()));
-    assert_eq!(f.core.validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({})).unwrap(), saved.mcp_url);
-    for bad in [json!({"path":"records"}), json!({"path":"//evil.example/x"}), json!({"path":"/a?access_token=1"}), json!({"url":"https://evil.example/x"}), json!({"path":5})] {
-        assert!(f.core.validate_api_read(&saved.id, &saved.mcp_url, "read", &bad).is_err(), "{bad}");
+    assert_eq!(
+        f.core
+            .validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({}))
+            .unwrap(),
+        saved.mcp_url
+    );
+    for bad in [
+        json!({"path":"records"}),
+        json!({"path":"//evil.example/x"}),
+        json!({"path":"/a?access_token=1"}),
+        json!({"url":"https://evil.example/x"}),
+        json!({"path":5}),
+    ] {
+        assert!(
+            f.core
+                .validate_api_read(&saved.id, &saved.mcp_url, "read", &bad)
+                .is_err(),
+            "{bad}"
+        );
     }
 }
 
@@ -1082,24 +1442,38 @@ async fn a_list_in_pages_is_read_in_full_and_unknown_paging_fails() {
     Mock::given(method("GET"))
         .and(path("/transactions"))
         .and(wiremock::matchers::query_param("cursor", "abc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":2}],"cursor":{"next":null}})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"items":[{"id":2}],"cursor":{"next":null}})),
+        )
         .expect(1..)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/transactions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":1}],"cursor":{"next":"abc"}})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"items":[{"id":1}],"cursor":{"next":"abc"}})),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/more"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":1}],"has_more":true})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"items":[{"id":1}],"has_more":true})),
+        )
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
     let paged = f.api(&server, "/transactions").await;
-    assert!(matches!(f.conns.test(&paged.id).await.unwrap().state, ConnectionState::Connected { .. }));
-    let target = f.core.validate_api_read(&paged.id, &paged.mcp_url, "read", &json!({})).unwrap();
+    assert!(matches!(
+        f.conns.test(&paged.id).await.unwrap().state,
+        ConnectionState::Connected { .. }
+    ));
+    let target = f
+        .core
+        .validate_api_read(&paged.id, &paged.mcp_url, "read", &json!({}))
+        .unwrap();
     assert_eq!(target, paged.mcp_url);
     let more = f.api(&server, "/more").await;
     let err = f.conns.test(&more.id).await.unwrap_err().to_string();
@@ -1107,7 +1481,8 @@ async fn a_list_in_pages_is_read_in_full_and_unknown_paging_fails() {
 }
 
 #[tokio::test]
-async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_free_personal_access() {
+async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_free_personal_access(
+) {
     let server = MockServer::start().await;
     let query = "free personal API to read bank account transactions New Zealand";
     let mut first = plan("research", None, Value::Null);
@@ -1131,11 +1506,17 @@ async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_f
         .mount(&server)
         .await;
     Mock::given(path("/docs"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(format!("Official API: {}/records", server.uri())))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("Official API: {}/records", server.uri())),
+        )
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
-    let d = f.core.draft_task_no_input("Get my bank statements").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Get my bank statements")
+        .unwrap();
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
     let report = f
         .core
@@ -1144,7 +1525,10 @@ async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_f
         .unwrap()
         .access_plan
         .unwrap();
-    assert!(report.searched, "an empty service must still search by the problem");
+    assert!(
+        report.searched,
+        "an empty service must still search by the problem"
+    );
     assert_eq!(report.api.unwrap().cost, "free_personal");
     let requests = server.received_requests().await.unwrap();
     let search = requests
@@ -1154,9 +1538,15 @@ async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_f
         .unwrap();
     let system = search["input"][0]["content"].as_str().unwrap();
     let user = search["input"][1]["content"].as_str().unwrap();
-    assert!(user.contains(query), "the search runs on the problem phrase");
+    assert!(
+        user.contains(query),
+        "the search runs on the problem phrase"
+    );
     assert!(user.contains("prefer a free option"));
-    assert!(system.contains("free personal-access API") && system.contains("paid, partner-only or approval/accreditation-required"));
+    assert!(
+        system.contains("free personal-access API")
+            && system.contains("paid, partner-only or approval/accreditation-required")
+    );
     assert!(system.contains("never by guessing a brand"));
 }
 
@@ -1164,14 +1554,19 @@ async fn a_task_with_no_named_service_is_researched_by_its_problem_and_prefers_f
 async fn a_chatty_answer_wrapped_in_prose_is_trimmed_not_rejected() {
     let server = MockServer::start().await;
     let mut api = proposal(&server, "bearer");
-    api["setupInstructions"] = json!((0..12).map(|n| format!("Step {n}: {}", "x".repeat(700))).collect::<Vec<_>>());
+    api["setupInstructions"] = json!((0..12)
+        .map(|n| format!("Step {n}: {}", "x".repeat(700)))
+        .collect::<Vec<_>>());
     let mut chatty = plan("custom_api", None, api);
     chatty["summary"] = json!("s".repeat(2000));
     // The searching call answers with a sentence and a code fence around the JSON.
     let wrapped = format!("Here is what I found:\n```json\n{chatty}\n```\nHope that helps.");
     Mock::given(path("/responses"))
         .and(|r: &wiremock::Request| r.body_json::<Value>().unwrap().get("tools").is_none())
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("research", None, Value::Null), vec![])))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(answer(plan("research", None, Value::Null), vec![])),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -1186,7 +1581,10 @@ async fn a_chatty_answer_wrapped_in_prose_is_trimmed_not_rejected() {
         .mount(&server)
         .await;
     Mock::given(path("/docs"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(format!("Official API: {}/records", server.uri())))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("Official API: {}/records", server.uri())),
+        )
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
@@ -1202,7 +1600,10 @@ async fn a_chatty_answer_wrapped_in_prose_is_trimmed_not_rejected() {
     assert_eq!(report.state, "needs_connection");
     let api = report.api.unwrap();
     assert_eq!(api.setup_instructions.len(), 8);
-    assert!(api.setup_instructions.iter().all(|l| l.chars().count() <= 500));
+    assert!(api
+        .setup_instructions
+        .iter()
+        .all(|l| l.chars().count() <= 500));
     assert!(report.summary.chars().count() <= 1600);
 }
 
@@ -1218,58 +1619,137 @@ fn a_path_without_the_services_version_prefix_reads_under_it() {
 #[tokio::test]
 async fn learning_an_api_for_a_task_reads_its_paths_once_and_teaches_the_field_names() {
     let server = MockServer::start().await;
-    for (p, body) in [("/v1/me", json!({"item":{"name":"x"}})), ("/v1/accounts", json!({"items":[{"name":"Everyday","balance":{"current":12.5}}]}))] {
-        Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&server).await;
+    for (p, body) in [
+        ("/v1/me", json!({"item":{"name":"x"}})),
+        (
+            "/v1/accounts",
+            json!({"items":[{"name":"Everyday","balance":{"current":12.5}}]}),
+        ),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(p))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
     }
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/v1/me").await;
     f.conns.test(&saved.id).await.unwrap();
-    let learned = f.core.learn_api_for_task(&saved.id, "Show my account balances").await.unwrap();
-    let accounts = learned.iter().find(|e| e.url.ends_with("/v1/accounts")).expect("accounts path tried");
+    let learned = f
+        .core
+        .learn_api_for_task(&saved.id, "Show my account balances")
+        .await
+        .unwrap();
+    let accounts = learned
+        .iter()
+        .find(|e| e.url.ends_with("/v1/accounts"))
+        .expect("accounts path tried");
     assert_eq!(accounts.ok, Some(true));
-    assert!(accounts.result.as_deref().unwrap().contains("balance") && !accounts.result.as_deref().unwrap().contains("12.5"));
+    assert!(
+        accounts.result.as_deref().unwrap().contains("balance")
+            && !accounts.result.as_deref().unwrap().contains("12.5")
+    );
     let tools = f.conns.preview_tools(&saved.id).await.unwrap();
-    assert!(tools[0].description.contains("/v1/accounts returns"), "{}", tools[0].description);
-    assert!(tools[0].description.contains("under /v1"), "{}", tools[0].description);
+    assert!(
+        tools[0].description.contains("/v1/accounts returns"),
+        "{}",
+        tools[0].description
+    );
+    assert!(
+        tools[0].description.contains("under /v1"),
+        "{}",
+        tools[0].description
+    );
 }
 
 #[tokio::test]
 async fn known_working_requests_that_cover_a_task_are_used_before_any_new_research() {
     let server = MockServer::start().await;
-    for (p, body) in [("/v1/me", json!({"item":{"name":"x"}})), ("/v1/accounts", json!({"items":[{"name":"Everyday","balance":{"current":12.5}}]}))] {
-        Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&server).await;
+    for (p, body) in [
+        ("/v1/me", json!({"item":{"name":"x"}})),
+        (
+            "/v1/accounts",
+            json!({"items":[{"name":"Everyday","balance":{"current":12.5}}]}),
+        ),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(p))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
     }
     Mock::given(path("/responses"))
         .and(|r: &wiremock::Request| String::from_utf8_lossy(&r.body).contains("api_cover"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(json!({"covered":true,"paths":["/v1/accounts"]}), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            json!({"covered":true,"paths":["/v1/accounts"]}),
+            vec![],
+        )))
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/v1/me").await;
     f.conns.test(&saved.id).await.unwrap();
-    f.core.learn_api_for_task(&saved.id, "Show my account balances").await.unwrap();
+    f.core
+        .learn_api_for_task(&saved.id, "Show my account balances")
+        .await
+        .unwrap();
     // Second task: the known /v1/accounts request covers it, so no documentation is read and no new paths are tried.
-    Mock::given(method("GET")).and(path("/docs")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
-    Mock::given(method("GET")).and(path("/v1/user")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/docs"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/user"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
     let before = f.core.api_examples(&saved.id).unwrap().len();
-    let learned = f.core.learn_api_for_task(&saved.id, "Total of my account balances").await.unwrap();
+    let learned = f
+        .core
+        .learn_api_for_task(&saved.id, "Total of my account balances")
+        .await
+        .unwrap();
     assert_eq!(learned.len(), before);
-    assert!(learned.iter().any(|e| e.url.ends_with("/v1/accounts") && e.ok == Some(true)));
+    assert!(learned
+        .iter()
+        .any(|e| e.url.ends_with("/v1/accounts") && e.ok == Some(true)));
 }
 
 #[tokio::test]
 async fn a_keyless_api_whose_documentation_cannot_be_read_is_verified_by_answering_with_json() {
     let server = MockServer::start().await;
-    Mock::given(path("/docs")).respond_with(ResponseTemplate::new(200).set_body_string("<div id=app></div>")).mount(&server).await;
-    Mock::given(method("GET")).and(path("/records")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"current":{"temperature":18.2}}))).mount(&server).await;
+    Mock::given(path("/docs"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<div id=app></div>"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/records"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"current":{"temperature":18.2}})),
+        )
+        .mount(&server)
+        .await;
     Mock::given(path("/responses"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("public_api", None, proposal(&server, "none")), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            plan("public_api", None, proposal(&server, "none")),
+            vec![],
+        )))
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
-    let d = f.core.draft_task_no_input("Weather in Melbourne right now").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Weather in Melbourne right now")
+        .unwrap();
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
-    let next = f.core.research_task_access(&f.conns, &d.draft_id, &p.payload_hash).await.unwrap();
+    let next = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap();
     assert_eq!(next.access_plan.unwrap().state, "public_api");
     assert!(next.ready_to_build);
 }
@@ -1277,22 +1757,45 @@ async fn a_keyless_api_whose_documentation_cannot_be_read_is_verified_by_answeri
 #[tokio::test]
 async fn a_keyed_api_whose_documentation_cannot_be_read_is_verified_by_asking_for_a_key() {
     let server = MockServer::start().await;
-    Mock::given(path("/docs")).respond_with(ResponseTemplate::new(200).set_body_string("<div id=app></div>")).mount(&server).await;
-    Mock::given(method("GET")).and(path("/records")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    Mock::given(path("/docs"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<div id=app></div>"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/records"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
     Mock::given(path("/responses"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(plan("custom_api", None, proposal(&server, "header")), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            plan("custom_api", None, proposal(&server, "header")),
+            vec![],
+        )))
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
-    let d = f.core.draft_task_no_input("Read my Example records").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Read my Example records")
+        .unwrap();
     let p = f.core.access_preview(&f.conns, &d.draft_id).await.unwrap();
-    let next = f.core.research_task_access(&f.conns, &d.draft_id, &p.payload_hash).await.unwrap();
+    let next = f
+        .core
+        .research_task_access(&f.conns, &d.draft_id, &p.payload_hash)
+        .await
+        .unwrap();
     let report = next.access_plan.unwrap();
     assert_eq!(report.state, "needs_connection", "{}", report.summary);
     assert!(report.api.is_some());
     // The expected refusal does not pause later reads of the service.
     let saved = f.api(&server, "/records").await;
-    assert!(!f.conns.test(&saved.id).await.unwrap_err().to_string().contains("paused"));
+    assert!(!f
+        .conns
+        .test(&saved.id)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("paused"));
 }
 
 #[tokio::test]
@@ -1307,14 +1810,32 @@ async fn the_model_fills_in_the_output_layout_and_name_and_a_typed_one_is_kept()
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
-    let d = f.core.draft_task_no_input("Split the water and power bills four ways").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("Split the water and power bills four ways")
+        .unwrap();
     let filled = f.core.suggest_example_output(&d.draft_id).await.unwrap();
-    assert_eq!(filled.example_output.as_deref(), Some("Water: {water_cost}\nPower: {power_cost}\nEach: {each}"));
+    assert_eq!(
+        filled.example_output.as_deref(),
+        Some("Water: {water_cost}\nPower: {power_cost}\nEach: {each}")
+    );
     // Quotes, trailing punctuation and extra lines are dropped from the name.
     assert_eq!(filled.suggested_name.as_deref(), Some("Split the bills"));
     // A layout and name are already there, so no second model call is made and nothing is replaced.
-    let typed = f.core.update_task(&d.draft_id, TaskKind::Program, "bills.txt", Some("Total: {total}".into())).unwrap();
-    let kept = f.core.suggest_example_output(&typed.draft_id).await.unwrap();
+    let typed = f
+        .core
+        .update_task(
+            &d.draft_id,
+            TaskKind::Program,
+            "bills.txt",
+            Some("Total: {total}".into()),
+        )
+        .unwrap();
+    let kept = f
+        .core
+        .suggest_example_output(&typed.draft_id)
+        .await
+        .unwrap();
     assert_eq!(kept.example_output.as_deref(), Some("Total: {total}"));
     assert_eq!(kept.suggested_name.as_deref(), Some("Split the bills"));
 }
@@ -1329,12 +1850,18 @@ async fn a_failed_layout_answer_is_asked_for_once_more() {
         .mount(&server)
         .await;
     Mock::given(path("/responses"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(json!({"exampleOutput":"Wind: {speed} km/h","name":"Auckland wind today"}), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            json!({"exampleOutput":"Wind: {speed} km/h","name":"Auckland wind today"}),
+            vec![],
+        )))
         .expect(1)
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
-    let d = f.core.draft_task_no_input("What is the wind in Auckland today").unwrap();
+    let d = f
+        .core
+        .draft_task_no_input("What is the wind in Auckland today")
+        .unwrap();
     let next = f.core.suggest_example_output(&d.draft_id).await.unwrap();
     assert_eq!(next.example_output.as_deref(), Some("Wind: {speed} km/h"));
     assert_eq!(next.suggested_name.as_deref(), Some("Auckland wind today"));
@@ -1344,7 +1871,10 @@ async fn a_failed_layout_answer_is_asked_for_once_more() {
 async fn an_invalid_suggested_layout_is_dropped_but_the_name_is_kept() {
     let server = MockServer::start().await;
     Mock::given(path("/responses"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(answer(json!({"exampleOutput":"Water: {water_cost","name":"Water bill"}), vec![])))
+        .respond_with(ResponseTemplate::new(200).set_body_json(answer(
+            json!({"exampleOutput":"Water: {water_cost","name":"Water bill"}),
+            vec![],
+        )))
         .mount(&server)
         .await;
     let f = Fixture::new(&server).await;
@@ -1358,7 +1888,11 @@ async fn an_invalid_suggested_layout_is_dropped_but_the_name_is_kept() {
 async fn editing_an_api_on_the_same_service_keeps_its_id_so_tools_built_on_it_still_read() {
     let server = MockServer::start().await;
     for p in ["/v1/me", "/v1/accounts"] {
-        Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]}))).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(p))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items":[]})))
+            .mount(&server)
+            .await;
     }
     let f = Fixture::new(&server).await;
     let saved = f.api(&server, "/v1/me").await;
@@ -1366,13 +1900,34 @@ async fn editing_an_api_on_the_same_service_keeps_its_id_so_tools_built_on_it_st
     let mut config = f.core.api_config(&saved.id).unwrap();
     config.name = "Renamed".into();
     config.url = format!("{}/v1/accounts", server.uri());
-    let edited = f.core.update_api_connection(&saved.id, config, Some(Secret::new(b"NEW-SYNTHETIC-KEY".to_vec())), vec![]).await.unwrap();
+    let edited = f
+        .core
+        .update_api_connection(
+            &saved.id,
+            config,
+            Some(Secret::new(b"NEW-SYNTHETIC-KEY".to_vec())),
+            vec![],
+        )
+        .await
+        .unwrap();
     assert_eq!(edited.id, saved.id);
     assert_eq!(edited.name, "Renamed");
     f.conns.test(&saved.id).await.unwrap();
     // A tool saved against the old address still reads through this connection.
-    assert!(f.core.validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({"path":"/v1/me"})).is_ok());
+    assert!(f
+        .core
+        .validate_api_read(&saved.id, &saved.mcp_url, "read", &json!({"path":"/v1/me"}))
+        .is_ok());
     let mut elsewhere = f.core.api_config(&saved.id).unwrap();
     elsewhere.url = "https://another.example/v1".into();
-    assert!(f.core.update_api_connection(&saved.id, elsewhere, Some(Secret::new(b"K".to_vec())), vec![]).await.is_err());
+    assert!(f
+        .core
+        .update_api_connection(
+            &saved.id,
+            elsewhere,
+            Some(Secret::new(b"K".to_vec())),
+            vec![]
+        )
+        .await
+        .is_err());
 }

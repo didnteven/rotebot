@@ -66,7 +66,10 @@ impl CustomEndpointClient {
     ) -> Result<StructuredOutput, GatewayError> {
         let validator =
             jsonschema::validator_for(req.schema).map_err(|_| GatewayError::MalformedOutput)?;
-        let mut messages = vec![json!({"role":"system","content":req.system}), json!({"role":"user","content":req.user})];
+        let mut messages = vec![
+            json!({"role":"system","content":req.system}),
+            json!({"role":"user","content":req.user}),
+        ];
         let mut total = Usage::default();
         let mut usage_known = true;
         // Self-hosted models often ignore strict schemas or wrap JSON in prose; one corrective
@@ -78,7 +81,10 @@ impl CustomEndpointClient {
             total.reasoning_tokens += usage.reasoning_tokens;
             usage_known &= known;
             if !req.key.expose().is_empty()
-                && text.as_bytes().windows(req.key.expose().len()).any(|w| w == req.key.expose())
+                && text
+                    .as_bytes()
+                    .windows(req.key.expose().len())
+                    .any(|w| w == req.key.expose())
             {
                 return Err(GatewayError::MalformedOutput);
             }
@@ -88,9 +94,21 @@ impl CustomEndpointClient {
                     if contains_secret(&output, req.key.expose()) {
                         return Err(GatewayError::MalformedOutput);
                     }
-                    let first = validator.iter_errors(&output).next().map(|e| format!("It does not match the schema: {} (at {}).", e, e.instance_path()));
+                    let first = validator.iter_errors(&output).next().map(|e| {
+                        format!(
+                            "It does not match the schema: {} (at {}).",
+                            e,
+                            e.instance_path()
+                        )
+                    });
                     match first {
-                        None => return Ok(StructuredOutput { value: output, usage: total, usage_known }),
+                        None => {
+                            return Ok(StructuredOutput {
+                                value: output,
+                                usage: total,
+                                usage_known,
+                            })
+                        }
                         Some(problem) => problem,
                     }
                 }
@@ -104,7 +122,11 @@ impl CustomEndpointClient {
     }
 
     /// One chat completion: the answer text, its usage, and whether the usage was reported.
-    async fn complete(&self, req: &StructuredRequest<'_>, messages: &[Value]) -> Result<(String, Usage, bool), GatewayError> {
+    async fn complete(
+        &self,
+        req: &StructuredRequest<'_>,
+        messages: &[Value],
+    ) -> Result<(String, Usage, bool), GatewayError> {
         // Reasoning models spend part of max_tokens thinking; leave room for the answer itself.
         let body = json!({"model":self.model,"messages":messages,
             "response_format":{"type":"json_schema","json_schema":{"name":req.schema_name,"strict":true,"schema":req.schema}},
@@ -147,7 +169,8 @@ impl CustomEndpointClient {
             .as_str()
             .ok_or(GatewayError::MalformedOutput)?
             .to_string();
-        let known = value["usage"]["prompt_tokens"].is_u64() && value["usage"]["completion_tokens"].is_u64();
+        let known = value["usage"]["prompt_tokens"].is_u64()
+            && value["usage"]["completion_tokens"].is_u64();
         Ok((text, usage, known))
     }
 }
@@ -159,7 +182,9 @@ fn extract_json(text: &str) -> Option<Value> {
     }
     let start = text.find('{')?;
     let end = text.rfind('}')?;
-    serde_json::from_str::<Value>(text.get(start..=end)?).ok().filter(Value::is_object)
+    serde_json::from_str::<Value>(text.get(start..=end)?)
+        .ok()
+        .filter(Value::is_object)
 }
 
 fn contains_secret(value: &Value, secret: &[u8]) -> bool {

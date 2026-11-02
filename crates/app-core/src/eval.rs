@@ -189,16 +189,17 @@ pub fn classify_build_failure(kind: BuildFailureKind, message: &str) -> FailureC
     }
     // Host checks rejected the generated program; the sandbox message can
     // contain outage words ("unavailable") that must not relabel it.
-    if matches!(kind, BuildFailureKind::Checks | BuildFailureKind::MissingData)
-        || contains_any(
-            message,
-            &[
-                "checks failed",
-                "generated runner failed",
-                "javascript execution failed",
-            ],
-        )
-    {
+    if matches!(
+        kind,
+        BuildFailureKind::Checks | BuildFailureKind::MissingData
+    ) || contains_any(
+        message,
+        &[
+            "checks failed",
+            "generated runner failed",
+            "javascript execution failed",
+        ],
+    ) {
         return FailureClass::ChecksFailed;
     }
     if contains_any(

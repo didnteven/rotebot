@@ -918,7 +918,15 @@ impl Db {
                 "INSERT OR REPLACE INTO model_costs
                    (owner_id, tool_id, kind, at_ms, calls, cost_micros, unknown_calls)
                  VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![r.owner_id, r.tool_id, r.kind, r.at_ms, r.calls, r.cost_micros, r.unknown_calls],
+                params![
+                    r.owner_id,
+                    r.tool_id,
+                    r.kind,
+                    r.at_ms,
+                    r.calls,
+                    r.cost_micros,
+                    r.unknown_calls
+                ],
             )?;
             Ok(())
         })

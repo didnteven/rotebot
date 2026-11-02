@@ -25,7 +25,9 @@ impl AppCore {
         let encoded: String = name
             .bytes()
             .map(|b| match b {
-                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' => (b as char).to_string(),
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' => {
+                    (b as char).to_string()
+                }
                 _ => format!("%{b:02X}"),
             })
             .collect();
@@ -47,7 +49,9 @@ impl AppCore {
             "registry",
         )
         .await
-        .map_err(|_| CoreError::Invalid("Couldn't reach the connector registry. Try again later.".into()))?;
+        .map_err(|_| {
+            CoreError::Invalid("Couldn't reach the connector registry. Try again later.".into())
+        })?;
         Ok(parse_registry(&body))
     }
 }
@@ -75,7 +79,12 @@ pub(crate) fn parse_registry(body: &str) -> Vec<ConnectorCandidate> {
         if out.iter().any(|c| c.url == url) {
             continue;
         }
-        let clip = |s: &str, n: usize| s.chars().filter(|c| !c.is_control()).take(n).collect::<String>();
+        let clip = |s: &str, n: usize| {
+            s.chars()
+                .filter(|c| !c.is_control())
+                .take(n)
+                .collect::<String>()
+        };
         out.push(ConnectorCandidate {
             name: clip(name, 80),
             description: clip(server["description"].as_str().unwrap_or_default(), 160),

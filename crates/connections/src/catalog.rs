@@ -121,8 +121,12 @@ impl Catalog {
             || catalog.connectors.iter().any(|c| {
                 c.id.is_empty()
                     || !ids.insert(&c.id)
-                    || !((c.transport == "streamable-http" && c.auth.kind == "oauth" && c.mail.is_none())
-                        || (c.transport == "imap" && c.auth.kind == "app_password" && c.mail.is_some()))
+                    || !((c.transport == "streamable-http"
+                        && c.auth.kind == "oauth"
+                        && c.mail.is_none())
+                        || (c.transport == "imap"
+                            && c.auth.kind == "app_password"
+                            && c.mail.is_some()))
                     || c.auth.fixed_redirect_port == Some(0)
                     || c.auth
                         .authorization_server
@@ -169,7 +173,13 @@ mod bundled_client_tests {
             serde_json::from_str(include_str!("../../../contracts/connectors.json")).unwrap();
         value["connectors"][0]["auth"]["bundled_client_id"] = "app-client.example".into();
         let catalog = Catalog::from_json(&value.to_string()).unwrap();
-        assert_eq!(catalog.connectors[0].auth.bundled_client_id.as_deref(), Some("app-client.example"));
-        assert!(Catalog::embedded().connectors.iter().all(|c| c.auth.bundled_client_id.is_none()));
+        assert_eq!(
+            catalog.connectors[0].auth.bundled_client_id.as_deref(),
+            Some("app-client.example")
+        );
+        assert!(Catalog::embedded()
+            .connectors
+            .iter()
+            .all(|c| c.auth.bundled_client_id.is_none()));
     }
 }

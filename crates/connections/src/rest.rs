@@ -105,9 +105,24 @@ pub fn validate_header(raw: &str) -> Result<(), ReadError> {
     // Real APIs name their key headers freely (Client-Id, Access-Token, Ocp-Apim-Subscription-Key),
     // so allow any valid name except the ones that steer routing, framing or the browser's own identity.
     const REFUSED: [&str; 18] = [
-        "host", "cookie", "set-cookie", "connection", "keep-alive", "te", "trailer",
-        "transfer-encoding", "upgrade", "content-length", "content-type", "accept-encoding",
-        "user-agent", "origin", "referer", "expect", "forwarded", "via",
+        "host",
+        "cookie",
+        "set-cookie",
+        "connection",
+        "keep-alive",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+        "content-length",
+        "content-type",
+        "accept-encoding",
+        "user-agent",
+        "origin",
+        "referer",
+        "expect",
+        "forwarded",
+        "via",
     ];
     let name = raw.to_ascii_lowercase();
     if REFUSED.contains(&name.as_str()) || name.starts_with("proxy-") || name.starts_with("sec-") {
@@ -122,7 +137,9 @@ pub fn validate_header(raw: &str) -> Result<(), ReadError> {
 pub fn validate_param(raw: &str) -> Result<(), ReadError> {
     if raw.is_empty()
         || raw.len() > 64
-        || !raw.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        || !raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
     {
         return Err(ReadError::Credential);
     }
@@ -167,7 +184,10 @@ pub async fn get_with_keys(
         let mut pairs = url.query_pairs_mut();
         for (name, value) in query {
             validate_param(name)?;
-            pairs.append_pair(name, std::str::from_utf8(value).map_err(|_| ReadError::Credential)?);
+            pairs.append_pair(
+                name,
+                std::str::from_utf8(value).map_err(|_| ReadError::Credential)?,
+            );
         }
     }
     let host = url.host_str().ok_or(ReadError::Url)?;
@@ -293,7 +313,13 @@ mod tests {
         ] {
             assert!(validate_header(name).is_err());
         }
-        for name in ["Client-Id", "Access-Token", "Modal-Key", "Ocp-Apim-Subscription-Key", "apikey"] {
+        for name in [
+            "Client-Id",
+            "Access-Token",
+            "Modal-Key",
+            "Ocp-Apim-Subscription-Key",
+            "apikey",
+        ] {
             assert!(validate_header(name).is_ok(), "{name}");
         }
         assert!(validate_param("access_token").is_ok());

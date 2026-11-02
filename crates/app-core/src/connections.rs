@@ -557,7 +557,10 @@ impl Connections {
     pub async fn preview_tools(&self, id: &str) -> CoreResult<Vec<ConnectorTool>> {
         if crate::api::is_api(id) {
             self.core.api_info(id)?;
-            return Ok(vec![crate::api::read_tool(&crate::api::api_base_path(&self.core.api_info(id)?.mcp_url), &self.core.known_paths_note(id))]);
+            return Ok(vec![crate::api::read_tool(
+                &crate::api::api_base_path(&self.core.api_info(id)?.mcp_url),
+                &self.core.known_paths_note(id),
+            )]);
         }
         let url = self.info_for(id)?.mcp_url;
         let is_mail = self.catalog.get(id).is_some_and(|c| c.mail.is_some());
@@ -1018,7 +1021,8 @@ impl Connections {
                     .core
                     .api_read_at(&c.connector_id, &target, false, target != c.resource)
                     .await?;
-                self.core.remember_api_read(&c.connector_id, &target, &text, "Worked in a tool")?;
+                self.core
+                    .remember_api_read(&c.connector_id, &target, &text, "Worked in a tool")?;
                 results.insert(source.name.clone(), text);
                 continue;
             }
@@ -1096,6 +1100,74 @@ pub fn source_text(result: &serde_json::Value) -> Result<String, String> {
     Ok(text)
 }
 
+impl AppCore {
+    /// Stages a no-input tool for its connection actions alone: no output folder,
+    /// no output file. The private folder only holds the staging area.
+    pub async fn stage_actions_no_input(&self, tool_id: &str) -> CoreResult<crate::StageResult> {
+        let detail = self.get_tool(tool_id)?;
+        let program = detail
+            .program
+            .as_ref()
+            .ok_or_else(|| CoreError::Invalid("Only program tools can send actions.".into()))?;
+        let private = self.inner.cfg.data_dir.join("digest");
+        std::fs::create_dir_all(&private).map_err(|e| CoreError::Internal(e.to_string()))?;
+        let dir = self.register_picked_dir(&private)?;
+        self.stage_inner_files(
+            tool_id,
+            None,
+            &dir.handle_id,
+            &program.output_name,
+            None,
+            false,
+        )
+        .await
+    }
+}
+
+/// Scheduled results go out through the mailbox the person approved with the schedule. The
+/// same checks as an approved connection action apply: the tool must still be the plain
+/// send tool with the expected shape, and the send is tried once.
+impl crate::schedules::ResultMailer for Connections {
+    fn send<'a>(
+        &'a self,
+        connector_id: &'a str,
+        to: &'a str,
+        subject: &'a str,
+        body: &'a str,
+    ) -> crate::schedules::MailFuture<'a> {
+        Box::pin(async move {
+            let resource = lock(&self.snapshot)
+                .iter()
+                .find(|s| s.connector_id == connector_id)
+                .map(|s| s.mcp_url.clone())
+                .ok_or("that mailbox is no longer connected")?;
+            let args = serde_json::json!({"to": to, "subject": subject, "body": body});
+            let mut service = self.service.clone().lock_owned().await;
+            let prepared = service.prepare(connector_id, &resource).await;
+            *lock(&self.snapshot) = service.list();
+            let mut prepared =
+                prepared.map_err(|_| "the mailbox needs to be connected again".to_string())?;
+            let mut tools = prepared.tools.iter().filter(|t| t.name == "send_message");
+            let tool = tools.next().ok_or("this connection cannot send email")?;
+            if tools.next().is_some()
+                || tool.annotations.read_only_hint == Some(true)
+                || tool.annotations.destructive_hint == Some(true)
+                || !jsonschema::validator_for(&tool.input_schema).is_ok_and(|v| v.is_valid(&args))
+            {
+                return Err("this connection's send tool is not the one that was approved".into());
+            }
+            match prepared.call("send_message", args).await {
+                Ok(value) if value["isError"] == true => Err(value["content"][0]["text"]
+                    .as_str()
+                    .map(|t| t.chars().take(160).collect())
+                    .unwrap_or_else(|| "the mail server refused it".into())),
+                Ok(_) => Ok(()),
+                Err(_) => Err("the mail server did not confirm it; check your Sent folder, it will not be retried".into()),
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod action_tests {
     use super::*;
@@ -1157,66 +1229,5 @@ mod action_tests {
             assert!(validate_calls(&[bad], &selected).is_err());
         }
         assert!(validate_calls(&vec![good; 6], &selected).is_err());
-    }
-}
-
-impl AppCore {
-    /// Stages a no-input tool for its connection actions alone: no output folder,
-    /// no output file. The private folder only holds the staging area.
-    pub async fn stage_actions_no_input(&self, tool_id: &str) -> CoreResult<crate::StageResult> {
-        let detail = self.get_tool(tool_id)?;
-        let program = detail
-            .program
-            .as_ref()
-            .ok_or_else(|| CoreError::Invalid("Only program tools can send actions.".into()))?;
-        let private = self.inner.cfg.data_dir.join("digest");
-        std::fs::create_dir_all(&private).map_err(|e| CoreError::Internal(e.to_string()))?;
-        let dir = self.register_picked_dir(&private)?;
-        self.stage_inner_files(tool_id, None, &dir.handle_id, &program.output_name, None, false)
-            .await
-    }
-}
-
-/// Scheduled results go out through the mailbox the person approved with the schedule. The
-/// same checks as an approved connection action apply: the tool must still be the plain
-/// send tool with the expected shape, and the send is tried once.
-impl crate::schedules::ResultMailer for Connections {
-    fn send<'a>(
-        &'a self,
-        connector_id: &'a str,
-        to: &'a str,
-        subject: &'a str,
-        body: &'a str,
-    ) -> crate::schedules::MailFuture<'a> {
-        Box::pin(async move {
-            let resource = lock(&self.snapshot)
-                .iter()
-                .find(|s| s.connector_id == connector_id)
-                .map(|s| s.mcp_url.clone())
-                .ok_or("that mailbox is no longer connected")?;
-            let args = serde_json::json!({"to": to, "subject": subject, "body": body});
-            let mut service = self.service.clone().lock_owned().await;
-            let prepared = service.prepare(connector_id, &resource).await;
-            *lock(&self.snapshot) = service.list();
-            let mut prepared =
-                prepared.map_err(|_| "the mailbox needs to be connected again".to_string())?;
-            let mut tools = prepared.tools.iter().filter(|t| t.name == "send_message");
-            let tool = tools.next().ok_or("this connection cannot send email")?;
-            if tools.next().is_some()
-                || tool.annotations.read_only_hint == Some(true)
-                || tool.annotations.destructive_hint == Some(true)
-                || !jsonschema::validator_for(&tool.input_schema).is_ok_and(|v| v.is_valid(&args))
-            {
-                return Err("this connection's send tool is not the one that was approved".into());
-            }
-            match prepared.call("send_message", args).await {
-                Ok(value) if value["isError"] == true => Err(value["content"][0]["text"]
-                    .as_str()
-                    .map(|t| t.chars().take(160).collect())
-                    .unwrap_or_else(|| "the mail server refused it".into())),
-                Ok(_) => Ok(()),
-                Err(_) => Err("the mail server did not confirm it; check your Sent folder, it will not be retried".into()),
-            }
-        })
     }
 }

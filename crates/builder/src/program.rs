@@ -63,9 +63,18 @@ impl Program {
     /// needs no model round. Code that already defines `run` is left as it is.
     pub fn ensure_run(&mut self) {
         let squashed = self.code.split_whitespace().collect::<Vec<_>>().join(" ");
-        let defines_run = ["function run(", "function run (", "run = (", "run=(", "run = function", "run=function", "run = async", "run=async"]
-            .iter()
-            .any(|form| squashed.contains(form));
+        let defines_run = [
+            "function run(",
+            "function run (",
+            "run = (",
+            "run=(",
+            "run = function",
+            "run=function",
+            "run = async",
+            "run=async",
+        ]
+        .iter()
+        .any(|form| squashed.contains(form));
         if !defines_run && !self.code.trim().is_empty() {
             self.code = format!("function run() {{\n{}\n}}\n", self.code.trim_end());
         }
@@ -152,16 +161,31 @@ pub fn web_source_host(url: &str, allow_insecure: bool) -> Result<String, String
     // An archived or cached copy is old data presented as current, and a way around a site
     // that refused: read the live site, or another live site with the same data.
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
-    if ["web.archive.org", "archive.org", "archive.ph", "archive.today", "archive.is", "archive.li", "webcache.googleusercontent.com", "cachedview.nl"]
-        .iter()
-        .any(|archive| host == *archive || host.ends_with(&format!(".{archive}")))
+    if [
+        "web.archive.org",
+        "archive.org",
+        "archive.ph",
+        "archive.today",
+        "archive.is",
+        "archive.li",
+        "webcache.googleusercontent.com",
+        "cachedview.nl",
+    ]
+    .iter()
+    .any(|archive| host == *archive || host.ends_with(&format!(".{archive}")))
     {
         return Err("Archived or cached copies are old data, not the live site: use the live site or another live source".into());
     }
     // The source must be the site that holds the data. An address that carries another address
     // (a proxy, converter or reader service) fetches a different site than the one approved.
-    let rest = format!("{}?{}", parsed.path(), parsed.query().unwrap_or_default()).to_ascii_lowercase();
-    if ["http://", "https://", "http:/", "https:/", "http%3a", "https%3a"].iter().any(|m| rest.contains(m)) {
+    let rest =
+        format!("{}?{}", parsed.path(), parsed.query().unwrap_or_default()).to_ascii_lowercase();
+    if [
+        "http://", "https://", "http:/", "https:/", "http%3a", "https%3a",
+    ]
+    .iter()
+    .any(|m| rest.contains(m))
+    {
         return Err("This address fetches another site for you (a proxy or converter). Use the site that holds the data directly, or another site".into());
     }
     let rest = if let Some(rest) = url.strip_prefix("https://") {
@@ -473,8 +497,16 @@ mod source_contract_tests {
     use super::*;
     #[test]
     fn archived_copies_are_not_web_sources() {
-        for url in ["https://web.archive.org/web/2025/https://www.imdb.com/chart/moviemeter/", "https://archive.ph/abc"] {
-            assert!(web_source_host(url, false).unwrap_err().contains("Archived"), "{url}");
+        for url in [
+            "https://web.archive.org/web/2025/https://www.imdb.com/chart/moviemeter/",
+            "https://archive.ph/abc",
+        ] {
+            assert!(
+                web_source_host(url, false)
+                    .unwrap_err()
+                    .contains("Archived"),
+                "{url}"
+            );
         }
         assert!(web_source_host("https://www.imdb.com/chart/moviemeter/", false).is_ok());
         for url in ["https://yacdn.org/proxy/https://www.imdb.com/chart/", "https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.reddit.com%2Fr%2Frust.rss"] {
@@ -487,7 +519,11 @@ mod source_contract_tests {
         program.code = "var x = 1;\nmacroscope.output('out.txt', String(x));".into();
         program.ensure_run();
         assert!(program.code.starts_with("function run() {\nvar x = 1;"));
-        for code in ["function run(){}", "const run = () => {}", "function  run ()  {}"] {
+        for code in [
+            "function run(){}",
+            "const run = () => {}",
+            "function  run ()  {}",
+        ] {
             let mut program = p();
             program.code = code.into();
             program.ensure_run();

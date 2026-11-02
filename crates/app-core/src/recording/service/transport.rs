@@ -199,6 +199,15 @@ fn require_every_property(value: &mut serde_json::Value) {
     }
 }
 
+/// The reviewed schema in the form strict structured-output endpoints accept.
+/// The reply is still validated in full by `ModelRequest::parse_draft`.
+pub(super) fn provider_schema(schema_json: &str) -> CoreResult<serde_json::Value> {
+    let mut schema: serde_json::Value = serde_json::from_str(schema_json).map_err(err)?;
+    strip_unsupported_keywords(&mut schema);
+    require_every_property(&mut schema);
+    Ok(schema)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,13 +235,4 @@ mod tests {
             .iter()
             .any(|t| t == "null"));
     }
-}
-
-/// The reviewed schema in the form strict structured-output endpoints accept.
-/// The reply is still validated in full by `ModelRequest::parse_draft`.
-pub(super) fn provider_schema(schema_json: &str) -> CoreResult<serde_json::Value> {
-    let mut schema: serde_json::Value = serde_json::from_str(schema_json).map_err(err)?;
-    strip_unsupported_keywords(&mut schema);
-    require_every_property(&mut schema);
-    Ok(schema)
 }

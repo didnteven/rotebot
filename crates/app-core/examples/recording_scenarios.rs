@@ -15,15 +15,20 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 fn decode(path: &std::path::Path) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).expect("png")))
-        .read_info()
-        .expect("info");
+    let mut reader = png::Decoder::new(std::io::BufReader::new(
+        std::fs::File::open(path).expect("png"),
+    ))
+    .read_info()
+    .expect("info");
     let mut buf = vec![0; reader.output_buffer_size().expect("size")];
     let info = reader.next_frame(&mut buf).expect("frame");
     let data = &buf[..info.buffer_size()];
     let rgba = match info.color_type {
         png::ColorType::Rgba => data.to_vec(),
-        png::ColorType::Rgb => data.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
+        png::ColorType::Rgb => data
+            .chunks(3)
+            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .collect(),
         other => panic!("unsupported png colour {other:?}"),
     };
     (info.width, info.height, rgba)
@@ -48,7 +53,10 @@ async fn main() {
         if !only.is_empty() && !only.iter().any(|o| **o == name) {
             continue;
         }
-        println!("=== {name}\n  expect: {}", sc["expect"].as_str().unwrap_or(""));
+        println!(
+            "=== {name}\n  expect: {}",
+            sc["expect"].as_str().unwrap_or("")
+        );
         println!("{}", run_one(&sc, &name, &images, &key).await);
     }
 }
@@ -69,13 +77,19 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
         Ok(c) => c,
         Err(e) => return format!("  SETUP FAILED: {e}"),
     };
-    if core.save_api_key(key).await.is_err() || core.select_route(ModelRoute::ApiKey).await.is_err() {
+    if core.save_api_key(key).await.is_err() || core.select_route(ModelRoute::ApiKey).await.is_err()
+    {
         return "  SETUP FAILED: key".into();
     }
-    let id = core.start_recording(RecordingSource::Sample).expect("start");
+    let id = core
+        .start_recording(RecordingSource::Sample)
+        .expect("start");
     for (n, f) in sc["frames"].as_array().unwrap().iter().enumerate() {
         let (w, h, rgba) = decode(&images.join(format!("{name}-{}.png", n + 1)));
-        let mut labels = vec![f["title"].as_str().unwrap_or("").to_string(), f["url"].as_str().unwrap_or("").to_string()];
+        let mut labels = vec![
+            f["title"].as_str().unwrap_or("").to_string(),
+            f["url"].as_str().unwrap_or("").to_string(),
+        ];
         let mut boxes = vec![
             json!({"text": f["url"], "rect": {"x": 104, "y": 48, "width": 600, "height": 20}}),
             json!({"text": f["title"], "rect": {"x": 20, "y": 10, "width": 300, "height": 16}}),
@@ -99,7 +113,8 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
     }
     core.stop_recording(&id).expect("stop");
     for sample_seq in [1, 2, 3] {
-        core.remove_recording_frame(&id, sample_seq).expect("remove sample frame");
+        core.remove_recording_frame(&id, sample_seq)
+            .expect("remove sample frame");
     }
     let preview = match core.preview_recording(&id).await {
         Ok(p) => p,
@@ -113,13 +128,49 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
     let mut out = String::new();
     out += &format!("  goal: {}\n  trigger: {}\n", v["goal"], v["trigger"]);
     for s in v["steps"].as_array().unwrap() {
-        out += &format!("  step {} [{}] {}: {}\n", s["order"], s["capability"].as_str().unwrap_or(""), s["app"].as_str().unwrap_or(""), s["action"].as_str().unwrap_or(""));
+        out += &format!(
+            "  step {} [{}] {}: {}\n",
+            s["order"],
+            s["capability"].as_str().unwrap_or(""),
+            s["app"].as_str().unwrap_or(""),
+            s["action"].as_str().unwrap_or("")
+        );
     }
-    out += &format!("  variables: {}\n", v["variables"].as_array().unwrap().iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["description"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" | "));
-    out += &format!("  constants: {}\n", v["constants"].as_array().unwrap().iter().map(|x| format!("{}={}", x["name"].as_str().unwrap_or(""), x["value"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(" | "));
+    out += &format!(
+        "  variables: {}\n",
+        v["variables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| format!(
+                "{}={}",
+                x["name"].as_str().unwrap_or(""),
+                x["description"].as_str().unwrap_or("")
+            ))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    );
+    out += &format!(
+        "  constants: {}\n",
+        v["constants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| format!(
+                "{}={}",
+                x["name"].as_str().unwrap_or(""),
+                x["value"].as_str().unwrap_or("")
+            ))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    );
     out += &format!("  output: {}\n", v["output_description"]);
     for q in v["questions"].as_array().unwrap() {
-        out += &format!("  question: {} (default {})\n", q["prompt"].as_str().unwrap_or(""), q["default"]);
+        out += &format!(
+            "  question: {} (default {})\n",
+            q["prompt"].as_str().unwrap_or(""),
+            q["default"]
+        );
     }
     let mut answers = BTreeMap::new();
     for q in draft.questions.iter() {
@@ -148,10 +199,14 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
     let mut approved = false;
     let mut state = None;
     for _ in 0..360 {
-        let Ok(s) = core.build_state(&started.build_id) else { break };
+        let Ok(s) = core.build_state(&started.build_id) else {
+            break;
+        };
         if s.phase == BuildPhase::Candidate && !approved {
             if let Some(program) = s.program.as_ref() {
-                approved = core.approve_build_sources(&started.build_id, program).is_ok();
+                approved = core
+                    .approve_build_sources(&started.build_id, program)
+                    .is_ok();
             }
         }
         if s.phase.is_terminal() {
@@ -160,16 +215,31 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-    let Some(state) = state else { return format!("{out}  BUILD TIMED OUT") };
+    let Some(state) = state else {
+        return format!("{out}  BUILD TIMED OUT");
+    };
     if state.phase != BuildPhase::Ready {
         let why = state.failure.map(|f| f.message).unwrap_or_default();
         return format!("{out}  BUILD FAILED: {why}");
     }
-    let hosts = state.program.as_ref().map(|p| p.web_sources.iter().map(|s| s.url.clone()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+    let hosts = state
+        .program
+        .as_ref()
+        .map(|p| {
+            p.web_sources
+                .iter()
+                .map(|s| s.url.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
     out += &format!("  sources: {hosts}\n");
     if std::env::var("SCENARIO_DEBUG").is_ok() {
         if let Some(p) = state.program.as_ref() {
-            out += &format!("  code: {}\n", p.code.chars().take(2500).collect::<String>());
+            out += &format!(
+                "  code: {}\n",
+                p.code.chars().take(2500).collect::<String>()
+            );
         }
     }
     let tool = match core.save_tool(&state.build_id, "scenario").await {
@@ -177,7 +247,9 @@ async fn run_one(sc: &Value, name: &str, images: &std::path::Path, key: &str) ->
         Err(e) => return format!("{out}  SAVE FAILED: {e}"),
     };
     match core.preview_run_no_input(&tool.summary_row.id).await {
-        Ok(StageResult::Staged(p)) => out += &format!("  RESULT:\n{}\n", p.preview_text.unwrap_or_default().trim()),
+        Ok(StageResult::Staged(p)) => {
+            out += &format!("  RESULT:\n{}\n", p.preview_text.unwrap_or_default().trim())
+        }
         Ok(StageResult::Failed(f)) => out += &format!("  RUN FAILED: {}\n", f.failure.message()),
         Err(e) => out += &format!("  RUN ERROR: {e}\n"),
     }

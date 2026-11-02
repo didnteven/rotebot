@@ -1,16 +1,17 @@
 //! Approved unattended triggers. Programs still stage once; only the host can
 //! commit a local plan. Connection calls always remain staged for review.
 use super::*;
+use crate::conditions::SendWhen;
 use chrono::{DateTime, Datelike, Days, LocalResult, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
-use crate::conditions::SendWhen;
 use serde::{Deserialize, Serialize};
 
 pub trait Notifier: Send + Sync {
     fn notify(&self, title: &str, body: &str) -> Result<(), String>;
 }
 
-pub type MailFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>>;
+pub type MailFuture<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>>;
 /// Sends one scheduled result as an email through a connected mailbox. The recipient was
 /// approved with the schedule, so a program can never choose where its result goes.
 pub trait ResultMailer: Send + Sync {
@@ -36,7 +37,10 @@ impl EmailDelivery {
     /// approved text is exactly who receives the result.
     fn validate(&self) -> CoreResult<()> {
         let (local, domain) = self.to.split_once('@').unwrap_or(("", ""));
-        let plain = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || "._+-".contains(c));
+        let plain = |s: &str| {
+            s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._+-".contains(c))
+        };
         if self.to.len() > 254
             || local.is_empty()
             || !plain(local)
@@ -58,31 +62,41 @@ impl EmailDelivery {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Frequency {
     /// Every hour, at the minute of `time` (its hour is ignored).
-    Hourly { time: String },
+    Hourly {
+        time: String,
+    },
     /// Every day at `time` and again at `second_time`.
     TwiceDaily {
         time: String,
         #[serde(rename = "secondTime")]
         second_time: String,
     },
-    Daily { time: String },
-    Weekly { weekday: u32, time: String }, // Monday = 1
-    Monthly { day: u32, time: String },
+    Daily {
+        time: String,
+    },
+    Weekly {
+        weekday: u32,
+        time: String,
+    }, // Monday = 1
+    Monthly {
+        day: u32,
+        time: String,
+    },
 }
 fn parse_time(text: &str) -> CoreResult<NaiveTime> {
     if text.len() != 5
-            || !text.bytes().enumerate().all(|(i, c)| {
-                if i == 2 {
-                    c == b':'
-                } else {
-                    c.is_ascii_digit()
-                }
-            })
-        {
-            return Err(CoreError::Invalid("Time must be HH:MM".into()));
-        }
-        NaiveTime::parse_from_str(text, "%H:%M")
-            .map_err(|_| CoreError::Invalid("Time must be HH:MM".into()))
+        || !text.bytes().enumerate().all(|(i, c)| {
+            if i == 2 {
+                c == b':'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
+    {
+        return Err(CoreError::Invalid("Time must be HH:MM".into()));
+    }
+    NaiveTime::parse_from_str(text, "%H:%M")
+        .map_err(|_| CoreError::Invalid("Time must be HH:MM".into()))
 }
 impl Frequency {
     /// The local times this frequency runs on a matching day, earliest first.
@@ -90,7 +104,9 @@ impl Frequency {
         Ok(match self {
             Self::Hourly { time } => {
                 let minute = chrono::Timelike::minute(&parse_time(time)?);
-                (0..24).filter_map(|h| NaiveTime::from_hms_opt(h, minute, 0)).collect()
+                (0..24)
+                    .filter_map(|h| NaiveTime::from_hms_opt(h, minute, 0))
+                    .collect()
             }
             Self::TwiceDaily { time, second_time } => {
                 let mut both = vec![parse_time(time)?, parse_time(second_time)?];
@@ -375,11 +391,21 @@ impl AppCore {
             let folder_ok = s.outputs.folder.as_ref().is_none_or(|f| {
                 Self::folder_identity(Path::new(&f.display_path)).ok() == s.folder_identity
             });
-            let current_version = self.db().tool(&s.tool_id).ok().flatten()
-                .and_then(|row| self.tool_detail(&row).ok()).map(|d| d.version_hash);
+            let current_version = self
+                .db()
+                .tool(&s.tool_id)
+                .ok()
+                .flatten()
+                .and_then(|row| self.tool_detail(&row).ok())
+                .map(|d| d.version_hash);
             // Only a new version (saved with its own approval) carries the schedule; the same version
             // with a changed approval record still asks again.
-            if folder_ok && s.status != "emergency_paused" && current_version.as_ref().is_some_and(|v| *v != s.version_hash) {
+            if folder_ok
+                && s.status != "emergency_paused"
+                && current_version
+                    .as_ref()
+                    .is_some_and(|v| *v != s.version_hash)
+            {
                 if let Ok(binding) = self.schedule_binding(&s.tool_id) {
                     if binding != s.binding {
                         s.binding = binding;
@@ -903,7 +929,11 @@ impl AppCore {
             return None;
         }
         let id = e.schedule_id.as_deref()?;
-        let schedule = self.raw_schedules().ok()?.into_iter().find(|s| s.id == id)?;
+        let schedule = self
+            .raw_schedules()
+            .ok()?
+            .into_iter()
+            .find(|s| s.id == id)?;
         let condition = &schedule.outputs.send_when;
         if condition.is_always() {
             return None;
@@ -962,7 +992,10 @@ impl AppCore {
             .clone()
             .ok_or("email is not available")?;
         // The person can pause or change the schedule while the tool runs.
-        if !self.schedule_still_approved(s, true).map_err(|e| e.to_string())? {
+        if !self
+            .schedule_still_approved(s, true)
+            .map_err(|e| e.to_string())?
+        {
             return Err("the schedule changed before the email was sent".into());
         }
         let text = entry.body.trim();
@@ -978,8 +1011,8 @@ impl AppCore {
         .filter(|c| !c.is_control())
         .take(150)
         .collect();
-        let body: String = text.chars().take(20_000).collect::<String>()
-            + "\n\n— Sent by your Rotebot schedule";
+        let body: String =
+            text.chars().take(20_000).collect::<String>() + "\n\n— Sent by your Rotebot schedule";
         tokio::time::timeout(
             std::time::Duration::from_secs(60),
             mailer.send(&email.connector_id, &email.to, &subject, &body),
