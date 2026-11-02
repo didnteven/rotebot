@@ -10,7 +10,7 @@
 use macroscope_model_gateway::{
     CostEstimator, MetaResponsesClient, StructuredRequest, DEFAULT_MODEL,
 };
-use macroscope_vault::{validate_key, Secret, SecretRef, SecretStore};
+use macroscope_vault::{validate_key, Secret};
 use serde_json::json;
 use std::io::Write;
 
@@ -32,6 +32,7 @@ fn read_hidden() -> Option<Secret> {
 fn keychain_key() -> Option<Secret> {
     #[cfg(target_os = "macos")]
     {
+        use macroscope_vault::{SecretRef, SecretStore};
         let store = macroscope_vault::KeychainStore;
         store
             .get(&SecretRef::new("meta-api-key").ok()?)

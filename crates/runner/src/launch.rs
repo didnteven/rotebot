@@ -49,6 +49,8 @@ fn configure(cmd: &mut Command, require_address_space: bool) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(not(unix))]
+    let _ = require_address_space;
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -144,6 +146,8 @@ fn read_pipe(reader: impl Read, cap: usize) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 fn kill(pid: u32) {
+    #[cfg(not(unix))]
+    let _ = pid;
     #[cfg(unix)]
     unsafe {
         libc::kill(-(pid as i32), libc::SIGKILL);

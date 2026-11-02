@@ -234,6 +234,7 @@ struct State {
 }
 type Shared = Arc<Mutex<State>>;
 
+#[cfg(unix)]
 fn cpu_time() -> Duration {
     let mut ts = libc::timespec {
         tv_sec: 0,
@@ -244,6 +245,12 @@ fn cpu_time() -> Duration {
         libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, &mut ts);
     }
     Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+// Elsewhere, wall time since the first reading: never less than CPU time, so limits trip no later.
+#[cfg(not(unix))]
+fn cpu_time() -> Duration {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed()
 }
 
 /// Whether `word` appears in `code` with no identifier character on either side.
