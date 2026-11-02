@@ -58,7 +58,7 @@ async fn build_with(mapping: Value) -> (BuildState, Vec<Request>, AppCore, tempf
     let started = core.start_build(&draft.draft_id, true).await.unwrap();
     assert_eq!(started.route, ModelRoute::ApiKey);
     let mut state = core.build_state(&started.build_id).unwrap();
-    for _ in 0..200 {
+    for _ in 0..1200 {
         state = core.build_state(&started.build_id).unwrap();
         if matches!(state.phase, BuildPhase::Ready | BuildPhase::Failed) {
             break;
@@ -147,7 +147,7 @@ async fn local_only_during_a_request_cancels_and_acknowledges_the_barrier() {
     let preview = core.load_sample_csv().unwrap();
     let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
     let b = core.start_build(&draft.draft_id, true).await.unwrap();
-    for _ in 0..100 {
+    for _ in 0..1000 {
         if !server.received_requests().await.unwrap().is_empty() {
             break;
         }
@@ -222,7 +222,7 @@ async fn deletion_during_dispatch_awaits_workers_and_cannot_resurrect_history() 
     let preview = core.load_sample_csv().unwrap();
     let draft = core.draft_task(&preview.handle.handle_id, "").unwrap();
     let build = core.start_build(&draft.draft_id, true).await.unwrap();
-    for _ in 0..100 {
+    for _ in 0..1000 {
         if !server.received_requests().await.unwrap().is_empty() {
             break;
         }

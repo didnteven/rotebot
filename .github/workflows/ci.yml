@@ -25,6 +25,12 @@ jobs:
           node-version: 24.10.0
           cache: npm
       - run: npm ci
+      # SQLCipher's vendored OpenSSL needs a full Perl to configure; Git Bash's Perl lacks
+      # modules it uses, so point openssl-src at the runner's Strawberry Perl.
+      - if: runner.os == 'Windows'
+        run: |
+          test -x /c/Strawberry/perl/bin/perl.exe
+          echo "OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl.exe" >> "$GITHUB_ENV"
       - run: bash scripts/check.sh
       - run: npx tauri build --debug --no-bundle
         working-directory: apps/desktop

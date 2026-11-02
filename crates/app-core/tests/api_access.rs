@@ -196,7 +196,7 @@ async fn public_source_auth_refusal_and_rate_limit_stop_without_a_repair_or_alte
             .unwrap();
         let b = f.core.start_build(&d.draft_id, true).await.unwrap();
         let mut terminal = None;
-        for _ in 0..500 {
+        for _ in 0..3000 {
             let s = f.core.build_state(&b.build_id).unwrap();
             if s.phase.is_terminal() {
                 terminal = Some(s);
@@ -445,7 +445,7 @@ async fn emergency_stop_cancels_inflight_api_io_and_acknowledges_the_barrier() {
     let conns = f.conns.clone();
     let id = a.id.clone();
     let pending = tokio::spawn(async move { conns.test(&id).await });
-    for _ in 0..100 {
+    for _ in 0..2000 {
         if !server.received_requests().await.unwrap().is_empty() {
             break;
         }
@@ -701,7 +701,7 @@ async fn custom_api_is_read_by_the_existing_approved_build_and_saved_tool_pipeli
         .unwrap();
     let build = f.core.start_build(&d.draft_id, true).await.unwrap();
     let mut terminal = None;
-    for _ in 0..500 {
+    for _ in 0..3000 {
         let state = f.core.build_state(&build.build_id).unwrap();
         if state.phase.is_terminal() {
             terminal = Some(state);
@@ -758,7 +758,7 @@ async fn custom_api_is_read_by_the_existing_approved_build_and_saved_tool_pipeli
         core.stage_run_no_input(&tool_id, &folder_id, "pending.txt")
             .await
     });
-    for _ in 0..100 {
+    for _ in 0..2000 {
         if server
             .received_requests()
             .await

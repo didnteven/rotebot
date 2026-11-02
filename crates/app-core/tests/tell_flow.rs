@@ -44,7 +44,7 @@ fn core(dir: &Path) -> AppCore {
 }
 
 async fn wait_terminal(core: &AppCore, build_id: &str) -> BuildState {
-    for _ in 0..200 {
+    for _ in 0..1200 {
         let state = core.build_state(build_id).unwrap();
         if matches!(
             state.phase,

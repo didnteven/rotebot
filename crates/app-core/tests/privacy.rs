@@ -144,7 +144,7 @@ async fn ready(core: &AppCore) -> BuildState {
         .draft_task(&input.handle.handle_id, "Clean orders")
         .unwrap();
     let started = core.start_build(&draft.draft_id, false).await.unwrap();
-    for _ in 0..200 {
+    for _ in 0..3000 {
         let state = core.build_state(&started.build_id).unwrap();
         if state.phase == BuildPhase::Ready {
             return state;

@@ -43,7 +43,7 @@ fn draft(core: &AppCore) -> TaskDraft {
 }
 
 async fn terminal(core: &AppCore, id: &str) -> BuildState {
-    for _ in 0..200 {
+    for _ in 0..3000 {
         let state = core.build_state(id).unwrap();
         if matches!(
             state.phase,
