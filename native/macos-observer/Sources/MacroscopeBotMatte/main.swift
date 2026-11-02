@@ -1,4 +1,5 @@
 import Foundation
+import BotMatteCore
 import Vision
 import CoreImage
 import ImageIO
@@ -27,11 +28,32 @@ func run() throws {
     let context = CIContext(options: [.cacheIntermediates: false])
     let ciImage = CIImage(cvPixelBuffer: masked)
     guard let rgba = context.createCGImage(ciImage, from: ciImage.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)) else { throw MatteError.invalid }
+    let originalPixels = try pixels(image, width: width, height: height)
+    let maskedPixels = try pixels(rgba, width: width, height: height)
+    let repaired = MaskRepair.repair(original: originalPixels, masked: maskedPixels, width: width, height: height)
+    guard let provider = CGDataProvider(data: Data(repaired) as CFData),
+          let output = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                               bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    else { throw MatteError.invalid }
     let data = NSMutableData()
     guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw MatteError.invalid }
-    CGImageDestinationAddImage(destination, rgba, nil)
+    CGImageDestinationAddImage(destination, output, nil)
     guard CGImageDestinationFinalize(destination), data.length <= 8 * 1024 * 1024 else { throw MatteError.invalid }
     try FileHandle.standardOutput.write(contentsOf: data as Data)
+}
+func pixels(_ image: CGImage, width: Int, height: Int) throws -> [UInt8] {
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    try bytes.withUnsafeMutableBytes { buffer in
+        guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw MatteError.invalid }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    return bytes
 }
 enum MatteError: Error { case invalid, noSubject }
 signal(SIGPIPE, SIG_IGN)

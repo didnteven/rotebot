@@ -42,7 +42,12 @@ it("requires separate preview and pose approval, reuses the preview, and assigns
   expect(poses).toBeDisabled();
   await user.click(screen.getByLabelText("I approve sending this preview to Meta and the estimated US$0.05 charge."));
   await user.click(poses);
-  await user.click(await screen.findByRole("button", { name: "Use this character" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Use this character" })).toBeEnabled());
+  await user.click(screen.getByText("Generation details & privacy"));
+  await user.click(screen.getByRole("button", { name: "Repair cutouts · no API charge" }));
+  await waitFor(() => expect(cleanup).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Use this character" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "Use this character" }));
   expect(generate.mock.calls.map(([request]) => request.pose)).toEqual([0, 1, 2, 3, 4, 5]);
   expect(new Set(generate.mock.calls.map(([request]) => request.id)).size).toBe(1);
   expect(useBot).toHaveBeenCalledWith(expect.stringMatching(/^custom:/));

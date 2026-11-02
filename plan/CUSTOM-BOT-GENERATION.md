@@ -164,3 +164,13 @@ materials and style. The shared identity is the dark glass face panel and bright
 ivory oval eyes; the supplied reference no longer constrains the body or palette.
 Design IDs no longer inject competing preset anatomy or colors. Later poses
 continue to preserve the approved preview. Existing saved artwork is unchanged.
+
+## Preserve luminous eyes during local background removal
+
+The native matte helper restores original RGBA pixels inside small enclosed mask
+holes (up to 2% of the opaque subject area), preventing bright eyes from becoming
+transparent. Exterior-connected gaps and larger enclosed gaps retain the mask.
+Synthetic tests cover fully removed and faded eyes, original color, exterior gaps,
+large holes and original transparency. The creator offers Repair cutouts under
+Generation details & privacy; explicit cleanup reruns from retained originals,
+including previously accepted masks, without paid image-generation requests.

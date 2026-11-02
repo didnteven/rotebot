@@ -554,13 +554,16 @@ impl AppCore {
             self.inner.bot_io.try_lock().map_err(|_| {
                 CoreError::Invalid("Wait for the current bot image to finish.".into())
             })?;
-        let bot = self.get_bot_design(id)?;
+        let mut bot = self.get_bot_design(id)?;
+        // An explicit repair always starts from retained originals, including poses
+        // whose old masks were accepted but removed facial details.
+        bot.transparent_poses.clear();
+        bot.background_removal_error = None;
+        self.save_bot_meta(&bot)?;
         for pose in bot.completed_poses {
-            if !bot.transparent_poses.contains(&pose) {
-                self.clean_bot_pose(id, pose).await;
-                if self.bot_meta(id)?.background_removal_error.is_some() {
-                    break;
-                }
+            self.clean_bot_pose(id, pose).await;
+            if self.bot_meta(id)?.background_removal_error.is_some() {
+                break;
             }
         }
         self.get_bot_design(id)

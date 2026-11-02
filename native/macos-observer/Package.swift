@@ -12,7 +12,9 @@ let package = Package(
         .library(name: "CaptureCore", targets: ["CaptureCore"]),
     ],
     targets: [
-        .executableTarget(name: "MacroscopeBotMatte"),
+        .target(name: "BotMatteCore"),
+        .executableTarget(name: "MacroscopeBotMatte", dependencies: ["BotMatteCore"]),
+        .testTarget(name: "BotMatteCoreTests", dependencies: ["BotMatteCore"]),
         .target(name: "ObserverCore"),
         .executableTarget(name: "MacroscopeObserver", dependencies: ["ObserverCore"]),
         .testTarget(name: "ObserverCoreTests", dependencies: ["ObserverCore", "MacroscopeObserver"]),

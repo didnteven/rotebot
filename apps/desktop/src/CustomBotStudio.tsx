@@ -127,7 +127,10 @@ export function CustomBotStudio({ backend, status, currentSeed, title = "", useB
       <summary>Generation details &amp; privacy</summary>
       <p className="muted">Uses your saved Meta API key. Your description and a built-in face reference are sent to Meta. Additional poses use your generated preview.</p>
       <p className="muted">A preview costs about US$0.01; all six poses cost about US$0.06. Prices can change and retries cost extra. Each paid request needs your approval.</p>
-      {design && <p className="muted">{design.completedPoses.length} of 6 poses saved · Estimated request spend: {price(design.attempts)}.</p>}
+      {design && <>
+        <p className="muted">{design.completedPoses.length} of 6 poses saved · Estimated request spend: {price(design.attempts)}.</p>
+        {!needsCleanup && <button disabled={busy} onClick={() => void act(async () => { setProgress("Removing backgrounds on this Mac…"); try { await receive(await backend.removeBotBackgrounds(design.id)); } finally { setProgress(null); } })}>Repair cutouts · no API charge</button>}
+      </>}
       <p className="muted">Images are saved and reused locally at no extra charge. Backgrounds are removed on this Mac; originals are kept for cleanup retries.</p>
     </details>
   </dialog>;
