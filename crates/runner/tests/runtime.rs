@@ -152,6 +152,7 @@ fn cpu_wall_stack_and_output_limits_are_sticky() {
     );
 }
 #[test]
+#[cfg(unix)]
 #[allow(
     clippy::zombie_processes,
     reason = "wait4 below reaps the child and collects its own kernel peak RSS"

@@ -256,7 +256,8 @@ impl Fixture {
         self.core.start_build(&draft.draft_id, true).await.unwrap()
     }
     async fn terminal(&self, id: &str, approve: bool) -> BuildState {
-        for _ in 0..500 {
+        // Up to 30 s: shared CI machines run these suites in parallel and much slower.
+        for _ in 0..3000 {
             let s = self.core.build_state(id).unwrap();
             if s.phase.is_terminal() {
                 return s;
@@ -268,7 +269,10 @@ impl Fixture {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-        panic!("build timeout");
+        panic!(
+            "build timeout in phase {:?}",
+            self.core.build_state(id).unwrap().phase
+        );
     }
     async fn save(&self) -> ToolDetail {
         let s = self.start().await;

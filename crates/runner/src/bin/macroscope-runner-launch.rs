@@ -23,19 +23,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         launch::synthetic_command(Path::new(&args[2]))
     };
     let response = launch::invoke(command, &request)?;
-    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    if unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage) } != 0 {
-        return Err(std::io::Error::last_os_error().into());
+    // Peak memory and CPU of the runner child; getrusage is Unix only.
+    #[cfg(unix)]
+    {
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        if unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        #[cfg(target_os = "macos")]
+        let peak = usage.ru_maxrss as u64;
+        #[cfg(not(target_os = "macos"))]
+        let peak = usage.ru_maxrss as u64 * 1024;
+        eprintln!(
+            "{}",
+            serde_json::json!({"peak_rss_bytes":peak,
+            "cpu_seconds":usage.ru_utime.tv_sec as f64+usage.ru_utime.tv_usec as f64/1e6+usage.ru_stime.tv_sec as f64+usage.ru_stime.tv_usec as f64/1e6})
+        );
     }
-    #[cfg(target_os = "macos")]
-    let peak = usage.ru_maxrss as u64;
-    #[cfg(not(target_os = "macos"))]
-    let peak = usage.ru_maxrss as u64 * 1024;
-    eprintln!(
-        "{}",
-        serde_json::json!({"peak_rss_bytes":peak,
-        "cpu_seconds":usage.ru_utime.tv_sec as f64+usage.ru_utime.tv_usec as f64/1e6+usage.ru_stime.tv_sec as f64+usage.ru_stime.tv_usec as f64/1e6})
-    );
     std::io::stdout().write_all(&encode_response(&response))?;
     Ok(())
 }

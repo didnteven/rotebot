@@ -1635,11 +1635,14 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
-                .build(),
-        )
+        .plugin({
+            let autostart = tauri_plugin_autostart::Builder::new();
+            // The launcher choice exists only on macOS.
+            #[cfg(target_os = "macos")]
+            let autostart =
+                autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
+            autostart.build()
+        })
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let data_dir_for_backup = data_dir.clone();

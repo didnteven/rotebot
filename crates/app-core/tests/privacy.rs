@@ -348,6 +348,7 @@ async fn local_only_preserves_staged_local_runs_but_grant_revocation_blocks_comm
 }
 
 #[test]
+#[cfg(unix)]
 fn sample_setup_refuses_file_and_directory_symlinks_without_modifying_targets() {
     use std::os::unix::fs::symlink;
     let tmp = tempfile::tempdir().unwrap();

@@ -194,7 +194,9 @@ fn staging_ciphertext_nonce_tag_and_truncation_tamper_are_rejected() {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         }
+        // Windows only: clears the read-only attribute so the test can tamper with the file.
         #[cfg(windows)]
+        #[allow(clippy::permissions_set_readonly_false)]
         {
             let mut p = fs::metadata(&path).unwrap().permissions();
             p.set_readonly(false);

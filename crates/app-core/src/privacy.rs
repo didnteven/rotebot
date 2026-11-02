@@ -79,11 +79,15 @@ impl AppCore {
         }
         files.push(("README.txt", readme.into_bytes()));
         #[cfg(unix)]
-        let path = broker::export_bundle(&root, &name, &files).map_err(|_| CoreError::Invalid("Export refused: choose a folder without links and a destination that does not already exist.".into()))?;
+        let exported = broker::export_bundle(&root, &name, &files).map_err(|_| CoreError::Invalid("Export refused: choose a folder without links and a destination that does not already exist.".into()));
         #[cfg(not(unix))]
-        let path: PathBuf = return Err(CoreError::Invalid(
-            "Tool export is unavailable on this platform.".into(),
-        ));
+        let exported: CoreResult<PathBuf> = {
+            let _ = (&root, &name, &files);
+            Err(CoreError::Invalid(
+                "Tool export is unavailable on this platform.".into(),
+            ))
+        };
+        let path = exported?;
         self.activity("settings", format!("Exported tool “{}”", row.name), None);
         Ok(path.to_string_lossy().into_owned())
     }
