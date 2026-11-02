@@ -39,7 +39,8 @@ else:
 }
 
 async fn wait_running(root: &Path) {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    // A cold Python start on a shared CI machine can take several seconds.
+    tokio::time::timeout(Duration::from_secs(30), async {
         while !root.join("running").exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

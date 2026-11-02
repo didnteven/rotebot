@@ -393,12 +393,18 @@ mod discovery_tests {
             if message == "The sandbox runner is missing from this app; reinstall Rotebot"));
     }
 
+    const RUNNER: &str = if cfg!(windows) {
+        "macroscope-runner.exe"
+    } else {
+        "macroscope-runner"
+    };
+
     #[test]
     fn bundle_discovers_adjacent_runner_and_profile() {
         let temp = tempfile::tempdir().unwrap();
         let exe = bundle_exe(temp.path());
         let macos = exe.parent().unwrap();
-        let runner = macos.join("macroscope-runner");
+        let runner = macos.join(RUNNER);
         let profile = macos.join("macroscope-runner.sb");
         std::fs::write(&runner, b"test runner").unwrap();
         std::fs::write(&profile, b"bundled profile").unwrap();
@@ -422,7 +428,7 @@ mod discovery_tests {
     fn bundle_missing_profile_never_uses_source_tree_fallback() {
         let temp = tempfile::tempdir().unwrap();
         let exe = bundle_exe(temp.path());
-        std::fs::write(exe.with_file_name("macroscope-runner"), b"test runner").unwrap();
+        std::fs::write(exe.with_file_name(RUNNER), b"test runner").unwrap();
         assert_missing_bundle(&exe);
     }
 
@@ -431,7 +437,7 @@ mod discovery_tests {
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join("debug");
         std::fs::create_dir_all(&target).unwrap();
-        let runner = target.join("macroscope-runner");
+        let runner = target.join(RUNNER);
         std::fs::write(&runner, b"test runner").unwrap();
         let source_profile = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../runner/profile.sb")

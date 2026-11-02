@@ -29,3 +29,8 @@ macroscope-app-core = { path = "crates/app-core" }
 futures-core = "0.3"
 tauri = { version = "=2.12.5", features = ["tray-icon"] }
 tauri-build = "=2.7.4"
+
+# The host hashes the sandbox runner before every run. Unoptimized SHA-256 over a debug
+# runner (tens of MB, more on Linux where debug info is embedded) made each run take ~0.5 s.
+[profile.dev.package.sha2]
+opt-level = 3
