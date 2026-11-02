@@ -323,9 +323,14 @@ fn validate_selected_path(path: &Path) -> Result<(), BrokerError> {
     }
     // Reject symlink ancestors as well as the last component. The final open
     // uses NOFOLLOW too. Destination operations subsequently use a pinned FD.
+    // Only named components are checked: a Windows prefix such as `\\?\C:` names the
+    // volume itself, whose metadata cannot be read ("Incorrect function").
     let mut ancestor = PathBuf::new();
     for part in path.components() {
         ancestor.push(part);
+        if !matches!(part, Component::Normal(_)) {
+            continue;
+        }
         if fs::symlink_metadata(&ancestor)?.file_type().is_symlink() {
             return Err(BrokerError::InvalidSelection);
         }
