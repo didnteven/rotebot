@@ -132,3 +132,35 @@ and studio reflections, with a glossy black face panel. This explicitly override
 the matte style reference finish. Robot shape variation stays close to the
 existing rounded, compact companion family. Explicit material requests still
 take priority; later poses preserve their approved preview. No paid calls.
+
+## Delete saved characters
+
+The current preview and each saved-character row provide a Delete action with
+an inline confirmation. Deletion removes original and transparent images plus
+metadata/index entries, clears the image cache and task avatar assignments, and
+keeps tasks intact with built-in avatars. Native deletion validates the UUID,
+shares the image-generation lock, runs locally with cloud work paused and
+updates metadata/index in one transaction. Failed deletion keeps the UI entry
+available for retry. No paid API calls are made.
+
+## Distinct, believable expression poses
+
+Matching-pose prompts now explicitly preserve identity rather than the neutral
+stance. Working brings existing hands forward with a downward attentive gaze;
+waiting uses an upright curious tilt and relaxed stance; happy uses a small wave
+and crescent eyes; concerned uses a reachable hand-to-face gesture and worried
+eye shapes; resting lowers the body and closes the eyes. Every acting instruction
+is conditional on existing anatomy, with natural joint limits and stable balance.
+Existing cached poses remain unchanged and are never regenerated automatically.
+
+## Description-led previews and compact creator
+
+The creator puts the saved preview and its Use action first, with expressions,
+saved characters, and generation details in expandable sections. Paid requests
+still require separate approval with their estimated cost shown.
+
+New preview prompts prioritize the user's subject, silhouette, anatomy, colors,
+materials and style. The shared identity is the dark glass face panel and bright
+ivory oval eyes; the supplied reference no longer constrains the body or palette.
+Design IDs no longer inject competing preset anatomy or colors. Later poses
+continue to preserve the approved preview. Existing saved artwork is unchanged.

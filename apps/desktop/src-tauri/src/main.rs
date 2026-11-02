@@ -75,6 +75,10 @@ fn list_bot_designs(core: State<'_, Core>) -> Cmd<Vec<macroscope_app_core::bots:
     Ok(core.0.list_bot_designs()?)
 }
 #[tauri::command]
+fn delete_bot_design(core: State<'_, Core>, id: String) -> Cmd<()> {
+    Ok(core.0.delete_bot_design(&id)?)
+}
+#[tauri::command]
 fn get_bot_design(core: State<'_, Core>, id: String) -> Cmd<macroscope_app_core::bots::BotDesign> {
     Ok(core.0.get_bot_design(&id)?)
 }
@@ -1505,6 +1509,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
     tauri::generate_handler![
         remove_bot_backgrounds,
         list_bot_designs,
+        delete_bot_design,
         get_bot_design,
         generate_bot_image,
         list_today,

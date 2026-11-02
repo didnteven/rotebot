@@ -33,12 +33,12 @@ pub struct BotImageRequest {
     pub retry_uncertain: bool,
 }
 const POSES: [&str; 6] = [
-    "neutral, calm and quietly confident",
-    "focused and busy, shown through a small lean or an attentive expression",
-    "waiting patiently, with a gentle curious tilt or relaxed posture",
-    "quietly pleased, with a small lift in posture or a relaxed expression",
-    "gently concerned but reassuring, never angry or frightening",
-    "resting calmly; soften or close the eyes only if this character already has eyes",
+    "NEUTRAL: relaxed upright stance, calm fully open eyes and arms naturally at the sides if present",
+    "WORKING: visibly engaged in a task. If the character has arms, bring both hands forward together at waist or chest height as if carefully manipulating a small control, with elbows naturally bent only where its joints allow. Lean the torso forward and tilt the head down toward the hands. If it has digital eyes, turn the oval eyes into focused slightly narrowed shapes, still bright and alert, never sleepy. Keep feet planted and balance believable. Do not leave the arms hanging in the neutral pose",
+    "WAITING: attentive anticipation, clearly different from working. Stand upright with a noticeable curious sideways head tilt; if arms are present, rest one hand on the side of the torso and leave the other relaxed. Shift weight slightly onto one foot if the anatomy allows. Digital eyes are open rounded ovals with one a little taller, conveying curiosity, not drowsiness",
+    "HAPPY: a clear warm success reaction. If an arm is present, lift one hand beside the head in a small celebratory wave, with the other arm relaxed away from the torso. Give the body a slight upbeat lean while keeping its support believable. Digital eyes become two bright upward-curving happy crescents, not the neutral oval eyes. No added mouth, confetti or extra limbs",
+    "CONCERNED: a readable uncertain, asking-for-help expression, never angry. Tilt the head slightly down and sideways; if arms are present, bring one hand toward the chin or lower edge of the face and hold the other near the body, using only reachable natural joint positions. Digital eyes become gently uneven worried shapes, with their inner upper edges slightly lifted; do not add eyebrows or a mouth. Keep the body balanced and avoid copying the waiting stance",
+    "RESTING: visibly at rest. If the anatomy supports sitting, sit with the body lowered, existing feet forward and hands relaxed in the lap; otherwise lower or relax the existing silhouette without inventing joints or limbs. Tilt the head gently downward. Existing digital eyes close into two soft downward-curving arcs. No bed, pillow or sleep symbols",
 ];
 
 /// The same preview brief used by the application; exposed for small, explicit API studies.
@@ -46,51 +46,27 @@ pub fn preview_character_prompt(description: &str) -> String {
     character_prompt(description, 0, false)
 }
 
+/// The production reference-pose brief for a bounded visual study.
+pub fn matching_character_prompt(description: &str, pose: usize) -> Option<String> {
+    (1..POSES.len())
+        .contains(&pose)
+        .then(|| character_prompt(description, pose, true))
+}
+
 const BOT_STYLE_REFERENCE: &[u8] = include_bytes!("../assets/bot-style-reference.png");
 
 fn character_prompt(description: &str, pose: usize, has_reference: bool) -> String {
     let direction = if has_reference {
-        "REFERENCE LOCK: The supplied preview defines the character. Preserve its exact species or object type, silhouette, anatomy, proportions, colors, materials and facial features. Do not simplify, restyle, mechanize or redesign it. Change only its expression or subtle posture to communicate the requested state. Use only features and limbs already present; never add arms, legs, a face or mechanical parts for a pose."
+        "REFERENCE LOCK: The supplied preview defines the character. Preserve its exact species or object type, silhouette, anatomy, proportions, colors, materials and facial features. Do not simplify, restyle, mechanize or redesign it. Preserve identity, not the neutral pose: change the existing limbs, posture and expression decisively enough to communicate the requested state at avatar size. Preserve eye color and face placement, but digital eye shapes MUST change for each expression as specified. Keep surfaces, proportions and attachments unchanged. Use physically plausible joints, reachable hand positions, stable balance and natural weight distribution. Do not return the neutral standing image with only a tiny head rotation. Use only features and limbs already present; never add arms, legs, a face or mechanical parts for a pose."
     } else {
-        "CHARACTER DESIGN: The user's idea determines the subject. Robots, animals, plants, everyday objects and imaginary creatures are all valid. Do not turn a non-robot idea into a robot. STYLE REFERENCE: The supplied image is a FACE-LANGUAGE reference only: borrow its dark panel and bright oval eye shapes, not its character identity. Keep the character closely related to the existing app companion family: a rounded head, small compact body and simple limbs. Introduce modest variation in silhouette, proportions and palette rather than inventing a different visual style. Do not duplicate the supplied character exactly or repeat its curved chest stripe. No chest stripe, belt, badge or chest decoration unless explicitly requested. If the idea is a task title or activity rather than an explicit character description (for example Rent, invoices or email), create a robot in the reference style. Do not turn task words into literal objects such as keys, houses, envelopes or coins. Use the task to inspire the character personality; keep its body abstract and original rather than copying the reference. Only use a non-robot subject when the user explicitly describes one; then preserve that subject and use the reference only for rendering quality and simplicity. Default art direction: minimalist and cool. Use a few intentional geometric forms, clean sculptural surfaces, gently rounded edges and balanced compact proportions. SURFACE FINISH: Match the existing app bots with a smooth glossy ceramic or polished enamel shell, clearly visible soft specular highlights, gentle studio reflections and subtle rounded-edge shine. The dark face panel is glossy black glass with a restrained soft reflection; keep the luminous eyes crisp. This glossy finish overrides the matte surface in the supplied reference image. Avoid rough clay, chalky matte plastic, flat diffuse surfaces, metallic chrome and mirror-like glare. Use one restrained neutral base color and at most one controlled accent. The user can explicitly request a different material. For explicitly requested non-robot subjects, use simple facial marks only where appropriate. ROBOT FACE REQUIREMENT: For robot subjects, borrow only the supplied reference eye language: two bright oval eyes on one clean nearly black face panel, integrated into the original head shape chosen for this new design. Keep the head and body in the same rounded companion family, with modest individual differences. Inside the panel place two crisp luminous ivory vertical oval eyes, moderately sized, widely spaced and fully open in the neutral state. Never substitute tiny colored dots, bead eyes, horizontal slits, half-closed sleepy eyes or eyes carved directly into the shell for this face. Keep the panel flush and understated, with no chrome rim or bulky helmet. The eyes are simple digital shapes without pupils, eyelids, eyebrows, nose or mouth; they can change shape naturally for other states. Keep this dark-panel and bright-oval eye identity consistent across poses. Do not apply this robot face to non-robot subjects. Convey calm confidence through a subtle tilt or relaxed stance. Aim for a sophisticated modern desktop character, not a babyish collectible toy. Keep the face and silhouette legible at 48 pixels. The user's explicit appearance, color and material requests take priority over defaults, including a cute or plush style when explicitly requested. Otherwise avoid chubby baby proportions, oversized heads or eyes, sugary pastel palettes and exaggerated expressions. Limbs are optional and must suit the subject. For non-robot subjects, do not add face screens unless explicitly requested. No antennae, armor, mechanical seams, elaborate ears, patterns or accessories unless the user specifically requests them. Avoid angry eyebrows, excessive detail and visual clutter."
+        "DESIGN PRIORITY: The user's description leads the design. Follow the requested subject, silhouette, anatomy, proportions, colors, materials, style and accessories faithfully. Make requested differences obvious at avatar size, not minor variations of the supplied robot. Robots, animals, plants, everyday objects and imaginary creatures are all valid. Do not turn a non-robot idea into a robot. FACE SIGNATURE: For any character with a face, use one clean nearly black glass face panel with two crisp luminous ivory vertical oval eyes, widely spaced and fully open in the neutral state. This dark-panel and bright-oval eye signature is the strong shared identity, even when the body, head shape, species or material changes dramatically. Integrate the panel naturally into the requested subject; do not add a robot helmet, torso or mechanical limbs to accommodate it. Keep the eyes legible at 48 pixels, without pupils, eyebrows, nose or mouth. Do not substitute tiny dots, bead eyes or eyes carved directly into the body. Eye shapes may change for expressions in subsequent poses. Respect an explicitly faceless character. REFERENCE SCOPE: The supplied image demonstrates only the face panel and eye language. Do not copy its head shape, body, proportions, palette, shell material, chest stripe or accessories. The face signature does not constrain the rest of the character. DEFAULTS ONLY: Fill in unspecified details with simple readable forms, calm personality and uncluttered styling. For an unspecified robot material, use a glossy ceramic shell with soft specular highlights. These defaults never override the user's description; plush, matte, metallic, angular, tall, colorful and other requested designs are valid. If the input is only a task title or activity, invent a distinctive robot inspired by its personality rather than literal task props. Limbs are optional and must suit the requested subject. Do not add unrequested decorations."
     };
-    format!("Create exactly one original task companion character. User idea: {description}. {direction} Requested state: {}. Express this state naturally for the character's existing anatomy; a tiny tilt or change of orientation is enough for a character without limbs or a face. Show the complete character with generous 12% margin, centered in a square composition, consistent scale and mostly frontal camera with a slight three-quarter angle. Soft diffuse studio lighting and subtle material depth. Plain pale neutral background clearly separated from the subject, no ground shadow or props; the app removes the background locally. No typography, labels, logos, watermark, grid or multi-view sheet.", POSES[pose])
+    format!("Create exactly one original task companion character. User idea: {description}. {direction} Requested state: {}. Adapt the requested acting to the character's existing anatomy: every limb, eye or face instruction applies only if that feature exists. Never invent missing features. For a limbless or faceless character use a clear supported change in orientation or resting position. Pose and expression should be recognizably different from neutral; preserve the character's identity and material, not its exact limb positions. Render one believable held pose, not motion blur or multiple limbs. Show the complete character with generous 12% margin, centered in a square composition, consistent scale and mostly frontal camera with a slight three-quarter angle. Soft diffuse studio lighting and subtle material depth. Plain pale neutral background clearly separated from the subject, no ground shadow or props; the app removes the background locally. No typography, labels, logos, watermark, grid or multi-view sheet.", POSES[pose])
 }
 
-// A new design ID receives a stable visual brief; subsequent poses use the approved image.
-fn preview_design_prompt(description: &str, id: &str) -> String {
-    const HEADS: [&str; 6] = [
-        "a horizontal oval head",
-        "a softly rounded square head",
-        "a slightly taller rounded rectangular head",
-        "a flattened pebble-shaped head",
-        "a gently flattened rounded head",
-        "a smooth near-spherical head",
-    ];
-    const BODIES: [&str; 6] = [
-        "a tapered compact torso with small flat feet and short simple arms",
-        "a low round body with broad flat feet and tiny integrated arms",
-        "a compact softly curved torso with two short legs and small arms",
-        "a small rounded torso with short arms and stubby feet",
-        "a short pear-shaped torso on two short legs, with small arms",
-        "a compact rounded body with two simple arms and low feet",
-    ];
-    const PALETTES: [&str; 6] = [
-        "warm ivory with one muted terracotta accent",
-        "deep forest green with one soft cream accent",
-        "muted cobalt with one pale ice accent",
-        "soft silver with one restrained navy accent",
-        "warm charcoal with one muted copper accent",
-        "muted plum with one pale stone accent",
-    ];
-    let hash = Sha256::digest(id.as_bytes());
-    format!(
-        "{} NEW DESIGN BRIEF: For a robot or task-only idea, explore {}, {}, and {}. These are starting points subordinate to the user's explicit character, shape, anatomy, color and material requests. For an explicitly requested non-robot subject, ignore these robot anatomy suggestions and keep the requested subject. Preserve the existing app bots' glossy finish, compact rounded proportions and dark-panel/oval-eye language. Vary the silhouette modestly within this family. Do not duplicate the reference character or chest stripe.",
-        character_prompt(description, 0, false),
-        HEADS[hash[0] as usize % HEADS.len()],
-        BODIES[hash[1] as usize % BODIES.len()],
-        PALETTES[hash[2] as usize % PALETTES.len()],
-    )
+// The description and face signature define a preview; the saved image defines later poses.
+fn preview_design_prompt(description: &str, _id: &str) -> String {
+    character_prompt(description, 0, false)
 }
 
 impl AppCore {
@@ -141,6 +117,33 @@ impl AppCore {
                 .map_err(|_| CoreError::Internal("Could not read your bots.".into()))?;
         ids.iter().map(|id| self.bot_meta(id)).collect()
     }
+    pub fn delete_bot_design(&self, id: &str) -> CoreResult<()> {
+        let _io = self.inner.bot_io.try_lock().map_err(|_| {
+            CoreError::Invalid(
+                "Wait for the current character image to finish before deleting.".into(),
+            )
+        })?;
+        let _local = self.admit_local()?;
+        Self::bot_id(id)?;
+        let mut ids: Vec<String> =
+            serde_json::from_value(self.db().setting("bot-designs")?.unwrap_or(json!([])))
+                .map_err(|_| CoreError::Internal("Could not read your characters.".into()))?;
+        // The canonical UUID is the only user-controlled path component.
+        let directory = self.bot_path(id, 0)?.parent().unwrap().to_path_buf();
+        match std::fs::remove_dir_all(directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(CoreError::Invalid(
+                    "Could not remove the character images. Try deleting again.".into(),
+                ))
+            }
+        }
+        ids.retain(|value| value != id);
+        self.db().delete_bot_design(id, &ids)?;
+        Ok(())
+    }
+
     pub fn get_bot_design(&self, id: &str) -> CoreResult<BotDesign> {
         self.ensure_active()?;
         let mut bot = self.bot_meta(id)?;
@@ -572,31 +575,38 @@ mod matte_tests {
         let preview = character_prompt("A sleepy coffee bean with no arms", 0, false);
         assert!(preview.contains("User idea: A sleepy coffee bean with no arms"));
         assert!(preview.contains("Do not turn a non-robot idea into a robot"));
-        assert!(preview.contains("Default art direction: minimalist and cool"));
+        assert!(preview.contains("The user's description leads the design"));
         assert!(!preview.contains("compact cute proportions"));
         let pose = character_prompt("An elaborate bronze robot", 3, true);
         assert!(pose.contains("REFERENCE LOCK"));
         assert!(pose.contains("Do not simplify, restyle, mechanize or redesign it"));
-        assert!(!pose.contains("Default art direction: minimalist and cool"));
-        assert!(!pose.contains("raised arms"));
+        assert!(!pose.contains("DEFAULTS ONLY:"));
+        assert!(pose.contains("Preserve identity, not the neutral pose"));
     }
 
     #[test]
-    fn new_designs_vary_but_poses_keep_the_approved_identity() {
-        let first = preview_design_prompt("Rent", "00000000-0000-4000-8000-000000000001");
-        let second = preview_design_prompt("Rent", "00000000-0000-4000-8000-000000000002");
-        assert_ne!(first, second);
+    fn description_leads_preview_with_a_strong_face_signature_and_no_preset_body() {
+        let description = "A tall angular cobalt robot made of brushed metal with long legs";
+        let first = preview_design_prompt(description, "00000000-0000-4000-8000-000000000001");
+        let second = preview_design_prompt(description, "00000000-0000-4000-8000-000000000002");
         assert_eq!(
-            first,
-            preview_design_prompt("Rent", "00000000-0000-4000-8000-000000000001")
+            first, second,
+            "Design IDs must not inject competing anatomy or palettes"
         );
-        assert!(first.contains("glossy finish, compact rounded proportions"));
-        assert!(first.contains("soft specular highlights"));
-        assert!(first.contains("overrides the matte surface"));
-        assert!(first.contains("subordinate to the user's explicit character"));
-        let pose = character_prompt("Rent", 1, true);
+        assert!(first.contains(description));
+        assert!(first.contains("The user's description leads the design"));
+        assert!(first.contains("two crisp luminous ivory vertical oval eyes"));
+        assert!(first.contains("one clean nearly black glass face panel"));
+        assert!(first
+            .contains("Do not copy its head shape, body, proportions, palette, shell material"));
+        assert!(!first.contains("NEW DESIGN BRIEF:"));
+        assert!(!first.contains("modest variation"));
+        let non_robot = preview_design_prompt("A fuzzy purple fox", "example");
+        assert!(non_robot.contains("For any character with a face"));
+        assert!(non_robot.contains("Do not turn a non-robot idea into a robot"));
+        let pose = character_prompt(description, 1, true);
         assert!(pose.contains("REFERENCE LOCK:"));
-        assert!(!pose.contains("NEW DESIGN BRIEF:"));
+        assert!(!pose.contains("DEFAULTS ONLY:"));
     }
 
     #[test]

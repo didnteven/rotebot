@@ -4,6 +4,7 @@ fn main() {
     const COMMANDS: &[&str] = &[
         "remove_bot_backgrounds",
         "list_bot_designs",
+        "delete_bot_design",
         "get_bot_design",
         "generate_bot_image",
         "list_today",

@@ -20,9 +20,9 @@ impl Respond for ImageProvider {
         assert!(!body.to_string().contains("bot-test-key"));
         assert_eq!(request.url.path(), "/v1/images/edits");
         let prompt = body["prompt"].as_str().unwrap();
-        if prompt.contains("STYLE REFERENCE:") {
+        if prompt.contains("DESIGN PRIORITY:") {
             assert!(prompt.contains("task title or activity"));
-            assert!(prompt.contains("Never substitute tiny colored dots"));
+            assert!(prompt.contains("Do not substitute tiny dots"));
             assert!(!prompt.contains("REFERENCE LOCK:"));
         } else {
             assert!(prompt.contains("REFERENCE LOCK:"));
@@ -102,5 +102,23 @@ async fn preview_pose_cache_restart_and_cloud_consent_boundary() {
     core.set_local_only(true).await.unwrap();
     assert!(core.generate_bot_image(request(2, true)).await.is_err());
     assert_eq!(core.get_bot_design(&id).unwrap().attempts, 2);
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    // Delete locally while cloud access is paused; keep unrelated files untouched.
+    let directory = tmp.path().join("data/bots").join(&id);
+    assert!(directory.join("0.png").is_file());
+    std::fs::write(directory.join("0-transparent.png"), b"cached cutout").unwrap();
+    let unrelated = tmp.path().join("data/bots/keep.txt");
+    std::fs::write(&unrelated, b"keep").unwrap();
+    assert!(core.delete_bot_design("../keep.txt").is_err());
+    core.delete_bot_design(&id).unwrap();
+    assert!(!directory.exists());
+    assert!(unrelated.is_file());
+    assert!(core.get_bot_design(&id).is_err());
+    assert!(core.list_bot_designs().unwrap().is_empty());
+    core.delete_bot_design(&id).unwrap(); // A repeated delete is harmless.
+    drop(core);
+    let core = make_core();
+    assert!(core.list_bot_designs().unwrap().is_empty());
+    assert!(core.get_bot_design(&id).is_err());
     assert_eq!(server.received_requests().await.unwrap().len(), 2);
 }

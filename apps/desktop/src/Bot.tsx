@@ -16,6 +16,16 @@ export function botIdentity(taskId: string) {
 export function saveBotIdentity(taskId: string, seed: string) {
   try { localStorage.setItem(avatarKey, JSON.stringify({ ...identities(), [taskId]: seed })); window.dispatchEvent(new Event("macroscope-bot-changed")); } catch { /* Stable ID remains the fallback when storage is unavailable. */ }
 }
+export function removeCustomBotIdentity(id: string) {
+  try {
+    const current = identities();
+    for (const taskId of Object.keys(current)) {
+      if (current[taskId] === `custom:${id}`) delete current[taskId];
+    }
+    localStorage.setItem(avatarKey, JSON.stringify(current));
+  } catch { /* Missing designs still render a built-in companion. */ }
+  window.dispatchEvent(new Event("macroscope-bot-changed"));
+}
 export function botHash(seed: string) {
   let hash = 2166136261;
   for (const character of seed) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);

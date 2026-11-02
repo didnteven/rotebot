@@ -87,6 +87,7 @@ export class TauriBackend implements Backend {
   loginEnabled: Backend["loginEnabled"] = () => invoke("login_enabled");
   setLoginEnabled: Backend["setLoginEnabled"] = (enabled) => invoke("set_login_enabled", {enabled});
   removeBotBackgrounds: Backend["removeBotBackgrounds"] = id => invoke("remove_bot_backgrounds", { id });
+  deleteBotDesign: Backend["deleteBotDesign"] = id => invoke("delete_bot_design", { id });
   listBotDesigns: Backend["listBotDesigns"] = () => invoke("list_bot_designs");
   getBotDesign: Backend["getBotDesign"] = id => invoke("get_bot_design", { id });
   generateBotImage: Backend["generateBotImage"] = request => invoke("generate_bot_image", { request });

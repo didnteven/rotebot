@@ -519,6 +519,7 @@ export class MockBackend implements Backend {
     return this.resolveRoute();
   }
   private botDesigns = new Map<string, import("./types").BotDesign>();
+  async deleteBotDesign(id: string) { this.botDesigns.delete(id); }
   async listBotDesigns() { return [...this.botDesigns.values()].map(bot => ({ ...bot, images: {} })); }
   async getBotDesign(id: string) {
     const bot = this.botDesigns.get(id);

@@ -587,6 +587,7 @@ export interface Backend {
   setLoginEnabled(enabled: boolean): Promise<void>;
   appInfo(): Promise<AppInfo>;
   listBotDesigns(): Promise<BotDesign[]>;
+  deleteBotDesign(id: string): Promise<void>;
   getBotDesign(id: string): Promise<BotDesign>;
   removeBotBackgrounds(id: string): Promise<BotDesign>;
   generateBotImage(request: BotImageRequest): Promise<BotDesign>;

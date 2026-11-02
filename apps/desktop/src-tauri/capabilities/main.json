@@ -8,6 +8,7 @@
   "permissions": [
     "allow-remove-bot-backgrounds",
     "allow-list-bot-designs",
+    "allow-delete-bot-design",
     "allow-get-bot-design",
     "allow-generate-bot-image",
     "allow-app-info",

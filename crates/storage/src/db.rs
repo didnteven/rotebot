@@ -1121,6 +1121,23 @@ impl Db {
         })
     }
 
+    /// Remove a custom character and update its library index atomically.
+    pub fn delete_bot_design(&self, id: &str, remaining: &[String]) -> Result<(), DbError> {
+        self.with(|c| {
+            let tx = c.unchecked_transaction()?;
+            tx.execute(
+                "DELETE FROM settings_kv WHERE key = ?1",
+                [format!("bot:{id}")],
+            )?;
+            tx.execute(
+                "INSERT OR REPLACE INTO settings_kv (key, value_json) VALUES ('bot-designs', ?1)",
+                [serde_json::to_string(remaining)?],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
     pub fn setting(&self, key: &str) -> Result<Option<Value>, DbError> {
         self.with(|c| {
             let found = c

@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { MockBackend } from "./backend/mock";
 import { BotLibraryProvider } from "./BotLibrary";
 import { CustomBotStudio } from "./CustomBotStudio";
+import { botIdentity, saveBotIdentity } from "./Bot";
 
 it("requires separate preview and pose approval, reuses the preview, and assigns the saved bot", async () => {
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
@@ -33,6 +34,10 @@ it("requires separate preview and pose approval, reuses the preview, and assigns
   await waitFor(() => expect(screen.getByRole("button", { name: "Use preview for now" })).toBeEnabled());
   expect(cleanup).toHaveBeenCalledOnce();
   expect(generate).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: "Use preview for now" })).toHaveClass("primary");
+  expect(screen.getByText("Add expressions").closest("details")).not.toHaveAttribute("open");
+  await user.click(screen.getByText("Add expressions"));
+  expect(screen.getByText("Add expressions").closest("details")).toHaveAttribute("open");
   const poses = screen.getByRole("button", { name: "Generate 5 poses · US$0.05" });
   expect(poses).toBeDisabled();
   await user.click(screen.getByLabelText("I approve sending this preview to Meta and the estimated US$0.05 charge."));
@@ -42,4 +47,41 @@ it("requires separate preview and pose approval, reuses the preview, and assigns
   expect(new Set(generate.mock.calls.map(([request]) => request.id)).size).toBe(1);
   expect(useBot).toHaveBeenCalledWith(expect.stringMatching(/^custom:/));
   expect(close).toHaveBeenCalledOnce();
+});
+
+it("confirms deletion, keeps failed deletions available, and resets tasks using the deleted character", async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+  const backend = new MockBackend();
+  await backend.saveApiKey("test-key");
+  const id = crypto.randomUUID(), otherId = crypto.randomUUID();
+  await backend.generateBotImage({ id, description: "Rent robot", pose: 0, approved: true, retryUncertain: false });
+  await backend.generateBotImage({ id: otherId, description: "Mail robot", pose: 0, approved: true, retryUncertain: false });
+  saveBotIdentity("rent-task", `custom:${id}`);
+  saveBotIdentity("other-task", `custom:${otherId}`);
+  const remove = vi.spyOn(backend, "deleteBotDesign");
+  const useBot = vi.fn();
+  render(<BotLibraryProvider backend={backend}><CustomBotStudio backend={backend} status={await backend.modelAccess()} currentSeed={`custom:${id}`} useBot={useBot} close={() => {}} openSettings={() => {}} /></BotLibraryProvider>);
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Your saved characters"));
+  await user.click(await screen.findByRole("button", { name: "Delete Rent robot" }));
+  expect(screen.getByRole("alertdialog", { name: "Delete “Rent robot”?" })).toBeVisible();
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Keep character" }));
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(await backend.getBotDesign(id)).toBeDefined();
+  await user.click(screen.getByRole("button", { name: "Delete Rent robot" }));
+  remove.mockRejectedValueOnce(new Error("Could not remove character images."));
+  await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+  await screen.findByText("Could not remove character images.");
+  expect(botIdentity("rent-task")).toBe(`custom:${id}`);
+  expect(screen.getByRole("button", { name: "Delete Rent robot" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Delete Rent robot" })).not.toBeInTheDocument());
+  expect(screen.getByRole("button", { name: "Delete Mail robot" })).toBeVisible();
+  expect(botIdentity("rent-task")).toBe("rent-task");
+  expect(botIdentity("other-task")).toBe(`custom:${otherId}`);
+  expect(useBot).toHaveBeenCalledWith(expect.stringMatching(/^draft-/));
+  await expect(backend.getBotDesign(id)).rejects.toThrow("Bot not found");
+  expect(await backend.getBotDesign(otherId)).toBeDefined();
 });
