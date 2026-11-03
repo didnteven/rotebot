@@ -216,6 +216,11 @@ Explore the [build progress](docs/build/PROGRESS.md), [architecture decisions](d
 [tested examples](docs/build/TESTED-EXAMPLES.md), [master plan](plan/PLAN.md),
 [branch map](docs/build/BRANCHES.md), and [privacy policy](docs/legal/privacy-policy.md).
 
+## License
+
+Rotebot is licensed under the [GNU Affero General Public License v3.0 only](LICENSE)
+(`AGPL-3.0-only`).
+
 ---
 
 <p align="center"><strong>Show it once. Make it routine.</strong></p>
