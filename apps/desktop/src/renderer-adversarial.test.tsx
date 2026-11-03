@@ -93,7 +93,7 @@ function fixture(payload: string) {
   const outbound = { id: "outbound", atMs: 1, purpose: v("outbound purpose"), destination: v("destination"), route: "api_key" as const, syntheticOnly: true, costMicros: 0, payloadText: v("outbound payload") };
   const backend = new MockBackend([{ id: "tool", name: v("saved tool"), version: 1 }], {
     testOnlyOverrides: {
-      modelAccess: async () => ({ customEndpoint: {baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:0}, apiKey: { present: false, fingerprint: null, lastTest: null }, muse: { kind: "unknown", version: null, message: v("model error") }, selectedRoute: null, effectiveRoute: "offline_demo", blockedReason: v("route blocker"), egress: "cloud_allowed", model: "fixture", museUnverifiedOk: false }),
+      modelAccess: async () => ({ customEndpoint: {baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:0}, apiKey: { present: false, fingerprint: null, lastTest: null }, muse: { kind: "unknown", version: null, message: v("model error") }, selectedRoute: null, effectiveRoute: "offline_demo", blockedReason: v("route blocker"), egress: "cloud_allowed", model: "fixture", metaModel: "muse-spark-1.3", metaModels: [], museUnverifiedOk: false }),
       refreshMuseStatus: async () => { throw new Error(v("settings error")); },
       pickCsv: async () => csv,
       pickOutputDir: async () => folder,

@@ -42,7 +42,7 @@ use macroscope_effect_broker::{
     StagedPlan,
 };
 use macroscope_executor::{Limits, MappingError};
-use macroscope_model_gateway::{GatewayError, MetaResponsesClient, DEFAULT_MODEL};
+use macroscope_model_gateway::{GatewayError, MetaResponsesClient, DEFAULT_MODEL, META_MODELS};
 use macroscope_muse_client::{BinaryInfo, CredentialRoute, PlanStatus};
 use macroscope_policy::{EgressPolicy, EgressState as PolicyState};
 use macroscope_storage::db::{self, Db};
@@ -62,6 +62,29 @@ const DB_KEY_REF: &str = "db-key";
 const STAGING_KEY_REF: &str = "staging-key";
 const LOCAL_RUN_POLICY_EPOCH: u64 = 0;
 const BUILD_BUDGET_MICROS: i64 = 2_000_000;
+
+/// A typical direct build (about 2k tokens in, 4k out) at this model's price, rounded up to a cent.
+fn typical_build_micros(model: &str) -> i64 {
+    let usage = macroscope_model_gateway::Usage {
+        input_tokens: 2_000,
+        output_tokens: 4_000,
+        ..Default::default()
+    };
+    let micros = macroscope_model_gateway::CostEstimator::default()
+        .estimate(model, &usage)
+        .unwrap_or(20_000) as i64;
+    (micros + 9_999) / 10_000 * 10_000
+}
+
+/// The model named in a Meta build's "Meta API key · model" label.
+fn meta_model_in_label(label: &str) -> String {
+    label
+        .rsplit(" · ")
+        .next()
+        .filter(|id| META_MODELS.iter().any(|m| m.id == *id))
+        .unwrap_or(DEFAULT_MODEL)
+        .to_string()
+}
 /// Longest task description the builder accepts. A plan made from a recording is longer than a typed request.
 pub(crate) const GOAL_LIMIT: usize = 6000;
 const SAMPLE_CSV: &[u8] = include_bytes!("../../../fixtures/orders/input.csv");
@@ -1307,11 +1330,20 @@ impl AppCore {
             effective_route: effective,
             blocked_reason: blocked,
             egress,
-            model: if effective == Some(ModelRoute::CustomEndpoint) {
-                custom.model.unwrap_or_default()
-            } else {
-                DEFAULT_MODEL.into()
+            model: match effective {
+                Some(ModelRoute::CustomEndpoint) => custom.model.unwrap_or_default(),
+                Some(ModelRoute::ApiKey) => self.meta_model(),
+                _ => DEFAULT_MODEL.into(),
             },
+            meta_model: self.meta_model(),
+            meta_models: META_MODELS
+                .iter()
+                .map(|m| MetaModelOption {
+                    id: m.id.into(),
+                    label: m.label.into(),
+                    price: m.price.into(),
+                })
+                .collect(),
             muse_unverified_ok: self.muse_containment_accepted(),
         }
     }
@@ -1419,6 +1451,33 @@ impl AppCore {
         Ok(self.model_access().await)
     }
 
+    /// The chosen Meta model. A stored id this version cannot price falls back to the default,
+    /// because direct calls are budgeted against the model's price.
+    pub(crate) fn meta_model(&self) -> String {
+        self.db()
+            .setting("meta_model")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .filter(|id| META_MODELS.iter().any(|m| m.id == id))
+            .unwrap_or_else(|| DEFAULT_MODEL.into())
+    }
+
+    pub async fn select_meta_model(&self, model: &str) -> CoreResult<ModelAccessStatus> {
+        let Some(chosen) = META_MODELS.iter().find(|m| m.id == model) else {
+            return Err(CoreError::Invalid(
+                "That Meta model isn't available in Rotebot.".into(),
+            ));
+        };
+        self.db().set_setting("meta_model", &json!(chosen.id))?;
+        self.activity(
+            "settings",
+            format!("Meta API key model set to {}", chosen.label),
+            None,
+        );
+        Ok(self.model_access().await)
+    }
+
     /// Owner opt-in for Muse plan builds before the native-tool containment gate has
     /// evidence (plan §4.3 / P7). Shell and writes stay disabled either way.
     pub async fn set_muse_unverified_ok(&self, ok: bool) -> CoreResult<ModelAccessStatus> {
@@ -1518,7 +1577,10 @@ impl AppCore {
                 },
                 Some(0),
             ),
-            ModelRoute::ApiKey => (Self::draft_packet(&draft), Some(20_000)),
+            ModelRoute::ApiKey => (
+                Self::draft_packet(&draft),
+                Some(typical_build_micros(&access.model)),
+            ),
             ModelRoute::MusePlan | ModelRoute::CustomEndpoint => (Self::draft_packet(&draft), None),
         };
         // Describe the same inputs used by draft_packet, before serialization. CSV
@@ -1620,7 +1682,8 @@ impl AppCore {
         let cost = match route {
             ModelRoute::OfflineDemo => "Free; no model calls".into(),
             ModelRoute::ApiKey => format!(
-                "Estimated cost: $0.02 · Budget: ${:.2}",
+                "Estimated cost: ${:.2} · Budget: ${:.2}",
+                estimate.unwrap_or(0) as f64 / 1e6,
                 BUILD_BUDGET_MICROS as f64 / 1e6
             ),
             ModelRoute::MusePlan => "Counts against your Muse plan".into(),
@@ -1884,7 +1947,7 @@ impl AppCore {
         let route_label = match route {
             ModelRoute::CustomEndpoint => self.custom_route_label(),
             ModelRoute::OfflineDemo => "Offline demo (no model)".to_string(),
-            ModelRoute::ApiKey => format!("Meta API key · {DEFAULT_MODEL}"),
+            ModelRoute::ApiKey => format!("Meta API key · {}", self.meta_model()),
             ModelRoute::MusePlan => format!("Muse plan · {DEFAULT_MODEL}"),
         };
         let state = BuildState {
@@ -2011,6 +2074,8 @@ impl AppCore {
             ModelRoute::OfflineDemo => BuildRoute::Offline,
             ModelRoute::ApiKey => BuildRoute::DirectMeta {
                 key_ref: Self::api_key_ref(),
+                // The model this build announced when it started, even if Settings changes now.
+                model: meta_model_in_label(&self.build_state(&build_id)?.route_label),
             },
             ModelRoute::MusePlan => BuildRoute::MuseExec {
                 route: CredentialRoute::PlanSignIn,
@@ -3499,6 +3564,8 @@ impl AppCore {
             "offline-demo".to_string()
         } else if state.route == ModelRoute::CustomEndpoint {
             state.route_label.clone()
+        } else if state.route == ModelRoute::ApiKey {
+            meta_model_in_label(&state.route_label)
         } else {
             DEFAULT_MODEL.to_string()
         };

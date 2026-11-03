@@ -284,6 +284,11 @@ async fn select_route(core: State<'_, Core>, route: ModelRoute) -> Cmd<ModelAcce
 }
 
 #[tauri::command]
+async fn select_meta_model(core: State<'_, Core>, model: String) -> Cmd<ModelAccessStatus> {
+    Ok(core.0.select_meta_model(&model).await?)
+}
+
+#[tauri::command]
 async fn set_muse_unverified_ok(core: State<'_, Core>, ok: bool) -> Cmd<ModelAccessStatus> {
     Ok(core.0.set_muse_unverified_ok(ok).await?)
 }
@@ -1544,6 +1549,7 @@ fn handlers<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Syn
         refresh_muse_status,
         open_muse_sign_in,
         select_route,
+        select_meta_model,
         set_muse_unverified_ok,
         set_local_only,
         pick_csv,

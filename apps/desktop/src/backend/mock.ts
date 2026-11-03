@@ -399,6 +399,11 @@ export class MockBackend implements Backend {
     blockedReason,
     egress: "cloud_allowed",
     model: "muse-spark-1.3",
+    metaModel: "muse-spark-1.3",
+    metaModels: [
+      { id: "muse-spark-1.3", label: "Muse Spark", price: "$1.25 in / $4.25 out per million tokens" },
+      { id: "muse-wonder-1.0", label: "Muse Wonder", price: "$4.00 in / $20.00 out per million tokens" },
+    ],
     museUnverifiedOk: false,
   };
   private connectors: ConnectorInfo[] = connectorCatalog.connectors.map(
@@ -486,7 +491,7 @@ export class MockBackend implements Backend {
           : this.status.effectiveRoute === "offline_demo"
             ? blockedReason
             : null;
-    this.status.model = this.status.effectiveRoute === "custom_endpoint" ? this.status.customEndpoint.model! : "muse-spark-1.3";
+    this.status.model = this.status.effectiveRoute === "custom_endpoint" ? this.status.customEndpoint.model! : this.status.effectiveRoute === "api_key" ? this.status.metaModel : "muse-spark-1.3";
     return clone(this.status);
   }
   async appInfo(): Promise<AppInfo> {
@@ -593,6 +598,12 @@ export class MockBackend implements Backend {
     c.callsThisMonth++; c.lastTest={status:"ok",latencyMs:7}; return this.resolveRoute();
   }
   async removeCustomEndpoint() { this.recording.invalidateConsent(); this.status.customEndpoint={baseUrl:null,host:null,model:null,displayName:null,tokenPresent:false,lastTest:null,monthlyCallCap:500,callsThisMonth:this.status.customEndpoint.callsThisMonth}; return this.resolveRoute(); }
+  async selectMetaModel(model: string) {
+    if (!this.status.metaModels.some((m) => m.id === model))
+      throw new Error("That Meta model isn't available in Rotebot.");
+    this.status.metaModel = model;
+    return this.resolveRoute();
+  }
   async selectRoute(route: ModelRoute) {
     if(route==="custom_endpoint" && !this.customReady()) throw new Error("Configure and test the custom endpoint first.");
     if (route === "api_key" && !this.status.apiKey.present)

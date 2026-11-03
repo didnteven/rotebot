@@ -878,10 +878,11 @@ impl AppCore {
                 payload_text: Some(user.into()),
             })?;
         }
+        let meta_model = self.meta_model();
         let future = async {
             let request = |key| StructuredRequest {
                 key,
-                model: None,
+                model: Some(meta_model.as_str()),
                 system,
                 user,
                 max_output_tokens: 2400,
@@ -918,7 +919,7 @@ impl AppCore {
                             &id,
                             Some(
                                 macroscope_model_gateway::CostEstimator::default()
-                                    .estimate(DEFAULT_MODEL, &out.usage)
+                                    .estimate(&meta_model, &out.usage)
                                     .map_err(|e| CoreError::Invalid(e.to_string()))?
                                     as i64,
                             ),

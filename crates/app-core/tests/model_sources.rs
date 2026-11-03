@@ -1000,3 +1000,25 @@ async fn runtime_diagnostic_words_remain_failed_for_model_replay_and_schedules()
         );
     }
 }
+#[tokio::test]
+async fn chosen_meta_model_reaches_build_labels_and_model_steps() {
+    let f = Fixture::new(program(true, false)).await;
+    assert_eq!(f.core.model_access().await.meta_model, "muse-spark-1.3");
+    assert!(f
+        .core
+        .select_meta_model("not-a-priced-model")
+        .await
+        .is_err());
+    let status = f.core.select_meta_model("muse-wonder-1.0").await.unwrap();
+    assert_eq!(status.meta_model, "muse-wonder-1.0");
+    assert_eq!(status.model, "muse-wonder-1.0");
+    let b = f.start().await;
+    let s = f.terminal(&b.build_id, true).await;
+    assert_eq!(s.phase, BuildPhase::Ready, "{s:?}");
+    assert_eq!(s.route_label, "Meta API key · muse-wonder-1.0");
+    let models = f.fake.models.lock().unwrap();
+    assert!(!models.is_empty());
+    for body in models.iter() {
+        assert_eq!(body["model"], "muse-wonder-1.0");
+    }
+}

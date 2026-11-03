@@ -68,6 +68,7 @@ it("forwards every command with the shared camelCase arguments and snake_case na
     ["refreshMuseStatus", [], undefined],
     ["openMuseSignIn", [], undefined],
     ["selectRoute", ["offline_demo"], { route: "offline_demo" }],
+    ["selectMetaModel", ["muse-wonder-1.0"], { model: "muse-wonder-1.0" }],
     ["setLocalOnly", [true], { localOnly: true }],
     ["setMuseUnverifiedOk", [true], { ok: true }],
     ["pickCsv", [], undefined],

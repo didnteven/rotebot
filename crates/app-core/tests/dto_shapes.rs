@@ -42,6 +42,12 @@ fn model_access_and_tagged_unions_match_the_contract() {
         blocked_reason: Some("x".into()),
         egress: EgressState::CloudAllowed,
         model: "muse-spark-1.3".into(),
+        meta_model: "muse-spark-1.3".into(),
+        meta_models: vec![MetaModelOption {
+            id: "muse-spark-1.3".into(),
+            label: "Muse Spark".into(),
+            price: "p".into(),
+        }],
         muse_unverified_ok: false,
     };
     assert_eq!(
@@ -56,6 +62,8 @@ fn model_access_and_tagged_unions_match_the_contract() {
             "blockedReason": "x",
             "egress": "cloud_allowed",
             "model": "muse-spark-1.3",
+            "metaModel": "muse-spark-1.3",
+            "metaModels": [{"id": "muse-spark-1.3", "label": "Muse Spark", "price": "p"}],
             "museUnverifiedOk": false
         })
     );

@@ -53,6 +53,7 @@ pub fn model_schema() -> Value {
 pub enum BuildRoute {
     DirectMeta {
         key_ref: SecretRef,
+        model: String,
     },
     CustomEndpoint {
         key_ref: SecretRef,
@@ -87,7 +88,10 @@ pub fn select_route(
 ) -> Result<BuildRoute, BuildError> {
     if let Some(key_ref) = key {
         return Ok(match preference {
-            ApiPreference::DirectMeta => BuildRoute::DirectMeta { key_ref },
+            ApiPreference::DirectMeta => BuildRoute::DirectMeta {
+                key_ref,
+                model: DEFAULT_MODEL.into(),
+            },
             ApiPreference::MuseExec => BuildRoute::MuseExec {
                 route: CredentialRoute::ApiKey,
             },
@@ -407,6 +411,10 @@ impl MappingBuilder<'_> {
                     route: CredentialRoute::PlanSignIn
                 }
             );
+        let priced_model = match &self.route {
+            BuildRoute::DirectMeta { model, .. } => model.as_str(),
+            _ => DEFAULT_MODEL,
+        };
         let estimator = CostEstimator::default();
         let mut reserved = 0u64;
         let mut charged = 0u64;
@@ -438,7 +446,7 @@ impl MappingBuilder<'_> {
             let reservation = if unpriced_route {
                 0
             } else {
-                estimator.estimate(DEFAULT_MODEL, &ceiling)?
+                estimator.estimate(priced_model, &ceiling)?
             };
             if charged
                 .checked_add(reserved)
@@ -483,7 +491,7 @@ impl MappingBuilder<'_> {
                         })
                         .await
                 }
-                BuildRoute::DirectMeta { key_ref } => {
+                BuildRoute::DirectMeta { key_ref, model } => {
                     let key = self
                         .vault
                         .get(key_ref)
@@ -493,7 +501,7 @@ impl MappingBuilder<'_> {
                     self.gateway
                         .generate_structured(StructuredRequest {
                             key: &key,
-                            model: None,
+                            model: Some(model),
                             system,
                             user: &prompt,
                             max_output_tokens,
@@ -526,7 +534,7 @@ impl MappingBuilder<'_> {
                         usage_total.reasoning_tokens += output.usage.reasoning_tokens;
                         known &= output.usage_known;
                     } else if output.usage_known && !unpriced_route {
-                        let cost = estimator.estimate(DEFAULT_MODEL, &output.usage)?;
+                        let cost = estimator.estimate(priced_model, &output.usage)?;
                         if cost > reservation {
                             return Err(BuildError::BudgetExceeded);
                         }

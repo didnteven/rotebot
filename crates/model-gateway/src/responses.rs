@@ -10,6 +10,26 @@ use std::time::{Duration, SystemTime};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.meta.ai/v1";
 pub const DEFAULT_MODEL: &str = "muse-spark-1.3";
+/// A Meta model someone can choose. Only models `CostEstimator` can price are listed, because
+/// every direct call is budgeted against its price.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MetaModel {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub price: &'static str,
+}
+pub const META_MODELS: &[MetaModel] = &[
+    MetaModel {
+        id: DEFAULT_MODEL,
+        label: "Muse Spark",
+        price: "$1.25 in / $4.25 out per million tokens",
+    },
+    MetaModel {
+        id: "muse-wonder-1.0",
+        label: "Muse Wonder",
+        price: "$4.00 in / $20.00 out per million tokens",
+    },
+];
 const MAX_RESPONSE: usize = 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct MetaResponsesClient {

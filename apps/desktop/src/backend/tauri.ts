@@ -107,6 +107,8 @@ export class TauriBackend implements Backend {
   setCustomEndpointOptions: Backend["setCustomEndpointOptions"] = (displayName, monthlyCallCap) => invoke("set_custom_endpoint_options", {displayName, monthlyCallCap});
   testCustomEndpoint: Backend["testCustomEndpoint"] = () => invoke("test_custom_endpoint");
   removeCustomEndpoint: Backend["removeCustomEndpoint"] = () => invoke("remove_custom_endpoint");
+  selectMetaModel: Backend["selectMetaModel"] = (model) =>
+    invoke("select_meta_model", { model });
   selectRoute: Backend["selectRoute"] = (route) =>
     invoke("select_route", { route });
   setMuseUnverifiedOk: Backend["setMuseUnverifiedOk"] = (ok) =>

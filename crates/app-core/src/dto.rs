@@ -121,7 +121,18 @@ pub struct ModelAccessStatus {
     pub blocked_reason: Option<String>,
     pub egress: EgressState,
     pub model: String,
+    /// The model the Meta API key route uses, whichever route is selected.
+    pub meta_model: String,
+    pub meta_models: Vec<MetaModelOption>,
     pub muse_unverified_ok: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetaModelOption {
+    pub id: String,
+    pub label: String,
+    pub price: String,
 }
 
 // ---------- files, drafts ----------

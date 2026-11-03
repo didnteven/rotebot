@@ -120,6 +120,24 @@ export function Settings({
                 : status.apiKey.lastTest.kind.replaceAll("_", " ")
               : "Not tested"}
           </p>
+          <label>
+            Model{" "}
+            <select
+              value={status.metaModel}
+              disabled={busy}
+              onChange={(e) => {
+                const model = e.target.value;
+                void act(async () => update(await backend.selectMetaModel(model)));
+              }}
+            >
+              {status.metaModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="muted">
+            {status.metaModels.find((m) => m.id === status.metaModel)?.price}. Used for builds and when saved tools ask the model on this route.
+          </p>
           <div className="actions">
             <button
               disabled={busy}

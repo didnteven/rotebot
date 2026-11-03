@@ -246,10 +246,11 @@ impl AppCore {
                     .get(&Self::api_key_ref())
                     .map_err(|_| CoreError::Vault("Model key unavailable".into()))?
                     .ok_or_else(|| CoreError::Invalid("Model key unavailable".into()))?;
+                let meta_model = self.meta_model();
                 let output = MetaResponsesClient::new(&self.inner.cfg.gateway_base_url)
                     .generate_structured(StructuredRequest {
                         key: &key,
-                        model: None,
+                        model: Some(&meta_model),
                         system,
                         user: &user,
                         max_output_tokens: 4096,
@@ -262,7 +263,7 @@ impl AppCore {
                 let cost = if output.usage_known {
                     Some(
                         CostEstimator::default()
-                            .estimate(DEFAULT_MODEL, &output.usage)
+                            .estimate(&meta_model, &output.usage)
                             .map_err(|e| CoreError::Invalid(e.to_string()))?
                             as i64,
                     )

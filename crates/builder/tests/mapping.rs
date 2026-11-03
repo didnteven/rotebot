@@ -58,7 +58,10 @@ async fn direct_meta_fixture_synthetic_packet_and_host_validation() {
     let policy = EgressPolicy::default();
     let epoch = policy.allow_cloud().unwrap();
     let builder = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &policy,
@@ -120,7 +123,10 @@ async fn malformed_then_corrected_once_and_unknown_spend_stays_reserved() {
     let policy = EgressPolicy::default();
     let epoch = policy.allow_cloud().unwrap();
     let builder = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &policy,
@@ -171,7 +177,10 @@ async fn truncated_answer_is_retried_once_with_a_larger_output_ceiling() {
     let policy = EgressPolicy::default();
     let epoch = policy.allow_cloud().unwrap();
     let builder = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &policy,
@@ -217,7 +226,10 @@ async fn malformed_twice_fails_no_third_dispatch() {
     let p = EgressPolicy::default();
     let e = p.allow_cloud().unwrap();
     let b = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &p,
@@ -246,7 +258,10 @@ async fn budget_exhaustion_and_stale_epoch_prevent_dispatch() {
     let p = EgressPolicy::default();
     let e = p.allow_cloud().unwrap();
     let b = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &p,
@@ -329,7 +344,8 @@ fn route_selection_prioritizes_key_then_plan_and_types_no_access() {
     assert_eq!(
         select_route(Some(key.clone()), &signed, ApiPreference::DirectMeta).unwrap(),
         BuildRoute::DirectMeta {
-            key_ref: key.clone()
+            key_ref: key.clone(),
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
         }
     );
     assert_eq!(
@@ -371,7 +387,10 @@ async fn rejected_api_key_revokes_admission_and_never_falls_back_to_plan() {
     let policy = EgressPolicy::default();
     let epoch = policy.allow_cloud().unwrap();
     let builder = MappingBuilder {
-        route: BuildRoute::DirectMeta { key_ref: key },
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: macroscope_model_gateway::DEFAULT_MODEL.into(),
+        },
         vault: &vault,
         gateway: MetaResponsesClient::new(server.uri()),
         policy: &policy,
@@ -406,4 +425,46 @@ async fn rejected_api_key_revokes_admission_and_never_falls_back_to_plan() {
             .await,
         Err(BuildError::EgressDenied)
     ));
+}
+#[tokio::test]
+async fn direct_meta_sends_and_prices_the_chosen_model() {
+    let c = contract();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(response(serde_json::to_value(&c.mapping).unwrap()))
+        .mount(&server)
+        .await;
+    let vault = MemoryStore::default();
+    let key = SecretRef::new("k").unwrap();
+    vault
+        .set(&key, Secret::new(b"bogus-builder-canary".to_vec()))
+        .unwrap();
+    let policy = EgressPolicy::default();
+    let epoch = policy.allow_cloud().unwrap();
+    let builder = MappingBuilder {
+        route: BuildRoute::DirectMeta {
+            key_ref: key,
+            model: "muse-wonder-1.0".into(),
+        },
+        vault: &vault,
+        gateway: MetaResponsesClient::new(server.uri()),
+        policy: &policy,
+        consent_epoch: epoch,
+        muse: None,
+        custom_observer: None,
+        muse_progress: None,
+    };
+    let result = builder
+        .propose(
+            &c,
+            SyntheticSamples::from_contract(&c, 20),
+            BuildBudget::default(),
+            &Validator,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.cost_microusd, Some(4400));
+    let requests = server.received_requests().await.unwrap();
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["model"], "muse-wonder-1.0");
 }
