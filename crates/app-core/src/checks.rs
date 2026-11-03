@@ -222,6 +222,13 @@ fn expand_placeholder_words(line: &str) -> String {
     out
 }
 
+/// True for an example line that is nothing but one placeholder, such as a story under a `Story:`
+/// label. It stands for the next line of text once the fixed lines before it have been found.
+fn is_bare_placeholder(line: &str) -> bool {
+    template_literals(line)
+        .is_some_and(|parts| parts.len() == 2 && parts.iter().all(|p| p.trim().is_empty()))
+}
+
 /// Template match: an example line with `{name}`-style placeholders matches
 /// an output line whose text around them is identical and where each
 /// placeholder stands for at least one character (it may span several words,
@@ -732,7 +739,13 @@ pub fn run_program_with_sources(
             let actual: Vec<String> = output.lines().map(normalize_shape_line).collect();
             let mut need = 0;
             for line in &actual {
-                if need < expected.len() && shape_line_matches(&expected[need], line) {
+                let value_line = need > 0
+                    && need < expected.len()
+                    && is_bare_placeholder(&expected[need])
+                    && !line.trim().is_empty();
+                if value_line
+                    || (need < expected.len() && shape_line_matches(&expected[need], line))
+                {
                     need += 1;
                 }
             }
@@ -1078,6 +1091,58 @@ mod tests {
         assert!(!m("Hottest name, temp", "Coldest Auckland, 18.5\u{b0}C"));
         assert!(!m("Hottest names", "Hottest Auckland"));
         assert!(!m("name temp", "Auckland 18"));
+    }
+
+    /// A value alone on its line under a label is found by position; a layout of nothing but
+    /// values still has no fixed text to check against, so it does not pass.
+    #[cfg(feature = "generated-runtime")]
+    #[test]
+    fn a_value_alone_on_its_line_follows_the_label_before_it() {
+        use std::collections::BTreeMap;
+        let run = |example: &str, text: &str| {
+            let mut draft = web_draft();
+            draft.example_output = Some(example.into());
+            let program = macroscope_builder::Program {
+                connection_sources: vec![],
+                model_step: None,
+                summary: "s".into(),
+                output_name: draft.output_name.clone(),
+                code: "function run() {}".into(),
+                web_sources: vec![],
+            };
+            let text = text.to_string();
+            let output_name = draft.output_name.clone();
+            let outcome = super::run_program_with_sources(
+                &draft,
+                &program,
+                &BTreeMap::new(),
+                None,
+                &|| Err("no input".to_string()),
+                &|_, _, _| {
+                    Ok((
+                        vec![macroscope_runner::Output {
+                            name: output_name.clone(),
+                            text: text.clone(),
+                        }],
+                        vec![],
+                    ))
+                },
+            );
+            outcome
+                .checks
+                .iter()
+                .find(|c| c.id == "example")
+                .unwrap()
+                .passed
+        };
+        let layout = "Title: {title}\nStory:\n{story}\nMoral: {moral}";
+        assert!(run(
+            layout,
+            "Title: A\nStory:\nOnce upon a time.\nMoral: Be kind."
+        ));
+        assert!(!run(layout, "Title: A\nStory:\n\nMoral: Be kind."));
+        assert!(!run(layout, "Title: A\nMoral: Be kind."));
+        assert!(!run("{only}", "Anything at all"));
     }
 
     /// A bare label line (`High:`) in the example means "label, then a value".

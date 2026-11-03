@@ -1067,6 +1067,9 @@ impl AppCore {
     }
 
     fn plain_check_failure(detail: &str) -> String {
+        if detail.contains("ModelAnswerNeeded") {
+            return "The AI step did not answer the latest version of this tool".into();
+        }
         detail.trim_end_matches('.').to_string()
     }
 
@@ -2325,6 +2328,8 @@ impl AppCore {
         #[cfg(feature = "generated-runtime")]
         let first_answers = build_answers.clone();
         #[cfg(feature = "generated-runtime")]
+        let mut answered_program = candidate.program.clone();
+        #[cfg(feature = "generated-runtime")]
         let runtime = if draft.kind == TaskKind::Program {
             Some(self.runtime())
         } else {
@@ -2839,14 +2844,17 @@ impl AppCore {
                         }
                     }
                     // A corrected program can ask something new. If this fails, the checks run without
-                    // its answer and fail, so it is corrected or falls back like any other failure.
+                    // its answer and fail, so it is corrected or falls back like any other failure,
+                    // and this reason replaces the runner's internal one.
+                    #[allow(unused_mut)]
+                    let mut model_answer_error: Option<String> = None;
                     #[cfg(feature = "generated-runtime")]
                     if let Some(new) = candidate2
                         .program
                         .as_ref()
                         .filter(|p| p.model_step.is_some())
                     {
-                        let unchanged = candidate.program.as_ref().is_some_and(|old| {
+                        let unchanged = answered_program.as_ref().is_some_and(|old| {
                             old.code == new.code
                                 && old.model_step == new.model_step
                                 && old.web_sources == new.web_sources
@@ -2863,12 +2871,16 @@ impl AppCore {
                                 _ = cancelled.changed() => { self.push_phase(&build_id, BuildPhase::Stopped, "Stopped by you")?; return Ok(()); },
                                 result = self.resolve_model_answers(new, &snapshot, &fetched, !draft.no_input, None) => result,
                             };
-                            if let Ok((answers, spend)) = result {
-                                build_answers = answers;
-                                test_spend.calls += spend.calls;
-                                test_spend.micros += spend.micros;
-                                test_spend.unknown_calls += spend.unknown_calls;
-                                self.record_model_spend(&build_id, None, "test", test_spend)?;
+                            match result {
+                                Ok((answers, spend)) => {
+                                    build_answers = answers;
+                                    answered_program = Some(new.clone());
+                                    test_spend.calls += spend.calls;
+                                    test_spend.micros += spend.micros;
+                                    test_spend.unknown_calls += spend.unknown_calls;
+                                    self.record_model_spend(&build_id, None, "test", test_spend)?;
+                                }
+                                Err(e) => model_answer_error = Some(e.to_string()),
                             }
                         }
                     }
@@ -2931,7 +2943,18 @@ impl AppCore {
                     })
                     .await;
                     match checked2 {
-                        Ok((passed2, check_list2, comparison2)) => {
+                        Ok((passed2, mut check_list2, comparison2)) => {
+                            if let Some(reason) = &model_answer_error {
+                                for check in check_list2.iter_mut().filter(|c| !c.passed) {
+                                    if check
+                                        .detail
+                                        .as_deref()
+                                        .is_some_and(|d| d.contains("ModelAnswerNeeded"))
+                                    {
+                                        check.detail = Some(reason.clone());
+                                    }
+                                }
+                            }
                             let failed2: Vec<String> = check_list2
                                 .iter()
                                 .filter(|c| !c.passed)
