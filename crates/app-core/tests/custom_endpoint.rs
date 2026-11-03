@@ -623,9 +623,10 @@ mod runtime {
         .await
         .expect("cancelled transport releases the worker immediately");
         assert_eq!(wait(&f.core, &next.build_id).await.phase, BuildPhase::Ready);
+        // Two for the stopped build, then the next build and the review of its fixed result.
         assert_eq!(
             f.core.model_access().await.custom_endpoint.calls_this_month,
-            3
+            4
         );
     }
 }

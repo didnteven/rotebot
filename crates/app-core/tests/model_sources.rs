@@ -29,6 +29,10 @@ struct Fake {
     calls: Arc<Mutex<Vec<Value>>>,
     models: Arc<Mutex<Vec<Value>>>,
     answer: Arc<Mutex<Value>>,
+    /// Answers given before `answer`, oldest first.
+    early_answers: Arc<Mutex<Vec<Value>>>,
+    /// Programs given before `program`, oldest first.
+    early_programs: Arc<Mutex<Vec<Program>>>,
     missing: Arc<Mutex<bool>>,
     unauthorized: Arc<Mutex<bool>>,
     result: Arc<Mutex<Option<Value>>>,
@@ -44,9 +48,19 @@ async fn endpoint(State(f): State<Fake>, headers: HeaderMap, Json(body): Json<Va
         let runtime = body["text"]["format"]["name"] == "model_step";
         let value = if runtime {
             f.models.lock().unwrap().push(body);
-            f.answer.lock().unwrap().clone()
+            let mut early = f.early_answers.lock().unwrap();
+            if early.is_empty() {
+                f.answer.lock().unwrap().clone()
+            } else {
+                early.remove(0)
+            }
         } else {
-            json!(*f.program.lock().unwrap())
+            let mut early = f.early_programs.lock().unwrap();
+            if early.is_empty() {
+                json!(*f.program.lock().unwrap())
+            } else {
+                json!(early.remove(0))
+            }
         };
         if runtime && f.delay.load(Ordering::SeqCst) == 2 {
             f.blocked.notify_one();
@@ -142,6 +156,8 @@ impl Fixture {
             calls: Arc::default(),
             models: Arc::default(),
             answer: Arc::new(Mutex::new(json!({"summary":ANSWER}))),
+            early_answers: Arc::default(),
+            early_programs: Arc::default(),
             missing: Arc::default(),
             unauthorized: Arc::default(),
             result: Arc::default(),
@@ -1021,4 +1037,121 @@ async fn chosen_meta_model_reaches_build_labels_and_model_steps() {
     for body in models.iter() {
         assert_eq!(body["model"], "muse-wonder-1.0");
     }
+}
+
+/// A no-input program with no sources and no model step: it can only write this text.
+fn fixed_program() -> Program {
+    let mut p = program(false, false);
+    p.connection_sources = vec![];
+    p.code = r#"function run(){macroscope.output('summary.txt','Same text\n')}"#.into();
+    p
+}
+
+/// The same task done properly: asks the model on each run, with no sources.
+fn generating_program() -> Program {
+    let mut p = fixed_program();
+    p.model_step = Some(macroscope_builder::ModelStep {
+        purpose: "Write it".into(),
+        prompt: "Write something new".into(),
+    });
+    p.code = r#"function run(){const a=macroscope.model.ask({date:macroscope.date.today()},{type:'object',additionalProperties:false,properties:{summary:{type:'string'}},required:['summary']});macroscope.output('summary.txt',a.summary+'\n')}"#.into();
+    p
+}
+
+#[tokio::test]
+async fn a_fixed_result_is_reviewed_and_a_correction_adds_a_model_step_only_after_the_go_ahead() {
+    let f = Fixture::new(generating_program()).await;
+    f.fake.early_programs.lock().unwrap().push(fixed_program());
+    let b = f.start().await;
+    // The correction holds at Candidate with its new step, having called no model for it.
+    let mut held = None;
+    for _ in 0..3000 {
+        let s = f.core.build_state(&b.build_id).unwrap();
+        assert!(!s.phase.is_terminal(), "{s:?}");
+        if s.phase == BuildPhase::Candidate
+            && s.program.as_ref().is_some_and(|p| p.model_step.is_some())
+        {
+            held = Some(s);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let held = held.expect("the corrected candidate waits for approval");
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        f.core.build_state(&b.build_id).unwrap().phase,
+        BuildPhase::Candidate
+    );
+    assert!(f.fake.models.lock().unwrap().is_empty());
+    assert!(held
+        .events
+        .iter()
+        .any(|e| e.message.contains("review the output against the task")));
+    let s = f.terminal(&b.build_id, true).await;
+    assert_eq!(s.phase, BuildPhase::Ready, "{s:?}");
+    assert!(s.program.as_ref().unwrap().model_step.is_some());
+    assert_eq!(f.fake.models.lock().unwrap().len(), 1);
+    assert_eq!(
+        s.comparison.unwrap().output_text.as_deref().map(str::trim),
+        Some(ANSWER)
+    );
+}
+
+#[tokio::test]
+async fn a_correction_cannot_replace_an_approved_model_step() {
+    let f = Fixture::new(generating_program()).await;
+    let mut first = generating_program();
+    first.model_step.as_mut().unwrap().prompt = "The approved prompt".into();
+    // A failing first program, so a correction runs and returns the different prompt.
+    first.code = "function run(){throw new Error('broken')}".into();
+    f.fake.early_programs.lock().unwrap().push(first);
+    let b = f.start().await;
+    let s = f.terminal(&b.build_id, true).await;
+    assert_eq!(
+        s.program.unwrap().model_step.unwrap().prompt,
+        "The approved prompt"
+    );
+    assert!(f
+        .fake
+        .models
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|m| !m.to_string().contains("Write something new")));
+}
+
+#[tokio::test]
+async fn a_truly_fixed_tool_is_kept_when_the_review_returns_it_unchanged() {
+    let f = Fixture::new(fixed_program()).await;
+    let b = f.start().await;
+    let s = f.terminal(&b.build_id, false).await;
+    assert_eq!(s.phase, BuildPhase::Ready, "{s:?}");
+    assert!(s.program.unwrap().model_step.is_none());
+    assert!(f.fake.models.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_garbled_model_answer_is_asked_for_again_then_fails_in_plain_words() {
+    let f = Fixture::new(generating_program()).await;
+    let t = f.save().await;
+    let calls = f.fake.models.lock().unwrap().len();
+    f.fake
+        .early_answers
+        .lock()
+        .unwrap()
+        .push(json!({"summary":":{"}));
+    let StageResult::Staged(stage) = f.stage(&t).await.unwrap() else {
+        panic!("stage failed")
+    };
+    assert_eq!(stage.preview_text.as_deref().map(str::trim), Some(ANSWER));
+    assert_eq!(f.fake.models.lock().unwrap().len(), calls + 2);
+    f.core.discard_run(&stage.run_id).unwrap();
+    *f.fake.answer.lock().unwrap() = json!({"summary":"}: broken"});
+    let failed = match f.stage(&t).await {
+        Ok(StageResult::Failed(failed)) => failed.failure.message(),
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("a garbled answer must not reach the result"),
+    };
+    assert!(failed.contains("garbled in \"summary\""), "{failed}");
+    assert!(!failed.contains("broken"), "{failed}");
 }

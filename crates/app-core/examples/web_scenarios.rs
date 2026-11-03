@@ -130,17 +130,14 @@ async fn run_one(prompt: &str, key: &str, endpoint: Option<&(String, String)>) -
         Ok(s) => s,
         Err(e) => return format!("BUILD START FAILED: {e}"),
     };
-    let mut approved = false;
     let mut state = None;
     for _ in 0..900 {
         let Ok(s) = core.build_state(&started.build_id) else {
             break;
         };
-        if s.phase == BuildPhase::Candidate && !approved {
+        if s.phase == BuildPhase::Candidate {
             if let Some(program) = s.program.as_ref() {
-                approved = core
-                    .approve_build_sources(&started.build_id, program)
-                    .is_ok();
+                let _ = core.approve_build_sources(&started.build_id, program);
             }
         }
         if s.phase.is_terminal() {

@@ -93,6 +93,20 @@ function run() {
 }
 ```
 
+A task that asks for new content needs no source: the model step writes it on each run.
+Never write the answer into the code.
+
+```js
+function run() {
+  // model_step.prompt: "Suggest one idea for today. Vary your choice between runs."
+  const answer = macroscope.model.ask({date: macroscope.date.today()}, {
+    type: "object", additionalProperties: false,
+    properties: {idea: {type: "string"}}, required: ["idea"]
+  });
+  macroscope.output("idea.txt", answer.idea + "\n");
+}
+```
+
 Limits: declared prompt 2000 chars, serialized data 64 KiB, schema 8 KiB, at most
 3 distinct requests and 3 answer rounds per run. Schemas use `anyOf`, never
 `oneOf`, no `default` or numeric `format`; objects declare every property in

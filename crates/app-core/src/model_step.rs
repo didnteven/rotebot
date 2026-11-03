@@ -11,6 +11,36 @@ pub(crate) struct ModelSpend {
     pub unknown_calls: i64,
 }
 
+/// The first field whose text is broken JSON or leaked model output rather than a value, which a
+/// schema of plain strings cannot catch: only punctuation such as `:{`, leftover closing brackets
+/// such as `}: ...`, or the field's own name returned as its value. Listed choices are exempt.
+fn garbled_field(value: &Value, schema: &Value, name: Option<&str>) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let text = text.trim();
+            let structural = text.contains(['{', '}', '[', ']', ':', '`']);
+            let garbled = !text.is_empty()
+                && schema.get("enum").is_none()
+                && schema.get("const").is_none()
+                && ((structural && !text.chars().any(char::is_alphanumeric))
+                    || text.starts_with(['}', ']'])
+                    || text.contains("}```")
+                    || name.is_some_and(|n| {
+                        n.replace('_', " ")
+                            .eq_ignore_ascii_case(&text.replace('_', " "))
+                    }));
+            garbled.then(|| name.unwrap_or("answer").to_string())
+        }
+        Value::Array(items) => items
+            .iter()
+            .find_map(|v| garbled_field(v, &schema["items"], name)),
+        Value::Object(fields) => fields
+            .iter()
+            .find_map(|(k, v)| garbled_field(v, &schema["properties"][k], Some(k))),
+        _ => None,
+    }
+}
+
 impl AppCore {
     /// Stores a test run's (owner = build id) or run's (owner = run id) model spend.
     pub(crate) fn record_model_spend(
@@ -104,26 +134,42 @@ impl AppCore {
                         if self.web_fetch_blocked().is_some() {
                             return Err(CoreError::Invalid("Local only blocks model steps".into()));
                         }
-                        let (value, cost) = tokio::select! {
-                            biased;
-                            _ = self.inner.policy.revoked(epoch) => return Err(CoreError::Invalid("Model step cancelled".into())),
-                            result = self.model_answer(&request, tool) => result?,
+                        // A garbled answer is asked for once more: the answer can differ each time.
+                        let mut attempt = 0;
+                        let value = loop {
+                            attempt += 1;
+                            let (value, cost) = tokio::select! {
+                                biased;
+                                _ = self.inner.policy.revoked(epoch) => return Err(CoreError::Invalid("Model step cancelled".into())),
+                                result = self.model_answer(&request, tool) => result?,
+                            };
+                            spend.calls += 1;
+                            match cost {
+                                Some(c) => spend.micros += c,
+                                None => spend.unknown_calls += 1,
+                            }
+                            if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > 65_536)
+                            {
+                                return Err(CoreError::Invalid(
+                                    "Model answer exceeds 64 KiB".into(),
+                                ));
+                            }
+                            if !jsonschema::validator_for(&request.schema)
+                                .is_ok_and(|v| v.is_valid(&value))
+                            {
+                                return Err(CoreError::Invalid(
+                                    "Model answer does not match schema".into(),
+                                ));
+                            }
+                            let Some(field) = garbled_field(&value, &request.schema, None) else {
+                                break value;
+                            };
+                            if attempt >= 2 {
+                                return Err(CoreError::Invalid(format!(
+                                    "The AI's answer was garbled in \"{field}\". Run it again; the answer can differ each time."
+                                )));
+                            }
                         };
-                        spend.calls += 1;
-                        match cost {
-                            Some(c) => spend.micros += c,
-                            None => spend.unknown_calls += 1,
-                        }
-                        if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > 65_536) {
-                            return Err(CoreError::Invalid("Model answer exceeds 64 KiB".into()));
-                        }
-                        if !jsonschema::validator_for(&request.schema)
-                            .is_ok_and(|v| v.is_valid(&value))
-                        {
-                            return Err(CoreError::Invalid(
-                                "Model answer does not match schema".into(),
-                            ));
-                        }
                         answers.insert(request.key, value);
                     }
                 }
@@ -335,5 +381,59 @@ impl AppCore {
             updated_ms: self.now(),
         })?;
         Ok((value, cost))
+    }
+}
+
+#[cfg(test)]
+mod garbled_tests {
+    use super::garbled_field;
+    use serde_json::{json, Value};
+
+    fn check(field: &str, text: &str) -> Option<String> {
+        garbled_field(&json!({ field: text }), &Value::Null, None)
+    }
+
+    #[test]
+    fn broken_values_seen_from_real_models_are_caught() {
+        for text in [
+            ":{",
+            "}",
+            "}:",
+            "```",
+            "}```:// Wait wrong. I truncated?",
+            "] then",
+        ] {
+            assert_eq!(check("serves", text).as_deref(), Some("serves"), "{text}");
+        }
+        assert!(check("servings", "servings").is_some());
+        assert!(check("prep_time", "Prep Time").is_some());
+    }
+
+    #[test]
+    fn ordinary_values_pass() {
+        for text in [
+            "4",
+            "3 rounds",
+            "-",
+            "",
+            "Time: 35 minutes",
+            "{name} is a placeholder",
+            "e.g. [a, b]",
+        ] {
+            assert_eq!(check("serves", text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn nested_values_are_checked_and_listed_choices_are_exempt() {
+        let schema = json!({"properties":{"items":{"items":{"properties":{"kind":{"enum":["kind","other"]}}}}}});
+        assert_eq!(
+            garbled_field(&json!({"items":[{"kind":"kind"}]}), &schema, None),
+            None
+        );
+        assert_eq!(
+            garbled_field(&json!({"items":[{"note":"}"}]}), &schema, None).as_deref(),
+            Some("note")
+        );
     }
 }

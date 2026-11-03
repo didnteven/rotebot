@@ -387,9 +387,11 @@ export function CreateFlow({
   useEffect(() => {
     // Only connection reads and an AI step wait for this go-ahead. A program that reads public web
     // pages only has already moved on, so approving it would fail and show a false failure.
-    if (build?.phase !== "candidate" || !build.program || autoApproved.current === build.buildId
+    // A correction can add an AI step to a build approved without one, and that needs its own go-ahead.
+    const approvalKey = `${build?.buildId}|${build?.program?.modelStep?.prompt ?? ""}`;
+    if (build?.phase !== "candidate" || !build.program || autoApproved.current === approvalKey
       || (!build.program.connectionSources?.length && !build.program.modelStep)) return;
-    autoApproved.current = build.buildId;
+    autoApproved.current = approvalKey;
     void act(async () => setBuild(await backend.approveBuildSources(build.buildId, build.program!)));
   }, [build, draft, backend]);
   const activeBuild = build && !terminal(build);
@@ -814,6 +816,8 @@ export function CreateFlow({
               {build.comparison.outputText !== undefined ? <div className={`result-answer preserve-lines${build.comparison.outputText.length>200?" long":""}`} tabIndex={0} aria-label="Answer">{build.comparison.outputText}</div> : <DataTable columns={build.comparison.outputColumns} rows={build.comparison.outputRows} caption="Result · first 8 rows" />}
               {!draft?.noInput && !sites.length && <p>{rowCount(build.comparison.rowsIn)} → {rowCount(build.comparison.rowsOut)}</p>}
               <UsedLine parts={usedParts(build.program, build.route, draft?.requiredConnections)} />
+              {draft?.noInput && build.program && !build.program.webSources.length && !build.program.connectionSources?.length && !build.program.modelStep
+                && <p className="muted" role="note">This tool gives the same result every run; only the date can change. If you want something new each time, choose “No, change it” and say so.</p>}
               <Field label="Tool name">
                 <input value={name} onChange={(e) => { nameEdited.current = true; setName(e.target.value); }} />
               </Field>
