@@ -1,106 +1,221 @@
-# Rotebot
+<p align="center">
+  <img src="docs/assets/rotebot-hero.svg" alt="Rotebot — Show it once. Make it routine." width="100%">
+</p>
 
-**Show a chore once, get a small checked tool.** Rotebot is a macOS desktop app that
-turns a repetitive task into a tool you can rerun. Describe the job in plain language, or
-**Show** it: pick a window, do the chore once, and Rotebot works out what you did. Either
-way you review exactly what would leave your Mac, then Rotebot builds a small program that
-reads the data you chose (a file, a web page or public API, or a connected service such as
-Gmail), is checked against the real data, and produces a new file or a set of planned
-actions for you to approve. Nothing is created or sent until you approve it, and files are
-never overwritten.
+<p align="center">
+  <strong>Your next time-saving tool starts with the chore you just did.</strong><br>
+  Describe it. Show it. Let Rotebot build something you can use again.
+</p>
 
-Most people can't easily describe an automation, and an AI agent that acts on your files
-and accounts unchecked is hard to trust. Rotebot keeps the model out of the run loop: it
-writes a finite program once, the host checks it, and the program runs in a sandbox.
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-desktop-18181B?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS desktop">
+  <img src="https://img.shields.io/badge/built_with-Rust_%2B_Tauri_%2B_React-7C3AED?style=flat-square" alt="Built with Rust, Tauri and React">
+  <img src="https://img.shields.io/badge/powered_by-Meta_Muse-2563EB?style=flat-square" alt="Powered by Meta Muse">
+  <img src="https://img.shields.io/badge/status-developer_preview-F59E0B?style=flat-square" alt="Developer preview">
+</p>
 
-## How it works
+<p align="center">
+  <a href="#meet-rotebot">The idea</a> ·
+  <a href="#from-chore-to-tool">How it works</a> ·
+  <a href="#run-it-on-your-mac">Run it</a> ·
+  <a href="#under-the-hood">Architecture</a> ·
+  <a href="docs/build/TESTED-EXAMPLES.md">Tested examples</a>
+</p>
 
-1. **Describe or Show.** Type what you want, or record yourself doing it once. Show
-   masks private details in the captured frames and asks about anything ambiguous.
-2. **Review what leaves the Mac.** A screen lists the data and instruction that would be
-   sent to the model, and nothing goes out before you confirm it.
-3. **Build and check.** The model writes a program. The host runs it against the real
-   data and checks the result, for example the output format or an example you gave. If a
-   check fails, the model gets the difference and tries once more.
-4. **Approve and run.** The output is staged for your review, then written as a new file.
-   A tool that sends or changes something stages the planned actions instead, and they
-   wait in a "Needs you" queue for approval. Tools can run on a schedule while the app is
-   open.
+---
 
-It also suggests **connections** (Gmail, Slack, Notion, …) when you mention a service in a
-task or use it during a Show recording, and connects them over MCP with OAuth.
+## Meet Rotebot
 
-It also suggests **connections** (Gmail, Slack, Notion, …) when you mention a service in a
-task or use it during a **Show** recording, and connects them over MCP with OAuth.
+The export you clean every Friday. The log you keep searching. The morning update you
+assemble from three different places. Small jobs add up.
 
-Program plans offer **Send and check access** to reuse suitable connections and known
-public APIs, then research missing API access and show setup instructions. Custom
-API connections support one approved JSON GET with a native-entered bearer token
-or API key header. See [API discovery](docs/adr/0006-api-discovery.md) for supported
-authentication, research providers and limits.
+**Rotebot turns repetitive work into a library of small, reusable tools.** Tell it what
+you need in plain language, or pick a window and **Show** it by doing the task once.
+Rotebot builds a program, checks it against real data, and puts the result in front of
+you for review. Save the tool. Run it again. Give that chore a shorter future.
 
-## How Rotebot uses Meta's AI tooling
+Each tool gets its own bot character, too. Your automation library should have some personality.
 
-| Capability | Where it is used |
-|---|---|
-| Responses API, `muse-spark-1.3` | Writes the checked programs (`crates/model-gateway`, `crates/builder`) |
-| Structured output (`json_schema`) | Models return programs the host can validate before anything runs |
-| Vision (`input_image`) | Show sends the masked recording frames so the model can work out what you did (`crates/app-core/src/recording`) |
-| Built-in `web_search` tool | Researches a service's API when you mention one in a task |
-| Image generation and edits, `muse-image-1.0` | Creates each tool's bot character, using a reference image to keep the style consistent |
-| Muse plan route | Runs through the user's own Muse allowance via a custom MSP client (`crates/muse-client`), as an alternative to a Meta API key |
+| Give it a job | Get a tool for |
+| --- | --- |
+| “Clean up this orders export.” | Turning a repetitive CSV transformation into a reusable workflow |
+| “Pull the ERROR lines out of this log.” | Extracting what matters from a text file |
+| “Save Auckland's weather to a file.” | Fetching a web source and producing a readable result |
+| “Summarize my calendar every morning.” | Combining approved connection reads, an optional model step, and a schedule |
 
-## How it was built
+CSV, log filtering, and weather have recorded runs. Connected tasks depend on service
+access and setup; schedules run while the app is open. Explore the
+[tested example inventory](docs/build/TESTED-EXAMPLES.md) for evidence and source-quality limits.
 
-Rotebot was built over several days (the full commit history is in this repo) with AI
-coding assistants: Claude Code and Codex wrote and reviewed most of the code. Muse Code
-(`muse-spark-1.3`) was used as an independent, read-only reviewer. Its two reviews
-([first](docs/build/muse-review.md), [second](docs/build/muse-review-2.md)) found 16
-defects, including OAuth client credentials that could reach a different server, and API
-keys in web-source URLs that were being logged. Each was reproduced with a failing test
-and then fixed. The working name during development was *Macroscope*; internal crate and
-binary names and the `MACROSCOPE_*` environment variables still use it.
+## From chore to tool
 
-## Run it
+### 01 · Describe it. Or show it.
 
-Prerequisites: stable Rust, Node 24 with npm, Xcode command-line tools (macOS).
+Type the outcome you want, or record yourself doing the chore in a selected window.
+**Show** masks private details in captured frames and asks about ambiguous steps.
+
+### 02 · Review what leaves your Mac.
+
+See the instruction and data that would go to the model before confirming the build.
+Rotebot can suggest connections when you mention a service or use it during a recording.
+
+### 03 · Build it. Check it.
+
+The model writes a small program; the host runs it against the selected data and checks
+the result. Generated text programs are checked for deterministic output, the agreed
+filename, output syntax, and any supplied example. A failed check can trigger a repair
+attempt before the tool reaches you.
+
+### 04 · Make it part of your day.
+
+Preview the output, approve it, and save the tool for next time. Run it manually or set
+a daily, weekly, or monthly schedule. Planned sends and changes to connected services
+wait in **Needs you** for approval of the exact action.
+
+## Big ambition. Explicit permissions.
+
+The core design is simple: **AI builds the program. The host controls what it can do.**
+
+| Boundary | What enforces it |
+| --- | --- |
+| Generated code runs in a sandbox | A separate QuickJS process with mandatory macOS Seatbelt isolation and memory, CPU, and wall-time limits |
+| Credentials stay with the host | Approved source reads happen outside the sandbox; generated code gets data, without tokens or direct network access |
+| Existing files stay intact | File commits create new files and never overwrite existing ones |
+| External writes need you | Sends, posts, and service changes are staged for explicit approval |
+| Scheduled work has a defined scope | Sources, optional model calls, and local outputs are approved when saving; permission changes require re-approval |
+| You can see and stop activity | Run receipts, an outbound log, **Local only**, and **Emergency stop** controls |
+
+Ordinary transformations run as programs. Tools that need summarization can include an
+explicitly approved model step, with disclosed data and budgets. Scheduled local outputs
+can run under their saved permissions; external writes always wait for you.
+
+This is a **macOS developer preview**. The generated runtime is admitted for developer
+builds; release admission still requires a signed immutable bundle and fresh boundary
+checks. See the [runtime decision](docs/adr/0003-programs-through-runtime-v2.md) and
+[build progress](docs/build/PROGRESS.md) for the current evidence.
+
+## Built to be checked
+
+**84 / 90 passed · 30 CSV tasks · 3 repetitions · zero forbidden effects**
+
+That's the recorded result of a frozen Muse-plan build tested against exact expected
+outputs and hidden checks. Infrastructure failures remain in the denominator. It is
+evidence for that CSV family and build, rather than a general success rate for arbitrary
+tasks or the current version. [Read the full evaluation →](evals/csv-family/results/2026-10-28-muse-plan-frozen-gate.md)
+
+## Run it on your Mac
+
+You'll need **stable Rust**, **Node 24.10+ (below 25)**, **npm 11+**, and **Xcode command-line tools**.
+Run these commands from the repository root:
 
 ```sh
 npm ci
-(cd native/macos-observer && swift build -c release)   # enables Show
+
+# Build the native observer used by Show.
+(cd native/macos-observer && swift build -c release)
+
+# Check your local toolchain, then launch the desktop app.
 bash scripts/doctor.sh
 cd apps/desktop && npx tauri dev
 ```
 
-A double-clickable app for this Mac (unsigned, observer included): `scripts/bundle-mac.sh`
-(add `--release` for an optimized build). It prints the path to `Rotebot.app`.
+Choose a route in **Settings → Model access**:
 
-Browser preview with the in-memory mock backend: `npm run -w apps/desktop dev`.
-Native binary: `cd apps/desktop && npx tauri build --debug --no-bundle`.
-Debug builds keep secrets in `dev-secrets/secrets.json` (0600, in a 0700 directory) in Rotebot's data folder to avoid Keychain prompts; macOS release builds use the Keychain, with `MACROSCOPE_VAULT=file|keychain` available to test either store.
-All checks (fmt, Clippy, Rust tests, TypeScript, UI tests, Vite build): `bash scripts/check.sh`.
+| Route | What you need | How it works |
+| --- | --- | --- |
+| **Meta API key** | A Meta developer API key | Enter it through a native hidden-input dialog; usage is billed to your key |
+| **Muse plan** | An existing Muse login via `muse login` in Terminal | Uses your Muse allowance; requires explicit opt-in until file-access confinement is verified |
+| **Offline demo** | Nothing | Builds from confirmed rules without a model; explicitly labelled as a demo, with no generated-program support |
 
-### Model access (Settings → Model access)
+<details>
+<summary><strong>Browser preview, app bundle, and development commands</strong></summary>
 
-| Route | What you need | Notes |
-|---|---|---|
-| Meta API key | A Meta developer API key | Entered in a native hidden-input dialog, stored in the app's secret store, billed to the key |
-| Muse plan | `muse login` in Terminal (Rotebot never signs in for you) | Uses your Muse allowance; needs an explicit opt-in until Muse's file-access confinement is verified |
-| Offline demo | Nothing | Builds from your confirmed rules without a model; labelled as a demo |
+Run these from the repository root.
 
-## What is where
+```sh
+# Explore the UI with the in-memory mock backend.
+npm run -w apps/desktop dev
 
-| Path | Purpose |
-|---|---|
-| `crates/app-core` | The product service behind the UI contract: drafts, builds, host checks, tools, runs, Show |
-| `crates/executor`, `crates/effect-broker` | Deterministic CSV interpreter, and the stage → approve → create-only commit broker |
-| `crates/model-gateway`, `crates/muse-client`, `crates/builder` | Meta Responses client, Muse supervisor/MSP client, mapping builder |
-| `crates/connections` | Connector catalog, MCP client, OAuth (PKCE, DCR), detection |
-| `crates/storage`, `crates/vault`, `crates/policy` | SQLCipher database, Keychain, cloud-egress epochs |
-| `apps/desktop` | Tauri shell (`src-tauri`) and React UI (`src`) with the typed `Backend` contract |
-| `native/macos-observer` | Swift metadata-only observer for Show |
-| `experiments/runtime-gate` | Deno + Seatbelt admission experiment (verdict: not admitted) |
-| `docs/build/PROGRESS.md` | What passed, failed, or is still unverified |
+# Build a double-clickable Rotebot.app with the Show observer included.
+bash scripts/bundle-mac.sh
 
-See the [master plan](plan/PLAN.md), the [ADRs](docs/adr/) (owner overrides in
-[0001](docs/adr/0001-owner-overrides-2026-10-27.md)), and [branch map](docs/build/BRANCHES.md).
+# Build an optimized local bundle.
+bash scripts/bundle-mac.sh --release
+
+# Build the native binary without bundling.
+(cd apps/desktop && npx tauri build --debug --no-bundle)
+
+# Run formatting, Clippy, Rust tests, TypeScript, UI tests, and the Vite build.
+bash scripts/check.sh
+```
+
+The bundle script prints the app path. Bundles use ad hoc signing for local development
+and are not notarized releases.
+
+Debug builds store secrets in `dev-secrets/secrets.json` in Rotebot's data folder
+(file mode `0600`, directory mode `0700`) to avoid Keychain prompts. macOS release
+builds use Keychain. `MACROSCOPE_VAULT=file|keychain` selects either store for testing.
+
+</details>
+
+## Under the hood
+
+```mermaid
+flowchart LR
+    A[Describe or Show] --> B[Review outbound data]
+    B --> C[Model builds program]
+    C --> D[Host checks in sandbox]
+    D --> E[Save reusable tool]
+    E --> F[Manual or scheduled run]
+    F --> G[Approved local outputs]
+    F --> H[External actions: Needs you]
+```
+
+**Rust at the core. Tauri on the desktop. React at the surface.** A finite CSV
+interpreter handles transformations it can express; generated JavaScript runs in the
+separate QuickJS runtime. The host owns source access, checks, permissions, and commits.
+
+| Area | Where to explore |
+| --- | --- |
+| Product orchestration, builds, tools, runs, and Show | [`crates/app-core`](crates/app-core) |
+| CSV execution, isolated program execution, and staged commits | [`crates/executor`](crates/executor), [`crates/runner`](crates/runner), [`crates/effect-broker`](crates/effect-broker) |
+| Meta Responses, Muse supervision, and program generation | [`crates/model-gateway`](crates/model-gateway), [`crates/muse-client`](crates/muse-client), [`crates/builder`](crates/builder) |
+| MCP connections, OAuth with PKCE and DCR, and service detection | [`crates/connections`](crates/connections) |
+| SQLCipher storage, secret stores, and outbound policy | [`crates/storage`](crates/storage), [`crates/vault`](crates/vault), [`crates/policy`](crates/policy) |
+| Desktop shell, React UI, and typed backend contract | [`apps/desktop`](apps/desktop) |
+| Native Show observation | [`native/macos-observer`](native/macos-observer) |
+
+### Powered by Meta's AI tooling
+
+| Capability | What it does in Rotebot |
+| --- | --- |
+| Responses API · `muse-spark-1.3` | Writes programs for the host to check |
+| Structured output · `json_schema` | Returns program definitions the host can validate |
+| Vision · `input_image` | Interprets masked Show recording frames |
+| Built-in `web_search` | Researches API access for services mentioned in tasks |
+| Image generation and editing · `muse-image-1.0` | Creates tool bot characters with a shared reference style |
+| Muse plan via a custom MSP client | Offers model access through the user's Muse allowance |
+
+For missing service access, **Send and check access** can reuse suitable connections,
+research public APIs, and explain setup. Custom API connections support an approved JSON
+GET with a bearer token or API-key header entered natively.
+[API discovery details →](docs/adr/0006-api-discovery.md)
+
+## A small app with a serious paper trail
+
+Rotebot was built over several days with Claude Code and Codex writing and reviewing
+most of the code. Muse Code served as an independent reviewer: its
+[first](docs/build/muse-review.md) and [second](docs/build/muse-review-2.md) reviews found
+16 defects, including credential-routing and secret-logging issues. Each was reproduced
+with a failing test and fixed. The full commit history is in this repository.
+
+The working name was **Macroscope**. Internal crates, binaries, and `MACROSCOPE_*`
+environment variables still carry that name.
+
+Explore the [build progress](docs/build/PROGRESS.md), [architecture decisions](docs/adr/),
+[tested examples](docs/build/TESTED-EXAMPLES.md), [master plan](plan/PLAN.md),
+[branch map](docs/build/BRANCHES.md), and [privacy policy](docs/legal/privacy-policy.md).
+
+---
+
+<p align="center"><strong>Show it once. Make it routine.</strong></p>
