@@ -33,6 +33,7 @@
     "allow-refresh-muse-status",
     "allow-open-muse-sign-in",
     "allow-select-route",
+    "allow-select-meta-model",
     "allow-set-muse-unverified-ok",
     "allow-set-local-only",
     "allow-pick-csv",

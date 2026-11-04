@@ -38,6 +38,7 @@ fn main() {
         "refresh_muse_status",
         "open_muse_sign_in",
         "select_route",
+        "select_meta_model",
         "set_muse_unverified_ok",
         "set_local_only",
         "pick_csv",
